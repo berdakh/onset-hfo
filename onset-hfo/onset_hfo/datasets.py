@@ -588,6 +588,29 @@ def _load_cached_slice(slice_dir: Path, meta: dict, verbose: bool = True) -> Rec
     return rec
 
 
+def iter_slices(t_start: float, t_stop: float, chunk_s: float,
+                overlap_s: float = 2.0, verbose: bool = True, **kwargs):
+    """Yield ``(ChunkPlan, Recording)`` over a long window, one chunk at a time.
+
+    The chunk source for :mod:`onset_hfo.streaming`. Each chunk is an ordinary
+    :func:`fetch_slice` call, so the byte-range fetching, the caching and the
+    BrainVision parsing are the same code the single-slice path uses -- there
+    is no second loader to keep in step.
+
+    Memory stays flat: one chunk is loaded, yielded and dropped before the
+    next is fetched. **Disk does not.** Every chunk is cached under
+    ``artifacts/data`` exactly as a single slice would be, so an hour of
+    recording leaves an hour of recording on disk. That is a deliberate
+    trade -- re-running an analysis should not re-download it -- and it is
+    stated here because "streaming" usually implies otherwise.
+    """
+    from onset_hfo.streaming import plan_chunks
+
+    for plan in plan_chunks(t_start, t_stop, chunk_s, overlap_s):
+        yield plan, fetch_slice(t_start=plan.read_start, t_stop=plan.read_stop,
+                                verbose=verbose, **kwargs)
+
+
 def load_example(**kwargs) -> Recording:
     """The one-liner used by the notebooks: the default example slice."""
     return fetch_slice(**kwargs)

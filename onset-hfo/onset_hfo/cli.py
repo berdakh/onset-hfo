@@ -236,6 +236,80 @@ def _cmd_stability(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_stream(args: argparse.Namespace) -> int:
+    """Detect over a recording too long to hold in memory.
+
+    Writes events and per-channel rates. It deliberately does **not** write a
+    report or figures: both need the whole signal array, which is the thing
+    this command exists because you do not have. Use ``run`` on a window you
+    can hold when you want the report.
+    """
+    import json
+
+    from onset_hfo.datasets import iter_slices
+    from onset_hfo.detectors.base import events_to_frame
+    from onset_hfo.metrics import channel_rates
+    from onset_hfo.preprocess import prepare
+    from onset_hfo.streaming import OverlapTooShort, stream_detect
+
+    ensure_dirs()
+    cfg = PipelineConfig()
+    cfg.top_k = args.top_k
+
+    seen: dict[str, object] = {}
+
+    def chunks():
+        for plan, recording in iter_slices(
+                t_start=args.start, t_stop=args.stop, chunk_s=args.chunk,
+                overlap_s=args.overlap, subject=args.subject, task=args.task,
+                run=args.run, verbose=args.verbose):
+            prep = prepare(recording, cfg.preprocess, verbose=False)
+            seen.setdefault("channels", list(prep.ch_names))
+            seen.setdefault("steps", list(prep.steps))
+            seen.setdefault("recording", recording)
+            yield plan, prep
+
+    try:
+        events = stream_detect(chunks, cfg, detectors=tuple(args.detectors))
+    except OverlapTooShort as exc:
+        print(f"[onset-hfo] {exc}")
+        return 2
+
+    duration = args.stop - args.start
+    recording = seen.get("recording")
+    out_dir = Path(args.out or RESULTS_DIR) / (
+        f"{args.subject}_stream_{args.start:g}-{args.stop:g}s")
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    frames = [events_to_frame(evs) for evs in events.values() if evs]
+    if frames:
+        import pandas as pd
+        pd.concat(frames, ignore_index=True).to_csv(out_dir / "events.csv", index=False)
+    for name, evs in events.items():
+        channel_rates(evs, duration, seen.get("channels")).to_csv(
+            out_dir / f"rates_{name}.csv", index=False)
+
+    provenance = recording.provenance() if recording is not None else {}
+    provenance.update({
+        "analysis": "streamed",
+        "t_start_s": args.start, "t_stop_s": args.stop,
+        "chunk_s": args.chunk, "overlap_s": args.overlap,
+        "preprocessing": seen.get("steps", []),
+        "note": ("Baselines were measured once over the whole window, not per "
+                 "chunk, so these events do not depend on the chunk size. See "
+                 "onset_hfo/streaming.py."),
+    })
+    (out_dir / "provenance.json").write_text(json.dumps(provenance, indent=2, default=str))
+
+    print(f"\n[onset-hfo] {duration / 60:.1f} minutes analysed in "
+          f"{args.chunk:g} s chunks")
+    for name, evs in events.items():
+        print(f"[onset-hfo]   {name}: {len(evs)} events "
+              f"({60 * len(evs) / duration:.1f}/min across all channels)")
+    print(f"[onset-hfo] written to {out_dir}")
+    return 0
+
+
 def _cmd_runs(args: argparse.Namespace) -> int:
     from onset_hfo.datasets import list_runs
 
@@ -307,6 +381,29 @@ def build_parser() -> argparse.ArgumentParser:
                        choices=["ripple", "fast_ripple"])
     bench.add_argument("--out", default=None, help=f"output directory (default: {RESULTS_DIR})")
     bench.set_defaults(func=_cmd_benchmark)
+
+    stream = sub.add_parser(
+        "stream",
+        help="detect over a recording longer than memory, in overlapping chunks")
+    stream.add_argument("--subject", default=None)
+    stream.add_argument("--task", default=None)
+    stream.add_argument("--run", default=None)
+    stream.add_argument("--start", type=float, default=0.0)
+    stream.add_argument("--stop", type=float, required=True,
+                        help="seconds; the whole window to analyse")
+    stream.add_argument("--chunk", type=float, default=60.0,
+                        help="seconds per chunk (default: 60)")
+    stream.add_argument("--overlap", type=float, default=2.0,
+                        help="seconds read beyond each chunk and discarded, so a "
+                             "boundary cannot truncate an event or a filter "
+                             "(default: 2)")
+    stream.add_argument("--detectors", nargs="+", default=["rms", "line_length"],
+                        choices=["rms", "line_length", "hilbert", "short_time_energy"])
+    stream.add_argument("--top-k", type=int, default=5)
+    stream.add_argument("--out", default=None)
+    stream.add_argument("--verbose", action="store_true",
+                        help="print each chunk as it is fetched")
+    stream.set_defaults(func=_cmd_stream)
 
     out = sub.add_parser(
         "outcome",

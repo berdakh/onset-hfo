@@ -26,6 +26,7 @@ import numpy as np
 
 from onset_hfo.config import DetectorConfig
 from onset_hfo.detectors.base import (
+    ChannelBaseline,
     Event,
     bandpass,
     count_oscillation_peaks,
@@ -47,6 +48,7 @@ def detect_with_feature(
     filtered: np.ndarray | None = None,
     channels: list[str] | None = None,
     describe_spectrum: bool = True,
+    baselines: dict[str, ChannelBaseline] | None = None,
 ) -> list[Event]:
     """Run the five-step detection above on every requested channel.
 
@@ -68,6 +70,15 @@ def detect_with_feature(
     describe_spectrum:
         Measure peak frequency and spectral prominence per event. Costs time;
         switch off for quick parameter sweeps.
+    baselines:
+        Per-channel median/MAD to threshold against, instead of measuring them
+        from ``prep``. Used when a long recording is analysed in chunks: the
+        baseline has to be a property of the whole recording, or the answer
+        depends on where the chunk boundaries fell. See
+        :mod:`onset_hfo.streaming`. A channel absent from the mapping falls
+        back to measuring its own chunk, which is the right behaviour for the
+        in-memory path and the wrong one for a chunk -- so the streaming code
+        supplies every channel and checks that it did.
     """
     sf = prep.sfreq
     names = channels or prep.ch_names
@@ -87,15 +98,20 @@ def detect_with_feature(
     for ch in names:
         x = filtered[filt_lookup[ch]]
         trace = feature(x, win)
-        if cfg.baseline == "sd":
+        given = (baselines or {}).get(ch)
+        if given is not None:
+            center, scale = given.feature_center, given.feature_scale
+            amp_scale = given.amplitude_scale
+        elif cfg.baseline == "sd":
             center, scale = float(np.mean(trace)), float(np.std(trace) or np.finfo(float).eps)
+            amp_scale = float(np.squeeze(robust_scale(x)[1]))
         else:
             c, s = robust_scale(trace)
             center, scale = float(np.squeeze(c)), float(np.squeeze(s))
+            amp_scale = float(np.squeeze(robust_scale(x)[1]))
         threshold = center + cfg.threshold_sd * scale
         extend_threshold = center + cfg.extend_sd * scale
-        _, amp_scale = robust_scale(x)
-        peak_threshold = cfg.peak_threshold_sd * float(np.squeeze(amp_scale))
+        peak_threshold = cfg.peak_threshold_sd * amp_scale
 
         segments = extend_segments(threshold_segments(trace, threshold, min_len, gap),
                                    trace, extend_threshold, gap)
