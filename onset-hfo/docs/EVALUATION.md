@@ -551,7 +551,7 @@ unmeasured, and is the first experiment to run.
 
 ## 7. Test suite
 
-`pytest -q` — 419 tests, entirely offline. They cover the
+`pytest -q` — 445 tests, entirely offline. They cover the
 primitives (robust scale, sliding features, threshold segmentation, bipolar
 pairing), the detectors (hot channels found, events are oscillations, a flat
 channel yields nothing, thresholds behave monotonically, reruns are
