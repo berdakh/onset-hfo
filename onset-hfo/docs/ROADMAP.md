@@ -44,13 +44,14 @@ most worth testing elsewhere, and the one most likely to hold.
 model has driven it would produce 22 patients' worth of *scripted-planner*
 numbers, which measure the script rather than the thesis.
 
-Not on this list, because they live in their own documents with their own
-ordered plans: the two-repository cleanup
-([`DUPLICATION.md`](DUPLICATION.md) — items 5–8 are done on this side and
-wait only on `berdakh/onset`, with the exact text for each written out there;
-item 4 is entirely in that repository) and the expo material
-([`EXPO.md`](EXPO.md), [`POSTER.md`](POSTER.md) — the claim is written, the
-board is not built).
+Not on this list, because it lives in its own document with its own ordered
+plan: the expo material ([`EXPO.md`](EXPO.md), [`POSTER.md`](POSTER.md) — the
+claim is written, the board is not built).
+
+The two-repository cleanup ([`DUPLICATION.md`](DUPLICATION.md)) is **done**:
+all eight items, on both sides, closed by onset-hfo#29, onset-hfo#30 and
+berdakh/onset#3. Item 4 was revised rather than executed — that document
+records why, and it is the more useful half of the outcome.
 
 ---
 
