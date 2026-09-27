@@ -327,6 +327,84 @@ cfg.rms.threshold_sd = 4.0
 
 ---
 
+## 3b. Physiological versus epileptic ripples: what the split is worth
+
+Roadmap item 6. Every rate this project has published merges two populations
+that mean opposite things — a ripple in healthy cortex is not a finding, and
+nothing here can tell it from an epileptic one. No public archive carries the
+label, so the pipeline does the honest half instead: it splits events by
+whether they ride an interictal discharge, reports the sub-populations side by
+side (`populations_<detector>.csv`), and **measures whether that split
+separates anything at all**.
+
+**Cohort.** The shipped 60-second analysis, `data/example_analysis/`
+(ds003029, real patient recording). RMS: 95 spike-coupled events against
+1,454 independent. Line length: 181 against 2,007. Five morphology features
+per event, Bonferroni-corrected across the five.
+
+### RMS — nothing survives correction, and the sample is borderline
+
+| feature | median coupled | median independent | AUC | 95% CI | p | Bonferroni |
+|---|---|---|---|---|---|---|
+| duration (ms) | 47.0 | 55.0 | 0.437 | 0.379–0.496 | 0.039 | 0.193 |
+| cycles | 6.57 | 7.69 | 0.425 | 0.366–0.478 | 0.014 | **0.072** |
+| peak frequency (Hz) | 136.7 | 148.4 | 0.459 | 0.395–0.518 | 0.185 | 0.925 |
+| spectral prominence (dB) | 9.31 | 8.93 | 0.499 | 0.444–0.554 | 0.983 | 1.000 |
+| peak amplitude (µV) | 106.3 | 141.2 | 0.447 | 0.386–0.509 | 0.081 | 0.404 |
+
+`min_detectable_auc(95, 1454) = 0.59`. The largest observed deviation from
+chance is 0.425, equivalent to 0.575 — **just under the floor.** So this is
+*not shown*, not *not there*: the sample could not have resolved the effect it
+appears to be seeing.
+
+### Line length — one feature separates, and it is weak
+
+| feature | median coupled | median independent | AUC | 95% CI | p | Bonferroni |
+|---|---|---|---|---|---|---|
+| duration (ms) | 53.0 | 54.0 | 0.484 | 0.440–0.530 | 0.465 | 1.000 |
+| cycles | 8.73 | 7.85 | 0.549 | 0.508–0.592 | 0.029 | 0.146 |
+| **peak frequency (Hz)** | **174.8** | **148.4** | **0.585** | 0.542–0.625 | <0.001 | **0.001** |
+| spectral prominence (dB) | 9.84 | 9.87 | 0.456 | 0.420–0.492 | 0.048 | 0.238 |
+| peak amplitude (µV) | 66.0 | 85.4 | 0.443 | 0.406–0.481 | 0.012 | 0.058 |
+
+`min_detectable_auc(181, 2007) = 0.57`, and the observed 0.585 clears it. So
+this one is real on this recording: spike-coupled events peak about 26 Hz
+higher. **AUC 0.585 still cannot classify an individual event** — it is a
+distributional difference, not a label.
+
+### The finding that matters is that the two detectors disagree
+
+On peak frequency, RMS gives AUC **0.459** — coupled events slightly *lower* —
+and line length gives **0.585** — coupled events clearly *higher*. Same
+recording, same discharges, opposite sign. Two detectors that differ only in
+the feature they threshold should not disagree about the direction of a
+property of the underlying ripples, and the most economical explanation is
+that this is a fact about *which events each detector selects* rather than
+about the ripples themselves.
+
+**So the pipeline reports two rates and does not label either one.** A split
+that cannot be seen consistently in the waveform is a split you carry forward,
+not one you resolve.
+
+### What this is not
+
+- **Discharge co-occurrence is a proxy, not a label.** No archive here marks
+  which ripples were physiological. The sub-populations are named
+  `spike_coupled` and `independent` for exactly that reason.
+- **One recording, one patient, 60 seconds.** Whether the split localises
+  better than the merged rate — the question that would make it clinically
+  interesting — needs the outcome study re-run per sub-population, which needs
+  the archive and so has not been done.
+- **No classifier, and none is planned on this evidence.** Training one on a
+  proxy and reading it as the thing is the failure mode this section exists to
+  avoid.
+
+Reproduce: `onset_hfo.populations.compare_populations` on the events of
+`data/example_analysis/`. It takes a few minutes — the permutation is exact
+where that is affordable and sampled at 200,000 draws where it is not.
+
+---
+
 ## 4. How hard is the problem? Recall against SNR
 
 `ripple_snr` is the implanted ripple's peak amplitude divided by the RMS the
@@ -473,7 +551,7 @@ unmeasured, and is the first experiment to run.
 
 ## 7. Test suite
 
-`pytest -q` — 403 tests, entirely offline. They cover the
+`pytest -q` — 419 tests, entirely offline. They cover the
 primitives (robust scale, sliding features, threshold segmentation, bipolar
 pairing), the detectors (hot channels found, events are oscillations, a flat
 channel yields nothing, thresholds behave monotonically, reruns are

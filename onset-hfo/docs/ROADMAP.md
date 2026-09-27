@@ -24,7 +24,7 @@ four are done and kept for what they found.
 | **3** | [The ladder across the 22-subject cohort](#2-outcome-as-the-reference-standard--done-twice-the-ladder-across-the-cohort-is-not) | cheap; recordings cached | deliberately gated on #1 |
 | **4** | [Sweep the two new detectors on real data](#4-more-than-two-detectors-and-a-proper-agreement-analysis--built-measured-only-on-synthetic-data) | built; synthetic only | a `benchmark` run with network |
 | **5** | [A hand-annotated benchmark](#5-a-small-hand-annotated-benchmark) | not started | two reviewers' time |
-| **6** | [Physiological versus epileptic ripples](#6-physiological-versus-epileptic-ripples) | not started | nothing, and it is hard |
+| **6** | [Sub-populations against outcome](#6-physiological-versus-epileptic-ripples--reported-not-resolved) | the split is built and measured | a networked `outcome` re-run |
 | **7** | [Electrode geometry](#3-electrode-geometry--blocked-on-this-dataset-needs-a-different-archive) | write it against the schema | an archive with coordinates |
 
 **Why #1 is first.** Every orchestration number this project has published
@@ -245,18 +245,49 @@ detector's measurable performance.
 
 ---
 
-## 6. Physiological versus epileptic ripples
+## 6. Physiological versus epileptic ripples — *reported, not resolved*
 
 **Why.** The single biggest scientific gap. A high ripple rate in healthy
 occipital cortex is not a finding, and nothing in this prototype can tell the
-two apart.
+two apart. Every rate published here merges the two.
 
-**What.** Start with what is measurable: co-occurrence with discharges (already
-flagged), waveform morphology, spectral shape, and relation to sleep state
-where sleep is annotated. Report the sub-populations separately rather than
-merging them into one rate.
+**Status.** `onset_hfo/populations.py` splits events by whether they ride an
+interictal discharge, `run_pipeline` reports the sub-populations side by side
+(`populations_<detector>.csv`) and never merges them back, and the report
+carries the caveat that neither sub-population is a label.
 
-**Touches.** `onset_hfo/validate.py`, `metrics.py`, `report.py`.
+**And it measures whether the split is worth anything**, which is the part
+that could have been skipped. Full tables in
+[`EVALUATION.md`](EVALUATION.md) §3b; the short version:
+
+- **RMS: nothing survives Bonferroni across five morphology features**, and
+  `min_detectable_auc(95, 1454) = 0.59` against a largest observed effect
+  equivalent to 0.575. *Not shown*, not *not there*.
+- **Line length: peak frequency separates** — coupled events peak 26 Hz
+  higher, AUC 0.585, Bonferroni p = 0.001, above that arm's 0.57 floor. Real,
+  and far too weak to classify an individual event.
+- **The two detectors disagree about the direction.** RMS puts coupled events
+  slightly *lower* in peak frequency (AUC 0.459), line length clearly
+  *higher* (0.585). Same recording, same discharges, opposite sign. Two
+  detectors differing only in the feature they threshold should not disagree
+  about a property of the ripples, so the most economical reading is that
+  this is a fact about which events each detector selects.
+
+**So no classifier, and none is planned on this evidence.** A split that
+cannot be seen consistently in the waveform is one to carry forward, not to
+resolve. Training on a proxy and reading it as the thing is the failure this
+item exists to avoid.
+
+**What is left, and it is the interesting half.** Whether the sub-populations
+*localise* differently — whether the spike-coupled rate predicts the resection
+better than the merged rate does — is the question that would make the split
+clinically meaningful. It needs `outcome` re-run per sub-population across the
+20 patients, which needs the archive. That is now board item 6.
+
+**Touches.** `onset_hfo/populations.py` (new), `pipeline.py`, `report.py` via
+the existing `data_quality` section — deliberately not a new report section,
+because the agent's tool contract is frozen and enumerates the sections it may
+read, and a stable contract is worth more than a tidier schema.
 
 ---
 

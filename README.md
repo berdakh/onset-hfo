@@ -21,7 +21,7 @@ pip install -e ".[dev]"
 python -m onset_hfo.cli run --synthetic --figures   # offline, ~10 seconds
 python -m onset_hfo.cli run --subject sub-pt01 --start 50 --stop 110
 python -m onset_agent.cli --results artifacts/results/sub-pt01_ictal_run-01 --demo
-pytest -q                                           # 403 tests, offline
+pytest -q                                           # 419 tests, offline
 ```
 
 Part of the [Onset](https://berdakh.github.io/onset/) project —
