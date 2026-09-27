@@ -615,12 +615,18 @@ def test_the_duplication_plan_quotes_the_wording_the_code_ships():
     assert "There is no " in panels.DISCLAIMER_TAIL
 
 
-def test_the_plan_records_which_half_of_each_item_is_done():
-    """Items 5-8 have two halves; a plan that said "done" would be wrong."""
+def test_the_plan_is_closed_out_rather_than_left_half_done():
+    """Items 5-8 had two halves each; both sides have now shipped.
+
+    This asserted `count("**half done**") == 4` while only this repository was
+    reachable. The other half shipped in berdakh/onset#3, so the assertion is
+    the opposite one: nothing in the table may still be waiting.
+    """
     plan = _duplication_plan()
-    assert plan.count("**half done**") == 4, \
-        "items 5-8 each need both halves tracked separately"
-    assert "the `onset-hfo` side is in place and the `berdakh/onset`\nside is not" in plan
+    assert "**half done**" not in plan and "| todo |" not in plan, \
+        "an item is still open; the table must say which half"
+    assert plan.count("**done**") >= 8, "the eight planned actions must all be recorded"
+    assert "berdakh/onset#3" in plan, "the table must name the PR that closed items 4-8"
 
 
 def test_the_theme_file_names_its_twin():

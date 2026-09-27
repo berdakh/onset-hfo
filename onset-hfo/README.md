@@ -32,7 +32,8 @@ A channel's rate leads to the events behind it, an event leads to the signal it
 was measured on, and the assistant's every citation opens to both. Ask it which
 channels to resect and watch it refuse.
 
-New to the project? [**docs/TUTORIAL.html**](docs/TUTORIAL.html) is a standalone
+New to the project? [**Where do seizures start?**](https://berdakh.github.io/onset-hfo/TUTORIAL.html)
+([source](../site/TUTORIAL.html)) is a standalone
 walkthrough — the research question, the signal, the traps, every measured
 result and what it does and does not support. One file, opens in a browser.
 

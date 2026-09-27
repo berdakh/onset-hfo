@@ -4,7 +4,9 @@ Start wherever your question is.
 
 ## "Explain the whole thing to me once"
 
-Open [**TUTORIAL.html**](TUTORIAL.html) in a browser — a standalone walkthrough
+Open [**Where do seizures start?**](https://berdakh.github.io/onset-hfo/TUTORIAL.html)
+— it lives in [`site/`](../../site/TUTORIAL.html) because that is the directory
+CI publishes — a standalone walkthrough
 of the entire project in eleven parts: the clinical problem, what the signal
 looks like, why filter ringing makes this hard, the cohort, the measured
 transfer gap, what a handful of labels buys, calibration, the agent, and the

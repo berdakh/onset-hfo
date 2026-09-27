@@ -72,7 +72,7 @@ Equally measured. These look like duplication and are not.
 
 2. **The two long-form guides.** `onset/docs/tutorial.html` (73 KB) teaches
    *how the system is built* — iEEG, features, models, evaluation without
-   leakage, an optional agent lab. `onset-hfo/docs/TUTORIAL.html` (58 KB)
+   leakage, an optional agent lab. `onset-hfo/site/TUTORIAL.html` (58 KB)
    teaches *whether the results are true* — what the archive does and does not
    contain, why a filtered sharp edge looks like a ripple, five attacks and the
    one that landed. Same subject, opposite questions. Merging them would
@@ -117,30 +117,33 @@ Ordered by benefit per unit of work. Items 1–3 are done.
 | 1 | Make the Onset site the front door: nav and hero lead to Onset-HFO, §04 carries the real-data result, the footer links both sites | **done** — berdakh/onset#1 |
 | 2 | Give the Onset-HFO site and app links back to the Onset site, so neither is a dead end | **done** |
 | 3 | Align the two sidebars' link vocabulary so the same document has the same name in both apps | **done** — see below |
-| 4 | Retire the teaching prototype's thin pages. Its `Data`, `Architecture` and `Research` pages restate what the site says at greater length and better. Replace each with a short page that links the site section | **todo** — entirely in `berdakh/onset` |
-| 5 | Write the standing disclaimer once. Both banners keep an identical structure and differ only in the sentence naming the data; the canonical text lives in this repository and the other copies it | **half done** — canonical copy written, see below |
-| 6 | Mark the theme file. A header comment in each `.streamlit/config.toml` naming the other repository as its twin, so whoever edits one knows a second copy exists | **half done** — this repository's file carries the `TWIN FILE` header |
-| 7 | Cross-link the two long-form guides: one sentence at the top of each saying which question the other answers | **half done** — `docs/TUTORIAL.html` now opens with it |
-| 8 | Add the four-line "stays in step" checklist below to both repositories' contributing notes | **half done** — in `CONTRIBUTING.md`, plus a review-checklist line |
+| 4 | Retire the teaching prototype's thin pages. Its `Data`, `Architecture` and `Research` pages restate what the site says at greater length and better. Replace each with a short page that links the site section | **done** — berdakh/onset#3, with its premise revised; see below |
+| 5 | Write the standing disclaimer once. Both banners keep an identical structure and differ only in the sentence naming the data; the canonical text lives in this repository and the other copies it | **done** — canonical copy here, adopted in berdakh/onset#3 |
+| 6 | Mark the theme file. A header comment in each `.streamlit/config.toml` naming the other repository as its twin, so whoever edits one knows a second copy exists | **done** — both `.streamlit/config.toml` files carry the header |
+| 7 | Cross-link the two long-form guides: one sentence at the top of each saying which question the other answers | **done** — both guides open with it; the target is published now |
+| 8 | Add the four-line "stays in step" checklist below to both repositories' contributing notes | **done** — `CONTRIBUTING.md` here, the README there |
 
-**"Half done" means the `onset-hfo` side is in place and the `berdakh/onset`
-side is not.** Items 5–8 each have two halves by construction, and only this
-repository was reachable when they were written. What remains in the other
-repository is small and fully specified — the exact text for each is below, so
-none of it has to be reinvented:
+**Item 4's premise did not survive checking, and the item was revised rather
+than executed.** It said to retire the teaching prototype's `Data`,
+`Architecture` and `Research` pages as restatements of the site. Measured
+against the site, that held for one of the three:
 
-| # | What to do in `berdakh/onset` |
+| page | verdict |
 |---|---|
-| 4 | Replace `Data`, `Architecture` and `Research` with short pages linking the matching site section |
-| 5 | Replace the inline banner text with the three constants below, changing **only** `DATA_SENTENCE` |
-| 6 | Copy the `TWIN FILE` header from this repository's `.streamlit/config.toml` |
-| 7 | Add the mirror sentence to `docs/tutorial.html` — the wording is below |
-| 8 | Copy the four-item checklist into its contributing notes |
+| `Data` | **Not a restatement.** It is an interactive signal browser, and the site's own §02 *links to it* — "Open the synthetic signal viewer". Retiring it would have broken the front door's own link and deleted the one thing the site cannot do. |
+| `Architecture` | **Partly.** The site covers the five implemented steps; the page's full-system-against-prototype table is on the site nowhere. |
+| `Research` | **Yes.** Lab, PI, repositories and what-is-implemented are all in the site's §05. That half is cut; the MSc theses and the five inherited principles stay, being published nowhere else. |
+
+So each page links the site section it draws on and only the restated
+paragraph was removed. The lesson is the one this project keeps relearning:
+**a plan item written from an impression needs re-measuring before it is
+executed**, and "these pages are thin" was an impression.
 
 ### Item 5: the canonical disclaimer
 
-Lives in `onset-hfo/app/common.py`. Structure is fixed; exactly one line
-differs between the two apps.
+Lives in `onset-hfo/app/panels.py` — the module that imports no Streamlit,
+so a test can read it where Streamlit is not installed. Structure is fixed;
+exactly one line differs between the two apps.
 
 ```python
 DISCLAIMER_LEAD = "Research prototype — not a medical device."
@@ -161,21 +164,25 @@ match, and it is the more important of the two to get right: a reader who
 mistakes the synthetic cohort for patients has been misled about the only
 thing that matters.
 
-### Item 7: the mirror sentence
+### Item 7, and the dead link it nearly shipped
 
-`onset-hfo/docs/TUTORIAL.html` now opens by saying that the implementation
-walkthrough works through *how the system is built* while it works through
-*whether the results are true*. The mirror belongs at the top of
-`onset/docs/tutorial.html`, pointing the other way:
+Both guides now open by naming the question the other answers:
+`site/TUTORIAL.html` points at the implementation walkthrough, and
+`onset/docs/tutorial.html` points back.
 
-> There is a companion to this document. It asks the opposite question: where
-> this one works through **how the system is built** — iEEG, features, models,
-> evaluation without leakage, an optional agent lab — [Where do seizures
-> start?](https://berdakh.github.io/onset-hfo/TUTORIAL.html) works through
-> **whether the results are true**: what the archive does and does not contain,
-> why a filtered sharp edge looks like a ripple, and five attacks on the result
-> with the one that landed. Same subject, opposite questions; neither is a
-> longer version of the other.
+**Writing the second half exposed that the first half's target did not
+exist.** This repository publishes `site/` to GitHub Pages and nothing else,
+so `berdakh.github.io/onset-hfo/TUTORIAL.html` was a 404 and had been for as
+long as the file existed — the project's longest document, the one that argues
+whether its own results are true, was reachable only by cloning the
+repository. The file moved from `docs/` to `site/`, which is where CI looks,
+and the two READMEs that pointed at the old path now point at the published
+URL.
+
+Worth stating as a rule rather than an anecdote: **the two repositories
+publish different directories.** `onset` publishes `docs/`; `onset-hfo`
+publishes `site/`, with `docs/` holding markdown read on GitHub. A path that
+works in one is not a path in the other.
 
 ### What "done" means for item 3
 
