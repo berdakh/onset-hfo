@@ -17,6 +17,7 @@ import pandas as pd
 from scipy.signal import find_peaks, hilbert
 
 __all__ = [
+    "ChannelBaseline",
     "Event",
     "events_to_frame",
     "frame_to_events",
@@ -154,6 +155,25 @@ def frame_to_events(df: pd.DataFrame) -> list[Event]:
 # --------------------------------------------------------------------------
 # Signal primitives
 # --------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ChannelBaseline:
+    """The three scale numbers one channel's detection is thresholded against.
+
+    Normally computed from the channel's own trace inside
+    :func:`~onset_hfo.detectors.engine.detect_with_feature`. They are named and
+    passed around separately for one reason: **when a recording is analysed in
+    chunks, these must be properties of the whole recording rather than of the
+    chunk.** A per-chunk baseline would make the detector's answer depend on
+    where the chunk boundaries fell, which is the failure this project already
+    documented once for analysis windows (``docs/OUTCOME.md``) and does not
+    intend to reintroduce in the name of scaling.
+    """
+
+    feature_center: float     #: median of the feature trace
+    feature_scale: float      #: 1.4826 x MAD of the feature trace
+    amplitude_scale: float    #: 1.4826 x MAD of the band-passed signal
 
 
 def robust_scale(x: np.ndarray, axis: int = -1) -> tuple[np.ndarray, np.ndarray]:

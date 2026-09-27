@@ -14,7 +14,8 @@ most useful thing to read before starting the next one.
 
 Eleven numbered items below carry the history — why each mattered, what it
 found, and what it cost. This section is the short answer: **what is still
-open, and which of it is blocked on what.**
+open, and which of it is blocked on what.** Seven items are open; the other
+four are done and kept for what they found.
 
 | | Open work | State | Blocked on |
 |---|---|---|---|
@@ -24,8 +25,7 @@ open, and which of it is blocked on what.**
 | **4** | [Sweep the two new detectors on real data](#4-more-than-two-detectors-and-a-proper-agreement-analysis--built-measured-only-on-synthetic-data) | built; synthetic only | a `benchmark` run with network |
 | **5** | [A hand-annotated benchmark](#5-a-small-hand-annotated-benchmark) | not started | two reviewers' time |
 | **6** | [Physiological versus epileptic ripples](#6-physiological-versus-epileptic-ripples) | not started | nothing, and it is hard |
-| **7** | [Whole recordings in `run` and `benchmark`](#7-scaling-whole-recordings-instead-of-one-minute-slices--done-for-the-outcome-study) | done for `outcome` only | nothing |
-| **8** | [Electrode geometry](#3-electrode-geometry--blocked-on-this-dataset-needs-a-different-archive) | write it against the schema | an archive with coordinates |
+| **7** | [Electrode geometry](#3-electrode-geometry--blocked-on-this-dataset-needs-a-different-archive) | write it against the schema | an archive with coordinates |
 
 **Why #1 is first.** Every orchestration number this project has published
 comes from the deterministic scripted planner, which the docs have called
@@ -260,25 +260,81 @@ merging them into one rate.
 
 ---
 
-## 7. Scaling: whole recordings instead of one-minute slices — *done for the outcome study*
+## 7. Scaling: whole recordings instead of one-minute slices — *done*
 
-**Status.** `onset-hfo outcome` now defaults to the whole 300-second run rather
-than a 60-second slice, and 20 of them fit in memory one at a time without any
-streaming work. That was enough to discover that the answer *depends* on the
-window (item 10), which is the reason this item mattered. What remains is the
-general case: `run` and `benchmark` still take a slice, and nothing here
-streams, so a ten-minute or hour-long recording from another archive would not
-fit.
+**Status.** `onset_hfo/streaming.py` and `onset-hfo stream` analyse a recording
+longer than memory. `datasets.iter_slices` serves it in overlapping chunks
+through the same byte-range fetcher the single-slice path uses, so there is no
+second loader to keep in step.
 
 **Why.** A minute is enough to demonstrate a method and not enough to measure a
 patient. Rates in clinical studies come from ten-minute or hour-long
 interictal windows.
 
-**What.** Stream the byte-range loader in chunks with overlap handling; keep
-memory flat; cache per-channel baselines rather than recomputing them.
-Parallelise across channels — the detectors are embarrassingly parallel.
+**Memory, measured.** One RMS detector over a synthetic recording served from
+disk one chunk at a time, 60-second chunks:
 
-**Touches.** `onset_hfo/datasets.py`, `pipeline.py`.
+| recording | whole array | streamed |
+|---|---|---|
+| 2 min | 380 MB | 279 MB |
+| 5 min | 663 MB | 345 MB |
+| 10 min | 1,136 MB | 344 MB |
+| 20 min | 2,071 MB | 349 MB |
+
+The whole-array path grows at about 95 MB per minute of recording; the
+streamed path is flat from five minutes on. An hour would be roughly 6 GB
+against 350 MB.
+
+**The hard part was never the memory.** Every detector fires at
+`median + k × robustSD` *of the channel's own feature trace*. Let each chunk
+measure its own median and the detector's answer starts depending on where the
+boundaries fell — and it is not a rounding error: measured on a 60-second
+synthetic recording in 10-second chunks, a per-chunk baseline **invented 89
+events and lost 117, out of 460**. A busy chunk raises its own threshold and
+hides its own events; a quiet one lowers it and invents them. This project has
+already published a result that changed when the analysis window changed
+(item 10); reintroducing the same defect as a scaling optimisation would have
+been worse than not scaling at all.
+
+So the module makes **two passes**: measure one median and one MAD per channel
+over the whole recording, then detect with those numbers injected. Two passes
+cost roughly twice the filtering, and buy an answer that does not depend on the
+chunk size.
+
+**What the tests hold it to**, in order of how much they matter:
+
+1. Where the baseline sees every sample, streaming returns **exactly** the
+   events the in-memory pipeline returns, at every chunk size tried. No
+   boundary bug, no double counting, no truncation.
+2. Above the subsample cap the result is still **exactly invariant to chunk
+   size**, because the retained samples are chosen by absolute position in the
+   recording rather than within the chunk.
+3. The bounded-memory baseline costs **under 1%** of events against an
+   exhaustive one (1 event in 460, measured).
+4. A per-chunk baseline is asserted to be *wrong by more than 10%*, so nobody
+   deletes the second pass as an optimisation.
+
+**A bug caught in the writing.** The first sketch chose its subsample stride
+from each chunk's own size, which is bounded and deterministic and still
+wrong: 60-second chunks thinned four times as hard as 15-second ones and moved
+three events out of 460 across the threshold. Bounded and deterministic is not
+the same as chunk-independent.
+
+**The refusals.** `plan_chunks` raises rather than warns when the overlap is
+shorter than the longer of the band-pass filter's ring-in and the longest
+acceptable event, and says which of the two bound. A short overlap does not
+fail loudly — it quietly returns slightly wrong events near every boundary,
+which is the kind of error that reaches a paper.
+
+**What is still not here.** `run` and `benchmark` still take a slice: both
+build a report and figures, which need the whole signal array by construction.
+`stream` writes events and per-channel rates — what a long recording is
+actually for — and says so rather than producing a partial report. Per-channel
+parallelism is also absent; the detectors are embarrassingly parallel and this
+runs them in a loop. Both are speed, and neither changes an answer.
+
+**Touches.** `onset_hfo/streaming.py` (new), `datasets.py`, `detectors/base.py`
+(`ChannelBaseline`), `detectors/engine.py`, `cli.py`.
 
 ---
 
