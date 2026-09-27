@@ -34,6 +34,7 @@ from onset_hfo.detectors import (
 )
 from onset_hfo.detectors.base import Event, bandpass, events_to_frame
 from onset_hfo.metrics import channel_rates, compare_rankings, detector_agreement, rate_change
+from onset_hfo.populations import population_notes, population_rates
 from onset_hfo.preprocess import Prepared, prepare
 from onset_hfo.report import Report, build_report
 from onset_hfo.validate import flag_spike_cooccurrence, rejection_summary, validate_events
@@ -65,6 +66,9 @@ class PipelineResult:
     report: Report
     rate_change: pd.DataFrame | None = None
     timings: dict[str, float] = field(default_factory=dict)
+    #: detector name -> per-channel rates split into the two sub-populations
+    #: of roadmap item 6. Never merged back into one number by this class.
+    populations: dict[str, pd.DataFrame] = field(default_factory=dict)
 
     # -- access -----------------------------------------------------------
     @property
@@ -99,6 +103,8 @@ class PipelineResult:
         for det, table in self.rates.items():
             table.to_csv(out / f"rates_{det}.csv", index=False)
         self.spike_rates.to_csv(out / "rates_spike.csv", index=False)
+        for det, table in self.populations.items():
+            table.to_csv(out / f"populations_{det}.csv", index=False)
         self.comparison.to_csv(out / "comparison.csv", index=False)
         if self.rate_change is not None:
             self.rate_change.to_csv(out / "rate_change.csv", index=False)
@@ -205,17 +211,27 @@ def run_pipeline(recording: Recording, config: PipelineConfig | None = None,
                 print(f"[onset-hfo] rate change computed: before {before[0]:.0f}-{before[1]:.0f} s "
                       f"vs during {during[0]:.0f}-{during[1]:.0f} s")
 
+    # Roadmap item 6: a rate that merges physiological and epileptic ripples
+    # is the project's largest silent assumption. It cannot be resolved here,
+    # so it is at least reported -- two rates, and the caveat that neither
+    # sub-population is a label.
+    populations = {name: population_rates(evs, duration, prep.ch_names)
+                   for name, evs in events.items()}
+    notes = list(recording.notes or [])
+    notes += population_notes(events, duration)
+
     rejections = {name: rejection_summary(evs) for name, evs in events.items()}
     report = build_report(
         provenance=recording.provenance(), rates=rates, comparison=comparison, events=events,
         spike_rates=spike_rates, duration_s=duration, preprocessing_steps=prep.steps,
         config=cfg.as_dict(), rejections=rejections, rate_change_rows=change_rows,
-        top_k=cfg.top_k, notes=recording.notes, citation=recording.citation)
+        top_k=cfg.top_k, notes=notes, citation=recording.citation)
 
     result = PipelineResult(recording=recording, prepared=prep, config=cfg, events=events,
                             spikes=spikes, rates=rates, spike_rates=spike_rates,
                             comparison=comparison, agreement=agreement, report=report,
-                            rate_change=change_frame, timings=timings)
+                            rate_change=change_frame, timings=timings,
+                            populations=populations)
     if save_to is not None:
         result.save(save_to)
     if verbose:

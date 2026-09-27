@@ -97,7 +97,7 @@ python -m onset_hfo.cli outcome
 #     (or just open https://onsetnu.streamlit.app/)
 pip install -e ".[app]" && streamlit run app/Home.py
 
-pytest -q        # 403 tests, all offline
+pytest -q        # 419 tests, all offline
 ```
 
 ## What it actually does
@@ -296,6 +296,8 @@ onset_hfo/            the pipeline
   pipeline.py         end to end
   streaming.py        recordings longer than memory, in chunks that cannot
                       change the answer
+  populations.py      ripples split by discharge co-occurrence, reported
+                      side by side and never merged into one rate
   store.py            the read-only view the agent is given
   cohort.py           clinician SOZ contacts, outcome and site from the archive
   batch.py            the pipeline across a cohort -> one labelled feature table
@@ -337,7 +339,7 @@ data/outcome/         the outcome study's per-subject tables, for the Patients p
 data/example_analysis/  a real 60 s analysis, so the app works on a fresh clone
 
 notebooks/            the five Colab notebooks (built by scripts/build_notebooks.py)
-tests/                403 offline tests (synthetic data + a mock model server)
+tests/                419 offline tests (synthetic data + a mock model server)
 docs/                 everything above
 ```
 
