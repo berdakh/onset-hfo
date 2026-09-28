@@ -14,7 +14,7 @@ most useful thing to read before starting the next one.
 
 Eleven numbered items below carry the history — why each mattered, what it
 found, and what it cost. This section is the short answer: **what is still
-open, and which of it is blocked on what.** Six items are open; the other five
+open, and which of it is blocked on what.** Five items are open; the other six
 are done and kept for what they found.
 
 | | Open work | State | Blocked on |
@@ -23,8 +23,14 @@ are done and kept for what they found.
 | **2** | [**A second cohort**](#11-a-second-cohort) | not started | finding an archive |
 | **3** | [The ladder across the 22-subject cohort](#2-outcome-as-the-reference-standard--done-twice-the-ladder-across-the-cohort-is-not) | cheap; recordings cached | deliberately gated on #1 |
 | **4** | [A hand-annotated benchmark](#5-a-small-hand-annotated-benchmark--harness-built-marking-not-done) | **harness built**, unmarked | two reviewers' afternoons |
-| **5** | [Sub-populations against outcome](#6-physiological-versus-epileptic-ripples--reported-not-resolved) | the split is built and measured | a networked `outcome` re-run |
-| **6** | [Electrode geometry](#3-electrode-geometry--blocked-on-this-dataset-needs-a-different-archive) | write it against the schema | an archive with coordinates |
+| **5** | [Electrode geometry](#3-electrode-geometry--blocked-on-this-dataset-needs-a-different-archive) | write it against the schema | an archive with coordinates |
+
+**What just came off the board.** "Sub-populations against outcome" was item 5
+and is [answered](#6-physiological-versus-epileptic-ripples--reported-and-the-localisation-question-answered),
+negatively: splitting ripples by discharge coupling does **not** localise the
+resection better than the merged rate. It was thought to need the archive; it
+did not, because the cached 60 s slices were enough once the screen pooled five
+of them per patient.
 
 **Why #1 is first.** Every orchestration number this project has published
 comes from the deterministic scripted planner, which the docs have called
@@ -324,7 +330,7 @@ taken by the orchestration notebook.
 
 ---
 
-## 6. Physiological versus epileptic ripples — *reported, not resolved*
+## 6. Physiological versus epileptic ripples — *reported, and the localisation question answered*
 
 **Why.** The single biggest scientific gap. A high ripple rate in healthy
 occipital cortex is not a finding, and nothing in this prototype can tell the
@@ -357,13 +363,51 @@ cannot be seen consistently in the waveform is one to carry forward, not to
 resolve. Training on a proxy and reading it as the thing is the failure this
 item exists to avoid.
 
-**What is left, and it is the interesting half.** Whether the sub-populations
-*localise* differently — whether the spike-coupled rate predicts the resection
-better than the merged rate does — is the question that would make the split
-clinically meaningful. It needs `outcome` re-run per sub-population across the
-20 patients, which needs the archive. That is now board item 6.
+**The interesting half, now measured: the split does not localise better.**
+Whether the spike-coupled rate predicts the resection better than the merged
+rate is the question that would make the split clinically meaningful. It was
+listed here as needing the archive, and it did not: the cached 60 s slices are
+enough once the screen uses five of them per patient and pools by subject mean.
+Full tables in [`EVALUATION.md`](EVALUATION.md) §3b, extract in
+[`data/outcome/subpopulation_screen.csv`](../data/outcome/subpopulation_screen.csv),
+entry point `scripts/run_subpopulation_outcome.py`. The short version:
 
-**Touches.** `onset_hfo/populations.py` (new), `pipeline.py`, `report.py` via
+- **In the ripple band, every sub-population arm is at or below the merged
+  rate** — gains of −0.011, −0.027 and −0.011 on the three outcome metrics.
+  The spike-coupled arm sits at chance on all three (0.487, 0.513, 0.474), and
+  on `top_channel_resected` its sign is reversed.
+- **The fast ripple band — the pre-specified arm — could not answer it.** Its
+  spike-coupled population has a median of **one** event per 60 s window, and
+  fewer than five in 56 of 100 subject-windows.
+- **And that near-empty population produced the best-looking numbers in the
+  section**: 0.806 and 0.826, apparently beating the merged rate, neither
+  surviving Bonferroni. Three checks retire them: the tie-aware
+  `candidates_resected` metric puts the same arm at 0.479; the merged arm
+  replicates across bands (0.753 → 0.747) while the coupled arm collapses
+  (0.806 → 0.487); and the band effect that should be there is (merged
+  `share_in_rz` falls 0.714 → 0.527 from fast ripples to ripples, as fast
+  ripples localising better predicts).
+
+**What it does not establish.** Group sizes this small resolve very little —
+the power floor runs 0.85 to 0.88 depending on the arm, and **no arm clears its
+own**, the merged 0.747 included. This is strong enough to retire the apparent
+gain, not to rule out a real one; and the ripple-band answer is a secondary
+analysis, not comparable to the published fast-ripple AUC. The arms are also
+not scored on identical patients, because a patient whose sub-population is
+empty in every window drops out of that arm — one patient in the ripple band,
+three across the fast ripple one. **The lesson worth keeping** is that the
+tie-aware metric earned its place: it was added in item 10 step 3 to stop an
+argmax overclaiming, and here it is the thing that caught one.
+
+One property of the split *is* reliable: the spike-coupled share of all ripples
+is stable within a patient and varies between them (within-subject SD 0.013
+against between-subject 0.063, ICC ≈ 0.96). It is a real patient feature that
+does not predict the resection — which is a more useful thing to know than
+either "no signal" or "promising".
+
+**Touches.** `onset_hfo/populations.py`, `scripts/run_subpopulation_outcome.py`
+(new), `data/outcome/subpopulation_screen.csv` (new), `pipeline.py`,
+`report.py` via
 the existing `data_quality` section — deliberately not a new report section,
 because the agent's tool contract is frozen and enumerates the sections it may
 read, and a stable contract is worth more than a tidier schema.
