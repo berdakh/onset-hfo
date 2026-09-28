@@ -23,7 +23,7 @@ four are done and kept for what they found.
 | **2** | [**A second cohort**](#11-a-second-cohort) | not started | finding an archive |
 | **3** | [The ladder across the 22-subject cohort](#2-outcome-as-the-reference-standard--done-twice-the-ladder-across-the-cohort-is-not) | cheap; recordings cached | deliberately gated on #1 |
 | **4** | [Sweep the two new detectors on real data](#4-more-than-two-detectors-and-a-proper-agreement-analysis--built-measured-only-on-synthetic-data) | built; synthetic only | a `benchmark` run with network |
-| **5** | [A hand-annotated benchmark](#5-a-small-hand-annotated-benchmark) | not started | two reviewers' time |
+| **5** | [A hand-annotated benchmark](#5-a-small-hand-annotated-benchmark--harness-built-marking-not-done) | **harness built**, unmarked | two reviewers' afternoons |
 | **6** | [Sub-populations against outcome](#6-physiological-versus-epileptic-ripples--reported-not-resolved) | the split is built and measured | a networked `outcome` re-run |
 | **7** | [Electrode geometry](#3-electrode-geometry--blocked-on-this-dataset-needs-a-different-archive) | write it against the schema | an archive with coordinates |
 
@@ -229,19 +229,59 @@ agreement rather than the matrix.
 
 ---
 
-## 5. A small hand-annotated benchmark
+## 5. A small hand-annotated benchmark — *harness built, marking not done*
 
-**Why.** The simulator can only measure what it simulates. Two hundred
-expert-marked events on real data would turn "0.97 precision on synthetic
-ripples" into a statement about recordings.
+**Why.** The simulator can only measure what it simulates. "Precision 0.97 on
+synthetic ripples" is a statement about the generator; a few hundred windows
+marked by two people would make it a statement about recordings.
 
-**What.** Build a review UI (the event figure already exists — it needs
-keyboard shortcuts and a CSV writer), mark a few hundred candidate windows
-from a public recording with two reviewers, publish the annotations, and score
-against them. Include the inter-rater agreement: it is the ceiling on any
-detector's measurable performance.
+**Status.** `onset_hfo/review.py`, `onset-hfo review` and
+`notebooks/07_annotation.ipynb` are the half that does not need people. What
+remains is two reviewers' afternoons, and it cannot be faked.
 
-**Touches.** new `onset_hfo/review.py`, `notebooks/04_annotation.ipynb`.
+**Most of what makes such a benchmark worthless is in that built half**, which
+is why it was worth building before anyone marks anything:
+
+1. **The sample is drawn from the recording, not from the detector.** Review
+   only the detector's own hits and you can measure precision and *never*
+   recall, because a window it did not propose is never looked at — and the
+   reference becomes a function of the thing being scored. Three strata,
+   equal numbers: accepted candidates, rejected candidates, and **background
+   windows with no detection in them**. The third is the only one that can
+   ever reveal a false negative.
+2. **The reviewer is blinded.** The manifest carries four columns — an opaque
+   id, a channel, two times. The stratum and the detector's verdict go to a
+   separate `.key.csv`, so handing over the wrong file is a visible mistake.
+   The sampler checks its own output for ordering that would leak the stratum
+   through the numbering.
+3. **Agreement is chance-corrected.** Most windows are not ripples, so two
+   reviewers who say "no" to everything agree ~90% of the time. Cohen's kappa
+   with a bootstrap interval, the prevalence beside it, and `unsure` as a
+   first-class answer that is dropped and *counted* rather than guessed.
+4. **The ceiling is printed before any score.** Two reviewers agreeing at
+   kappa 0.6 define a reference no detector can be measured against more
+   finely than that. `ceiling_note` says so in a sentence.
+5. **Scores are per stratum, never pooled.** The strata were sampled in equal
+   numbers rather than in proportion, so a pooled figure would weight a
+   background window as heavily as a candidate and describe a recording that
+   does not exist. Both consensus rules (`both` / `either`) are reported
+   because they bracket the answer, and quoting whichever is kinder is how a
+   detector's precision gets published.
+
+**A bug the harness caught on its first real run.** The shipped example is a
+slice from 50–110 s. With the time origin left at its default the background
+stratum was drawn from 0–60 s, so a third of the sample pointed at signal the
+analysis does not contain — which shows up as a blank figure, not an error,
+and would have cost a reviewer an afternoon before anyone noticed.
+`sample_windows` now refuses a range its candidates do not live in.
+
+**What is still left.** Two reviewers, a few hundred windows, and publishing
+the annotations — the marks are the contribution, since a scored detector is
+reproducible from them and nobody else has to spend the afternoon.
+
+**Touches.** `onset_hfo/review.py` (new), `cli.py`,
+`notebooks/07_annotation.ipynb` — 04 in the original plan, which was already
+taken by the orchestration notebook.
 
 ---
 

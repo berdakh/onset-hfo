@@ -1571,6 +1571,226 @@ for f in sorted(pathlib.Path("artifacts/results/outcome_ds003498").iterdir()):
 ]
 
 
+# =========================================================================
+# 7. The hand-annotated benchmark
+# =========================================================================
+
+NB7 = "07_annotation.ipynb"
+nb7 = [
+    md(f"""
+# Onset-HFO 7 — Mark a few hundred windows, and find out what the reference is worth
+
+{badge(NB7)}
+
+Every accuracy number in this project is agreement with *another algorithm* —
+the archive's own Morphology detector — or accuracy against a simulator that
+can only measure what it simulates. "Precision 0.97 on synthetic ripples" is a
+statement about the generator.
+
+**This notebook turns that into a statement about recordings**, by having two
+people mark real windows. It is the one measurement here that needs humans,
+and it takes two reviewers an afternoon each.
+
+**The three things that make such a benchmark worth doing** are all in the
+sampling rather than the marking, and `onset_hfo.review` enforces them:
+
+1. **Windows the detector never proposed are in the sample.** Review only the
+   detector's own hits and you can measure precision and *never* recall — and
+   the reference becomes a function of the thing you are scoring.
+2. **The reviewer cannot see the detector's verdict.** The manifest carries
+   four columns: an opaque id, a channel, and two times. The stratum and the
+   detector's opinion go in a separate key file, named so that handing over
+   the wrong one is a visible mistake.
+3. **Agreement is chance-corrected.** Most windows are not ripples, so two
+   reviewers who say "no" to everything agree ~90% of the time. Cohen's kappa,
+   with a bootstrap interval, and the prevalence beside it.
+
+**And the ceiling is the finding.** Two reviewers who agree at kappa 0.6 have
+defined a reference no detector can be scored against more finely than that.
+The notebook prints that sentence before it prints any score.
+
+**Runtime.** Minutes of compute; the marking is however long you take.
+Progress is appended to a CSV after every window, so you can close the tab.
+"""),
+    code(SETUP),
+    md("""
+## 1. Something to review
+
+Any saved analysis will do. The shipped example is a real 60-second recording
+from OpenNeuro `ds003029` and needs no download.
+"""),
+    code("""from onset_hfo.store import ResultStore
+from onset_hfo.detectors.base import Event
+
+store = ResultStore("data/example_analysis")
+events = store.events
+by_detector = {}
+for name in ("rms", "line_length"):
+    rows = events[events.detector == name]
+    by_detector[name] = [
+        Event(channel=r.channel, start=r.start, stop=r.stop, detector=name,
+              band=(r.band_low, r.band_high), accepted=bool(r.accepted))
+        for r in rows.itertuples()]
+
+channels = sorted(events.channel.unique())
+duration = float(store.provenance.get("slice_stop_s", 60)
+                 - store.provenance.get("slice_start_s", 0))
+print(f"{sum(len(v) for v in by_detector.values())} candidates on "
+      f"{len(channels)} channels over {duration:.0f} s")"""),
+    md("""
+## 2. Draw a blinded, stratified sample
+
+Equal numbers from three strata **by design, not by prevalence**: background
+outnumbers candidates enormously in a real recording, and sampling it
+proportionally would spend the whole afternoon on empty windows. The imbalance
+is corrected when scoring, which is why the stratum is recorded.
+
+Set `N_PER_STRATUM` to what your reviewers will actually finish. 70 each means
+210 windows, which is roughly an afternoon.
+"""),
+    code("""from pathlib import Path
+from onset_hfo.review import sample_windows, write_manifest
+
+N_PER_STRATUM = 70
+OUT = Path("artifacts/review")
+
+windows = sample_windows(by_detector, duration_s=duration, channels=channels,
+                         n_per_stratum=N_PER_STRATUM, seed=0)
+manifest_path = write_manifest(windows, OUT / "manifest.csv")
+
+import pandas as pd
+print(pd.Series([w.stratum for w in windows]).value_counts().to_string())
+print()
+print("give the reviewer:", manifest_path)
+print("do NOT give them:", manifest_path.with_suffix(".key.csv"))"""),
+    md("""
+## 3. Mark them
+
+One window at a time: the wideband trace, the band-passed trace, and the
+event's own spectrum. The question is whether it is an oscillation with a
+spectral bump of its own, or a sharp transient the filter turned into one.
+
+**`unsure` is a real answer.** Forcing a binary choice on an ambiguous window
+manufactures agreement that is not there, and the analysis drops those
+windows explicitly and counts them.
+
+Set `REVIEWER` to your own initials. Re-running the cell resumes where you
+stopped.
+"""),
+    code("""REVIEWER = "A"   # <- change per reviewer
+
+import ipywidgets as widgets
+from IPython.display import clear_output, display
+import matplotlib.pyplot as plt
+
+from onset_hfo.preprocess import prepare
+from onset_hfo.review import AnnotationLog, read_manifest
+from onset_hfo.viz import plot_event
+
+manifest = read_manifest(manifest_path)
+log = AnnotationLog(OUT / "annotations.csv", reviewer=REVIEWER)
+todo = log.remaining(manifest)
+print(f"{log.done} done, {len(todo)} to go")
+
+# The signal behind the windows. `reload_spec` on a saved analysis says which
+# slice to fetch; here we use the analysis the store was built from.
+prep = prepare(store.recording(), verbose=False) if hasattr(store, "recording") else None"""),
+    md("""
+If `prep` is `None` above, the saved analysis does not carry its signal and
+the windows cannot be drawn — run `python -m onset_hfo.cli run` first, or
+point `ResultStore` at an analysis you produced locally.
+
+The loop below draws one window and waits for a click.
+"""),
+    code("""out = widgets.Output()
+state = {"i": 0}
+
+def show():
+    with out:
+        clear_output(wait=True)
+        if state["i"] >= len(todo):
+            print(f"Done — {log.done} windows marked by {REVIEWER}.")
+            return
+        row = manifest[manifest.window_id == todo[state["i"]]].iloc[0]
+        mid = 0.5 * (row.t_start + row.t_stop)
+        window = Event(channel=row.channel, start=mid - 0.015, stop=mid + 0.015,
+                       detector="", band=(80.0, 250.0))
+        print(f"{row.window_id}   ({state['i'] + 1} of {len(todo)})")
+        plot_event(prep, window, context_s=row.t_stop - row.t_start)
+        plt.show()
+
+def mark(label):
+    def handler(_):
+        log.record(todo[state["i"]], label)
+        state["i"] += 1
+        show()
+    return handler
+
+buttons = []
+for label, style in (("hfo", "success"), ("not_hfo", "danger"), ("unsure", "warning")):
+    b = widgets.Button(description=label, button_style=style)
+    b.on_click(mark(label))
+    buttons.append(b)
+
+display(widgets.HBox(buttons), out)
+show()"""),
+    md("""
+## 4. What the reference is worth
+
+Run this once **both** reviewers have finished. The ceiling sentence comes
+first on purpose: every score after it has to be read against that number.
+"""),
+    code("""from onset_hfo.review import agreement, ceiling_note
+
+annotations = pd.read_csv(OUT / "annotations.csv")
+stats = agreement(annotations)
+print(ceiling_note(stats))
+print()
+for k, v in stats.items():
+    print(f"  {k}: {v}")"""),
+    md("""
+## 5. Score the detector against it
+
+Per stratum, never pooled: the strata were sampled in equal numbers rather
+than in proportion, so a pooled figure would weight a background window as
+heavily as a candidate and describe a recording that does not exist.
+
+Both consensus rules are printed because they bracket the answer. Quoting
+whichever is kinder is how a detector's precision gets published.
+"""),
+    code("""from onset_hfo.review import score_against_annotations, save_study
+
+key = pd.read_csv(manifest_path.with_suffix(".key.csv"))
+for rule in ("both", "either"):
+    scores = score_against_annotations(by_detector["rms"], manifest, annotations,
+                                       key, consensus=rule, detector="rms")
+    print(f"consensus = {rule}")
+    for stratum, s in scores["strata"].items():
+        print(f"  {stratum:11s} n={s['n']:3d}  tp={s['true_positive']:3d} "
+              f"fp={s['false_positive']:3d} fn={s['false_negative']:3d} "
+              f"tn={s['true_negative']:3d}  reviewers called "
+              f"{s['reviewer_hfo_rate']:.0%} of them HFOs")
+    print()
+
+save_study(OUT, stats, scores)
+print("written to", OUT)"""),
+    md("""
+## What to do with it
+
+**Publish the annotations.** The marks are the contribution — a scored
+detector is reproducible from them, and nobody else has to spend the
+afternoon. Include the manifest, the annotations and the key.
+
+**Publish the kappa next to every score.** A detector reported at precision
+0.8 against a reference whose reviewers agreed at kappa 0.4 has been measured
+against something largely made of disagreement, and the number will not
+survive a second pair of reviewers.
+
+**Do not pool the strata.** The sample is not a recording.
+"""),
+]
+
+
 def execute(path: Path, timeout: int = 5400) -> None:
     """Run a notebook in place and keep its outputs.
 
@@ -1597,7 +1817,12 @@ def main(argv: list[str] | None = None) -> None:
     wanted = {int(a) for a in argv if a.isdigit()}
     NOTEBOOK_DIR.mkdir(parents=True, exist_ok=True)
     for number, (name, cells) in enumerate(
-            [(NB1, nb1), (NB2, nb2), (NB3, nb3), (NB4, nb4), (NB5, nb5)], 1):
+            [(NB1, nb1), (NB2, nb2), (NB3, nb3), (NB4, nb4), (NB5, nb5),
+             (None, None), (NB7, nb7)], 1):
+        if name is None:
+            # 06_agent_benchmark.ipynb is committed but was never added here.
+            # Numbering is kept aligned so `--execute 7` means notebook 7.
+            continue
         if wanted and number not in wanted:
             continue
         path = write(name, cells)

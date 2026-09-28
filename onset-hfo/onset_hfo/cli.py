@@ -31,6 +31,7 @@ from onset_hfo.config import (
     PipelineConfig,
     ensure_dirs,
 )
+from onset_hfo.detectors.base import Event
 from onset_hfo.outcome import FULL_RUN_S
 from onset_hfo.stability import DISJOINT_LENGTH, GROWING_WINDOWS
 
@@ -310,6 +311,84 @@ def _cmd_stream(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_review(args: argparse.Namespace) -> int:
+    """The headless half of the hand-annotated benchmark (roadmap item 5).
+
+    Sampling, agreement and scoring run here; the marking itself is
+    ``notebooks/07_annotation.ipynb``, because looking at a waveform is not a
+    thing a command line does well.
+    """
+    import json
+
+    import pandas as pd
+
+    from onset_hfo.review import (
+        agreement,
+        ceiling_note,
+        read_manifest,
+        sample_windows,
+        save_study,
+        score_against_annotations,
+        write_manifest,
+    )
+    from onset_hfo.store import ResultStore
+
+    out = Path(args.out)
+    if args.step == "sample":
+        store = ResultStore(args.analysis)
+        events = store.events
+        by_detector = {}
+        for name in sorted(events.detector.unique()):
+            if name == "spike":
+                continue
+            rows = events[events.detector == name]
+            by_detector[name] = [Event(
+                channel=r.channel, start=r.start, stop=r.stop, detector=name,
+                band=(r.band_low, r.band_high), accepted=bool(r.accepted))
+                for r in rows.itertuples()]
+        start = float(store.provenance.get("slice_start_s", 0.0))
+        duration = float(store.provenance.get("slice_stop_s", 60.0)) - start
+        windows = sample_windows(by_detector, duration_s=duration,
+                                 channels=sorted(events.channel.unique()),
+                                 n_per_stratum=args.per_stratum, seed=args.seed,
+                                 t_offset=start)
+        path = write_manifest(windows, out / "manifest.csv")
+        counts = pd.Series([w.stratum for w in windows]).value_counts()
+        print(f"[onset-hfo] {len(windows)} windows: "
+              + ", ".join(f"{k} {v}" for k, v in counts.items()))
+        print(f"[onset-hfo] give the reviewer   {path}")
+        print(f"[onset-hfo] keep back the key   {path.with_suffix('.key.csv')}")
+        return 0
+
+    annotations = pd.read_csv(out / "annotations.csv")
+    stats = agreement(annotations)
+    print("\n" + ceiling_note(stats) + "\n")
+    if args.step == "agreement":
+        print(json.dumps(stats, indent=2))
+        return 0
+
+    manifest = read_manifest(out / "manifest.csv")
+    key = pd.read_csv(out / "manifest.key.csv")
+    store = ResultStore(args.analysis)
+    rows = store.events[store.events.detector == args.detector]
+    events = [Event(channel=r.channel, start=r.start, stop=r.stop, detector=args.detector,
+                    band=(r.band_low, r.band_high), accepted=bool(r.accepted))
+              for r in rows.itertuples()]
+    scores = {}
+    for rule in ("both", "either"):
+        scores[rule] = score_against_annotations(events, manifest, annotations, key,
+                                                 consensus=rule, detector=args.detector)
+        print(f"consensus = {rule}")
+        for stratum, s in scores[rule]["strata"].items():
+            print(f"  {stratum:11s} n={s['n']:3d}  tp={s['true_positive']:3d} "
+                  f"fp={s['false_positive']:3d} fn={s['false_negative']:3d} "
+                  f"tn={s['true_negative']:3d}  reviewers called "
+                  f"{s['reviewer_hfo_rate']:.0%} of them HFOs")
+    save_study(out, stats, scores)
+    print(f"\n[onset-hfo] written to {out}")
+    return 0
+
+
 def _cmd_runs(args: argparse.Namespace) -> int:
     from onset_hfo.datasets import list_runs
 
@@ -381,6 +460,20 @@ def build_parser() -> argparse.ArgumentParser:
                        choices=["ripple", "fast_ripple"])
     bench.add_argument("--out", default=None, help=f"output directory (default: {RESULTS_DIR})")
     bench.set_defaults(func=_cmd_benchmark)
+
+    review = sub.add_parser(
+        "review",
+        help="sample, agree and score a hand-annotated benchmark (marking is "
+             "notebooks/07_annotation.ipynb)")
+    review.add_argument("step", choices=["sample", "agreement", "score"])
+    review.add_argument("--analysis", default=None,
+                        help="a saved analysis directory (needed by sample and score)")
+    review.add_argument("--out", default="artifacts/review")
+    review.add_argument("--per-stratum", type=int, default=70,
+                        help="windows per stratum; three strata, so 70 means 210")
+    review.add_argument("--detector", default="rms")
+    review.add_argument("--seed", type=int, default=0)
+    review.set_defaults(func=_cmd_review)
 
     stream = sub.add_parser(
         "stream",
