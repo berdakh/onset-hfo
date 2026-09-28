@@ -17,6 +17,7 @@ can work from a fresh clone with no 700 MB download and no 90-minute rerun.
 | `recordings.csv` | one patient's analysed run | 20 |
 | `subjects.csv` | patient × band × scope × source | 160 |
 | `channels.csv.gz` | patient × band × channel | 1,880 |
+| `subpopulation_screen.csv` | band × patient × window × population | 600 |
 
 ## What each file carries
 
@@ -42,6 +43,26 @@ each band (`ripple`, `fast_ripple`), each scope (`reviewed` channels only, or
 `candidates_resected` is the share of that tied set that was removed — the
 honest version of the same question. The pre-specified arm is
 `band=fast_ripple, scope=reviewed`.
+
+**`subpopulation_screen.csv`** — the same metrics again, but with the events
+split into the two sub-populations of
+[`EVALUATION.md`](../../docs/EVALUATION.md) §3b, to answer whether either one
+localises the resection better than the merged rate. One row per
+`band` × `subject` × `window` × `population`, where `population` is `merged`,
+`spike_coupled` (the event rode an interictal discharge) or `independent`.
+
+This one is **not** the per-subject grain of the three files above: it is five
+60 s windows per patient rather than the whole 300 s run, because the whole run
+is not cached and fetching it needs the archive. The analysis pools the windows
+by subject mean. `n_events` is the population's event count in that window and
+is the column to read first — in the fast ripple band its median is **1**, which
+is why the screen's answer comes from the ripple band and is reported as a
+secondary analysis.
+
+**The answer is no**, in the ripple band where the populations are large enough
+to measure: every sub-population AUC is at or below the merged one. §3b has the
+tables and why the flattering fast-ripple numbers in this file are artifacts of
+an argmax over a near-empty set.
 
 **`channels.csv.gz`** — one row per channel, with `zone` = `resected` (both
 contacts removed), `partial` (one) or `spared` (neither), plus the event count
@@ -69,8 +90,19 @@ python -m onset_hfo.cli outcome        # whole 300 s runs, both bands
 ```
 
 writes the full study to `artifacts/results/outcome_ds003498/` — **not
-tracked** — from which these four files are the committed extract. The group
+tracked** — from which the first four files are the committed extract. The group
 tables in `../stability/` come from the same run.
+
+`subpopulation_screen.csv` has its own entry point, which needs no network at
+all once the 60 s slices are in `artifacts/data/`:
+
+```bash
+ONSET_HFO_OFFLINE=1 python scripts/run_subpopulation_outcome.py   # ~40 min
+```
+
+Naming the subjects explicitly is what makes that offline: only the subject
+*listing* touches the archive. Pass `--from-csv data/outcome/subpopulation_screen.csv`
+to re-print the §3b tables from this file with no re-analysis.
 
 The source data is CC0. Anything published from it should cite the dataset and
 [Fedele et al. 2017](https://www.nature.com/articles/s41598-017-13064-1); the

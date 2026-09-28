@@ -453,15 +453,120 @@ about the ripples themselves.
 that cannot be seen consistently in the waveform is a split you carry forward,
 not one you resolve.
 
+### Does the split localise the resection better? Measured: no
+
+The question that would make the split clinically interesting is not whether
+the two populations *differ* — measured above, weakly — but whether either one
+predicts the resected zone better than the merged rate does. Screened across
+all 20 ds003498 patients, on the five cached 60 s windows that tile each
+`run-01`, pooled by subject mean, with the outcome study's own metric
+functions so the `merged` arm is comparable to §0b. Committed extract:
+[`data/outcome/subpopulation_screen.csv`](../data/outcome/subpopulation_screen.csv).
+
+**Ripple band** (80–250 Hz). Bonferroni across the nine rows; `n` is
+seizure-free against recurrence, and `floor` is that arm's own
+`min_detectable_auc`:
+
+| metric | population | n | mean SF | mean rec | AUC | 95% CI | p | Bonferroni | floor |
+|---|---|---|---|---|---|---|---|---|---|
+| top_channel_resected | merged | 13/7 | 0.600 | 0.229 | 0.747 | 0.527–0.934 | 0.072 | 0.644 | 0.85 |
+| | spike_coupled | 13/6 | 0.600 | 0.667 | **0.487** | 0.231–0.737 | 0.950 | 1.000 | 0.87 |
+| | independent | 13/7 | 0.538 | 0.171 | 0.736 | 0.516–0.923 | 0.073 | 0.656 | 0.85 |
+| candidates_resected | merged | 13/7 | 0.560 | 0.369 | 0.648 | 0.396–0.868 | 0.311 | 1.000 | 0.85 |
+| | spike_coupled | 13/6 | 0.509 | 0.488 | **0.513** | 0.218–0.795 | 0.949 | 1.000 | 0.87 |
+| | independent | 13/7 | 0.515 | 0.363 | 0.621 | 0.363–0.852 | 0.403 | 1.000 | 0.85 |
+| share_in_rz | merged | 13/7 | 0.379 | 0.393 | 0.527 | 0.253–0.791 | 0.877 | 1.000 | 0.85 |
+| | spike_coupled | 13/6 | 0.508 | 0.536 | **0.474** | 0.218–0.731 | 0.898 | 1.000 | 0.87 |
+| | independent | 13/7 | 0.375 | 0.385 | 0.516 | 0.253–0.780 | 0.938 | 1.000 | 0.85 |
+
+**Every sub-population gain over the merged rate is negative**: −0.011,
+−0.027, −0.011. The spike-coupled arm sits at chance on all three metrics, and
+on `top_channel_resected` the sign is *reversed* — 0.600 in the seizure-free
+patients against 0.667 in the recurrences.
+
+**The arms are not scored on quite the same patients**, which the `n` column is
+there to show. A patient whose spike-coupled population is empty in all five
+windows has no share and no busiest channel in that arm, so it drops out of
+that arm alone — and putting a 0 there instead would read as "none of this
+patient's events were resected", which is a different claim. In the ripple band
+that costs one patient (sub-08, a recurrence) from the coupled arm and nobody
+from the other two. In the fast ripple band it costs two from the coupled arm
+(sub-08 and sub-10) and one from the independent arm (sub-05) — which is a
+second reason its numbers are not the ones reported.
+
+### Why the fast ripple band could not answer this, and what it looked like
+
+The pre-specified arm for the outcome study is fast ripples, and it is the arm
+this screen cannot use — **the spike-coupled population there is too small to
+rank channels with**:
+
+| | coupled events per window: min · Q1 · median · max | windows with <5 | subjects whose median is <5 |
+|---|---|---|---|
+| fast ripple | 0 · 0 · **1** · 54 | 56/100 | 11/20 |
+| ripple | 0 · 17 · **36** · 306 | 8/100 | 1/20 |
+
+An argmax over a median of one event is a coin flip, and it duly produced the
+best-looking numbers in this whole section: spike-coupled
+`top_channel_resected` **0.806** (p = 0.025) and `share_in_rz` **0.826**
+(p = 0.021), both apparently beating the merged rate, both on 12 patients
+against 6. Neither survives Bonferroni, neither clears its own 0.88 floor, and
+both are artifacts. Three things say so:
+
+- **The tie-aware metric contradicts them.** `candidates_resected` — which
+  exists precisely to catch an argmax over a set that is mostly ties — puts
+  the fast-ripple spike-coupled arm at **0.479**, worst of the three and below
+  chance, while it agrees with the other two arms.
+- **The merged arm replicates across bands and the coupled arm does not.**
+  `top_channel_resected` for merged is 0.753 (fast ripple) against 0.747
+  (ripple). Only the coupled arm collapses, 0.806 → 0.487. That is the
+  signature of noise in one arm rather than a property of one band.
+- **The pipeline is otherwise behaving.** Merged `share_in_rz` falls
+  0.714 → 0.527 from fast ripples to ripples, reproducing the standard
+  finding that fast ripples localise better. The band effect that *should* be
+  there, is.
+
+**What this does and does not establish.** It does not show that the split is
+worthless. Group sizes this small resolve very little: the floor is **0.85** at
+13/7, **0.86** at 12/7, **0.87** at 13/6 and **0.88** at 12/6, and **not one of
+the eighteen arms clears its own floor** — the merged 0.747 included. What it
+shows is that *on the evidence available here there is no gain to report*, and
+that the one result which looked like a gain came from a population of one
+event per minute. The ripple band answer is a **secondary** analysis: it is not
+comparable to the published fast-ripple AUC, and it was run only because the
+pre-specified arm was unmeasurable.
+
+One thing the split does measure reliably. The spike-coupled *share* of all
+ripples is a stable patient property — within-subject SD across windows 0.013
+against between-subject SD 0.063, so ICC ≈ 0.96. It is a real and repeatable
+feature of a patient. It just does not predict where the surgeon cut.
+
+Reproduce (offline, from the slices already in `artifacts/data/`, ~40 min):
+
+```bash
+ONSET_HFO_OFFLINE=1 python scripts/run_subpopulation_outcome.py
+# or re-print the tables above from the committed extract, no re-analysis:
+python scripts/run_subpopulation_outcome.py \
+  --from-csv data/outcome/subpopulation_screen.csv
+```
+
 ### What this is not
 
 - **Discharge co-occurrence is a proxy, not a label.** No archive here marks
   which ripples were physiological. The sub-populations are named
   `spike_coupled` and `independent` for exactly that reason.
-- **One recording, one patient, 60 seconds.** Whether the split localises
-  better than the merged rate — the question that would make it clinically
-  interesting — needs the outcome study re-run per sub-population, which needs
-  the archive and so has not been done.
+- **The morphology comparison above is one recording, one patient, 60
+  seconds.** The localisation screen is the whole 20-patient cohort, but on
+  five 60 s windows rather than the whole 300 s run, and in the ripple band
+  rather than the pre-specified fast ripple one. Neither is the study a
+  clinical claim would need.
+- **The negative localisation result is "no gain to report", not "no
+  effect".** At 13 seizure-free against 7 recurrences the screen could only
+  have resolved an AUC of 0.85 or better, and no arm in it reaches its own
+  floor. It is strong enough to retire the apparent fast-ripple gain, not to
+  rule out a real one.
+- **And the arms are not scored on identical patients.** A patient with an
+  empty sub-population drops out of that arm; one does in the ripple band,
+  three across the fast ripple one.
 - **No classifier, and none is planned on this evidence.** Training one on a
   proxy and reading it as the thing is the failure mode this section exists to
   avoid.
