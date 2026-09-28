@@ -19,6 +19,7 @@ from onset_agent.backends import AssistantMessage, Backend
 from onset_agent.contract import ToolRun
 from onset_agent.evidence import EvidenceStore
 from onset_agent.planner import (
+    FIXED_PLAN,
     FixedBudget,
     ModelJudged,
     Rung,
@@ -278,6 +279,28 @@ def test_an_unchallenged_channel_is_unchallenged_not_verified():
     store = _store_with([(5.0, [("A-B", 10.0)])])
     ranked = rank_channels(store)[0]
     assert ranked.robustness == 1.0 and ranked.retested_at == []
+
+
+def test_the_fixed_plan_never_retests_so_the_multiplier_cannot_reach_S0():
+    """The premise of the multiplier ablation, pinned structurally.
+
+    `docs/EVALUATION.md` §6c measures the multiplier as a ranking rule rather
+    than through the ladder, and that is only a fair account of S0 if S0 never
+    re-tests. It does not: `FIXED_PLAN` calls `detect_hfo` once and sets no
+    threshold, so `rank_channels` sees one threshold per channel, the stricter
+    loop never runs, and score reduces to the survey rate exactly.
+    """
+    detects = [params for name, params in FIXED_PLAN if name == "detect_hfo"]
+    assert len(detects) == 1, (
+        f"FIXED_PLAN now makes {len(detects)} detect_hfo calls; if any two use "
+        f"different thresholds the multiplier reaches S0 and §6c needs redoing")
+    assert "threshold_sd" not in detects[0]
+
+    # And with one threshold the rule is inert, not merely usually inert.
+    store = _store_with([(2.0, [("A-B", 10.0), ("C-D", 4.0)])])
+    for ranked in rank_channels(store):
+        assert ranked.robustness == 1.0
+        assert ranked.score == pytest.approx(ranked.survey_rate_per_min)
 
 
 # --------------------------------------------------------------------------
