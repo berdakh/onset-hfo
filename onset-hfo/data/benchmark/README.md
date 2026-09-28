@@ -57,3 +57,37 @@ times and two of them were wrong: `docs/EVALUATION.md` said 228, and
 count at 5.0 SD, not the expert count at all. The Detectors page now reads both
 files instead of restating either, and `tests/test_app.py` pins the numbers the
 prose quotes against what is committed here.
+
+---
+
+## `four_detector_sweep.csv` — all four detectors, both bands
+
+The same scoring as `agreement_sweep.csv`, extended to the two detectors added
+later (`hilbert`, `short_time_energy`) and run over a common grid so the four
+are comparable. 79 rows, same columns.
+
+| | grid swept (robust SD) |
+|---|---|
+| all four, both bands | 1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0, 8.0 |
+| `hilbert`, `line_length` — ripple | extended down: 0.5, 0.75 |
+| `short_time_energy` — fast ripple | extended up: 10.0, 12.0, 15.0 |
+
+**The extensions were not optional.** On the first pass, 4 of the 16
+detector × band × criterion optima sat on an endpoint, which is the grid
+running out rather than an optimum. Extending moved one materially:
+short-time energy's fast-ripple rank agreement went from 0.570 at 8.0 SD to
+**0.601 at 12.0 SD**. All sixteen are now interior.
+
+Regenerate offline, from the slices already in `artifacts/data/`:
+
+```bash
+python -m onset_hfo.cli benchmark --subjects sub-01 ... sub-20 \
+  --detectors rms line_length hilbert short_time_energy \
+  --bands ripple fast_ripple --thresholds 1.0 1.5 2.0 2.5 3.0 4.0 5.0 6.0 8.0
+```
+
+Naming the subjects explicitly matters: only the subject *listing* needs the
+network, so with the slices cached the whole sweep runs with
+`ONSET_HFO_OFFLINE=1`. The 27 cells this run shares with `agreement_sweep.csv`
+reproduce it **exactly**, which is how the offline path was checked against
+the original networked one.

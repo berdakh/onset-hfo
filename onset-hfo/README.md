@@ -97,7 +97,7 @@ python -m onset_hfo.cli outcome
 #     (or just open https://onsetnu.streamlit.app/)
 pip install -e ".[app]" && streamlit run app/Home.py
 
-pytest -q        # 445 tests, all offline
+pytest -q        # 453 tests, all offline
 ```
 
 ## What it actually does
@@ -341,7 +341,7 @@ data/outcome/         the outcome study's per-subject tables, for the Patients p
 data/example_analysis/  a real 60 s analysis, so the app works on a fresh clone
 
 notebooks/            seven Colab notebooks (all but 06 built by scripts/build_notebooks.py)
-tests/                445 offline tests (synthetic data + a mock model server)
+tests/                453 offline tests (synthetic data + a mock model server)
 docs/                 everything above
 ```
 

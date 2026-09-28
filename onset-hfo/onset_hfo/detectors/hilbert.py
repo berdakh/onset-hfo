@@ -31,10 +31,19 @@ made for short-time energy, that one survived contact with the data: these two
 are the closest pair of the four, agreeing at Jaccard 0.79 on the synthetic
 cohort, and they land at comparable event counts.
 
-Surviving one check is not a sweep. Nothing has been measured for this
-threshold on real data, and before using the detector for anything, run the
-sweep the way ``docs/EVALUATION.md`` §0 does for the other two -- its lesson
-was that an inherited default can be wrong by a factor of two and a half.
+**And the sweep has now been run.** Across the 20 patients of ds003498 the
+envelope's best threshold is **1.5 robust SD in the ripple band and 5.0 in
+fast ripples** -- essentially what RMS wants (2.0 and 5.0), which is the
+inherited default vindicated in the fast-ripple band and a little high in the
+ripple band. The two really are the closest pair of the four, on real data as
+on synthetic.
+
+**What it does not buy is a better ranking.** At its own best threshold it
+reaches rank agreement 0.613 in fast ripples against RMS's 0.610, and 0.578 in
+ripples against RMS's 0.655 -- a tie in one band and clearly behind in the
+other. Adding it was worth doing to learn that the disagreement between
+detectors is structural; it was not worth doing to improve the answer. See
+``docs/EVALUATION.md`` §1b.
 """
 
 from __future__ import annotations

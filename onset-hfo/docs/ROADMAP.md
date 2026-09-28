@@ -14,18 +14,17 @@ most useful thing to read before starting the next one.
 
 Eleven numbered items below carry the history — why each mattered, what it
 found, and what it cost. This section is the short answer: **what is still
-open, and which of it is blocked on what.** Seven items are open; the other
-four are done and kept for what they found.
+open, and which of it is blocked on what.** Six items are open; the other five
+are done and kept for what they found.
 
 | | Open work | State | Blocked on |
 |---|---|---|---|
 | **1** | [**Run the agent ladder under a real model**](#8-the-agent-more-tools-and-a-measured-evaluation-of-it) | harness done, **numbers missing** | a GPU afternoon |
 | **2** | [**A second cohort**](#11-a-second-cohort) | not started | finding an archive |
 | **3** | [The ladder across the 22-subject cohort](#2-outcome-as-the-reference-standard--done-twice-the-ladder-across-the-cohort-is-not) | cheap; recordings cached | deliberately gated on #1 |
-| **4** | [Sweep the two new detectors on real data](#4-more-than-two-detectors-and-a-proper-agreement-analysis--built-measured-only-on-synthetic-data) | built; synthetic only | a `benchmark` run with network |
-| **5** | [A hand-annotated benchmark](#5-a-small-hand-annotated-benchmark--harness-built-marking-not-done) | **harness built**, unmarked | two reviewers' afternoons |
-| **6** | [Sub-populations against outcome](#6-physiological-versus-epileptic-ripples--reported-not-resolved) | the split is built and measured | a networked `outcome` re-run |
-| **7** | [Electrode geometry](#3-electrode-geometry--blocked-on-this-dataset-needs-a-different-archive) | write it against the schema | an archive with coordinates |
+| **4** | [A hand-annotated benchmark](#5-a-small-hand-annotated-benchmark--harness-built-marking-not-done) | **harness built**, unmarked | two reviewers' afternoons |
+| **5** | [Sub-populations against outcome](#6-physiological-versus-epileptic-ripples--reported-not-resolved) | the split is built and measured | a networked `outcome` re-run |
+| **6** | [Electrode geometry](#3-electrode-geometry--blocked-on-this-dataset-needs-a-different-archive) | write it against the schema | an archive with coordinates |
 
 **Why #1 is first.** Every orchestration number this project has published
 comes from the deterministic scripted planner, which the docs have called
@@ -185,7 +184,7 @@ that ships coordinates.
 
 ---
 
-## 4. More than two detectors, and a proper agreement analysis — *built; measured only on synthetic data*
+## 4. More than two detectors, and a proper agreement analysis — *done*
 
 **Why.** Two detectors matching about half their events is a finding worth
 taking seriously. Three or four would show whether the disagreement is
@@ -217,11 +216,51 @@ anyone deciding to.
   portable operating point between features.** §3 said the threshold is a
   choice rather than a fact; this says the choice does not transfer.
 
-**What remains.** All of it is synthetic. The real-data agreement matrix on
-ds003498 against the expert markings needs one `onset-hfo benchmark` run with
-network access, and each of the two new features needs its own threshold
-sweep — inheriting 5.0 SD is exactly the mistake §0 caught the first time.
-Until then these are machinery with a sanity check, not a result.
+**Swept on real data, and the answer is no.** 20 patients of ds003498, first
+60 s of run-01 each, all four detectors over a common threshold grid in both
+bands. At each detector's *own* best threshold, by channel-rank agreement:
+
+| band | best | rank ρ | RMS | margin |
+|---|---|---|---|---|
+| ripple | short-time energy @ 4.0 SD | 0.658 | 0.655 @ 2.0 SD | **+0.003** |
+| fast ripple | Hilbert envelope @ 5.0 SD | 0.613 | 0.610 @ 5.0 SD | **+0.003** |
+
+**Two more detectors, each tuned on real data, bought no measurable
+improvement in channel ranking.** Three thousandths of a Spearman correlation
+across twenty patients is a tie. That is worth knowing: the ceiling here is
+not the choice of feature.
+
+**The portability claim, measured.** Optimal threshold in robust SDs —
+short-time energy wants **2× the ripple threshold and 2.4× the fast-ripple
+threshold** that RMS does, while the envelope wants almost exactly what RMS
+wants:
+
+| | RMS | line length | Hilbert | short-time energy |
+|---|---|---|---|---|
+| ripple | 2.0 | 1.5 | 1.5 | **4.0** |
+| fast ripple | 5.0 | 5.0 | 5.0 | **12.0** |
+
+Run short-time energy at RMS's 5.0 SD in the fast-ripple band and rank
+agreement falls from 0.601 to 0.485. So the synthetic conclusion holds, and
+one synthetic *verdict* was too harsh: "mostly the energy detector at an
+untuned, lower operating point" is right about a shared threshold and wrong
+about the detector. At its own it is competitive.
+
+**Four of sixteen arms first peaked on an endpoint** — the grid running out,
+not an optimum, which is the §0 lesson. Extending moved one materially:
+short-time energy's fast-ripple rank agreement went 0.570 at 8.0 SD → **0.601
+at 12.0**. All sixteen are now interior, and a test enforces it.
+
+**And the block was never the network.** The board read "blocked on a
+`benchmark` run with network access" for weeks. All 20 subjects were cached at
+exactly this window; only `list_subjects` needs the network, and naming the
+subjects skips it. The real blocker was `benchmark.py` holding a private
+two-entry copy of the detector registry, so `--detectors hilbert` raised a
+KeyError rather than sweeping. One registry now, and a test that every module
+sweeps the same set.
+
+Tables: [`EVALUATION.md`](EVALUATION.md) §1b. Extract:
+`data/benchmark/four_detector_sweep.csv`.
 
 **Touches.** `onset_hfo/detectors/` (done), `metrics.py` (done),
 `config.py` (done), `report.py` — the report still shows one pairwise

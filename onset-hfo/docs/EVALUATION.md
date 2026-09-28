@@ -256,13 +256,80 @@ vote next to the matrix above: **unanimity among detectors that agree with each
 other on every event would not be unanimity, it would be one detector.** These
 four do not, which is what makes the vote worth counting.
 
-### What is missing
+### On real data: the two extra detectors buy nothing
 
-All of the above is **synthetic**. The real-data agreement matrix — the one
-that matters, on ds003498 against the expert markings — needs one
-`onset-hfo benchmark` run on a machine with network access, and a threshold
-sweep for each of the two new features. Neither has been done. Until then, the
-two added detectors are machinery with a synthetic sanity check, not a result.
+The sweep above is synthetic. Here is the same four-detector comparison on
+**ds003498 — 20 patients, first 60 s of run-01 each, scored against 41,187
+expert markings on reviewed channels only**, swept over threshold in both
+bands. Cohort means; committed at
+[`data/benchmark/four_detector_sweep.csv`](../data/benchmark/four_detector_sweep.csv).
+
+Each detector at **its own best threshold**, by channel-rank agreement — the
+metric that matters, because nobody operates on an event, they operate on
+tissue:
+
+**Ripple band (80–250 Hz)**
+
+| detector | best SD | rank ρ | F1 | precision | recall | detections/60 s |
+|---|---|---|---|---|---|---|
+| short-time energy | 4.0 | **0.658** | 0.414 | 0.513 | 0.396 | 1,081 |
+| RMS | 2.0 | **0.655** | 0.400 | 0.507 | 0.381 | 1,035 |
+| line length | 1.5 | 0.602 | 0.402 | 0.505 | 0.391 | 1,055 |
+| Hilbert envelope | 1.5 | 0.578 | 0.385 | 0.456 | 0.404 | 1,163 |
+
+**Fast ripple band (250–500 Hz)**
+
+| detector | best SD | rank ρ | F1 | precision | recall | detections/60 s |
+|---|---|---|---|---|---|---|
+| Hilbert envelope | 5.0 | **0.613** | 0.270 | 0.546 | 0.208 | 71 |
+| RMS | 5.0 | **0.610** | 0.264 | 0.543 | 0.204 | 71 |
+| short-time energy | 12.0 | 0.601 | 0.259 | 0.583 | 0.200 | 69 |
+| line length | 5.0 | 0.560 | 0.234 | 0.643 | 0.173 | 58 |
+
+**Both margins are ties.** 0.658 against 0.655 in ripples, 0.613 against 0.610
+in fast ripples — three thousandths of a Spearman correlation across twenty
+patients. Two more detectors, each tuned on real data, bought **no measurable
+improvement in channel ranking** over the two that were already there. That is
+a useful thing to have paid for: it says the ceiling here is not the choice of
+feature.
+
+### And the threshold is not portable between features — measured
+
+The synthetic section predicted this; the cohort confirms it, and more sharply.
+Optimal threshold by detector and band, in robust SDs of that detector's own
+feature:
+
+| | RMS | line length | Hilbert | short-time energy |
+|---|---|---|---|---|
+| **ripple** | 2.0 | 1.5 | 1.5 | **4.0** |
+| **fast ripple** | 5.0 | 5.0 | 5.0 | **12.0** |
+
+Short-time energy needs **twice** the ripple threshold and **2.4×** the
+fast-ripple threshold that RMS does. Run it at RMS's 5.0 SD in the fast-ripple
+band — the obvious thing to do — and rank agreement falls from 0.601 to 0.485.
+The Hilbert envelope, by contrast, wants almost exactly what RMS wants (1.5
+against 2.0; 5.0 against 5.0), which is the same story the synthetic agreement
+matrix told: those two are the closest pair in the family.
+
+**A claim in this section was too harsh and is corrected.** It read: *"Short-time
+energy is mostly the energy detector at an untuned, lower operating point."*
+The first half is right — at a shared threshold it is badly mis-set — but at
+**its own** tuned threshold it matches RMS rather than merely trading recall
+for precision. It is a competitive detector that needs a different number, not
+a mis-set copy of another one.
+
+### Four of sixteen arms first peaked on the edge of the grid
+
+The first pass swept 1.0–8.0 SD. Four of the sixteen (detector × band ×
+criterion) optima landed on an endpoint, which by this project's own standard
+is the grid running out rather than an optimum — the lesson from §0, where the
+ripple sweep had to be extended downwards for exactly this reason.
+
+Extending (down to 0.5 for the ripple arms, up to 15.0 for short-time energy in
+fast ripples) moved one of them materially: **short-time energy's fast-ripple
+rank agreement went from 0.570 at 8.0 SD to 0.601 at 12.0 SD.** Had the grid
+not been extended, that detector would have been reported a full 0.03 worse
+than it is. All sixteen optima are now interior.
 
 ---
 
@@ -551,7 +618,7 @@ unmeasured, and is the first experiment to run.
 
 ## 7. Test suite
 
-`pytest -q` — 445 tests, entirely offline. They cover the
+`pytest -q` — 453 tests, entirely offline. They cover the
 primitives (robust scale, sliding features, threshold segmentation, bipolar
 pairing), the detectors (hot channels found, events are oscillations, a flat
 channel yields nothing, thresholds behave monotonically, reruns are
