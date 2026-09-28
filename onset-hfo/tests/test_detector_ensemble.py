@@ -259,3 +259,63 @@ def test_consensus_keeps_the_per_detector_rates_it_voted_on(four):
     for name in HFO_NAMES:
         assert f"rate_{name}" in votes.columns
         assert f"rank_{name}" in votes.columns
+
+
+# --------------------------------------------------------------------------
+# One registry, because there were four
+# --------------------------------------------------------------------------
+
+
+def test_every_module_sweeps_the_same_set_of_detectors():
+    """The drift that kept roadmap item 4 blocked without anyone noticing.
+
+    `benchmark.py` and `outcome.py` each kept a private two-entry copy of the
+    detector registry. Two detectors were added to the package months before,
+    and `--detectors hilbert` failed with a KeyError rather than sweeping — so
+    "the new detectors have only been measured on synthetic data" was a fact
+    about a dict literal, not about the data.
+    """
+    from onset_hfo.benchmark import DETECTORS as BENCH
+    from onset_hfo.detectors import HFO_DETECTORS
+    from onset_hfo.outcome import DETECTORS as OUTCOME
+    from onset_hfo.pipeline import HFO_DETECTORS as PIPELINE
+
+    assert set(HFO_DETECTORS) == set(HFO_NAMES)
+    for name, registry in (("benchmark", BENCH), ("outcome", OUTCOME),
+                           ("pipeline", PIPELINE)):
+        assert set(registry) == set(HFO_DETECTORS), \
+            f"{name} sweeps a different set of detectors than the package defines"
+
+
+def test_the_shared_registry_holds_no_spike_detector():
+    """A discharge is not an HFO, and the two are not interchangeable."""
+    from onset_hfo.detectors import DETECTORS, HFO_DETECTORS
+
+    assert "spike" not in HFO_DETECTORS
+    assert "spike" in DETECTORS
+    assert set(DETECTORS) == set(HFO_DETECTORS) | {"spike"}
+
+
+def test_the_agents_registry_stays_pinned_to_its_frozen_contract():
+    """The one copy that must NOT follow the package.
+
+    `onset_agent/tools.py` publishes `enum: [rms, line_length, spike]` as part
+    of a deliberately frozen JSON tool contract. Widening the agent's registry
+    without widening the contract would let the planner call a tool the schema
+    says does not exist; widening the contract is a decision, not a tidy-up.
+    """
+    from onset_agent.analysis import _HFO_DETECTORS
+    from onset_agent.tools import tool_schemas
+
+    assert set(_HFO_DETECTORS) == {"rms", "line_length"}
+    enums = []
+    for schema in tool_schemas():
+        # OpenAI-style: {"type": "function", "function": {"parameters": {...}}}
+        parameters = schema.get("function", schema).get("parameters", {})
+        detector = parameters.get("properties", {}).get("detector", {})
+        if "enum" in detector:
+            enums.append(detector["enum"])
+    assert enums, "no tool exposes a detector argument; this test is looking at nothing"
+    for enum in enums:
+        assert set(enum) == set(_HFO_DETECTORS) | {"spike"}, \
+            "the agent's registry and its frozen contract have diverged"
