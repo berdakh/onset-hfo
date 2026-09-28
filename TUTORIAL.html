@@ -1,0 +1,886 @@
+<title>Where Do Seizures Start?</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,600;1,400&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+
+<style>
+:root {
+  color-scheme: light;
+  --bg:        #f6f7f9;
+  --surface:   #ffffff;
+  --surface-2: #eef1f5;
+  --ink:       #10151c;
+  --ink-2:     #4a5462;
+  --ink-3:     #78838f;
+  --rule:      #dde2e8;
+  --rule-2:    #c8d0d9;
+  --accent:    #2a78d6;
+  --accent-soft:#e7f0fb;
+  --s1:        #2a78d6;
+  --s2:        #eb6834;
+  --s3:        #1baf7a;
+  --warn:      #b4460f;
+  --sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --serif: Spectral, ui-serif, Georgia, "Times New Roman", serif;
+  --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg:        #0e1216;
+    --surface:   #161b21;
+    --surface-2: #1d242c;
+    --ink:       #eef1f5;
+    --ink-2:     #a9b4c0;
+    --ink-3:     #7c8794;
+    --rule:      #242c35;
+    --rule-2:    #323c47;
+    --accent:    #3987e5;
+    --accent-soft:#16283c;
+    --s1:        #3987e5;
+    --s2:        #d95926;
+    --s3:        #199e70;
+    --warn:      #e08a5a;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg:        #0e1216;
+  --surface:   #161b21;
+  --surface-2: #1d242c;
+  --ink:       #eef1f5;
+  --ink-2:     #a9b4c0;
+  --ink-3:     #7c8794;
+  --rule:      #242c35;
+  --rule-2:    #323c47;
+  --accent:    #3987e5;
+  --accent-soft:#16283c;
+  --s1:        #3987e5;
+  --s2:        #d95926;
+  --s3:        #199e70;
+  --warn:      #e08a5a;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 1060px; margin: 0 auto; padding-inline: 20px; padding-block: 0; }
+.col  { max-width: 660px; }
+
+/* ---------- masthead ---------- */
+.mast { padding-block: 64px 40px; border-bottom: 1px solid var(--rule); }
+.kicker {
+  font-family: var(--mono); font-size: 11.5px; letter-spacing: .13em;
+  text-transform: uppercase; color: var(--ink-3); margin: 0 0 22px;
+}
+h1 {
+  font-family: var(--serif); font-weight: 600; font-size: clamp(38px, 7vw, 62px);
+  line-height: 1.06; letter-spacing: -.02em; margin: 0 0 20px; text-wrap: balance;
+}
+.sibling {
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--ink-2);
+  border-left: 3px solid var(--rule-2);
+  padding-left: 16px;
+  margin: 22px 0 0;
+}
+.standfirst {
+  font-family: var(--serif); font-size: clamp(18px, 2.4vw, 21px); line-height: 1.5;
+  color: var(--ink-2); margin: 0 0 28px; max-width: 640px;
+}
+.meta {
+  display: flex; flex-wrap: wrap; gap: 8px 26px;
+  font-family: var(--mono); font-size: 12px; color: var(--ink-3);
+  padding-top: 8px; border-top: 1px solid var(--rule);
+}
+.meta b { color: var(--ink-2); font-weight: 500; }
+
+/* ---------- sections ---------- */
+section { padding-block: 52px; border-bottom: 1px solid var(--rule); }
+.partno {
+  font-family: var(--mono); font-size: 11.5px; letter-spacing: .13em;
+  text-transform: uppercase; color: var(--accent); margin: 0 0 10px;
+}
+h2 {
+  font-family: var(--serif); font-weight: 600; font-size: clamp(26px, 4vw, 34px);
+  line-height: 1.18; letter-spacing: -.015em; margin: 0 0 18px; text-wrap: balance;
+}
+h3 {
+  font-family: var(--sans); font-weight: 600; font-size: 17px;
+  margin: 34px 0 10px; letter-spacing: -.005em;
+}
+p { margin: 0 0 16px; max-width: 660px; }
+ul, ol { margin: 0 0 16px; padding-left: 20px; max-width: 660px; }
+li { margin-bottom: 7px; }
+strong { font-weight: 600; }
+em { font-style: italic; }
+code {
+  font-family: var(--mono); font-size: .875em; background: var(--surface-2);
+  padding: .12em .38em; border-radius: 3px; color: var(--ink);
+}
+a { color: var(--accent); text-underline-offset: 2px; }
+a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ---------- so-what ---------- */
+.sowhat {
+  margin: 34px 0 0; padding: 18px 22px; background: var(--surface);
+  border-left: 3px solid var(--accent); border-radius: 0 6px 6px 0;
+  max-width: 700px;
+}
+.sowhat h4 {
+  font-family: var(--mono); font-size: 11.5px; letter-spacing: .13em;
+  text-transform: uppercase; color: var(--accent); margin: 0 0 8px; font-weight: 500;
+}
+.sowhat p { margin: 0; font-size: 15.5px; color: var(--ink-2); }
+.sowhat p + p { margin-top: 10px; }
+
+/* ---------- figures ---------- */
+figure { margin: 30px 0; }
+figure svg, figure img { display: block; width: 100%; height: auto; max-width: 100%; }
+.framed {
+  background: var(--surface); border: 1px solid var(--rule);
+  border-radius: 8px; padding: 18px;
+}
+figcaption {
+  font-size: 13.5px; line-height: 1.5; color: var(--ink-3);
+  margin-top: 12px; max-width: 660px;
+}
+figcaption b { color: var(--ink-2); font-weight: 500; }
+.scroller { overflow-x: auto; }
+
+/* ---------- tiles ---------- */
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin: 28px 0; }
+.tile {
+  background: var(--surface); border: 1px solid var(--rule); border-radius: 8px;
+  padding: 16px 18px;
+}
+.tile .v {
+  font-family: var(--mono); font-size: 27px; font-weight: 500; line-height: 1.1;
+  font-variant-numeric: tabular-nums; letter-spacing: -.02em;
+}
+.tile .k { font-size: 12.5px; color: var(--ink-3); margin-top: 6px; line-height: 1.35; }
+.tile.hi .v { color: var(--accent); }
+.tile.bad .v { color: var(--warn); }
+
+/* ---------- tables ---------- */
+table { border-collapse: collapse; width: 100%; font-size: 14px; margin: 22px 0; min-width: 440px; }
+th, td { padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--rule); }
+th {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .07em; text-transform: uppercase;
+  color: var(--ink-3); font-weight: 500; border-bottom: 1px solid var(--rule-2);
+}
+td.n { font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: right; }
+tr.mark td { background: var(--accent-soft); }
+tr.mark td.n, tr.mark td:first-child { font-weight: 600; }
+
+/* ---------- code block ---------- */
+pre {
+  background: var(--surface); border: 1px solid var(--rule); border-radius: 8px;
+  padding: 16px 18px; overflow-x: auto; font-family: var(--mono); font-size: 13px;
+  line-height: 1.65; margin: 20px 0; color: var(--ink-2);
+}
+pre .c { color: var(--ink-3); }
+pre b { color: var(--ink); font-weight: 500; }
+
+/* ---------- verdict list ---------- */
+.verdicts { list-style: none; padding: 0; margin: 24px 0; max-width: 700px; }
+.verdicts li {
+  display: grid; grid-template-columns: 62px 1fr; gap: 14px; align-items: start;
+  padding: 11px 0; border-bottom: 1px solid var(--rule);
+}
+.vpill {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .08em; font-weight: 500;
+  padding: 3px 0; text-align: center; border-radius: 3px;
+  background: var(--surface-2); color: var(--ink-2); border: 1px solid var(--rule-2);
+}
+.vpill.pass { color: var(--s3); border-color: currentColor; }
+.verdicts .t { font-size: 14.5px; }
+.verdicts .d { font-size: 13.5px; color: var(--ink-3); display: block; margin-top: 2px; }
+
+/* ---------- legend ---------- */
+.legend { display: flex; flex-wrap: wrap; gap: 8px 20px; font-size: 13px; color: var(--ink-2); margin-top: 12px; }
+.legend span { display: inline-flex; align-items: center; gap: 7px; }
+.swatch { width: 11px; height: 11px; border-radius: 2px; flex: none; }
+
+.lede { font-family: var(--serif); font-size: 19px; line-height: 1.55; color: var(--ink-2); }
+.foot { padding-block: 44px 72px; font-size: 13.5px; color: var(--ink-3); }
+.foot a { color: var(--ink-2); }
+
+@media (max-width: 640px) {
+  section { padding-block: 40px; }
+  .mast { padding-block: 44px 32px; }
+  .verdicts li { grid-template-columns: 56px 1fr; gap: 10px; }
+}
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+
+<div class="wrap">
+
+<header class="mast">
+  <p class="kicker">Onset-HFO · Brain–Machine Interface Lab, Nazarbayev University</p>
+  <h1>Where do seizures start?</h1>
+  <p class="standfirst">A surgeon can cure drug-resistant epilepsy by removing the tissue that generates the seizures — but only if someone can point at it. This is a tutorial on trying to point at it with a machine, on public intracranial EEG, and on how much of the answer survives contact with a new patient.</p>
+  <p class="sibling">There is a companion to this document. It asks the
+    opposite question: where this one works through <em>whether the results are
+    true</em> — what the archive does and does not contain, why a filtered sharp
+    edge looks like a ripple, and five attacks on the result with the one that
+    landed — the
+    <a href="https://berdakh.github.io/onset/tutorial.html">implementation
+    walkthrough</a> on the Onset project site works through <em>how the system
+    is built</em>: iEEG, features, models, evaluation without leakage, and an
+    optional agent lab. Same subject, opposite questions; neither is a longer
+    version of the other.</p>
+  <div class="meta">
+    <span><b>Data</b> OpenNeuro ds003029 · 22 patients · 1,466 channels</span>
+    <span><b>Code</b> 453 offline tests</span>
+    <span><b>Claim</b> none clinical</span>
+  </div>
+</header>
+
+<!-- ============================================================ -->
+<section>
+  <p class="partno">Part 1 — The problem</p>
+  <h2>The label you need only exists after you have already acted</h2>
+
+  <p class="lede">About a third of people with focal epilepsy do not respond to medication. For some of them surgery works: remove the tissue where seizures begin — the <strong>seizure onset zone</strong> — and the seizures stop.</p>
+
+  <p>Finding that tissue is the hard part. Electrodes are implanted directly into the brain and intracranial EEG (iEEG) is recorded for days, across 60 to 130 contacts. An epileptologist reviews it and marks where seizures appear to start. Surgery removes that region. Then, a year or two later, the patient either is seizure-free or is not.</p>
+
+  <p>That last step is the only honest ground truth anyone has — and it arrives after the decision it was supposed to inform.</p>
+
+  <figure>
+    <div class="framed">
+      <svg viewBox="0 0 700 250" role="img" aria-label="The presurgical loop: implant, record, review, resect, and an outcome that only arrives afterwards and is the only ground truth.">
+        <defs>
+          <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+          </marker>
+          <marker id="arA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/>
+          </marker>
+        </defs>
+        <g font-family="IBM Plex Sans, sans-serif" font-size="12.5" fill="currentColor">
+          <!-- boxes -->
+          <g stroke="currentColor" stroke-width="1.1" fill="none" opacity=".55">
+            <rect x="10"  y="52" width="116" height="52" rx="5"/>
+            <rect x="158" y="52" width="116" height="52" rx="5"/>
+            <rect x="306" y="52" width="116" height="52" rx="5"/>
+            <rect x="454" y="52" width="116" height="52" rx="5"/>
+          </g>
+          <rect x="602" y="52" width="88" height="52" rx="5" fill="none" stroke="var(--accent)" stroke-width="1.6"/>
+
+          <text x="68"  y="72" text-anchor="middle">Implant</text>
+          <text x="68"  y="89" text-anchor="middle" fill="var(--ink-3)" font-size="11">60–130 contacts</text>
+          <text x="216" y="72" text-anchor="middle">Record</text>
+          <text x="216" y="89" text-anchor="middle" fill="var(--ink-3)" font-size="11">days of iEEG</text>
+          <text x="364" y="72" text-anchor="middle">Review</text>
+          <text x="364" y="89" text-anchor="middle" fill="var(--ink-3)" font-size="11">by eye, expert-limited</text>
+          <text x="512" y="72" text-anchor="middle">Resect</text>
+          <text x="512" y="89" text-anchor="middle" fill="var(--ink-3)" font-size="11">the marked zone</text>
+          <text x="646" y="72" text-anchor="middle" fill="var(--accent)">Outcome</text>
+          <text x="646" y="89" text-anchor="middle" fill="var(--accent)" font-size="11">1–2 years on</text>
+
+          <!-- arrows along the top row -->
+          <g stroke="currentColor" stroke-width="1.3" marker-end="url(#ar)" opacity=".7">
+            <line x1="128" y1="78" x2="154" y2="78"/>
+            <line x1="276" y1="78" x2="302" y2="78"/>
+            <line x1="424" y1="78" x2="450" y2="78"/>
+          </g>
+          <line x1="572" y1="78" x2="598" y2="78" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#arA)"/>
+
+          <!-- feedback -->
+          <path d="M646 108 L646 168 L364 168" fill="none" stroke="var(--accent)" stroke-width="1.5"
+                stroke-dasharray="5 4" marker-end="url(#arA)"/>
+          <text x="632" y="186" text-anchor="end" fill="var(--accent)" font-size="11.5">the only ground truth — and it arrives too late to use</text>
+
+          <!-- bottom note -->
+          <text x="10" y="222" fill="var(--ink-3)" font-size="11.5">A model trained on outcome can only be trained on patients already operated on.</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption><b>The presurgical loop.</b> Every step before the dashed arrow is a judgement made without the answer. The dashed arrow is the only measurement that settles whether the judgement was right, and it closes years later — which is why retrospective cohorts, not prospective ones, are what any method like this gets tested on.</figcaption>
+  </figure>
+
+  <p>So the research question is narrower than "can a machine find the seizure onset zone". It is:</p>
+
+  <p class="lede" style="border-left:3px solid var(--rule-2); padding-left:18px; margin:24px 0;">Given days of iEEG and no answer key, can a machine rank the contacts so that the ones a clinician would name rise to the top — and can it say how sure it is?</p>
+
+  <div class="sowhat">
+    <h4>So what?</h4>
+    <p>Review is slow and expert-limited, and expertise is the scarcest input in epilepsy surgery worldwide. A ranking that is even roughly right narrows days of review to hours. A ranking that is confidently wrong is worse than nothing, which is why most of this tutorial is about measuring uncertainty rather than chasing accuracy.</p>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section>
+  <p class="partno">Part 2 — The signal</p>
+  <h2>What a machine can actually look for</h2>
+
+  <p>Two markers in the recording are candidates. Both are visible in the raw signal and both are countable.</p>
+
+  <p><strong>High-frequency oscillations (HFOs)</strong>, specifically <em>ripples</em>: brief bursts of 80–250 Hz activity lasting a few tens of milliseconds. Tissue that generates seizures tends to generate more of them. <strong>Interictal epileptiform discharges</strong> — spikes — are the sharp transients that show up between seizures and are what a clinician has always read.</p>
+
+  <p>Counting either by eye across 100 channels and several hours is not possible, so detection is automated. The detectors here are classical and deliberately transparent: band-pass the signal, slide a short window, measure energy (Staba et al., 2002) or line length (Gardner et al., 2007), threshold at a few robust standard deviations of that channel's own baseline, and require enough oscillation cycles that a single transient cannot pass.</p>
+
+  <figure>
+    <div class="framed">
+      <img src="img/real_example_event.png" alt="Three-panel figure of one detected ripple: the wideband signal with the event window shaded, the 80–250 Hz band-passed signal showing an oscillation, and the event's power spectrum with a peak rising above the recording's own 1/f background line.">
+    </div>
+    <figcaption><b>One accepted event, with the evidence that decides it.</b> Left, the unfiltered signal; middle, the same window band-passed to 80–250 Hz, where an oscillation is visible; right, the event's spectrum against the recording's own <span style="font-family:var(--mono)">1/f</span> background. Every number this system reports carries a window like this, so a reviewer can go back to the archive and look at the same samples the detector saw.</figcaption>
+  </figure>
+
+  <div class="sowhat">
+    <h4>So what?</h4>
+    <p>Nothing here is a black box. Each step can be drawn on a whiteboard and argued with, and each threshold is one number in one file. That matters more than it sounds: a clinician who cannot interrogate why a channel was ranked first will not act on the ranking.</p>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section>
+  <p class="partno">Part 3 — The trap</p>
+  <h2>A sharp edge, filtered, looks exactly like a ripple</h2>
+
+  <p>Here is the failure that makes naive HFO detection useless, and it is worth understanding before any of the results.</p>
+
+  <p>Filter a sharp transient — an electrode pop, a movement artifact, even a genuine epileptic spike — through an 80–250 Hz band-pass, and it <em>rings</em>. The ringing is a burst of 80–250 Hz energy lasting a few tens of milliseconds. It is not an oscillation in the brain; it is an artifact of the filter. To an energy detector it is indistinguishable from a ripple, and the energy is really there, so the detector is not even malfunctioning.</p>
+
+  <p>The fix is to check each candidate against the recording's own background spectrum. A real ripple has a spectral peak of its own; ringing does not. Measured on simulated data where every implanted event is known:</p>
+
+  <div class="tiles">
+    <div class="tile bad"><div class="v">0.63</div><div class="k">Precision, raw detector output. 86 of 238 detections were implanted artifacts.</div></div>
+    <div class="tile hi"><div class="v">0.97</div><div class="k">Precision after the spectral check, at a cost of one point of recall.</div></div>
+    <div class="tile"><div class="v">0.998</div><div class="k">Spike-detector precision, once a discontinuity test on the <em>unfiltered</em> samples was added. It was 0.58 before.</div></div>
+  </div>
+
+  <p>The spike detector had the same disease in mirror image. After a 5–60 Hz band-pass an electrode pop looks like a textbook sharp wave; in the raw samples it is a step. Measuring the largest sample-to-sample jump in the <em>unfiltered</em> signal separates them cleanly — genuine discharges score 3–5 on that feature, artifact steps 25–64.</p>
+
+  <div class="sowhat">
+    <h4>So what?</h4>
+    <p>Most of the difference between a detector that works and one that does not is artifact rejection, not the detector. Published HFO rates that omit this step are counting filter ringing, and the error is large: precision 0.63 against 0.97 on the same data with the same detector.</p>
+    <p>The generalisable lesson: <strong>when a filter hides the evidence, test on the raw samples.</strong></p>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section>
+  <p class="partno">Part 4 — The data</p>
+  <h2>What the public archive does and does not contain</h2>
+
+  <p>Everything here runs on <a href="https://openneuro.org/datasets/ds003029" target="_blank" rel="noopener">OpenNeuro ds003029</a> — intracranial recordings from four clinical centres, CC0-licensed, no data-use agreement. It was chosen because it is genuinely public, it is intracranial (scalp EEG cannot show ripples), and its files can be read in byte ranges over plain HTTPS, so a notebook downloads 24 MB instead of 100.</p>
+
+  <p>It also, it turns out, ships the labels. Buried in <code>sourcedata/</code> is a spreadsheet with the clinician-defined onset contacts for 100 patients, alongside Engel outcome scores and the recording centre. That single 30 KB file is what makes any of the scoring below possible.</p>
+
+  <div class="tiles">
+    <div class="tile"><div class="v">22</div><div class="k">patients analysed, of 31 planned</div></div>
+    <div class="tile"><div class="v">1,466</div><div class="k">bipolar channels, one row each</div></div>
+    <div class="tile"><div class="v">301</div><div class="k">channels touching a labelled onset contact — 20.5%</div></div>
+    <div class="tile"><div class="v">4</div><div class="k">clinical centres, unevenly represented</div></div>
+  </div>
+
+  <h3>The nine exclusions are findings, not nuisances</h3>
+  <p>Four UMMC recordings sample at <strong>250 Hz</strong>. Nyquist is 125 Hz, so an 80–250 Hz ripple is not measurable there at all — no amount of method fixes it. Four UMF signal files are shorter than their own marked seizure time. One more samples at 500 Hz, where the band reaches the anti-alias edge.</p>
+
+  <p>The practical consequence: "leave-one-site-out" on this archive is really NIH (13 patients) against JHH (6), with the other two centres contributing three between them. Anyone designing a cross-site experiment here needs that number before they design it, not after.</p>
+
+  <h3>Three traps worth stating out loud</h3>
+  <ul>
+    <li>The outcome column reads <code>S</code> for <em>success</em> (seizure-free) and <code>F</code> for <em>failure</em>. Reading <code>F</code> as "free" inverts every label in the cohort.</li>
+    <li>Subject ids differ between the archive tree and the spreadsheet — <code>sub-pt01</code> there, <code>pt1</code> here, and a separate near-empty <code>sub-pt1</code> directory to walk into.</li>
+    <li>Seizure-marker wording differs per centre: NIH writes <code>onset</code>, UMMC <code>sz onset</code>, UMF <code>eeg sz start</code>, JHH <code>SZ EVENT # (EEG SZ)</code>. Matching only the first two produces no error — half the cohort simply reports "no seizure marked" and every rate-change feature comes back empty.</li>
+  </ul>
+
+  <p>These recordings are also <strong>ictal</strong> — captured around seizures. The clinical HFO literature measures <em>interictal</em> rate, between seizures, usually in sleep. So what is measured here is "where, in this seizure, the ripple band is loudest", which is a different quantity and is stated as such in every report the pipeline writes.</p>
+
+  <div class="sowhat">
+    <h4>So what?</h4>
+    <p>Three of the five days this project could have lost were saved by reading the data before modelling it. A cohort of 22 rather than 31 is the honest denominator, and the 250 Hz exclusion would have silently produced meaningless ripple rates for four patients had nobody checked the sampling rate against the band.</p>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section>
+  <p class="partno">Part 5 — The central result</p>
+  <h2>The features are real. Most of them do not transfer.</h2>
+
+  <p>Each channel becomes one row: ripple rate from two detectors, spike rate, mean peak frequency, spectral prominence, amplitude, duration, the fraction of ripples riding on a spike, the rate change across the seizure onset, and relative power in four bands. Thirteen numbers, all of them quantities the pipeline already prints.</p>
+
+  <p>Then a classifier, scored three ways. The three protocols are the whole argument, so they are worth reading slowly:</p>
+
+  <table>
+    <thead><tr><th>Protocol</th><th>Trains on</th><th>What it answers</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Within-subject</strong></td><td>other contacts of the <em>same</em> patient</td><td>Are the contacts separable at all? A <strong>ceiling</strong>.</td></tr>
+      <tr><td><strong>Leave-one-patient-out</strong></td><td>every <em>other</em> patient</td><td>What a new patient would actually get.</td></tr>
+      <tr><td><strong>Leave-one-site-out</strong></td><td>patients at the <em>other</em> hospitals</td><td>What survives a change of centre.</td></tr>
+    </tbody>
+  </table>
+
+  <p>Within-subject is an upper bound and <strong>not a deployable model</strong>: using it would mean already knowing some of that patient's onset contacts, which is the thing being looked for. It earns its place by bounding everything else. If contacts cannot be separated <em>inside</em> one recording — where electrodes, amplifier, sedation and seizure are all held constant — no cross-patient model is going to manage it.</p>
+
+  <p>Because roughly a fifth of contacts are positive, accuracy is meaningless and AUROC is optimistic. The number to read is <strong>AUPRC against the 0.205 prevalence baseline</strong>.</p>
+
+  <figure>
+    <div class="framed scroller">
+      <svg viewBox="0 0 700 290" role="img" aria-label="Horizontal bar chart of AUPRC. Line-length rate untrained 0.467; leave-one-site-out 0.476; leave-one-patient-out 0.480; within-subject ceiling 0.709. A useless model scores 0.205.">
+        <g font-family="IBM Plex Sans, sans-serif" font-size="13">
+          <!-- grid -->
+          <g stroke="var(--rule)" stroke-width="1">
+            <line x1="360" y1="24" x2="360" y2="196"/>
+            <line x1="510" y1="24" x2="510" y2="196"/>
+            <line x1="660" y1="24" x2="660" y2="196"/>
+          </g>
+          <!-- prevalence reference -->
+          <line x1="333" y1="24" x2="333" y2="196" stroke="var(--ink-3)" stroke-width="1.2" stroke-dasharray="4 4"/>
+          <text x="329" y="20" text-anchor="end" font-size="11.5" fill="var(--ink-3)">a useless model · 0.205</text>
+
+          <!-- bars -->
+          <g fill="var(--s1)" opacity=".38">
+            <rect x="210" y="36"  width="280.2" height="22" rx="3"/>
+            <rect x="210" y="78"  width="285.6" height="22" rx="3"/>
+          </g>
+          <rect x="210" y="120" width="288.0" height="22" rx="3" fill="var(--s1)" opacity=".62"/>
+          <rect x="210" y="162" width="425.4" height="22" rx="3" fill="var(--s1)"/>
+
+          <!-- labels -->
+          <g fill="currentColor" text-anchor="end">
+            <text x="200" y="52">line length rate <tspan fill="var(--ink-3)">· untrained</tspan></text>
+            <text x="200" y="94">leave-one-site-out</text>
+            <text x="200" y="136">leave-one-patient-out</text>
+            <text x="200" y="178">within-subject <tspan fill="var(--ink-3)">· ceiling</tspan></text>
+          </g>
+          <!-- values -->
+          <g font-family="IBM Plex Mono, monospace" font-size="12.5" fill="currentColor">
+            <text x="500.2" y="52">0.467</text>
+            <text x="505.6" y="94">0.476</text>
+            <text x="508.0" y="136">0.480</text>
+            <text x="645.4" y="178">0.709</text>
+          </g>
+
+          <!-- axis -->
+          <line x1="210" y1="196" x2="660" y2="196" stroke="var(--rule-2)" stroke-width="1"/>
+          <g font-family="IBM Plex Mono, monospace" font-size="11" fill="var(--ink-3)" text-anchor="middle">
+            <text x="210" y="212">0</text>
+            <text x="360" y="212">0.25</text>
+            <text x="510" y="212">0.50</text>
+            <text x="660" y="212">0.75</text>
+          </g>
+          <text x="435" y="232" text-anchor="middle" font-size="11.5" fill="var(--ink-3)">AUPRC</text>
+
+          <!-- gap bracket -->
+          <g stroke="var(--s2)" stroke-width="1.4" fill="none">
+            <path d="M498 250 L498 258 L635 258 L635 250"/>
+          </g>
+          <text x="566.5" y="278" text-anchor="middle" font-size="12.5" fill="var(--s2)">the transfer gap</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption><b>Three protocols, one cohort.</b> The learned model beats the rate it was built from by about one AUPRC point. The ceiling sits far above both. Prevalence is 0.205, so a model that guessed would land on the dashed line.</figcaption>
+  </figure>
+
+  <p>Three readings, in order of how much they should change what anyone does next.</p>
+
+  <p><strong>The learned model barely beats the rate it was built from.</strong> 0.480 against 0.467 for simply ranking channels by line-length rate. Thirteen features, two model families and a cross-validation harness buy about one AUPRC point. Precision@5 moves more — 0.509 to 0.555 — which is the metric a clinician would actually feel, but nobody should describe this as the model working.</p>
+
+  <p><strong>The ceiling is far above both.</strong> 0.709 against 0.480. The features <em>are</em> separable inside a recording; there is a great deal of signal in this table. Most of it does not survive the move to a new patient. <em>That gap is the result.</em></p>
+
+  <p><strong>Changing hospital costs almost nothing on top of changing patient.</strong> 0.476 against 0.480. Whatever fails to transfer has already failed by the time you change centre — which places the problem at the patient level, not the site level, and says the normalisation work belongs there.</p>
+
+  <div class="sowhat">
+    <h4>So what?</h4>
+    <p>A great deal of published iEEG machine learning reports something like the within-subject number without saying so. The gap between 0.709 and 0.480 is the difference between a model evaluated on contacts from patients it has seen and one facing a patient it has not. If a paper does not say which it measured, assume the higher one.</p>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section>
+  <p class="partno">Part 6 — The cheap fix</p>
+  <h2>Five contacts from a clinician recover a third of the gap</h2>
+
+  <p>The ceiling needs labels nobody has. But a reviewer looking at a new implantation can genuinely point at a few contacts they are confident about — that is an ordinary thing to ask for, not a research programme.</p>
+
+  <p>So: leave-one-patient-out, except the target patient first contributes <em>k</em> labelled contacts, chosen before anything is predicted, and the model is scored only on contacts it was <strong>not</strong> given. At <em>k</em> = 0 this is exactly leave-one-patient-out, which makes both ends of the curve the same experiment rather than two different ones.</p>
+
+  <figure>
+    <div class="framed scroller">
+      <svg viewBox="0 0 700 300" role="img" aria-label="Line chart: AUPRC against the number of contacts the clinician labels first. Zero labels 0.455, rising to 0.655 at forty labels, approaching the within-subject ceiling.">
+        <g font-family="IBM Plex Sans, sans-serif" font-size="12">
+          <!-- y grid -->
+          <g stroke="var(--rule)" stroke-width="1">
+            <line x1="70" y1="232.9" x2="660" y2="232.9"/>
+            <line x1="70" y1="197.1" x2="660" y2="197.1"/>
+            <line x1="70" y1="161.4" x2="660" y2="161.4"/>
+            <line x1="70" y1="125.7" x2="660" y2="125.7"/>
+            <line x1="70" y1="90"    x2="660" y2="90"/>
+          </g>
+          <g font-family="IBM Plex Mono, monospace" font-size="11" fill="var(--ink-3)" text-anchor="end">
+            <text x="62" y="236.5">0.45</text>
+            <text x="62" y="200.7">0.50</text>
+            <text x="62" y="165">0.55</text>
+            <text x="62" y="129.3">0.60</text>
+            <text x="62" y="93.6">0.65</text>
+          </g>
+
+          <!-- reference lines -->
+          <line x1="70" y1="229.2" x2="660" y2="229.2" stroke="var(--ink-3)" stroke-width="1.2" stroke-dasharray="5 4"/>
+          <text x="660" y="245" text-anchor="end" font-size="11.5" fill="var(--ink-3)">leave-one-patient-out floor · 0.455</text>
+          <line x1="70" y1="86.5" x2="660" y2="86.5" stroke="var(--s2)" stroke-width="1.2" stroke-dasharray="5 4"/>
+          <text x="660" y="78" text-anchor="end" font-size="11.5" fill="var(--s2)">within-subject ceiling · 0.655</text>
+
+          <!-- series -->
+          <polyline points="70,229.2 168.3,218.3 266.7,204.5 365,175 463.3,158 561.7,133.1 660,86.2"
+                    fill="none" stroke="var(--s1)" stroke-width="2" stroke-linejoin="round"/>
+          <g fill="var(--s1)">
+            <circle cx="70"    cy="229.2" r="4"/>
+            <circle cx="168.3" cy="218.3" r="4"/>
+            <circle cx="266.7" cy="204.5" r="4"/>
+            <circle cx="463.3" cy="158"   r="4"/>
+            <circle cx="561.7" cy="133.1" r="4"/>
+            <circle cx="660"   cy="86.2"  r="4"/>
+          </g>
+          <!-- emphasised point: 5 labels -->
+          <circle cx="365" cy="175" r="7" fill="var(--s1)" stroke="var(--surface)" stroke-width="2.5"/>
+          <text x="365" y="160" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="12.5" fill="var(--s1)">0.531</text>
+          <text x="365" y="146" text-anchor="middle" font-size="11.5" fill="var(--s1)">38% of the gap</text>
+
+          <!-- x axis -->
+          <line x1="70" y1="256" x2="660" y2="256" stroke="var(--rule-2)" stroke-width="1"/>
+          <g font-family="IBM Plex Mono, monospace" font-size="11" fill="var(--ink-3)" text-anchor="middle">
+            <text x="70"    y="272">0</text>
+            <text x="168.3" y="272">1</text>
+            <text x="266.7" y="272">2</text>
+            <text x="365"   y="272">5</text>
+            <text x="463.3" y="272">10</text>
+            <text x="561.7" y="272">20</text>
+            <text x="660"   y="272">40</text>
+          </g>
+          <text x="365" y="292" text-anchor="middle" font-size="11.5" fill="var(--ink-3)">contacts the clinician labels first</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption><b>The label-budget curve.</b> Five contacts — under a tenth of a typical implantation — closes 38% of the distance between what a new patient gets and what the ceiling allows. Ten closes half. Forty closes it entirely, but forty labels is 60% of the electrodes and no longer a favour you can ask.</figcaption>
+  </figure>
+
+  <h3>And it matters which five</h3>
+
+  <p>The curve above assumes a <em>random</em> five. A clinician would not pick randomly — they would look at the suspicious ones. Four ways of choosing, each scored on the same held-out contacts:</p>
+
+  <figure>
+    <div class="framed scroller">
+      <svg viewBox="0 0 700 300" role="img" aria-label="Grouped bar chart of AUPRC lift over a random draw, at two, five and ten labels, for three selection strategies with error bars. Confident and rate gain; uncertainty sampling loses at five and ten labels.">
+        <g font-family="IBM Plex Sans, sans-serif" font-size="12">
+          <!-- y grid -->
+          <g stroke="var(--rule)" stroke-width="1">
+            <line x1="80" y1="87.5"  x2="660" y2="87.5"/>
+            <line x1="80" y1="128.75" x2="660" y2="128.75"/>
+            <line x1="80" y1="211.25" x2="660" y2="211.25"/>
+          </g>
+          <g font-family="IBM Plex Mono, monospace" font-size="11" fill="var(--ink-3)" text-anchor="end">
+            <text x="72" y="91">+0.06</text>
+            <text x="72" y="132.3">+0.03</text>
+            <text x="72" y="173.5">0</text>
+            <text x="72" y="214.8">−0.03</text>
+          </g>
+
+          <!-- group 2 labels: confident, rate, uncertainty -->
+          <g>
+            <rect x="107.7" y="85.4"  width="42" height="84.6" rx="3" fill="var(--s1)"/>
+            <rect x="155.7" y="116.2" width="42" height="53.8" rx="3" fill="var(--s2)"/>
+            <rect x="203.7" y="158.4" width="42" height="11.6" rx="3" fill="var(--s3)"/>
+          </g>
+          <g>
+            <rect x="301"   y="109.5" width="42" height="60.5" rx="3" fill="var(--s1)"/>
+            <rect x="349"   y="105.5" width="42" height="64.5" rx="3" fill="var(--s2)"/>
+            <rect x="397"   y="170"   width="42" height="23.2" rx="3" fill="var(--s3)"/>
+          </g>
+          <g>
+            <rect x="494.3" y="131.2" width="42" height="38.8" rx="3" fill="var(--s1)"/>
+            <rect x="542.3" y="127.2" width="42" height="42.8" rx="3" fill="var(--s2)"/>
+            <rect x="590.3" y="170"   width="42" height="41.3" rx="3" fill="var(--s3)"/>
+          </g>
+
+          <!-- error bars -->
+          <g stroke="currentColor" stroke-width="1.2" opacity=".65">
+            <line x1="128.7" y1="74"    x2="128.7" y2="96.8"/>
+            <line x1="176.7" y1="102.3" x2="176.7" y2="130.1"/>
+            <line x1="224.7" y1="144.1" x2="224.7" y2="172.7"/>
+            <line x1="322"   y1="96.8"  x2="322"   y2="122.2"/>
+            <line x1="370"   y1="83.8"  x2="370"   y2="127.2"/>
+            <line x1="418"   y1="167.6" x2="418"   y2="218.8"/>
+            <line x1="515.3" y1="106"   x2="515.3" y2="156.4"/>
+            <line x1="563.3" y1="98.7"  x2="563.3" y2="155.7"/>
+            <line x1="611.3" y1="170.2" x2="611.3" y2="252.4"/>
+          </g>
+
+          <!-- zero line -->
+          <line x1="80" y1="170" x2="660" y2="170" stroke="var(--ink-2)" stroke-width="1.4"/>
+
+          <!-- group labels -->
+          <g font-size="12.5" fill="currentColor" text-anchor="middle">
+            <text x="176.7" y="278">2 labels</text>
+            <text x="370"   y="278">5 labels</text>
+            <text x="563.3" y="278">10 labels</text>
+          </g>
+          <text x="80" y="296" font-size="11.5" fill="var(--ink-3)">AUPRC lift over a random draw · bars are the mean of five seeds, whiskers ±1 sd</text>
+        </g>
+      </svg>
+    </div>
+    <div class="legend">
+      <span><i class="swatch" style="background:var(--s1)"></i> confident — the model's own top-ranked contacts</span>
+      <span><i class="swatch" style="background:var(--s2)"></i> rate — highest ripple rate, no model needed</span>
+      <span><i class="swatch" style="background:var(--s3)"></i> uncertainty — the model's least sure, textbook active learning</span>
+    </div>
+    <figcaption><b>Choosing beats not choosing — and the textbook method loses.</b> Confident and rate win on all five seeds at two and five labels. Uncertainty sampling beat a random draw on <em>zero</em> of five seeds at five labels and one of five at ten.</figcaption>
+  </figure>
+
+  <p>The mechanism is visible in what each strategy actually picks. Against a cohort prevalence of 20.5%, the fraction of the five chosen contacts that really are onset contacts:</p>
+
+  <table>
+    <thead><tr><th>Strategy</th><th style="text-align:right">Positives found</th><th>Needs a model?</th></tr></thead>
+    <tbody>
+      <tr class="mark"><td>confident</td><td class="n">57%</td><td>yes</td></tr>
+      <tr><td>rate</td><td class="n">47%</td><td><strong>no</strong></td></tr>
+      <tr><td>uncertainty</td><td class="n">27%</td><td>yes</td></tr>
+      <tr><td>random</td><td class="n">25%</td><td>no</td></tr>
+    </tbody>
+  </table>
+
+  <p>Labelling near the decision boundary is efficient when labels are plentiful and the classes are balanced. With five labels and 20% prevalence, what you are short of is <strong>positives</strong> — and the contacts a model is unsure about are mostly ambiguous negatives. Uncertainty sampling spends a scarce budget on them.</p>
+
+  <div class="sowhat">
+    <h4>So what?</h4>
+    <p>This is the most actionable result in the project, and the deployable version of it needs no model at all: <em>label the five channels with the highest ripple rate.</em> That is a workflow a clinic could run tomorrow, and it captures most of the available gain.</p>
+    <p>It also carries a caveat that decides whether it travels. <code>confident</code> and <code>uncertainty</code> rank candidates using a <em>cohort</em> model, so they inherit the transfer gap from Part 5. On simulated data where each patient has their own decision boundary, <code>confident</code> becomes <strong>worse</strong> than random. <code>rate</code> reads a measured feature and needs nothing to transfer, which is why it is the one to bet on.</p>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section>
+  <p class="partno">Part 7 — Uncertainty</p>
+  <h2>A guarantee that quietly stops holding</h2>
+
+  <p>A ranking is not enough to act on. "These contacts, ranked" invites the reader to draw their own line. "These six contacts, with 90% coverage" is a statement with something attached to it.</p>
+
+  <p><strong>Split conformal prediction</strong> provides that, and its appeal is that it assumes nothing about the model being right. On a held-out calibration set it finds the score threshold at which the true label is retained 90% of the time, then applies it to new contacts. The only assumption is that calibration and test data are <em>exchangeable</em>.</p>
+
+  <p>Patients are not exchangeable. Different electrodes, different pathology, different seizure.</p>
+
+  <div class="tiles">
+    <div class="tile"><div class="v">0.900</div><div class="k">Nominal coverage — what the method promises at α = 0.1</div></div>
+    <div class="tile bad"><div class="v">0.866</div><div class="k">Empirical coverage — what it actually delivered, calibrating on 9 patients and testing on 13</div></div>
+    <div class="tile"><div class="v">1.12</div><div class="k">Mean prediction-set size · 88% singletons, 12% "cannot tell"</div></div>
+  </div>
+
+  <p>It undercovers, and the way it undercovers is the point: <strong>it does not fail loudly.</strong> It produces tight-looking sets that cover 3.4 points less often than advertised. Nothing in the output flags it. The project measures the degradation deliberately rather than assuming it away — calibrate on some centres, test on another, and report what happens to the guarantee.</p>
+
+  <h3>The clinically meaningful object</h3>
+  <p>Per-contact sets reduce to one number per patient: <strong>how many contacts cannot be ruled out</strong>. It is blunt reading. Across the test patients the candidate set ranges from <em>zero</em> contacts — the model ruled out everything, including all nine of that patient's true onset contacts — to 32 of 51.</p>
+
+  <p>A patient whose candidate set is four contacts has an actionable result. A patient whose set is forty has not been localized, however confident any individual score looked.</p>
+
+  <div class="sowhat">
+    <h4>So what?</h4>
+    <p>Distribution shift breaks not only accuracy but the uncertainty estimate that was supposed to protect against it. That is the finding that joins the generalisation and uncertainty questions into one story, and it is an argument for reporting empirical coverage next to the nominal level in any clinical prediction model — the nominal number is a promise about a condition that clinical data routinely violates.</p>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section>
+  <p class="partno">Part 8 — The agent</p>
+  <h2>Letting a language model choose what to measure</h2>
+
+  <p>Everything so far is a fixed pipeline: the same analysis on every patient. A clinician does not work that way. They change the montage, change the band, look at a different window, check whether a suspicious channel survives a stricter threshold.</p>
+
+  <p>The second half of the project asks whether a language model can run that loop — and, more importantly, builds the machinery to check whether anything it says is true. The design rule is narrow and load-bearing: <strong>the model never produces a number.</strong> It chooses which measurements to make and how to phrase them; deterministic code decides what is true.</p>
+
+  <figure>
+    <div class="framed scroller">
+      <svg viewBox="0 0 700 280" role="img" aria-label="How a claim becomes admissible: the planner calls a tool, the run is recorded with an id in the evidence store, and the verifier resolves each number in the draft back to a run id, keeping supported sentences and striking the rest.">
+        <defs>
+          <marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+          </marker>
+          <marker id="ar2g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="var(--s3)"/>
+          </marker>
+          <marker id="ar2r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="var(--s2)"/>
+          </marker>
+        </defs>
+        <g font-family="IBM Plex Sans, sans-serif" font-size="12.5" fill="currentColor">
+          <!-- planner -->
+          <rect x="8" y="46" width="118" height="56" rx="5" fill="none" stroke="currentColor" stroke-width="1.1" opacity=".6"/>
+          <text x="67" y="70" text-anchor="middle">Planner</text>
+          <text x="67" y="87" text-anchor="middle" font-size="11" fill="var(--ink-3)">picks tool + params</text>
+
+          <!-- tool -->
+          <rect x="176" y="46" width="132" height="56" rx="5" fill="none" stroke="currentColor" stroke-width="1.1" opacity=".6"/>
+          <text x="242" y="70" text-anchor="middle">Tool runs</text>
+          <text x="242" y="87" text-anchor="middle" font-size="11" fill="var(--ink-3)">the real pipeline</text>
+
+          <!-- store -->
+          <rect x="358" y="36" width="150" height="76" rx="5" fill="none" stroke="var(--accent)" stroke-width="1.6"/>
+          <text x="433" y="60" text-anchor="middle" fill="var(--accent)">Evidence store</text>
+          <text x="433" y="78" text-anchor="middle" font-size="11" fill="var(--ink-3)">append-only ledger</text>
+          <text x="433" y="95" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="var(--accent)">hfo_003 · 82.0/min</text>
+
+          <!-- arrows row 1 -->
+          <g stroke="currentColor" stroke-width="1.3" marker-end="url(#ar2)" opacity=".7">
+            <line x1="128" y1="74" x2="172" y2="74"/>
+            <line x1="310" y1="74" x2="354" y2="74"/>
+          </g>
+          <text x="150" y="66" text-anchor="middle" font-size="10.5" fill="var(--ink-3)">calls</text>
+          <text x="332" y="66" text-anchor="middle" font-size="10.5" fill="var(--ink-3)">records</text>
+
+          <!-- draft -->
+          <rect x="176" y="156" width="132" height="52" rx="5" fill="none" stroke="currentColor" stroke-width="1.1" opacity=".6"/>
+          <text x="242" y="178" text-anchor="middle">Draft sentence</text>
+          <text x="242" y="195" text-anchor="middle" font-size="11" fill="var(--ink-3)">written by the model</text>
+
+          <!-- verifier -->
+          <rect x="358" y="156" width="150" height="52" rx="5" fill="none" stroke="currentColor" stroke-width="1.1" opacity=".6"/>
+          <text x="433" y="178" text-anchor="middle">Verifier</text>
+          <text x="433" y="195" text-anchor="middle" font-size="11" fill="var(--ink-3)">resolves every number</text>
+
+          <!-- store down to verifier -->
+          <path d="M433 114 L433 152" stroke="var(--accent)" stroke-width="1.4" marker-end="url(#ar2)" opacity=".8"/>
+          <line x1="310" y1="182" x2="354" y2="182" stroke="currentColor" stroke-width="1.3" marker-end="url(#ar2)" opacity=".7"/>
+
+          <!-- outcomes -->
+          <line x1="510" y1="170" x2="556" y2="170" stroke="var(--s3)" stroke-width="1.5" marker-end="url(#ar2g)"/>
+          <text x="562" y="174" font-size="12" fill="var(--s3)">kept</text>
+          <line x1="510" y1="196" x2="556" y2="196" stroke="var(--s2)" stroke-width="1.5" marker-end="url(#ar2r)"/>
+          <text x="562" y="200" font-size="12" fill="var(--s2)">struck</text>
+
+          <!-- planner feedback -->
+          <path d="M176 182 L67 182 L67 106" fill="none" stroke="currentColor" stroke-width="1.2"
+                stroke-dasharray="5 4" marker-end="url(#ar2)" opacity=".6"/>
+          <text x="80" y="140" font-size="10.5" fill="var(--ink-3)">re-plan</text>
+
+          <text x="8" y="248" font-size="11.5" fill="var(--ink-3)">A sentence stating a number is admissible only if some tool produced it. There is no third state.</text>
+          <text x="8" y="266" font-size="11.5" fill="var(--ink-3)">Failed calls are recorded too — a trace that silently loses one is a worse audit record than one that failed.</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption><b>How a claim becomes admissible.</b> Nine tools run the real pipeline at parameters the planner chooses; every call is recorded with a run id. The verifier resolves each number in the draft back to a run, or the sentence is removed and the removal logged.</figcaption>
+  </figure>
+
+  <p>Four configurations share the identical analyzers, so any difference between them is attributable to orchestration rather than signal processing: a <strong>fixed pipeline</strong> with no model at all; <strong>single-shot</strong> tool calling; a <strong>planner that re-plans</strong> as results arrive; and that planner <strong>plus the verifier</strong>.</p>
+
+  <p>The mechanism by which re-planning can change the answer is a channel's <em>robustness</em>: its rate at the survey threshold multiplied by how well that rate survived any stricter threshold it was re-tested at, capped at 1. Scrutiny can lower confidence in a channel, never raise it. The fixed configurations never re-test, so they cannot produce a robustness below 1.</p>
+
+  <h3>An honest status report</h3>
+  <p>Every orchestration number produced so far comes from a <strong>deterministic scripted planner</strong> — a competent policy with no language model in it. That is the control, not the result. No language model has yet driven the ladder, so the central claim of this half is <em>unmeasured</em>, and saying otherwise would be the kind of overstatement the rest of the project exists to avoid.</p>
+
+  <div class="sowhat">
+    <h4>So what?</h4>
+    <p>Whatever a language model turns out to add, the infrastructure around it is the transferable part. An evidence ledger where every number carries the run that produced it, and a verifier that strikes what it cannot resolve, is applicable to any system that lets a model narrate quantitative results — and it is cheap to build compared to the harm of a fluent, unsupported clinical sentence.</p>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section>
+  <p class="partno">Part 9 — Trying to break it</p>
+  <h2>Five attacks, and the one that landed</h2>
+
+  <p>Everything above measures how well something works. These measure whether it can be made <em>confidently wrong</em>. Each states its expectation before it runs — a test that can be passed by any outcome is not a test.</p>
+
+  <ul class="verdicts">
+    <li><span class="vpill pass">PASS</span><span><span class="t">Anonymised channel names</span><span class="d">Rename <code>AD1</code> to <code>EA1</code>; the ranking must not move. Catches a model ranking on what it knows about electrode naming instead of on the evidence.</span></span></li>
+    <li><span class="vpill pass">PASS</span><span><span class="t">Shuffled name-to-signal mapping</span><span class="d">Permute which name sits on which signal; the onset-zone score must collapse to chance. It did — p 1.00 → 0.42.</span></span></li>
+    <li><span class="vpill pass">PASS</span><span><span class="t">Leading channel removed</span><span class="d">Channels that survive the removal must measure the same thing. Nine survivors drifted by <strong>0.00/min</strong>.</span></span></li>
+    <li><span class="vpill pass">PASS</span><span><span class="t">Run-to-run stability</span><span class="d">The same question asked five times must get the same answer.</span></span></li>
+    <li><span class="vpill" style="color:var(--warn);border-color:currentColor">FAILED</span><span><span class="t">No pathology</span><span class="d">A simulation containing <em>no</em> epileptic contacts. The pipeline ranked a channel at 6/min and called it the leader.</span></span></li>
+  </ul>
+
+  <p>The last one exposed a real hole: <strong>there was no null hypothesis.</strong> Every ranking function sorts noise, and this one had no way to say "nothing here".</p>
+
+  <p>The fix was not a threshold. A leader must be distinguishable from the <em>median</em> channel's confidence interval — built from Poisson intervals the pipeline already computed, so it tightens by itself as the analysed window grows instead of needing a constant someone tuned. The thing to check about any null is that it discriminates, because one that always fires is worthless:</p>
+
+  <table>
+    <thead><tr><th>Recording</th><th style="text-align:right">Leader</th><th style="text-align:right">Median</th><th style="text-align:right">Tied</th><th>Stands out?</th></tr></thead>
+    <tbody>
+      <tr><td>sub-pt01, real seizure</td><td class="n">83/min</td><td class="n">6/min</td><td class="n">16 of 71</td><td style="color:var(--s3)"><strong>yes</strong></td></tr>
+      <tr><td>synthetic, hot contacts</td><td class="n">54/min</td><td class="n">4/min</td><td class="n">3 of 15</td><td style="color:var(--s3)"><strong>yes</strong></td></tr>
+      <tr class="mark"><td>synthetic, nothing implanted</td><td class="n">6/min</td><td class="n">2/min</td><td class="n">15 of 15</td><td style="color:var(--warn)"><strong>no</strong></td></tr>
+    </tbody>
+  </table>
+
+  <p>Two of the five tests were themselves wrong when first written, and both failed on the real recording while passing on synthetic data. Anonymising to <code>CH01…CH98</code> fused fourteen electrodes into one, so the bipolar montage paired contacts across electrode boundaries and 71 analysed channels became 79 — the test was comparing two different analyses. And a bipolar channel cannot be removed in isolation: dropping the contacts behind <code>PST2-PST3</code> also destroys <code>PST1-PST2</code> and <code>PST3-PST4</code>.</p>
+
+  <div class="sowhat">
+    <h4>So what?</h4>
+    <p>On this kind of data, a failing test is about as likely to be measuring something real as to be noise. Twice in this project the failure <em>was</em> the finding — once a missing null hypothesis, once a reproducibility bug that also invalidated a published table. Both were caught by tests that stated what they expected before they ran.</p>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section>
+  <p class="partno">Part 10 — Limits</p>
+  <h2>What none of this establishes</h2>
+
+  <ul>
+    <li><strong>Not a clinical model.</strong> Fitted on 22 ictal recordings from three centres, scored against a retrospective record, on patients whose outcome was already known.</li>
+    <li><strong>Not interictal.</strong> The clinical HFO literature measures interictal rate, in sleep, between seizures. Every feature here comes from a 60-second window around a seizure. They are different quantities.</li>
+    <li><strong>Not a seizure-onset-zone detector.</strong> A high probability is a statement about ripple-band and discharge features. On <code>sub-pt01</code>, the pipeline's own top-ranked channels overlap the clinician's named contacts <em>no better than chance</em> (p = 1.00) — reported rather than buried, because ictal ripple energy spreads far beyond the onset region and that is the expected result.</li>
+    <li><strong>Not calibrated across sites.</strong> Part 7 measures the coverage loss; it does not repair it.</li>
+    <li><strong>No electrode coordinates.</strong> The archive ships none, so bipolar pairs are formed by contact number. On a grid, numbering wraps at the end of a row — some pairs join contacts centimetres apart.</li>
+  </ul>
+
+  <p>The agent's own guard still refuses questions about diagnosis, treatment and where seizures start, before the model is called at all. Localization is an offline metric computed by code, never a claim the model is permitted to make.</p>
+
+  <div class="sowhat">
+    <h4>So what?</h4>
+    <p>The honest summary in one sentence: the features carry real information about which contacts a clinician named, most of it does not transfer between patients, a handful of labels from the patient in front of you recovers a good part of what is lost, choosing <em>which</em> handful is worth about as much again — and the machinery to measure all four of those facts now exists and is tested.</p>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section>
+  <p class="partno">Part 11 — Run it</p>
+  <h2>Reproducing every number above</h2>
+
+  <p>The cohort feature table is committed (269 KB), so the modelling half runs with no download at all.</p>
+
+  <pre><span class="c"># setup</span>
+git clone https://github.com/berdakh/onset-hfo.git
+cd onset-hfo/onset-hfo
+pip install -e <b>".[dev,ml]"</b>
+
+<span class="c"># Part 5 — the three protocols</span>
+python -m onset_hfo.learn <b>evaluate</b>
+
+<span class="c"># Part 6 — the label budget, then which contacts to label</span>
+python -m onset_hfo.learn <b>personalize</b>
+python -m onset_hfo.learn <b>acquire</b>
+
+<span class="c"># Part 7 — calibration, conformal coverage, the exchangeability stress test</span>
+python -m onset_hfo.learn <b>uncertainty</b>
+
+<span class="c"># Parts 8–9 — the ladder and the falsification suite</span>
+python -m onset_agent.orchestrate --synthetic <b>--falsify</b>
+
+<span class="c"># Parts 2–3 — the detectors, against known truth</span>
+python -m onset_hfo.cli <b>evaluate</b> --seeds 1 7 42
+
+<span class="c"># 190 tests, offline and enforced, ~40 s</span>
+pytest -q</pre>
+
+  <p>Rebuilding the cohort from the archive takes about 700 MB and twenty minutes: <code>python -m onset_hfo.learn cohort --dry-run</code> prints the plan and downloads nothing.</p>
+
+  <p>Four Colab notebooks run with no setup. The fourth covers the agent, the learned model, the conformal sets and the falsification suite, and needs no recording downloaded.</p>
+</section>
+
+<footer class="foot">
+  <p><strong>Onset-HFO</strong> · Brain–Machine Interface Laboratory, School of Computing and Artificial Intelligence, Nazarbayev University. Code MIT; data CC0 from OpenNeuro <code>ds003029</code> (Li et al., <em>Neural fragility as an EEG marker of the seizure onset zone</em>, Nature Neuroscience 2023) — cite the dataset and its paper for anything derived from it.</p>
+  <p>This is research code. It is not a medical device, it has no access controls, no audit log and no clinical validation, and nothing in it should inform the care of a patient.</p>
+  <p><a href="https://github.com/berdakh/onset-hfo" target="_blank" rel="noopener">github.com/berdakh/onset-hfo</a></p>
+</footer>
+
+</div>

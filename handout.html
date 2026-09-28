@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Onset-HFO — one-page handout</title>
+<meta name="description" content="A printable one-page summary of Onset-HFO: what it measures on public intracranial EEG, what the numbers are, and what they are not.">
+<style>
+:root{
+  color-scheme: light;
+  --bg:#fcfcfb; --surface:#fff; --line:#e4e3de;
+  --ink:#0b0b0b; --ink-2:#52514e; --ink-3:#6f6e69;
+  --accent:#2a78d6; --accent-soft:#eaf1fc;
+  --warn:#8a5a00; --warn-bg:#fdf6e6; --warn-line:#efdcae;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme: dark;
+    --bg:#171715; --surface:#1f1f1d; --line:#35352f;
+    --ink:#f5f4ef; --ink-2:#c3c2b7; --ink-3:#97968d;
+    --accent:#3987e5; --accent-soft:#1b2942;
+    --warn:#e8c37a; --warn-bg:#2a2317; --warn-line:#4a3d22;
+  }
+}
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font:15px/1.5 ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+.sheet{max-width:820px;margin:0 auto;padding:28px 20px 48px}
+header{border-bottom:2px solid var(--ink);padding-bottom:10px;margin-bottom:14px}
+.kicker{font:600 11px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
+h1{font-size:25px;line-height:1.15;margin:8px 0 6px;letter-spacing:-.02em}
+.sub{margin:0;color:var(--ink-2);font-size:14px;max-width:62ch}
+h2{font:600 11px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);margin:18px 0 7px}
+p{margin:0 0 8px}
+.lede{font-size:15px;border-left:3px solid var(--accent);background:var(--accent-soft);padding:9px 13px;margin:0 0 4px;border-radius:0 5px 5px 0}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:0 26px}
+@media (max-width:640px){.cols{grid-template-columns:1fr}}
+table{border-collapse:collapse;width:100%;font-size:13px;margin:0 0 6px}
+th,td{text-align:left;padding:4px 7px 4px 0;border-bottom:1px solid var(--line);vertical-align:top}
+th{font:600 11px/1.3 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-3)}
+th .lc{text-transform:none}
+td.n{font-variant-numeric:tabular-nums;white-space:nowrap}
+.note{font-size:12.5px;color:var(--ink-2);margin:0 0 4px}
+.warn{background:var(--warn-bg);border:1px solid var(--warn-line);color:var(--warn);border-radius:6px;padding:9px 12px;font-size:13px;margin:6px 0 0}
+ul{margin:0 0 8px;padding-left:17px}
+li{margin:0 0 4px}
+.links{list-style:none;padding:0;margin:0;font-size:13px}
+.links li{margin:0 0 5px}
+.links b{display:block;font-weight:600}
+.links span{color:var(--ink-2);word-break:break-all;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+footer{margin-top:18px;padding-top:9px;border-top:1px solid var(--line);font-size:12px;color:var(--ink-3);display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap}
+a{color:var(--accent)}
+@media print{
+  @page{size:A4;margin:10mm}
+  :root{--bg:#fff;--surface:#fff;--ink:#000;--ink-2:#333;--ink-3:#555;--line:#ccc;--accent:#14448c;--accent-soft:#f2f5fb;--warn:#5a3c00;--warn-bg:#fbf7ee;--warn-line:#ddd0aa}
+  body{font-size:9.3pt;line-height:1.35}
+  .sheet{max-width:none;margin:0;padding:0}
+  h1{font-size:18pt}
+  .sub{font-size:9.4pt}
+  h2{margin:10px 0 4px}
+  table{font-size:8.6pt}
+  .cols{gap:0 18px}
+  a{color:inherit;text-decoration:none}
+  .links span{font-size:8pt}
+}
+</style>
+</head>
+<body>
+<div class="sheet">
+
+<header>
+  <div class="kicker">Brain–Machine Interfaces Lab · Nazarbayev University · Research prototype</div>
+  <h1>Onset-HFO — the signal behind every number</h1>
+  <p class="sub">High-frequency oscillations and interictal epileptiform discharges in
+  public intracranial EEG, with an evidence-only assistant on an open-weight model.</p>
+</header>
+
+<p class="lede">We can show you the signal window behind every number this system
+reports — and the two times we were wrong.</p>
+
+<div class="cols">
+<div>
+
+<h2>What it does</h2>
+<ul>
+  <li>Two HFO detectors differing in <em>one</em> thing — the feature they threshold
+      (RMS energy, Staba 2002; line length, Gardner 2007) — so a disagreement is
+      attributable to the feature, not to two implementations drifting apart.</li>
+  <li>Every event is checked against the recording's own 1/f background, so filter
+      ringing — what a sharp transient becomes after an 80–250 Hz filter — is rejected
+      rather than counted.</li>
+  <li>Rates carry Poisson intervals. Channels that cannot be separated from the leader
+      are reported as a candidate set, not ranked into a false order.</li>
+  <li>A report with no recommendation field. Not empty — absent.</li>
+</ul>
+
+<h2>Against expert markings</h2>
+<p class="note">Twenty patients, 41,187 marked events, counted only on the channels
+the annotators actually reviewed.</p>
+<table>
+<thead><tr><th>Band</th><th>Thr.</th><th>Prec.</th><th>Recall</th><th>Rank <span class="lc">ρ</span></th></tr></thead>
+<tbody>
+  <tr><td>ripple</td><td class="n">2.0 SD</td><td class="n">0.51</td><td class="n">0.38</td><td class="n">0.66</td></tr>
+  <tr><td>fast ripple</td><td class="n">5.0 SD</td><td class="n">0.54</td><td class="n">0.20</td><td class="n">0.61</td></tr>
+</tbody>
+</table>
+<p class="note">That is <em>agreement</em>, not accuracy: the reference is another
+validated detector's output, not a census of every oscillation, so an event we find
+that it never proposed counts against us either way.</p>
+
+</div>
+<div>
+
+<h2>Against surgical outcome</h2>
+<p class="note">ds003498 — Zurich interictal sleep at 2000 Hz, CC0. Resected contacts and
+seizure outcome from the archive. Whole 300 s run. Was the channel generating the most
+fast ripples inside the tissue the surgeon removed?</p>
+<table>
+<thead><tr><th>HFO source</th><th>Sz-free<br>(n=13)</th><th>Recur.<br>(n=7)</th><th>AUC (95% CI)</th><th>p</th></tr></thead>
+<tbody>
+  <tr><td>Expert markings</td><td class="n">11 / 13</td><td class="n">3 / 7</td><td class="n">0.71 (0.50–0.92)</td><td class="n">0.12</td></tr>
+  <tr><td>Our RMS detector</td><td class="n">10 / 13</td><td class="n">3 / 7</td><td class="n">0.67 (0.45–0.89)</td><td class="n">0.17</td></tr>
+</tbody>
+</table>
+<p class="note">The direction Fedele et al. (2017) predicts. Thirteen against seven can
+only detect AUC ≥ 0.85 at 80% power, so this cohort could not have established either
+number. Of 36 comparisons in the full study, one reaches p = 0.034 uncorrected —
+fewer than the ~2 that 36 tests produce by chance, and its Bonferroni p is 1.00.</p>
+
+<div class="warn"><strong>The most useful result.</strong> On the first 60 seconds of
+the same recordings — same code, same pre-specified metric — the expert arm gave
+AUC 0.82, p = 0.007, and that is what this project claimed until the study was re-run on
+the whole recording. Two patients account for the difference. A conclusion that changes
+between minute one and minutes one-to-five is not yet a measurement. Both tables are
+published side by side.</div>
+
+<h2>What it will not do</h2>
+<ul>
+  <li>Ask the assistant which tissue to resect and it refuses — <em>before</em> any
+      model runs, in code, not in a prompt.</li>
+  <li>No diagnosis, no treatment recommendation, no clinical validation.
+      The randomised HFO Trial (2022) came out <em>against</em> HFO-guided tailoring;
+      this project measures, it does not settle that.</li>
+</ul>
+
+</div>
+</div>
+
+<h2>Where to look</h2>
+<ul class="links">
+  <li><b>The live app</b> — ten pages over real recordings, no install, no account.
+      <span>https://onsetnu.streamlit.app/</span></li>
+  <li><b>Results, methods, figures, limitations</b>
+      <span>https://berdakh.github.io/onset-hfo/</span></li>
+  <li><b>Source, notebooks in Colab, the full outcome study</b>
+      <span>https://github.com/berdakh/onset-hfo</span></li>
+  <li><b>The wider Onset project</b> <span>https://berdakh.github.io/onset/</span></li>
+</ul>
+
+<footer>
+  <div><strong>Not a medical device.</strong> Research prototype on public de-identified
+  data. Nothing of yours is uploaded or stored.</div>
+  <div>MIT licence · 285 tests, offline</div>
+</footer>
+
+</div>
+</body>
+</html>

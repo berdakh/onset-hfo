@@ -1,0 +1,451 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Onset-HFO — detecting ripples and epileptiform discharges in public iEEG</title>
+<meta name="description" content="A research prototype: two classical HFO detectors and an interictal-discharge detector on public intracranial EEG, with an evidence-only agent on an open-weight model. Notebooks run in Colab with no setup.">
+<meta property="og:title" content="Onset-HFO">
+<meta property="og:description" content="Detecting high-frequency oscillations and interictal epileptiform discharges in public intracranial EEG, with an evidence-only agent on an open-weight model.">
+<meta property="og:type" content="website">
+<style>
+:root {
+  color-scheme: light;
+  --bg: #fcfcfb; --surface: #ffffff; --line: #e4e3de;
+  --ink: #0b0b0b; --ink-2: #52514e; --ink-3: #6f6e69;
+  --accent: #2a78d6; --accent-soft: #eaf1fc;
+  --warn: #8a5a00; --warn-bg: #fdf6e6; --warn-line: #efdcae;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg: #171715; --surface: #1f1f1d; --line: #35352f;
+    --ink: #f5f4ef; --ink-2: #c3c2b7; --ink-3: #97968d;
+    --accent: #3987e5; --accent-soft: #1b2942;
+    --warn: #e8c37a; --warn-bg: #2a2317; --warn-line: #4a3d22;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 860px; margin: 0 auto; padding: 0 20px; }
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+h1, h2, h3 { line-height: 1.25; letter-spacing: -0.015em; }
+h1 { font-size: clamp(2rem, 6vw, 2.9rem); margin: 0 0 .4em; }
+h2 { font-size: clamp(1.3rem, 3.6vw, 1.6rem); margin: 2.6em 0 .7em; padding-top: 1.4em; border-top: 1px solid var(--line); }
+h3 { font-size: 1.05rem; margin: 1.8em 0 .4em; }
+p, li { color: var(--ink-2); }
+p { margin: 0 0 1em; }
+code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .89em; }
+code { background: var(--accent-soft); padding: .12em .38em; border-radius: 4px; color: var(--ink); }
+pre { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; overflow-x: auto; }
+pre code { background: none; padding: 0; color: var(--ink); line-height: 1.55; }
+header { padding: 64px 0 8px; }
+.lede { font-size: 1.12rem; color: var(--ink-2); max-width: 46em; }
+.tag { display: inline-block; font-size: .78rem; letter-spacing: .04em; text-transform: uppercase;
+       color: var(--warn); background: var(--warn-bg); border: 1px solid var(--warn-line);
+       border-radius: 999px; padding: .25em .8em; margin-bottom: 1.2em; }
+.cards { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); margin: 1.2em 0; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px 18px 16px;
+        display: flex; flex-direction: column; }
+.card h3 { margin: 0 0 .3em; font-size: 1rem; color: var(--ink); }
+.card p { font-size: .93rem; margin: 0 0 1em; flex: 1; }
+.card .num { font-size: .78rem; color: var(--ink-3); letter-spacing: .06em; margin: 0 0 .5em; }
+.btn { display: inline-block; align-self: flex-start; background: var(--accent); color: #fff;
+       font-size: .9rem; font-weight: 500; text-decoration: none; padding: .5em 1em;
+       border-radius: 8px; border: 1px solid transparent; }
+.btn:hover { filter: brightness(1.08); }
+.btn:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+figure { margin: 1.6em 0; }
+figure img { width: 100%; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+figcaption { font-size: .88rem; color: var(--ink-3); margin-top: .6em; }
+table { border-collapse: collapse; width: 100%; font-size: .93rem; margin: 1em 0; }
+th, td { text-align: left; padding: .5em .7em; border-bottom: 1px solid var(--line); }
+th { color: var(--ink); font-weight: 600; }
+td { color: var(--ink-2); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.note { background: var(--surface); border: 1px solid var(--line); border-left: 3px solid var(--accent);
+        border-radius: 8px; padding: 14px 16px; margin: 1.4em 0; font-size: .95rem; }
+.note.caution { border-left-color: var(--warn); background: var(--warn-bg); border-color: var(--warn-line); }
+.note p:last-child { margin-bottom: 0; }
+ul.tight { padding-left: 1.2em; }
+ul.tight li { margin-bottom: .35em; }
+footer { border-top: 1px solid var(--line); margin-top: 3.5em; padding: 2em 0 4em; font-size: .9rem; color: var(--ink-3); }
+footer a { color: var(--ink-2); }
+.linkrow { display: flex; flex-wrap: wrap; gap: .5em 1.4em; margin: .8em 0 0; font-size: .95rem; }
+@media (max-width: 520px) { header { padding-top: 40px; } }
+/* A six-column results table cannot fit a phone. Let the table scroll inside
+   its own box rather than making the whole page scroll sideways, which breaks
+   every other section too. */
+@media (max-width: 620px) {
+  table { display: block; overflow-x: auto; white-space: nowrap; }
+  table::after { content: ""; display: block; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <span class="tag">Research prototype — not a medical device</span>
+  <h1>Onset-HFO</h1>
+  <p class="lede">
+    Detecting high-frequency oscillations (ripples, 80–250&nbsp;Hz) and interictal
+    epileptiform discharges in <strong>public</strong> intracranial EEG — with an
+    evidence-only agent on an <strong>open-weight</strong> model that can read the
+    results, must cite them, and is refused by code when it strays.
+  </p>
+  <div class="linkrow">
+    <a href="https://onsetnu.streamlit.app/"><strong>Open the live app</strong></a>
+    <a href="TUTORIAL.html">Where do seizures start? (the long-form guide)</a>
+    <a href="https://berdakh.github.io/onset/tutorial.html">The implementation walkthrough</a>
+    <a href="https://github.com/berdakh/onset-hfo">Code on GitHub</a>
+    <a href="https://openneuro.org/datasets/ds003498">The dataset (CC0)</a>
+    <a href="https://berdakh.github.io/onset/">The Onset project</a>
+    <a href="handout.html">One-page summary (prints to A4)</a>
+  </div>
+</header>
+
+<h2>Try it in the browser</h2>
+<div class="note">
+  <p>
+    <strong>The evidence viewer</strong> — ten pages over real recordings, no
+    install and no account. A channel's rate leads to the events behind it, an
+    event leads to the <em>signal</em> it was measured on, and the assistant's
+    every citation opens to both. The Outcome page carries the surgical-outcome
+    study, including the two results that did not hold up when they were checked
+    harder.
+  </p>
+  <p style="font-size:.93rem;color:var(--ink-3)">
+    Ask the assistant which channels to resect. It refuses, and shows you why —
+    that refusal happens before any model runs.
+  </p>
+  <p style="margin-top:1em">
+    <a class="btn" href="https://onsetnu.streamlit.app/">Open the app &rarr;</a>
+  </p>
+</div>
+
+<h2>New to intracranial EEG? Start here</h2>
+<div class="note">
+  <p>
+    <strong>From iEEG to evidence</strong> — the Onset project's illustrated
+    tutorial. It explains what these recordings are, what a ripple and an
+    interictal discharge look like, how evidence is built from them, and why a
+    detector's output is not a diagnosis. Worked examples throughout, and an
+    optional lab on putting an open-weight model in front of the results.
+  </p>
+  <p style="margin-top:1em">
+    <a class="btn" href="https://berdakh.github.io/onset/tutorial.html">Read the tutorial &rarr;</a>
+  </p>
+</div>
+<p style="font-size:.9rem;color:var(--ink-3)">
+  Already know the vocabulary? Skip to the notebooks below.
+</p>
+
+<h2>Run it, right now, with no setup</h2>
+<p>
+  Five notebooks, each opening straight into Google Colab. Notebook&nbsp;1
+  downloads 24&nbsp;MB of real recording and notebook&nbsp;5 about 480&nbsp;MB
+  (twenty patients); the rest need no download at all.
+</p>
+
+<div class="cards">
+  <div class="card">
+    <p class="num">Notebook 1</p>
+    <h3>HFO detection quickstart</h3>
+    <p>One minute of real intracranial EEG → filtering → two detectors → figures → a report that cites the signal window behind every number.</p>
+    <a class="btn" href="https://colab.research.google.com/github/berdakh/onset-hfo/blob/master/onset-hfo/notebooks/01_hfo_detection_quickstart.ipynb">Open in Colab &rarr;</a>
+  </div>
+  <div class="card">
+    <p class="num">Notebook 2</p>
+    <h3>Agentic analysis</h3>
+    <p>An open-weight model answering questions about those results — with citations, refusals, and a guard that catches an invented number in the act.</p>
+    <a class="btn" href="https://colab.research.google.com/github/berdakh/onset-hfo/blob/master/onset-hfo/notebooks/02_agentic_analysis.ipynb">Open in Colab &rarr;</a>
+  </div>
+  <div class="card">
+    <p class="num">Notebook 3</p>
+    <h3>Validation and benchmark</h3>
+    <p>Precision and recall against known truth, the threshold curve, and what each rejection criterion actually buys.</p>
+    <a class="btn" href="https://colab.research.google.com/github/berdakh/onset-hfo/blob/master/onset-hfo/notebooks/03_validation_and_benchmark.ipynb">Open in Colab &rarr;</a>
+  </div>
+  <div class="card">
+    <p class="num">Notebook 4</p>
+    <h3>Orchestration and localization</h3>
+    <p>The model choosing what to measure rather than only reading it, a learned per-contact model, conformal prediction sets, and a suite built to break all of it.</p>
+    <a class="btn" href="https://colab.research.google.com/github/berdakh/onset-hfo/blob/master/onset-hfo/notebooks/04_orchestration_and_localization.ipynb">Open in Colab &rarr;</a>
+  </div>
+  <div class="card">
+    <p class="num">Notebook 5</p>
+    <h3>Surgical outcome study</h3>
+    <p>The one test whose reference standard is not another algorithm: did the HFO map point at the tissue whose removal cured the patient? Also the notebook that shows a headline result weakening when the analysis window grows &mdash; and why that matters more than the result.</p>
+    <a class="btn" href="https://colab.research.google.com/github/berdakh/onset-hfo/blob/master/onset-hfo/notebooks/05_surgical_outcome_study.ipynb">Open in Colab &rarr;</a>
+  </div>
+</div>
+
+<p>Or locally, in about two minutes:</p>
+<pre><code>git clone https://github.com/berdakh/onset-hfo.git
+cd onset-hfo/onset-hfo
+pip install -e ".[dev]"
+
+python -m onset_hfo.cli run --synthetic --figures     # offline, ~10 seconds
+python -m onset_hfo.cli run --subject sub-pt01 --start 50 --stop 110
+python -m onset_agent.cli --results artifacts/results/sub-pt01_ictal_run-01 --demo
+python -m onset_hfo.cli outcome                       # the outcome study
+pytest -q                                             # 453 tests, offline</code></pre>
+
+<h2>What one detection looks like</h2>
+<p>
+  This is the figure that makes a detection arguable: the wideband signal, the
+  band-passed signal, and the event's spectrum against the recording's own 1/f
+  background. A real oscillation leaves a bump above that dashed line. Filter
+  ringing — what a sharp transient becomes after an 80–250&nbsp;Hz filter — does
+  not, and that difference is what the pipeline measures for every event.
+</p>
+<figure>
+  <img src="img/real_example_event.png" alt="Three panels: wideband trace, band-passed trace with the detected event shaded, and the event spectrum against a fitted 1/f background.">
+  <figcaption>An accepted event on <code>sub-pt01</code>, detected by the line-length detector.</figcaption>
+</figure>
+
+<h2>How it works</h2>
+<ul class="tight">
+  <li><strong>Data.</strong> Two public CC0 archives. <code>ds003029</code> — multicentre iEEG with clinician seizure markers, used for the ictal quickstart. <code>ds003498</code> — Zurich interictal sleep at 2000&nbsp;Hz, which ships expert HFO markings, the resected contacts and surgical outcome, and is what every measured number above rests on. The loader asks each archive for a byte range, so a notebook downloads 24&nbsp;MB instead of 105&nbsp;MB.</li>
+  <li><strong>Preprocessing.</strong> 1&nbsp;Hz high-pass, narrow mains notches (the 180 and 240&nbsp;Hz harmonics sit inside the ripple band), bipolar montage.</li>
+  <li><strong>Two HFO detectors</strong> that differ <em>only</em> in the feature they threshold — RMS energy (Staba 2002) and line length (Gardner 2007) — so a disagreement between them is attributable to the feature, not to two implementations drifting apart. Plus an interictal-discharge detector.</li>
+  <li><strong>Artifact rejection</strong> on each event's spectrum. This is where filter ringing is removed, and it is what the precision below rests on.</li>
+  <li><strong>A report</strong> with rates, Poisson intervals, evidence windows, and the disagreements stated rather than averaged away. There is no recommendation field — not empty, absent.</li>
+</ul>
+
+<h2>What it measures</h2>
+
+<h3>Against surgical outcome</h3>
+<p>
+  Twenty patients, the whole interictal-sleep run each (300&nbsp;s), the resected
+  contacts read from the archive's clinical sheet and seizure outcome from
+  <code>participants.tsv</code>. The question: was the channel generating the
+  most fast ripples inside the tissue the surgeon removed?
+</p>
+<table>
+  <thead><tr><th>HFO source</th><th class="num">Seizure-free (n=13)</th><th class="num">Recurrence (n=7)</th><th class="num">AUC (95% CI)</th><th class="num">p</th></tr></thead>
+  <tbody>
+    <tr><td>Expert markings</td><td class="num">11 / 13</td><td class="num">3 / 7</td><td class="num">0.71 (0.50&ndash;0.92)</td><td class="num">0.12</td></tr>
+    <tr><td>Our RMS detector</td><td class="num">10 / 13</td><td class="num">3 / 7</td><td class="num">0.67 (0.45&ndash;0.89)</td><td class="num">0.17</td></tr>
+  </tbody>
+</table>
+<div class="note">
+  <p>
+    The direction is the one
+    <a href="https://www.nature.com/articles/s41598-017-13064-1">Fedele et al. 2017</a>
+    predicts &mdash; the study this dataset comes from &mdash; and with 13
+    patients against 7 it does not reach significance. This cohort can only
+    detect AUC&nbsp;&ge;&nbsp;0.85 at 80% power, so it could not have
+    established either number. <strong>Nothing in the study survives
+    correction for multiple comparisons.</strong> One of the 36 comparisons the
+    study runs reaches p&nbsp;=&nbsp;0.034 uncorrected &mdash; our detector,
+    ripple band, candidate-set metric &mdash; which is fewer than the roughly
+    two that 36 tests produce by chance, and its Bonferroni-corrected p is 1.00.
+  </p>
+  <p>
+    <strong>The most useful result is that an earlier version of this table
+    said something stronger.</strong> On the first 60&nbsp;seconds of the same
+    recordings &mdash; same code, same pre-specified metric &mdash; the expert
+    arm gave AUC&nbsp;0.82, p&nbsp;=&nbsp;0.007, and that is what this page
+    claimed until the study was re-run on the full recording. Two patients
+    account for the whole difference. A conclusion that changes between minute
+    one and minutes one-to-five is not yet a measurement, and channel-ranking
+    stability across windows is now the most concrete open problem in the
+    project. Both tables, side by side, are in the
+    <a href="https://github.com/berdakh/onset-hfo/blob/master/onset-hfo/docs/OUTCOME.md">outcome document</a>.
+  </p>
+</div>
+
+<h3>Against expert markings</h3>
+<p>
+  The same 20 subjects, scored event by event &mdash; 41,187 marked events,
+  counted only on the channels the annotators actually reviewed:
+</p>
+<table>
+  <thead><tr><th>Band</th><th>Threshold</th><th class="num">Precision</th><th class="num">Recall</th><th class="num">F1</th><th class="num">Channel-rank &rho;</th></tr></thead>
+  <tbody>
+    <tr><td>ripple</td><td>1.5 SD</td><td class="num">0.43</td><td class="num">0.48</td><td class="num">0.42</td><td class="num">0.59</td></tr>
+    <tr><td>ripple</td><td>2.0 SD</td><td class="num">0.51</td><td class="num">0.38</td><td class="num">0.40</td><td class="num">0.66</td></tr>
+    <tr><td>fast ripple</td><td>3.5 SD</td><td class="num">0.33</td><td class="num">0.29</td><td class="num">0.30</td><td class="num">0.59</td></tr>
+    <tr><td>fast ripple</td><td>5.0 SD</td><td class="num">0.54</td><td class="num">0.20</td><td class="num">0.26</td><td class="num">0.61</td></tr>
+    <tr><td>fast ripple</td><td>2.0 SD</td><td class="num">0.09</td><td class="num">0.53</td><td class="num">0.15</td><td class="num">0.44</td></tr>
+  </tbody>
+</table>
+<div class="note">
+  <p>
+    <strong>That is agreement, not accuracy.</strong> The reference is the
+    validated output of another detector, not a census of every oscillation, so
+    an event we find that it never proposed counts against us whether or not it
+    is real. The defensible sentence: <em>we reproduce about half of a published
+    detector's validated events, and rank the same channels as active at
+    &rho; &asymp; 0.66.</em>
+  </p>
+</div>
+<p>
+  The same benchmark showed that this pipeline's own default threshold &mdash;
+  5 robust SDs, inherited from the ictal literature &mdash; finds only 12% of
+  interictal markings and ranks channels barely above chance. The measured
+  operating point is 1.5&ndash;2.0 SD, and it now ships as a named preset. A
+  default nobody had measured was quietly wrong for the clinically relevant
+  setting; catching that is what this project is for.
+</p>
+<p>
+  The two bands also want <em>different</em> operating points, by a factor of
+  two and a half: ripples rank best at 2.0&nbsp;SD, fast ripples at
+  5.0&nbsp;SD. Running the ripple value in the fast-ripple band drops
+  precision from 0.54 to 0.09, and flattened the outcome arm above when it was
+  first run that way. One threshold for both bands is a bug, not a
+  simplification.
+</p>
+<p>
+  On <strong>synthetic data with known truth</strong> (three recordings, 60&nbsp;s
+  each, implanted ripples, discharges and artifacts):
+</p>
+<table>
+  <thead><tr><th>Detector</th><th class="num">Precision</th><th class="num">Recall</th><th class="num">F1</th></tr></thead>
+  <tbody>
+    <tr><td>RMS energy (ripples)</td><td class="num">0.956 &plusmn; 0.017</td><td class="num">0.528 &plusmn; 0.073</td><td class="num">0.679</td></tr>
+    <tr><td>Line length (ripples)</td><td class="num">0.957 &plusmn; 0.017</td><td class="num">0.550 &plusmn; 0.078</td><td class="num">0.697</td></tr>
+    <tr><td>Interictal discharges</td><td class="num">0.998 &plusmn; 0.004</td><td class="num">0.844 &plusmn; 0.037</td><td class="num">0.914</td></tr>
+  </tbody>
+</table>
+<p>
+  Artifact rejection is what earns that precision: before it, the energy detector
+  scores <strong>0.63</strong> &mdash; nearly all of its false positives are large
+  transients ringing through the band-pass &mdash; and after it, <strong>0.97</strong>,
+  for about one point of recall.
+</p>
+
+<figure>
+  <img src="img/real_rates_rms.png" alt="Horizontal bar chart of ripple rate per channel with 95% confidence intervals.">
+  <figcaption>Ripple rate per channel, with Poisson intervals. Sixty seconds turns a rate
+  into a small count, so two channels whose intervals overlap are tied, not ranked.</figcaption>
+</figure>
+<figure>
+  <img src="img/real_rate_timecourse.png" alt="Ripple rate over time for the three leading channels, with the marked seizure shaded.">
+  <figcaption>The same recording over time. On the leading channels the rate is 0/min before
+  the clinician-marked onset (shaded) and about 145/min during the seizure.</figcaption>
+</figure>
+
+<h2>Two results reported rather than smoothed over</h2>
+<div class="note">
+  <p>
+    <strong>The ranking does not match the clinician's markers.</strong> The top-ranked
+    channels overlap the contacts named at seizure onset no more than chance predicts
+    (permutation p = 0.68–0.71). That is expected for a 60-second ictal window and a
+    rate-only ranking — and it is the clearest statement that nothing here identifies
+    a seizure-onset zone.
+  </p>
+</div>
+<div class="note">
+  <p>
+    <strong>One of the rejection criteria barely earns its place.</strong> An ablation
+    shows the spectral-peak check does nearly all the work; the cycle-count check
+    almost never fires. Both are kept, and the table is published so nobody has to
+    take that on trust.
+  </p>
+</div>
+<p>
+  The two detectors also match only about half of each other's individual events
+  (Jaccard 0.53) and rank seven leading channels very differently. The report names
+  those channels. A single-detector rate table is less certain than it looks.
+</p>
+<figure>
+  <img src="img/real_detector_comparison.png" alt="Scatter plot of line-length rate against RMS rate per channel, with disagreements highlighted.">
+  <figcaption>Each point is a channel. Diamonds are channels the two detectors rank very differently.</figcaption>
+</figure>
+
+<h2>The agent</h2>
+<p>
+  A language model is good at deciding <em>what to look up</em> in a detection table
+  and how to say it, and perfectly capable of writing a rate that was never measured.
+  So the split is: the model chooses the questions and the phrasing, the pipeline
+  decides what is true, and a checker proves it for every answer.
+</p>
+<ul class="tight">
+  <li>Eight <strong>read-only</strong> tools over one saved analysis. No tool runs a detector, writes a file, or takes a patient argument.</li>
+  <li>Treatment, diagnosis and other-patient questions are refused <strong>before</strong> the model runs — there is no model in the path to be persuaded.</li>
+  <li>After every answer: each citation must resolve to a window a tool returned, and each number must appear in a tool result. Otherwise the answer is discarded and the agent declines.</li>
+  <li>Backends: Ollama, any OpenAI-compatible server, <code>transformers</code> in-process (Qwen2.5 by default), and a scripted policy so the whole loop runs offline with no model at all.</li>
+</ul>
+<pre><code>problems: ["citation 'sub-xx|MADE-UP|rms|0.000' was never returned by a tool",
+           "the value '999.9 /min' does not appear in any tool result"]</code></pre>
+<p style="font-size:.9rem;color:var(--ink-3)">
+  Notebook 2 runs a deliberately lying model so you can watch the guard fire.
+</p>
+
+<h2>Documentation</h2>
+<div class="linkrow">
+  <a href="https://onsetnu.streamlit.app/">Live app</a>
+  <a href="https://github.com/berdakh/onset-hfo/blob/master/onset-hfo/docs/ARCHITECTURE.md">Architecture</a>
+  <a href="https://github.com/berdakh/onset-hfo/blob/master/onset-hfo/docs/DATA.md">Data</a>
+  <a href="https://github.com/berdakh/onset-hfo/blob/master/onset-hfo/docs/METHODS.md">Methods</a>
+  <a href="https://github.com/berdakh/onset-hfo/blob/master/onset-hfo/docs/AGENT.md">Agent</a>
+  <a href="https://github.com/berdakh/onset-hfo/blob/master/onset-hfo/docs/EVALUATION.md">Evaluation</a>
+  <a href="https://github.com/berdakh/onset-hfo/blob/master/onset-hfo/docs/OUTCOME.md">Outcome study</a>
+  <a href="https://github.com/berdakh/onset-hfo/blob/master/onset-hfo/docs/LIMITATIONS.md">Limitations</a>
+  <a href="https://github.com/berdakh/onset-hfo/blob/master/onset-hfo/docs/GLOSSARY.md">Glossary</a>
+  <a href="https://github.com/berdakh/onset-hfo/blob/master/onset-hfo/docs/ROADMAP.md">Roadmap</a>
+  <a href="https://github.com/berdakh/onset-hfo/blob/master/onset-hfo/docs/CONTRIBUTING.md">Contributing</a>
+</div>
+<p style="margin-top:1em">
+  New to the vocabulary — ictal, bipolar montage, ripple band? The
+  <a href="https://github.com/berdakh/onset-hfo/blob/master/onset-hfo/docs/GLOSSARY.md">glossary</a>
+  defines every term used on this page, and
+  <a href="https://berdakh.github.io/onset/tutorial.html">the tutorial</a>
+  covers the clinical context from the beginning.
+</p>
+
+<h2 id="limits">What this must not be used for</h2>
+<div class="note caution">
+  <p>
+    Not a medical device. Not validated on patients. Not a diagnosis, and not a
+    seizure-onset-zone finder — a high event rate is a measurement, and
+    physiological ripples occur in healthy tissue.
+  </p>
+  <p>
+    The detector numbers above are <strong>agreement with another detector's
+    validated output</strong>, not accuracy, on 60&nbsp;seconds per patient from
+    one centre. The outcome study is a <strong>retrospective series of twenty
+    patients</strong> — 13 against 7 — which can only detect a very large
+    effect, and in which nothing survives correction for its 36 comparisons.
+    Reproducing a
+    retrospective finding is evidence that the analysis is sound, not that the
+    clinical claim is. The
+    <a href="https://github.com/berdakh/onset-hfo/blob/master/onset-hfo/docs/LIMITATIONS.md">full list</a>
+    should be read before quoting any number on this page to anyone.
+  </p>
+</div>
+
+<footer>
+  <p>
+    Onset-HFO · <a href="https://onsetnu.streamlit.app/">live app</a> ·
+    part of the <a href="https://berdakh.github.io/onset/">Onset</a> project ·
+    Brain–Machine Interfaces Lab, Nazarbayev University · MIT licence.
+  </p>
+  <p>
+    Data: Li A, Inati S, Zaghloul K, <em>et al.</em>
+    <a href="https://openneuro.org/datasets/ds003029">Epilepsy-iEEG-Multicenter-Dataset</a>,
+    OpenNeuro (2021), CC0 — doi:10.18112/openneuro.ds003029.v1.0.3. Work using it is
+    asked to cite <em>Neural fragility as an EEG marker of the seizure onset zone</em>
+    (doi:10.1101/862797).
+  </p>
+  <p>
+    Expert HFO markings, resected contacts and surgical outcome:
+    <a href="https://openneuro.org/datasets/ds003498">ds003498</a>, OpenNeuro, CC0 —
+    doi:10.18112/openneuro.ds003498.v1.0.1. Fedele T, Burnos S, Boran E,
+    Krayenbühl N, Hilfiker P, Grunwald T, Sarnthein J.
+    <em>Resection of high frequency oscillations predicts seizure outcome in the
+    individual patient.</em> Sci Rep 7:13836 (2017) —
+    doi:10.1038/s41598-017-13064-1. BIDS conversion by A. Li (mne-hfo).
+  </p>
+</footer>
+
+</div>
+</body>
+</html>
