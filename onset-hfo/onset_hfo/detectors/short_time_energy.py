@@ -22,18 +22,26 @@ more permissive operating point on the squared feature. On one recording it
 finds 294 events where RMS at 5.0 SD finds 132, and RMS has to come down to
 about 2.5 SD (250 events) before the counts are comparable.
 
-**So do not read its higher F1 as a better detector.** It scores 0.82 against
-0.68 for RMS on the simulator, but ``docs/EVALUATION.md`` §3 already showed
-that lower thresholds score higher F1 *on this simulator*, whose
-signal-to-noise distribution is a guess. This detector is mostly the energy
-detector at an untuned, lower operating point, and the honest conclusion is
-the one that document already draws: **a threshold in robust SDs is not a
-portable operating point between features.** Each feature needs its own sweep.
+**Its higher F1 on the simulator is not a better detector** -- 0.82 against
+0.68 for RMS -- because ``docs/EVALUATION.md`` §3 showed that lower thresholds
+score higher F1 *on this simulator*, whose signal-to-noise distribution is a
+guess. The generalisable conclusion stands and is now measured on real data:
+**a threshold in robust SDs is not a portable operating point between
+features.**
 
-**The threshold is inherited, not measured**, exactly as for the envelope
-detector: 5.0 robust SD from the energy detector, never swept on real data.
-See ``docs/EVALUATION.md`` §0 for what happened the last time this project
-trusted an inherited default.
+**Swept on real data, and the verdict here was too harsh.** This docstring
+used to call it "mostly the energy detector at an untuned, lower operating
+point". Half right. Across the 20 patients of ds003498 its own best threshold
+is **4.0 robust SD in the ripple band and 12.0 in fast ripples**, against 2.0
+and 5.0 for RMS -- so at a *shared* threshold it is badly mis-set, exactly as
+claimed. But at its own, it matches RMS rather than trading recall for
+precision: rank agreement 0.658 against 0.655 in ripples, 0.601 against 0.610
+in fast ripples. A competitive detector that wants a different number, not a
+mis-set copy of one. ``docs/EVALUATION.md`` §1b has the tables.
+
+**Run it at RMS's threshold and it is genuinely worse**: 5.0 SD in the
+fast-ripple band gives rank agreement 0.485 where its own 12.0 gives 0.601.
+That gap is the whole reason this file says what it says.
 """
 
 from __future__ import annotations

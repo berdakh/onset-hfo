@@ -32,10 +32,20 @@ from onset_hfo.detectors.rms import detect_rms  # noqa: F401
 from onset_hfo.detectors.short_time_energy import detect_short_time_energy  # noqa: F401
 from onset_hfo.detectors.spike import detect_spikes  # noqa: F401
 
-DETECTORS = {"rms": detect_rms, "line_length": detect_line_length,
-             "hilbert": detect_hilbert, "short_time_energy": detect_short_time_energy,
-             "spike": detect_spikes}
+#: Every HFO detector, by name. Excludes the spike detector, which answers a
+#: different question and is not interchangeable with these.
+#:
+#: One registry, because there were four. `benchmark.py` kept its own copy and
+#: was still listing two detectors months after four existed, so the sweep
+#: silently could not see the new ones -- which is exactly the measurement
+#: roadmap item 4 was waiting for.
+HFO_DETECTORS = {"rms": detect_rms, "line_length": detect_line_length,
+                 "hilbert": detect_hilbert,
+                 "short_time_energy": detect_short_time_energy}
+
+#: The HFO detectors plus the interictal-discharge detector.
+DETECTORS = {**HFO_DETECTORS, "spike": detect_spikes}
 
 __all__ = ["Event", "events_to_frame", "frame_to_events", "detect_rms",
            "detect_line_length", "detect_hilbert", "detect_short_time_energy",
-           "detect_spikes", "DETECTORS"]
+           "detect_spikes", "DETECTORS", "HFO_DETECTORS"]

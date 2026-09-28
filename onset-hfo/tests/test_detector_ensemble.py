@@ -259,3 +259,150 @@ def test_consensus_keeps_the_per_detector_rates_it_voted_on(four):
     for name in HFO_NAMES:
         assert f"rate_{name}" in votes.columns
         assert f"rank_{name}" in votes.columns
+
+
+# --------------------------------------------------------------------------
+# One registry, because there were four
+# --------------------------------------------------------------------------
+
+
+def test_every_module_sweeps_the_same_set_of_detectors():
+    """The drift that kept roadmap item 4 blocked without anyone noticing.
+
+    `benchmark.py` and `outcome.py` each kept a private two-entry copy of the
+    detector registry. Two detectors were added to the package months before,
+    and `--detectors hilbert` failed with a KeyError rather than sweeping — so
+    "the new detectors have only been measured on synthetic data" was a fact
+    about a dict literal, not about the data.
+    """
+    from onset_hfo.benchmark import DETECTORS as BENCH
+    from onset_hfo.detectors import HFO_DETECTORS
+    from onset_hfo.outcome import DETECTORS as OUTCOME
+    from onset_hfo.pipeline import HFO_DETECTORS as PIPELINE
+
+    assert set(HFO_DETECTORS) == set(HFO_NAMES)
+    for name, registry in (("benchmark", BENCH), ("outcome", OUTCOME),
+                           ("pipeline", PIPELINE)):
+        assert set(registry) == set(HFO_DETECTORS), \
+            f"{name} sweeps a different set of detectors than the package defines"
+
+
+def test_the_shared_registry_holds_no_spike_detector():
+    """A discharge is not an HFO, and the two are not interchangeable."""
+    from onset_hfo.detectors import DETECTORS, HFO_DETECTORS
+
+    assert "spike" not in HFO_DETECTORS
+    assert "spike" in DETECTORS
+    assert set(DETECTORS) == set(HFO_DETECTORS) | {"spike"}
+
+
+def test_the_agents_registry_stays_pinned_to_its_frozen_contract():
+    """The one copy that must NOT follow the package.
+
+    `onset_agent/tools.py` publishes `enum: [rms, line_length, spike]` as part
+    of a deliberately frozen JSON tool contract. Widening the agent's registry
+    without widening the contract would let the planner call a tool the schema
+    says does not exist; widening the contract is a decision, not a tidy-up.
+    """
+    from onset_agent.analysis import _HFO_DETECTORS
+    from onset_agent.tools import tool_schemas
+
+    assert set(_HFO_DETECTORS) == {"rms", "line_length"}
+    enums = []
+    for schema in tool_schemas():
+        # OpenAI-style: {"type": "function", "function": {"parameters": {...}}}
+        parameters = schema.get("function", schema).get("parameters", {})
+        detector = parameters.get("properties", {}).get("detector", {})
+        if "enum" in detector:
+            enums.append(detector["enum"])
+    assert enums, "no tool exposes a detector argument; this test is looking at nothing"
+    for enum in enums:
+        assert set(enum) == set(_HFO_DETECTORS) | {"spike"}, \
+            "the agent's registry and its frozen contract have diverged"
+
+
+# --------------------------------------------------------------------------
+# The real-data sweep, pinned
+# --------------------------------------------------------------------------
+
+
+def _sweep():
+    import pandas as pd
+
+    from onset_hfo.config import PROJECT_ROOT
+
+    return pd.read_csv(PROJECT_ROOT / "data" / "benchmark" / "four_detector_sweep.csv")
+
+
+def test_the_four_detector_sweep_covers_every_arm():
+    frame = _sweep()
+    assert set(frame["detector"]) == set(HFO_NAMES)
+    assert set(frame["band"]) == {"ripple", "fast_ripple"}
+    for column in ("precision", "recall", "f1", "rank_rho"):
+        assert frame[column].between(-1.0, 1.0).all()
+
+
+def test_no_arms_optimum_sits_on_the_edge_of_the_swept_grid():
+    """The standard §0 set for itself, applied to all sixteen arms.
+
+    Four of them failed this on the first pass. Extending the grid moved
+    short-time energy's fast-ripple optimum from 0.570 at 8.0 SD to 0.601 at
+    12.0 -- so the check is not ceremony, it changed a published number.
+    """
+    frame = _sweep()
+    for (band, detector), part in frame.groupby(["band", "detector"]):
+        lo, hi = part["threshold_sd"].min(), part["threshold_sd"].max()
+        for criterion in ("rank_rho", "f1"):
+            best = float(part.loc[part[criterion].idxmax(), "threshold_sd"])
+            assert best not in (lo, hi), (
+                f"{detector}/{band} peaks at {best:g} SD by {criterion}, an "
+                f"endpoint of the {lo:g}-{hi:g} grid: that is the grid running "
+                f"out, not an optimum")
+
+
+def test_the_two_added_detectors_did_not_improve_the_ranking():
+    """The measured answer to 'was adding them worth it'. It was not.
+
+    Pinned because it is the kind of null that quietly becomes a positive
+    claim when someone re-runs with a different grid and quotes the winner.
+    """
+    frame = _sweep()
+    best = (frame.loc[frame.groupby(["band", "detector"])["rank_rho"].idxmax()]
+            .set_index(["band", "detector"])["rank_rho"])
+
+    ripple_margin = best[("ripple", "short_time_energy")] - best[("ripple", "rms")]
+    fast_margin = best[("fast_ripple", "hilbert")] - best[("fast_ripple", "rms")]
+    assert 0 <= ripple_margin < 0.01, f"ripple margin over RMS is now {ripple_margin:.3f}"
+    assert 0 <= fast_margin < 0.01, f"fast-ripple margin over RMS is now {fast_margin:.3f}"
+
+
+def test_short_time_energy_needs_its_own_threshold_on_real_data():
+    """A threshold in robust SDs is not portable between features, measured."""
+    frame = _sweep()
+    best = (frame.loc[frame.groupby(["band", "detector"])["rank_rho"].idxmax()]
+            .set_index(["band", "detector"])["threshold_sd"])
+
+    assert best[("ripple", "short_time_energy")] == 2 * best[("ripple", "rms")]
+    assert best[("fast_ripple", "short_time_energy")] > 2 * best[("fast_ripple", "rms")]
+    # The envelope, by contrast, wants what RMS wants.
+    assert abs(best[("fast_ripple", "hilbert")] - best[("fast_ripple", "rms")]) < 0.01
+
+
+def test_the_shared_cells_reproduce_the_original_networked_sweep():
+    """The offline run against cached slices must match the downloaded one.
+
+    27 cells overlap with `agreement_sweep.csv`, which was produced by a run
+    that fetched from OpenNeuro. They agree exactly; that is what licenses
+    regenerating this table without the network.
+    """
+    import pandas as pd
+
+    from onset_hfo.config import PROJECT_ROOT
+
+    old = pd.read_csv(PROJECT_ROOT / "data" / "benchmark" / "agreement_sweep.csv")
+    both = old.merge(_sweep(), on=["band", "detector", "threshold_sd"],
+                     suffixes=("_old", "_new"))
+    assert len(both) >= 27, f"only {len(both)} overlapping cells to check"
+    for column in ("precision", "recall", "f1", "detections", "rank_rho"):
+        assert (both[f"{column}_old"] - both[f"{column}_new"]).abs().max() == 0.0, \
+            f"{column} differs between the networked and offline runs"

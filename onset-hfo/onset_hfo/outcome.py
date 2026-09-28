@@ -92,7 +92,7 @@ import pandas as pd
 from onset_hfo.clinical import classify_channels, fetch_participants, resection_map
 from onset_hfo.config import BANDS, PIPELINE_VERSION, RESULTS_DIR, THRESHOLDS, DetectorConfig
 from onset_hfo.datasets import fetch_slice, list_subjects
-from onset_hfo.detectors import detect_line_length, detect_rms
+from onset_hfo.detectors import HFO_DETECTORS
 from onset_hfo.preprocess import prepare
 
 __all__ = [
@@ -105,7 +105,7 @@ __all__ = [
     "rank_comparison",
 ]
 
-DETECTORS = {"rms": detect_rms, "line_length": detect_line_length}
+DETECTORS = HFO_DETECTORS
 
 #: Length of one ``ds003498`` run, in seconds. Every run in the archive is
 #: exactly this long, so this is not a slice -- it is the whole recording and

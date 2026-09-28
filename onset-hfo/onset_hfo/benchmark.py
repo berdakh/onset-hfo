@@ -44,7 +44,7 @@ import pandas as pd
 
 from onset_hfo.config import BANDS, PIPELINE_VERSION, RESULTS_DIR, DetectorConfig
 from onset_hfo.datasets import fetch_slice, list_subjects
-from onset_hfo.detectors import detect_line_length, detect_rms
+from onset_hfo.detectors import HFO_DETECTORS
 from onset_hfo.evaluate import evaluate_detections
 from onset_hfo.preprocess import prepare
 from onset_hfo.validate import validate_events
@@ -55,7 +55,9 @@ __all__ = ["DEFAULT_THRESHOLDS", "benchmark_subject", "benchmark_cohort", "Bench
 #: pipeline ships with; the rest are there to show what it costs.
 DEFAULT_THRESHOLDS = (2.0, 2.5, 3.0, 3.5, 4.0, 5.0, 6.0)
 
-DETECTORS = {"rms": detect_rms, "line_length": detect_line_length}
+#: The shared registry. This file used to keep its own two-entry copy,
+#: so `--detectors hilbert` failed with a KeyError rather than sweeping.
+DETECTORS = HFO_DETECTORS
 
 
 @dataclass
