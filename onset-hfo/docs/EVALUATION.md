@@ -721,6 +721,133 @@ Every number above comes from the deterministic scripted planner. It is the
 control, not the result: what a real open-weight model does to these rows is
 unmeasured, and is the first experiment to run.
 
+---
+
+## 6c. Is the robustness multiplier the right rule? Measured: only where the band is well sampled
+
+§6b ends on a caveat rather than a result: on `sub-pt01` re-planning re-ordered
+the top five, but the five channels were *tied*, a 5% penalty was enough to
+shuffle them, and the re-ordering carried no information. That was one
+recording with no surgical reference. This section answers the same question
+across 20 patients who had surgery.
+
+**What is compared.** The multiplier is measured as a *ranking rule*, not
+through the ladder. Varying the planner as well would confound the answer, and
+the ds003029 cohort the ladder wants is not available offline (one subject is
+cached, its clinical sheet is not). So the rule is applied directly to the
+ds003498 slices, holding everything else fixed — same prepared recording,
+detector, survey threshold, channels, metric functions:
+
+| rule | score | which rungs produce it |
+|---|---|---|
+| `plain` | `survey_rate` | S0, S1 |
+| `multiplied` | `survey_rate × robustness` | S2, S3 |
+
+`tests/test_orchestration.py` pins the premise that makes this a fair account
+of S0: `FIXED_PLAN` makes exactly one `detect_hfo` call and sets no threshold,
+so S0 sees one threshold per channel, the stricter loop never runs, and score
+reduces to the survey rate *exactly*. The planner's robustness depends on which
+stricter thresholds the model chose, so that choice is swept — 1.25×, 1.5× and
+2.0× the survey threshold — rather than fixed at one arbitrary point.
+
+Committed extract:
+[`data/outcome/robustness_ablation.csv`](../data/outcome/robustness_ablation.csv).
+
+### Ripple band: the multiplier helps, consistently
+
+Survey 2.0 SD, 984.5 events per window (median), tied set of 5. **No patient is
+lost from any arm**, so every cell below is 13 seizure-free against 7
+recurrences.
+
+| metric | plain | ×1.25 | ×1.5 | ×2.0 | best gain |
+|---|---|---|---|---|---|
+| `top_channel_resected` | 0.747 | 0.813 | 0.786 | **0.824** | **+0.077** |
+| `tied_set_argmax_resected` | 0.736 | **0.830** | 0.813 | 0.802 | **+0.093** |
+| `top3_resected` | 0.698 | 0.687 | 0.725 | 0.725 | +0.027 |
+| `share_in_rz` | 0.527 | 0.527 | 0.560 | 0.637 | +0.110 |
+
+All three re-test points beat plain on both argmax metrics, so this is not one
+lucky choice of re-test threshold. The largest and most consistent gain is on
+`tied_set_argmax_resected` — the metric built to isolate what the multiplier is
+*for* — where permutation p falls from 0.086 to 0.014. **This is the first
+evidence in this repository that the mechanism distinguishing S2/S3 from S0/S1
+carries information rather than noise.**
+
+### Fast ripple band: it hurts, and it can annihilate the ranking
+
+| metric | plain | ×1.25 | ×1.5 | ×2.0 |
+|---|---|---|---|---|
+| `top_channel_resected` | 0.753 | 0.669 | 0.669 | 0.528 |
+| — patients scored | 13/7 | 11/7 | 11/7 | **9/6** |
+| `tied_set_argmax_resected` | 0.687 | 0.643 | 0.626 | 0.615 |
+| — patients scored | 13/7 | 13/7 | 13/7 | 13/7 |
+
+**Read the patient counts.** In a band this sparse the stricter pass finds zero
+events on *every* channel, so robustness is 0 everywhere, the score is
+uniformly zero, and there is no leader at all. It happens in **84 of 600
+multiplied windows** — 82 of them fast ripple, 2 ripple — and every one of those
+windows, and only those, yields a NaN. At 2.0× it wipes out all five windows of
+five patients (sub-02, sub-05, sub-06, sub-07, sub-10), a quarter of the cohort.
+
+That could have been dismissed as survivorship, except `tied_set_argmax_resected`
+drops the *same* windows for both rules — its tied set comes from the shared
+survey counts, so the comparison is apples-to-apples — and on that metric the
+multiplier still degrades monotonically, 0.687 → 0.643 → 0.626 → 0.615. **The
+fast-ripple harm is real, not an artifact of who dropped out.**
+
+### What the rule is actually doing
+
+| band | mean robustness (×2.0) | channels demoted per window | leader moved |
+|---|---|---|---|
+| ripple | 0.218 | 26.2 | 44% of windows |
+| fast ripple | 0.781 | 7.7 | 42% of windows |
+
+The two bands get wildly different treatment from the same rule, because
+robustness is a ratio of rates at two thresholds and that ratio is governed by
+the band's SNR distribution. So the rule is **not wrong and not right — it is
+conditional on the band being well sampled**, which is a defect in a rule
+applied unconditionally.
+
+### Two conclusions that do not depend on any AUC
+
+- **The rule should refuse to fire when the stricter pass finds nothing.** A
+  robustness of 0 obtained because a band went silent means *unmeasured*, not
+  *refuted*. The planner already makes exactly this distinction in the other
+  direction — a channel nobody re-tested keeps robustness 1.0, documented as
+  "*unchallenged*, not *verified*". The zero case is the same error mirrored,
+  and it is worse, because it destroys the ranking instead of leaving it alone.
+- **`candidates_resected` cannot be computed on a multiplied score at all.**
+  `candidate_channels` decides which channels are tied by overlapping
+  **Poisson** intervals, which needs an integer event count; `rate ×
+  robustness` is not one. So this project's own tie-aware answer to "did the
+  surgeon remove what the map pointed at" — added in item 10 step 3 precisely
+  to stop an argmax overclaiming — is undefined for the planner's own score. It
+  is reported for the plain rule and left NaN for the other, rather than
+  computed on a truncated count that would look like a number.
+
+### What this does not establish
+
+The power floors are 0.85 at 13/7, 0.87 at 11/7 and 13/6, 0.88 at 9/6. **The
+best AUC anywhere in this section is 0.830** — ripple `tied_set_argmax_resected`
+at ×1.25, on 13/7 — so **not one arm clears its own floor.** The ripple gain is
+*consistent with* a real effect, direction-consistent across three re-test
+points and two metrics, and it is not a demonstrated one. The fast-ripple
+degradation is the better-supported half, because it survives the one metric
+that keeps every patient.
+
+This is also still the scripted planner's mechanism measured without the
+planner. It says the rule can carry information in a well-sampled band; it says
+nothing about whether a language model would choose re-tests that exploit it.
+
+Reproduce (offline, from the slices already in `artifacts/data/`, ~50 min):
+
+```bash
+ONSET_HFO_OFFLINE=1 python scripts/run_robustness_ablation.py
+# or re-print the tables above from the committed extract, no re-analysis:
+python scripts/run_robustness_ablation.py \
+    --from-csv data/outcome/robustness_ablation.csv
+```
+
 ## 7. Test suite
 
 `pytest -q` — 453 tests, entirely offline. They cover the

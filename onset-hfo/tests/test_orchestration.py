@@ -8,6 +8,7 @@ way a served Qwen or Llama does, including the ways they get it wrong.
 
 from __future__ import annotations
 
+import functools
 import json
 
 import numpy as np
@@ -19,6 +20,7 @@ from onset_agent.backends import AssistantMessage, Backend
 from onset_agent.contract import ToolRun
 from onset_agent.evidence import EvidenceStore
 from onset_agent.planner import (
+    FIXED_PLAN,
     FixedBudget,
     ModelJudged,
     Rung,
@@ -278,6 +280,28 @@ def test_an_unchallenged_channel_is_unchallenged_not_verified():
     store = _store_with([(5.0, [("A-B", 10.0)])])
     ranked = rank_channels(store)[0]
     assert ranked.robustness == 1.0 and ranked.retested_at == []
+
+
+def test_the_fixed_plan_never_retests_so_the_multiplier_cannot_reach_S0():
+    """The premise of the multiplier ablation, pinned structurally.
+
+    `docs/EVALUATION.md` §6c measures the multiplier as a ranking rule rather
+    than through the ladder, and that is only a fair account of S0 if S0 never
+    re-tests. It does not: `FIXED_PLAN` calls `detect_hfo` once and sets no
+    threshold, so `rank_channels` sees one threshold per channel, the stricter
+    loop never runs, and score reduces to the survey rate exactly.
+    """
+    detects = [params for name, params in FIXED_PLAN if name == "detect_hfo"]
+    assert len(detects) == 1, (
+        f"FIXED_PLAN now makes {len(detects)} detect_hfo calls; if any two use "
+        f"different thresholds the multiplier reaches S0 and §6c needs redoing")
+    assert "threshold_sd" not in detects[0]
+
+    # And with one threshold the rule is inert, not merely usually inert.
+    store = _store_with([(2.0, [("A-B", 10.0), ("C-D", 4.0)])])
+    for ranked in rank_channels(store):
+        assert ranked.robustness == 1.0
+        assert ranked.score == pytest.approx(ranked.survey_rate_per_min)
 
 
 # --------------------------------------------------------------------------
@@ -760,3 +784,132 @@ def test_the_real_model_ladder_script_runs_end_to_end(tmp_path, monkeypatch):
     assert "tool calls" in results and "scripted" in results
     assert "—" not in results.split("| configuration |")[1].split("\n")[2], \
         "the table's first data row should carry a real ranking"
+
+
+# The multiplier ablation, pinned
+# --------------------------------------------------------------------------
+# EVALUATION.md §6c. The screen takes ~50 minutes, so these read the committed
+# extract and the reduction the script applies to it.
+
+
+@functools.lru_cache(maxsize=1)
+def _ablation():
+    import sys
+
+    from onset_hfo.config import PROJECT_ROOT
+
+    scripts = str(PROJECT_ROOT / "scripts")
+    if scripts not in sys.path:
+        sys.path.insert(0, scripts)
+    from run_robustness_ablation import analyse
+
+    rows = pd.read_csv(PROJECT_ROOT / "data" / "outcome" / "robustness_ablation.csv")
+    return rows, analyse(rows)
+
+
+def _auc(band, metric, rule, stricter=None):
+    _, result = _ablation()
+    arm = result[(result.band == band) & (result.metric == metric)
+                 & (result.rule == rule)]
+    if stricter is not None:
+        arm = arm[arm.stricter_x == stricter]
+    return arm
+
+
+def test_the_ablation_covers_both_rules_at_every_retest_point():
+    rows, _ = _ablation()
+    assert set(rows["band"]) == {"ripple", "fast_ripple"}
+    assert set(rows["rule"]) == {"plain", "multiplied"}
+    assert rows["subject"].nunique() == 20 and rows["window"].nunique() == 5
+    plain = rows[rows.rule == "plain"]
+    assert len(plain) == 2 * 20 * 5
+    # One multiplied row per re-test point per plain row.
+    assert sorted(rows[rows.rule == "multiplied"].stricter_x.unique()) == [1.25, 1.5, 2.0]
+    assert len(rows[rows.rule == "multiplied"]) == 3 * len(plain)
+    # The survey count is shared, so it must not vary with the rule.
+    shared = rows.groupby(["band", "subject", "window"]).n_events_survey.nunique()
+    assert (shared == 1).all(), "n_events_survey differs between rules in some window"
+
+
+def test_the_multiplier_helps_in_the_ripple_band_at_every_retest_point():
+    """The positive half of §6c, and the first sign the mechanism carries signal.
+
+    Pinned at every re-test point rather than the best one: a rule that only
+    helps at one arbitrary choice of stricter threshold is not a rule.
+    """
+    for metric in ("top_channel_resected", "tied_set_argmax_resected"):
+        plain = float(_auc("ripple", metric, "plain").auc.iloc[0])
+        for stricter in (1.25, 1.5, 2.0):
+            got = float(_auc("ripple", metric, "multiplied", stricter).auc.iloc[0])
+            assert got > plain, (
+                f"ripple/{metric} at {stricter}x is now {got:.3f} against plain "
+                f"{plain:.3f}; §6c says the multiplier helps here")
+
+
+def test_the_multiplier_hurts_in_the_fast_ripple_band():
+    """The negative half, on the metric that keeps every patient.
+
+    `tied_set_argmax_resected` takes its tied set from the shared survey
+    counts, so both rules are scored on the same 13/7 patients and the harm
+    cannot be read as survivorship.
+    """
+    plain = float(_auc("fast_ripple", "tied_set_argmax_resected", "plain").auc.iloc[0])
+    arm = _auc("fast_ripple", "tied_set_argmax_resected", "multiplied")
+    assert (arm.n_SF == 13).all() and (arm.n_rec == 7).all(), \
+        "this metric is only a fair comparator while it keeps every patient"
+    assert (arm.auc < plain).all(), \
+        f"the fast-ripple degradation is gone: plain {plain:.3f} vs {list(arm.auc)}"
+
+
+def test_a_silent_stricter_pass_annihilates_the_ranking():
+    """The defect §6c asks to fix, pinned so a fix has a failing test to flip.
+
+    When a sparse band finds nothing at the stricter threshold, robustness is 0
+    on every channel and the score is uniformly zero -- leaving no leader at
+    all. A robustness of 0 from "no events here" means *unmeasured*, not
+    *refuted*, and the rule does not currently make that distinction.
+    """
+    rows, _ = _ablation()
+    mult = rows[rows.rule == "multiplied"]
+    collapsed = mult[mult.score_mass == 0]
+
+    assert len(collapsed) > 0, \
+        "if the collapse is gone the rule was fixed; update §6c and this test"
+    # Overwhelmingly a sparse-band failure.
+    assert (collapsed.band == "fast_ripple").mean() > 0.9
+    # And the collapse is exactly what produces a missing answer.
+    assert collapsed.top_channel_resected.isna().all()
+    assert mult[mult.score_mass > 0].top_channel_resected.notna().all(), \
+        "a window with score left has no excuse for a missing leader"
+
+
+def test_the_tie_aware_metric_is_undefined_for_a_multiplied_score():
+    """Structural, and independent of every AUC in §6c.
+
+    `candidate_channels` decides ties by overlapping Poisson intervals, which
+    needs an integer count. `rate x robustness` is not one, so the project's own
+    tie-aware metric cannot be computed for the planner's own score -- and is
+    left NaN rather than computed on a truncated count.
+    """
+    rows, _ = _ablation()
+    assert rows[rows.rule == "plain"].candidates_resected.notna().any()
+    assert rows[rows.rule == "multiplied"].candidates_resected.isna().all(), \
+        "candidates_resected must stay NaN for the multiplied rule"
+
+
+def test_no_arm_of_the_ablation_clears_its_power_floor():
+    """So the ripple gain is 'consistent with', not 'demonstrated'.
+
+    Floors: 0.85 at 13/7, 0.87 at 11/7 and 13/6, 0.88 at 9/6 -- recorded rather
+    than recomputed, as in `test_populations.py`, because the simulation is slow.
+    """
+    floors = {(13, 7): 0.85, (11, 7): 0.87, (13, 6): 0.87, (9, 6): 0.88}
+    _, result = _ablation()
+    sizes = {(int(r.n_SF), int(r.n_rec)) for r in result.itertuples()}
+    assert sizes <= set(floors), f"unrecorded group size in {sizes}"
+
+    lowest = min(floors[s] for s in sizes)
+    worst = result.loc[result.auc.idxmax()]
+    assert worst.auc < lowest, (
+        f"{worst.band}/{worst.metric}/{worst.rule} now reaches {worst.auc:.3f} "
+        f"against a floor of at least {lowest}; §6c's hedging needs revisiting")

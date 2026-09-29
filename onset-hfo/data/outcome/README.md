@@ -18,6 +18,7 @@ can work from a fresh clone with no 700 MB download and no 90-minute rerun.
 | `subjects.csv` | patient × band × scope × source | 160 |
 | `channels.csv.gz` | patient × band × channel | 1,880 |
 | `subpopulation_screen.csv` | band × patient × window × population | 600 |
+| `robustness_ablation.csv` | band × patient × window × rule × re-test | 800 |
 
 ## What each file carries
 
@@ -64,6 +65,31 @@ to measure: every sub-population AUC is at or below the merged one. §3b has the
 tables and why the flattering fast-ripple numbers in this file are artifacts of
 an argmax over a near-empty set.
 
+**`robustness_ablation.csv`** — the ablation of
+`onset_agent.planner.rank_channels`'s robustness multiplier
+([`EVALUATION.md`](../../docs/EVALUATION.md) §6c). One row per
+`band` × `subject` × `window` × `rule` × `stricter_x`, where `rule` is `plain`
+(score = survey rate, what rungs S0/S1 produce) or `multiplied`
+(score = rate × robustness, what S2/S3 produce), and `stricter_x` is the re-test
+threshold as a multiple of the survey threshold.
+
+Two columns exist because the multiplied score is **not an event count**:
+
+| column | meaning |
+|---|---|
+| `n_events_survey` | the real integer count from the survey pass, identical across rules for a window |
+| `score_mass`, `score_mass_{resected,partial,spared}` | the summed *score*, which for `multiplied` is not a count |
+
+`score_mass == 0` marks a window where the rule **annihilated the ranking** —
+the sparse band went silent at the stricter threshold, so robustness is 0 on
+every channel. It happens in 84 of the 600 multiplied windows, 82 of them fast
+ripple, and those are exactly the rows whose metrics are NaN.
+
+`candidates_resected` and its companions are populated for `plain` only:
+`candidate_channels` needs integer counts for its Poisson intervals.
+`tied_set_argmax_resected` is the comparable substitute — the tied set comes
+from the shared survey counts, so both rules are judged on the same channels.
+
 **`channels.csv.gz`** — one row per channel, with `zone` = `resected` (both
 contacts removed), `partial` (one) or `spared` (neither), plus the event count
 from each source. This is the row-level evidence under any per-patient claim;
@@ -93,16 +119,18 @@ writes the full study to `artifacts/results/outcome_ds003498/` — **not
 tracked** — from which the first four files are the committed extract. The group
 tables in `../stability/` come from the same run.
 
-`subpopulation_screen.csv` has its own entry point, which needs no network at
-all once the 60 s slices are in `artifacts/data/`:
+The last two files have their own entry points, which need no network at all
+once the 60 s slices are in `artifacts/data/`:
 
 ```bash
 ONSET_HFO_OFFLINE=1 python scripts/run_subpopulation_outcome.py   # ~40 min
+ONSET_HFO_OFFLINE=1 python scripts/run_robustness_ablation.py     # ~50 min
 ```
 
 Naming the subjects explicitly is what makes that offline: only the subject
 *listing* touches the archive. Pass `--from-csv data/outcome/subpopulation_screen.csv`
-to re-print the §3b tables from this file with no re-analysis.
+to re-print the §3b tables from this file with no re-analysis; the ablation
+script takes the same flag against `robustness_ablation.csv` for §6c.
 
 The source data is CC0. Anything published from it should cite the dataset and
 [Fedele et al. 2017](https://www.nature.com/articles/s41598-017-13064-1); the
