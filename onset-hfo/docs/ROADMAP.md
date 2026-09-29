@@ -724,23 +724,47 @@ difference between a replication and another exploratory run.
 
 ## Open questions worth someone's attention
 
-* **Is the robustness rule the right rule?** `rank_channels` multiplies a
-  channel's survey rate by how well it survived a stricter threshold, capped
-  at 1. That is a design choice, not a law, and it is the mechanism by which
-  the re-planning rungs can differ from the fixed ones at all. On `sub-pt01`
-  the leading channels are so tied that a 5% penalty reshuffles them, which
-  means the rule is currently doing more than the evidence supports.
+* ~~**Is the robustness rule the right rule?**~~ **Measured, and the answer is
+  "only where the band is well sampled"** — see
+  [`EVALUATION.md`](EVALUATION.md) §6c, extract in
+  [`data/outcome/robustness_ablation.csv`](../data/outcome/robustness_ablation.csv).
+  Ablated as a ranking rule across the 20 ds003498 patients against surgical
+  outcome, sweeping the stricter re-test point over 1.25×, 1.5× and 2.0×:
+  * **In the ripple band it helps**, at every re-test point, most on the
+    tie-breaking metric it exists for (0.736 → 0.830, permutation p 0.086 →
+    0.014). That is the first evidence here that the mechanism separating
+    S2/S3 from S0/S1 carries information rather than noise.
+  * **In the fast ripple band it hurts, and can annihilate the ranking.** When
+    a sparse band goes silent at the stricter threshold, robustness is 0 on
+    every channel and the score is uniformly zero — 84 of 600 multiplied
+    windows, wiping out five patients entirely at 2.0×. The harm survives the
+    one metric that keeps every patient, so it is not survivorship.
+  * **The fix is to make the rule refuse to fire on a silent re-test.** A
+    robustness of 0 from "no events at this threshold" means *unmeasured*, not
+    *refuted* — the mirror image of the "unchallenged, not verified" case the
+    planner already handles correctly. Not yet implemented; it changes
+    `rank_channels`, which every orchestration number depends on, so it wants
+    its own change.
+  * And `candidates_resected` **cannot be computed on a multiplied score at
+    all**: Poisson intervals need integer counts. The project's own tie-aware
+    metric is undefined for the planner's own score.
+
   ~~Should the ranking refuse to order channels whose intervals overlap?~~
   **Answered, and the answer was yes**: `metrics.candidate_channels` and
   `leader_separation` report the set of channels that cannot be told apart
   from the leader, and [`OUTCOME.md`](OUTCOME.md) measures what reporting the
-  set instead of a winner costs (0.017 AUC). The robustness multiplier itself
-  is still a design choice and still unmeasured.
-* **Threshold choice.** On the simulator, 3–4 robust SDs beats the published 5
-  on F1. Is that a property of the simulator's SNR distribution, or a real
-  improvement? Answering it needs item 5.
-* **Is the cycle-count criterion earning its place?** The ablation says the
-  spectral check does nearly all the work. Keep, tighten, or delete?
+  set instead of a winner costs (0.017 AUC).
+* ~~**Threshold choice.**~~ **Answered by the ds003498 benchmark, not by the
+  hand-annotated one this entry used to point at.** On the simulator 3–4 robust
+  SDs beat the published 5 on F1; against the expert markings the optimum is
+  below 5 in every arm too, and the two bands want operating points a factor of
+  2.5 apart (ripples 2.0 SD, fast ripples 5.0 SD). §0 has the tables and
+  `onset_hfo.outcome.BAND_THRESHOLD_SD` maps bands to them.
+* **Is the cycle-count criterion earning its place?** §2's ablation says the
+  spectral check does nearly all the work and the decision recorded there is
+  *keep*, as a cheap guard against events too short to have a spectrum. What is
+  still missing is that the ablation is **synthetic only** — the criterion has
+  never been ablated against the expert markings on real data.
 * **Does the bipolar montage help or hurt for ripple *rate* specifically?**
   Easy experiment, currently unmeasured: run the whole pipeline in referential
   and bipolar montages and compare rankings.
