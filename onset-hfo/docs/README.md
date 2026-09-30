@@ -65,6 +65,10 @@ Read in this order:
 
 ## "I am joining the project and need to do something useful"
 
+* [**ONBOARDING.md**](ONBOARDING.md) — **start here.** Where everything lives,
+  the ten traps that have each already cost someone a day, the results to know
+  before changing anything, and which open question is actually runnable on a
+  laptop today.
 * [**ROADMAP.md**](ROADMAP.md) — what is still open, in priority order, with
   what each item is blocked on; then the history of the finished ones, kept
   because what an item found is worth reading before starting the next.
