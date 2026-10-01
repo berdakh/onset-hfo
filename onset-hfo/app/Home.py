@@ -43,7 +43,7 @@ decides. **There is no recommendation anywhere in this product.**
 
 **How to read the pages (left sidebar):**
 
-1. **Recording** — channel ranking from two detectors side by side, disagreement highlighted, and the signal window behind any event.
+1. **Recording** — channel ranking from the RMS and line-length detectors side by side, disagreement highlighted, and the signal window behind any event.
 2. **Report** — the structured, cited report: findings, disagreements, data quality, limitations.
 3. **Assistant** — ask about a channel or the evidence; try asking what to resect.
 4. **Detectors** — how they score against expert markings: precision, recall, channel-rank agreement, and the operating point the data prefers.

@@ -19,6 +19,8 @@ can work from a fresh clone with no 700 MB download and no 90-minute rerun.
 | `channels.csv.gz` | patient × band × channel | 1,880 |
 | `subpopulation_screen.csv` | band × patient × window × population | 600 |
 | `robustness_ablation.csv` | band × patient × window × rule × re-test | 800 |
+| `subpopulation_groups.csv` | band × metric × population | 18 |
+| `robustness_groups.csv` | band × metric × rule × re-test | 32 |
 
 ## What each file carries
 
@@ -89,6 +91,16 @@ ripple, and those are exactly the rows whose metrics are NaN.
 `candidate_channels` needs integer counts for its Poisson intervals.
 `tied_set_argmax_resected` is the comparable substitute — the tied set comes
 from the shared survey counts, so both rules are judged on the same channels.
+
+**`subpopulation_groups.csv`** and **`robustness_groups.csv`** — the reduced
+group tables for the two screens above: AUC, bootstrap interval, exact
+permutation `p` and a Bonferroni column, with the realised `n_SF`/`n_rec` per
+arm. They exist for the same reason `../stability/` holds group tables beside
+the per-subject ones: reducing the per-window rows takes a bootstrap and an
+exact permutation, which is seconds of work and not something the Streamlit app
+should do on a page load. Regenerate either by re-running its script and writing
+`analyse(rows)` to the file; write them at full precision, since rounding to
+four decimals on the way out moved two cells when it was first tried.
 
 **`channels.csv.gz`** — one row per channel, with `zone` = `resected` (both
 contacts removed), `partial` (one) or `spared` (neither), plus the event count

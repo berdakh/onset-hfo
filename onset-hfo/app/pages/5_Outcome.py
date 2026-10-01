@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import pandas as pd  # noqa: E402
 import streamlit as st  # noqa: E402
 
+from app import panels  # noqa: E402
 from app.common import banner, study  # noqa: E402
 from onset_hfo.config import PROJECT_ROOT  # noqa: E402
 
@@ -31,9 +32,9 @@ only reference standard in epilepsy surgery that is not another opinion.
 """)
 
 groups = study("outcome_groups_300s.csv")
-tab_result, tab_window, tab_runs, tab_honesty = st.tabs(
+tab_result, tab_window, tab_runs, tab_split, tab_honesty = st.tabs(
     ["The result", "Does the window matter?", "Does the night matter?",
-     "What it cannot support"])
+     "Does splitting the ripples help?", "What it cannot support"])
 
 
 with tab_result:
@@ -118,6 +119,85 @@ also resolves the ties: median candidate set 2 → 1, worst case 24 channels →
 **So the quantity this pipeline measures is a property of the patient, not of
 the recording session.** That is the precondition for anything clinical, and it
 now holds. Whether it *predicts outcome* is what twenty patients cannot settle.
+""")
+
+
+with tab_split:
+    st.subheader("Do the ripple sub-populations localise any better?")
+    st.markdown("""
+Every rate on this page merges two populations that mean opposite things: a
+ripple in healthy cortex is not a finding, and nothing in this pipeline can tell
+it from an epileptic one. No public archive carries that label, so the pipeline
+does the available half — it splits events by whether they ride an interictal
+discharge, reports the two side by side, and **measures whether the split is
+worth anything**.
+
+The question that would make it clinically interesting is not whether the two
+populations *differ*, but whether either one predicts the resected zone better
+than the merged rate. Screened across all 20 patients, five 60 s windows each,
+pooled by subject mean, using this study's own metric functions.
+""")
+
+    split = panels.subpopulation_groups("ripple")
+    if split.empty:
+        st.info("`data/outcome/subpopulation_groups.csv` is missing, so the "
+                "sub-population screen is not shown.")
+    else:
+        st.dataframe(split[["metric", "population", "n_SF", "n_rec",
+                            "auc", "p", "p_bonferroni"]].rename(columns={
+            "n_SF": "n seizure-free", "n_rec": "n recurrence", "auc": "AUC",
+            "p_bonferroni": "Bonferroni"}).round(3),
+            width="stretch", hide_index=True)
+        st.caption("Ripple band, read from `data/outcome/subpopulation_groups.csv`. "
+                   "Every row is 13 seizure-free against 7 recurrences — no "
+                   "patient is lost from any arm, which is why this band and not "
+                   "the pre-specified one carries the answer.")
+
+        gains = []
+        for metric, part in split.groupby("metric", sort=False):
+            merged = float(part[part.population == "merged"].auc.iloc[0])
+            best = float(part[part.population != "merged"].auc.max())
+            gains.append(f"{best - merged:+.3f} on `{metric}`")
+        st.error(
+            "**It does not help.** Every sub-population arm is at or below the "
+            "merged rate: best gains of " + ", ".join(gains) + ". The "
+            "spike-coupled arm sits at chance on all three, and on "
+            "`top_channel_resected` the sign is *reversed* — 0.600 in the "
+            "seizure-free patients against 0.667 in the recurrences.")
+
+        st.markdown("""
+**Why this is reported in the ripple band and not the pre-specified fast-ripple
+one.** The spike-coupled population in the fast-ripple band is too small to rank
+channels with, and an argmax over it is a coin flip.
+""")
+        meas = panels.subpopulation_measurability()
+        if not meas.empty:
+            st.dataframe(meas.rename(columns={
+                "median": "median events / window", "q1": "lower quartile",
+                "maximum": "max", "windows_under_5": "windows with <5 events"}
+            ).round(1), width="stretch", hide_index=True)
+            st.caption("Out of 100 subject-windows per population per band.")
+
+        st.warning("""
+**And that near-empty population produced the most flattering numbers in the
+whole screen** — spike-coupled 0.806 (p = 0.025) and 0.826 (p = 0.021), both
+apparently beating the merged rate. Three checks retire them. The tie-aware
+`candidates_resected` metric, which exists precisely to catch an argmax over a
+set that is mostly ties, puts the same arm at **0.479** — below chance. The
+merged arm replicates across bands (0.753 → 0.747) while the coupled arm
+collapses (0.806 → 0.487), which is noise in one arm rather than a band effect.
+And the band effect that *should* be there is: merged `share_in_rz` falls
+0.714 → 0.527 from fast ripples to ripples, as fast ripples localising better
+predicts.
+""")
+
+        st.info("""
+**One thing the split does measure reliably.** The spike-coupled share of all
+ripples is a stable patient property — within-subject SD 0.013 against
+between-subject 0.063, so an ICC of about 0.96. It is a real and repeatable
+feature of a patient. It just does not predict where the surgeon cut, which is
+more useful to know than either "no signal" or "promising". Full tables:
+`docs/EVALUATION.md` §3b.
 """)
 
 
