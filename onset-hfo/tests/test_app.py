@@ -650,3 +650,144 @@ def test_the_sidebar_opens_with_the_four_shared_destinations_in_order():
     positions = [source.index(f"[{name}]") for name in names]
     assert positions == sorted(positions), \
         "the shared link row is out of order; the two apps must match"
+
+
+# The four-detector family and the two studies that followed it
+# --------------------------------------------------------------------------
+# The pages quote these numbers in prose. The point of reading them from a
+# committed file is that the file is the owner; these tests pin the agreement
+# between the two, so a sweep that changes the answer fails here rather than
+# leaving a stale sentence on a deployed page.
+
+
+def test_the_family_sweep_covers_four_detectors_in_both_bands():
+    best = panels.family_operating_points()
+    assert set(best["detector"]) == {"rms", "line_length", "hilbert",
+                                     "short_time_energy"}
+    assert set(best["band"]) == {"ripple", "fast_ripple"}
+    assert len(best) == 8
+    # Each detector at its own threshold, so the thresholds must not be uniform.
+    assert best["threshold_sd"].nunique() > 1
+
+
+def test_adding_two_detectors_bought_nothing_and_the_page_says_so():
+    """The Detectors page asserts 'both margins are ties'. This is that claim."""
+    margin = panels.family_margin()
+    assert set(margin) == {"ripple", "fast_ripple"}
+    for band, m in margin.items():
+        assert 0 <= m["margin"] < 0.01, (
+            f"{band} margin is now {m['margin']:+.3f}; the Detectors page says "
+            f"the added features bought nothing and would need rewriting")
+
+
+def test_the_detectors_page_computes_the_margin_rather_than_quoting_it():
+    """The margin must not be typed into the page.
+
+    A hardcoded "+0.003" would be correct today and unowned tomorrow, which is
+    the failure mode the whole read-from-the-file convention exists to avoid.
+    The page must call `family_margin` and render whatever it returns.
+    """
+    source = (Path(__file__).resolve().parents[1] / "app" / "pages"
+              / "4_Detectors.py").read_text()
+    assert "panels.family_margin()" in source
+    margin = panels.family_margin()
+    assert {f"{m['margin']:.3f}" for m in margin.values()} == {"0.003"}
+
+
+def test_the_fast_ripple_coupled_population_is_the_unmeasurable_one():
+    """Why the Outcome page reports the split in the ripple band."""
+    meas = panels.subpopulation_measurability()
+    coupled = meas[meas["population"] == "spike_coupled"].set_index("band")
+    assert coupled.loc["fast_ripple", "median"] <= 2
+    assert coupled.loc["ripple", "median"] > 10 * max(
+        coupled.loc["fast_ripple", "median"], 1)
+    assert coupled.loc["fast_ripple", "windows_under_5"] > 50
+
+
+def test_the_subpopulation_screen_keeps_every_patient_in_the_ripple_band():
+    rows = panels.subpopulation_outcome("ripple")
+    assert rows["subject"].nunique() == 20
+    assert set(rows["population"]) == {"merged", "spike_coupled", "independent"}
+    assert (rows["band"] == "ripple").all()
+
+
+def test_the_retesting_rule_collapse_is_a_fast_ripple_failure():
+    """The Research page says 84 of 600 windows, and that it is band-specific."""
+    collapse = panels.robustness_collapse()
+    assert collapse["windows"] == 600
+    assert collapse["collapsed"] == 84
+    assert collapse["by_band"]["fast_ripple"] == 82
+
+
+def test_the_research_page_quotes_the_collapse_it_computes():
+    source = (Path(__file__).resolve().parents[1] / "app" / "pages"
+               / "9_Research.py").read_text()
+    collapse = panels.robustness_collapse()
+    assert f"{collapse['collapsed']} of" in source, \
+        "the Research page no longer quotes the collapse count it can compute"
+
+
+def test_no_page_still_claims_only_two_detectors():
+    """The whole point of this revision. A regression here is a stale page."""
+    stale = []
+    app_dir = Path(__file__).resolve().parents[1] / "app"
+    for path in sorted(app_dir.rglob("*.py")):
+        text = path.read_text()
+        for phrase in ("Two deliberately plain detectors",
+                       "two detectors that differ",
+                       "three or four would show"):
+            if phrase in text:
+                stale.append(f"{path.name}: {phrase!r}")
+    assert not stale, stale
+
+
+def test_the_two_sweeps_agree_wherever_they_overlap():
+    """The Detectors page tells the reader this, so it must stay true.
+
+    The page shows two tables whose line-length optima differ (2.5 SD against
+    1.5 SD), and explains the difference as a grid that stopped too high rather
+    than a disagreement. That explanation is only honest while the shared cells
+    actually match.
+    """
+    import pandas as pd
+
+    key = ["band", "detector", "threshold_sd"]
+    shared = panels.sweep().merge(panels.family_sweep(), on=key,
+                                  suffixes=("_a", "_f"))
+    assert len(shared) >= 27, f"only {len(shared)} shared cells"
+    for column in ("rank_rho", "f1", "precision", "recall"):
+        delta = (shared[f"{column}_a"] - shared[f"{column}_f"]).abs().max()
+        assert delta == pytest.approx(0.0, abs=1e-9), \
+            f"the two sweeps now differ by {delta} on {column}"
+    assert isinstance(shared, pd.DataFrame)
+
+
+def test_the_outcome_page_reads_the_group_table_rather_than_hardcoding_it():
+    """A table typed into a page is correct today and unowned tomorrow.
+
+    This was briefly hardcoded, and the round trip through a 4-decimal CSV
+    moved two cells (0.311 -> 0.310, 0.527 -> 0.528) before anyone looked.
+    That is the whole argument for reading the file.
+    """
+    source = (Path(__file__).resolve().parents[1] / "app" / "pages"
+              / "5_Outcome.py").read_text()
+    assert "panels.subpopulation_groups(" in source
+    assert "0.747, 0.072, 0.644" not in source, "the table is hardcoded again"
+
+
+def test_the_committed_group_tables_match_what_the_scripts_compute():
+    """The extracts must be regenerable, not just present."""
+    groups = panels.subpopulation_groups("ripple").set_index(
+        ["metric", "population"])["auc"].round(3)
+    assert groups[("top_channel_resected", "merged")] == pytest.approx(0.747)
+    assert groups[("top_channel_resected", "spike_coupled")] == pytest.approx(0.487)
+    assert groups[("share_in_rz", "merged")] == pytest.approx(0.527)
+
+    rob = panels.robustness_groups()
+    ripple = rob[(rob.band == "ripple")
+                 & (rob.metric == "tied_set_argmax_resected")]
+    plain = float(ripple[ripple.rule == "plain"].auc.iloc[0])
+    multiplied = ripple[ripple.rule == "multiplied"].auc
+    assert round(plain, 3) == pytest.approx(0.736)
+    assert (multiplied > plain).all(), \
+        "the Research page says the rule helps in the ripple band at every point"

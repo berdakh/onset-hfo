@@ -22,7 +22,7 @@ digraph G { rankdir=LR; node [shape=box, style="rounded,filled", fillcolor="#F7F
   arch   [label="Public archive\\nOpenNeuro (BIDS)\\nbyte-range slices"];
   sim    [label="Simulator\\nlabelled events\\n+ the traps", fillcolor="#EEEDFE"];
   pre    [label="Preprocess\\nhigh-pass · notch\\nbipolar montage"];
-  det    [label="Detectors\\nRMS · line length\\nspikes"];
+  det    [label="Detectors\\nRMS · line length\\nenvelope · energy\\nspikes"];
   val    [label="Artifact rejection\\nspectral prominence\\nover 1/f"];
   meas   [label="Measure\\nrates · Poisson CIs\\nagreement"];
   store  [label="artifacts/results/\\nevents · rates · report\\n(immutable)"];

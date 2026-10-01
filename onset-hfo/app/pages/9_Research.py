@@ -36,7 +36,8 @@ st.markdown("""
 | Beats a published detector | **No, and not claimed.** The reference *is* a published detector; these are agreement numbers |
 | The map relates to surgical outcome | **Direction yes, significance no.** AUC 0.71, p = 0.12 on 13 vs 7 patients; nothing in the study survives correction for its 36 comparisons |
 | The measurement is stable | **Across nights yes** (18/20 patients), **within a minute no** — a 60 s window changed the headline once |
-| Distinguishes epileptic from physiological ripples | **No.** Nothing in the pipeline tries. The single biggest scientific gap |
+| Distinguishes epileptic from physiological ripples | **No.** Nothing in the pipeline tries. The one available proxy — whether a ripple rides a discharge — was screened against outcome and does **not** localise better than the merged rate |
+| The choice of detector is the limiting factor | **No, measured.** Four features, each swept on real data, rank channels within 0.003 ρ of one another. The ceiling is the reference standard and the unit of analysis |
 | Validated for clinical use | **No.** Not a medical device |
 """)
 
@@ -56,17 +57,44 @@ stability instead.
 
 st.subheader("What is open, in order")
 st.markdown("""
-1. **Physiological versus epileptic ripples.** A high ripple rate in healthy
-   occipital cortex is not a finding, and nothing here can tell the two apart.
+1. **A real model driving the analysis ladder.** Every orchestration number so
+   far comes from a scripted planner, so it measures the script rather than the
+   thesis. Needs a GPU afternoon; the harness is built and tested.
 2. **A second cohort.** Everything rests on one centre, one annotation protocol,
    one surgical team. Needs an archive with HFO markings *and* resection *and*
    outcome — ds003498 is the only public one known to have all three.
 3. **A hand-annotated benchmark.** The only way to turn *agreement* into
    *accuracy*: a few hundred expert-marked events on real data, reviewed here.
-4. **More than two detectors.** Two matching about half their events is a
-   finding; three or four would show whether that disagreement is structural.
-5. **A real model driving the analysis ladder.** Every orchestration number so
-   far comes from a scripted planner, so it measures the script.
+   The sampling, agreement and scoring harness is built; the marking needs two
+   reviewers' afternoons.
+4. **Electrode geometry.** Bipolar pairs are formed by contact number, which is
+   wrong where a grid row wraps. Needs an archive that publishes coordinates.
+5. **Physiological versus epileptic ripples** remains the biggest scientific
+   gap, but it is no longer an experiment this project can run: the only proxy
+   available in public data has now been measured and does not localise better
+   than the merged rate. Progress needs a labelled archive, not more analysis.
+""")
+
+st.subheader("Three questions that came off this list by being answered")
+st.success("""
+**More than two detectors.** Two detectors matching about half their events was
+a finding; the question was whether that disagreement is structural. Four
+features were implemented and swept on real data, and it is: every pairwise
+Jaccard overlap sits between 0.47 and 0.79. The two added features bought
+**0.003 ρ** in each band, so the choice of feature is not where the headroom is.
+
+**Do the ripple sub-populations localise differently?** No. Splitting events by
+discharge coupling leaves every arm at or below the merged rate, and the one
+arm that appeared to beat it was an argmax over a population with a median of
+one event per minute. See the Outcome page.
+
+**Is the re-planning ranking rule the right rule?** Conditionally. It helps in
+the ripple band at every re-test point — the first evidence here that the
+mechanism separating the re-planning rungs from the fixed ones carries
+information — and in the fast-ripple band it *annihilates* the ranking in 84 of
+600 windows, because a silent re-test makes every channel score zero. The fix is
+specified and not yet implemented, since it moves every orchestration number in
+the project.
 """)
 
 st.subheader("Principles inherited from the Onset project")

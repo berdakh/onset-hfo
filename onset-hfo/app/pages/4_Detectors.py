@@ -43,15 +43,24 @@ def sweep() -> pd.DataFrame:
 
 st.title("Detectors and how they are scored")
 st.markdown("""
-Two deliberately plain detectors that differ in **one thing only** — the feature
-they threshold — so a disagreement between them is attributable to the feature
-rather than to two implementations drifting apart.
+Four deliberately plain detectors that differ in **one thing only** — the
+feature they threshold — so a disagreement between them is attributable to the
+feature rather than to four implementations drifting apart.
 
 - **RMS energy** (Staba et al. 2002) — root-mean-square of the band-passed signal.
 - **Line length** (Gardner et al. 2007) — cumulative absolute difference.
+- **Hilbert envelope** — magnitude of the analytic signal.
+- **Short-time energy** — mean square, which is RMS *before* the square root.
 
-Both then pass every candidate through the same **artifact rejection**, which is
-where filter ringing is removed and where almost all of the precision comes from.
+All four then pass every candidate through the same **artifact rejection**, which
+is where filter ringing is removed and where almost all of the precision comes
+from.
+
+The first two were the original pair and carry the sweep below, which has the
+finer grid and the longer history. The second two were added later to test
+whether the choice of feature is where the remaining headroom lies; the
+[family comparison](#the-whole-family-does-the-feature-choice-matter) says it
+is not.
 """)
 
 frame = sweep()
@@ -160,6 +169,86 @@ with st.expander("What was actually swept, per arm"):
                "across grids.")
 
 # --------------------------------------------------------------------------
+# All four features, on a common grid
+# --------------------------------------------------------------------------
+
+st.subheader("The whole family: does the feature choice matter?")
+family = panels.family_operating_points()
+margin = panels.family_margin()
+
+if family.empty:
+    st.info("`data/benchmark/four_detector_sweep.csv` is missing, so the "
+            "four-detector comparison is not shown.")
+else:
+    st.markdown("""
+Two more features were added and swept on the same 20 patients over a common
+grid, so that four are comparable under identical downstream processing. Each
+row is that detector at **its own** best threshold, because comparing features
+at a shared threshold measures the threshold rather than the feature.
+""")
+    st.dataframe(family.rename(columns={
+        "threshold_sd": "its best threshold (SD)", "rank_rho": "channel-rank ρ",
+        "f1": "F1", "detections": "detections / 60 s"}).round(3),
+        width="stretch", hide_index=True)
+    st.caption(
+        "**Why line length peaks lower here than in the table above.** These are "
+        "two different grids, and on the 27 thresholds they share they agree "
+        "*exactly* — the largest difference in any metric is 0. The older sweep "
+        "simply never ran line length below 2.0 SD, so its optimum of 2.5 was "
+        "the grid stopping too high; this one runs down to 0.5 and finds 1.5. "
+        "That is the boundary problem the warning above describes, caught on an "
+        "arm that had not been extended.")
+
+    if margin:
+        cols = st.columns(len(margin))
+        for col, (band, m) in zip(cols, sorted(margin.items()), strict=False):
+            col.metric(f"{BANDS.get(band, band)} — gain from adding two features",
+                       f"{m['margin']:+.3f} ρ")
+            col.caption(f"best of the original pair {m['best_original']:.3f}, "
+                        f"best of all four {m['best_overall']:.3f} "
+                        f"(`{m['winner']}`)")
+
+    st.success("""
+**Both margins are ties.** Two more detectors, each given its own sweep on real
+data, bought no measurable improvement in channel ranking over the two already
+there. That is a useful thing to have paid for: it says the ceiling here is not
+the choice of feature. What is left is the reference standard — the markings are
+another detector's validated output, so precision above about 0.6 is not
+available — and the unit of analysis, which the Outcome page shows dominates
+everything else measured here.
+""")
+
+    st.markdown("""
+**A threshold in robust SD is not portable between features.** Short-time energy
+is RMS before the square root, so under a *fixed* threshold the two would select
+identical samples. They do not, because `median + 5 robustSD` sits at about the
+98th percentile of an RMS trace and the 96th of a squared one: squaring is not
+affine and stretches the upper tail relative to the median. Run short-time
+energy at RMS's fast-ripple threshold and its rank agreement falls from 0.601 to
+**0.485**. The Hilbert envelope, by contrast, wants almost exactly what RMS
+wants. Each feature needs its own sweep, and the table above is what that looks
+like.
+""")
+
+    with st.expander("How much the four detectors disagree with each other"):
+        st.dataframe(pd.DataFrame([
+            ("RMS", 1.000, 0.588, 0.788, 0.471),
+            ("line length", 0.588, 1.000, 0.574, 0.500),
+            ("Hilbert envelope", 0.788, 0.574, 1.000, 0.506),
+            ("short-time energy", 0.471, 0.500, 0.506, 1.000),
+        ], columns=["detector", "RMS", "line length", "Hilbert", "short-time energy"]),
+            width="stretch", hide_index=True)
+        st.caption(
+            "Mean Jaccard overlap over three synthetic seeds. Every off-diagonal "
+            "cell sits between 0.47 and 0.79: no two of the four agree on more "
+            "than four events in five, and the worst pair agrees on fewer than "
+            "half. The disagreement is structural rather than a quirk of one "
+            "pair, so a single-detector rate table is less certain than it looks "
+            "— and that is now four measurements rather than one. Note which "
+            "pair is least similar: short-time energy was added *expecting* "
+            "near-redundancy with RMS, and the prediction was wrong.")
+
+# --------------------------------------------------------------------------
 
 rms = frame[(frame["band"] == "ripple") & (frame["detector"] == "rms")]
 at = {row.threshold_sd: row for row in rms.itertuples()}
@@ -203,6 +292,8 @@ st.subheader("Against known truth, where accuracy *can* be measured")
 st.dataframe(pd.DataFrame([
     ("RMS energy (ripples)", "0.956 ± 0.017", "0.528 ± 0.073", 0.679),
     ("Line length (ripples)", "0.957 ± 0.017", "0.550 ± 0.078", 0.697),
+    ("Hilbert envelope (ripples)", "0.932", "0.556", 0.696),
+    ("Short-time energy (ripples)", "0.835", "0.808", 0.821),
     ("Interictal discharges", "0.998 ± 0.004", "0.844 ± 0.037", 0.914),
 ], columns=["detector", "precision", "recall", "F1"]),
     width="stretch", hide_index=True)
@@ -215,6 +306,13 @@ st.caption(
     "it the RMS detector scores 0.63 — nearly all of its false positives are "
     "large transients ringing through the band-pass — and after it, 0.97, for "
     "about one point of recall.")
+st.warning(
+    "**Do not read short-time energy's F1 of 0.821 as a better detector.** All "
+    "four run at their *default* 5.0 SD here, and 5.0 SD is a materially more "
+    "permissive point on a squared feature — it finds 294 events on one "
+    "recording where RMS finds 132. On real data at its own tuned threshold it "
+    "matches RMS rather than beating it. A detector comparison at a shared "
+    "threshold is a comparison of thresholds.")
 
 st.info(
     "Reproduce the sweep: `python -m onset_hfo.cli benchmark`, about an hour "

@@ -582,3 +582,163 @@ def operating_points(by: str = "rank_rho") -> pd.DataFrame:
         })
     return (pd.DataFrame(rows).sort_values(["band", "detector"])
             .reset_index(drop=True))
+
+
+# --------------------------------------------------------------------------
+# The four-detector family, and two studies that followed from it
+# --------------------------------------------------------------------------
+#
+# Same principle as the sweep above: the page gets the committed file. These
+# three extracts each answered a question the Research page used to list as
+# open, and each answer is a null, which is exactly the kind of result that
+# decays into a vague claim if it is retyped rather than read.
+
+
+def family_sweep() -> pd.DataFrame:
+    """The four-detector sweep, or an empty frame if it is absent.
+
+    Same scoring as :func:`sweep`, extended to the analytic-signal envelope and
+    short-time energy and run over a common grid so the four are comparable.
+    """
+    path = BENCHMARK / "four_detector_sweep.csv"
+    return pd.read_csv(path) if path.exists() else pd.DataFrame()
+
+
+def family_operating_points(by: str = "rank_rho") -> pd.DataFrame:
+    """Each detector at *its own* best threshold, which is the only fair view.
+
+    Comparing four features at a shared threshold measures the threshold, not
+    the feature: ``median + 5 robustSD`` sits at about the 98th percentile of an
+    RMS trace and the 96th of a squared one, so the same multiplier is a
+    materially more permissive operating point on short-time energy. The
+    ``threshold_sd`` column is therefore part of the result, not a parameter to
+    be held constant.
+    """
+    frame = family_sweep()
+    if frame.empty or by not in frame.columns:
+        return pd.DataFrame()
+    rows = []
+    for (band, detector), part in frame.groupby(["band", "detector"]):
+        best = part.loc[part[by].idxmax()]
+        rows.append({
+            "band": band,
+            "detector": detector,
+            "threshold_sd": float(best["threshold_sd"]),
+            "rank_rho": float(best["rank_rho"]),
+            "f1": float(best["f1"]),
+            "precision": float(best["precision"]),
+            "recall": float(best["recall"]),
+            "detections": float(best["detections"]),
+        })
+    out = pd.DataFrame(rows)
+    return (out.sort_values(["band", by], ascending=[True, False])
+            .reset_index(drop=True))
+
+
+def family_margin(by: str = "rank_rho") -> dict:
+    """How much the two added features bought, per band. The answer is nothing.
+
+    Returned rather than asserted so the page cannot drift from the file: if a
+    future sweep makes one of them win properly, the margin moves and the
+    sentence beside it is wrong in a way a reader can see.
+    """
+    best = family_operating_points(by)
+    if best.empty:
+        return {}
+    original = {"rms", "line_length"}
+    out = {}
+    for band, part in best.groupby("band"):
+        was = part[part.detector.isin(original)][by].max()
+        now = part[by].max()
+        winner = part.loc[part[by].idxmax(), "detector"]
+        out[band] = {"best_original": float(was), "best_overall": float(now),
+                     "winner": str(winner), "margin": float(now - was)}
+    return out
+
+
+def subpopulation_outcome(band: str = "ripple") -> pd.DataFrame:
+    """Do the ripple sub-populations localise the resection better? They do not.
+
+    One row per metric x population, pooled over five 60 s windows per patient.
+    Reported in the ripple band because the fast-ripple spike-coupled
+    population has a median of one event per window, which cannot support an
+    argmax; ``docs/EVALUATION.md`` §3b has that argument in full.
+    """
+    path = COHORT / "subpopulation_screen.csv"
+    if not path.exists():
+        return pd.DataFrame()
+    rows = pd.read_csv(path)
+    return rows[rows["band"] == band].reset_index(drop=True)
+
+
+def subpopulation_measurability() -> pd.DataFrame:
+    """Events per window per population, which is why the band choice was forced.
+
+    The column to read is ``median``: a population with one event per minute
+    cannot rank channels, and an argmax over it produced the most flattering
+    numbers in the whole screen.
+    """
+    path = COHORT / "subpopulation_screen.csv"
+    if not path.exists():
+        return pd.DataFrame()
+    rows = pd.read_csv(path)
+    out = (rows.groupby(["band", "population"])["n_events"]
+           .agg(median="median", q1=lambda s: s.quantile(0.25), maximum="max")
+           .reset_index())
+    empty = (rows.assign(sparse=rows["n_events"] < 5)
+             .groupby(["band", "population"])["sparse"].sum()
+             .reset_index(name="windows_under_5"))
+    return out.merge(empty, on=["band", "population"])
+
+
+def subpopulation_groups(band: str = "ripple") -> pd.DataFrame:
+    """The §3b group table, as committed, so the page need not recompute it.
+
+    The per-window rows in :func:`subpopulation_outcome` take a bootstrap and an
+    exact permutation to reduce, which is seconds of work and not something to
+    do on a page load. This is the reduced table, committed for the same reason
+    `data/stability/` holds the group tables beside the per-subject ones.
+    """
+    path = COHORT / "subpopulation_groups.csv"
+    if not path.exists():
+        return pd.DataFrame()
+    rows = pd.read_csv(path)
+    return rows[rows["band"] == band].reset_index(drop=True)
+
+
+def robustness_groups() -> pd.DataFrame:
+    """The §6c group table, as committed. See :func:`subpopulation_groups`."""
+    path = COHORT / "robustness_groups.csv"
+    return pd.read_csv(path) if path.exists() else pd.DataFrame()
+
+
+def robustness_ablation() -> pd.DataFrame:
+    """The re-testing rule the planner uses, measured against outcome.
+
+    ``rule`` is ``plain`` (score = rate, what the fixed rungs produce) or
+    ``multiplied`` (score = rate x robustness, what the re-planning rungs
+    produce). ``score_mass == 0`` marks a window where the rule annihilated the
+    ranking: the band went silent at the stricter threshold, so every channel
+    scored zero and no leader exists.
+    """
+    path = COHORT / "robustness_ablation.csv"
+    return pd.read_csv(path) if path.exists() else pd.DataFrame()
+
+
+def robustness_collapse() -> dict:
+    """How often the re-testing rule leaves no leader at all, by band.
+
+    This is the finding that does not depend on any AUC, and the one a reader
+    should see before the AUC table: a rule that can destroy the ranking is
+    worse than one that merely reorders it badly.
+    """
+    rows = robustness_ablation()
+    if rows.empty or "score_mass" not in rows.columns:
+        return {}
+    mult = rows[rows["rule"] == "multiplied"]
+    if not len(mult):
+        return {}
+    collapsed = mult[mult["score_mass"] == 0]
+    by_band = collapsed.groupby("band").size().to_dict()
+    return {"collapsed": int(len(collapsed)), "windows": int(len(mult)),
+            "by_band": {str(k): int(v) for k, v in by_band.items()}}
