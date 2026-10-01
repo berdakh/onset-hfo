@@ -173,13 +173,28 @@ with st.expander("What was actually swept, per arm"):
 # --------------------------------------------------------------------------
 
 st.subheader("The whole family: does the feature choice matter?")
-family = panels.family_operating_points()
-margin = panels.family_margin()
 
-if family.empty:
+# Streamlit re-runs a changed page script but can keep an already-imported local
+# module in sys.modules, so a deploy that adds a `panels` function can leave a
+# new page calling an old module. That used to raise AttributeError and blank
+# the whole page; now it degrades to this one section and names the remedy.
+_needed = ("family_operating_points", "family_margin")
+_missing = [name for name in _needed if not hasattr(panels, name)]
+
+if _missing:
+    family, margin = pd.DataFrame(), {}
+    st.warning(
+        "This section needs `panels." + "`, `panels.".join(_missing) + "`, which "
+        "the running app has not loaded. That happens when a deploy picks up a "
+        "changed page while keeping the previously imported module, and it "
+        "clears on a restart: **Manage app → Reboot**. The rest of this page is "
+        "unaffected.")
+elif (family := panels.family_operating_points()).empty:
+    margin = {}
     st.info("`data/benchmark/four_detector_sweep.csv` is missing, so the "
             "four-detector comparison is not shown.")
 else:
+    margin = panels.family_margin()
     st.markdown("""
 Two more features were added and swept on the same 20 patients over a common
 grid, so that four are comparable under identical downstream processing. Each

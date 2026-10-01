@@ -791,3 +791,41 @@ def test_the_committed_group_tables_match_what_the_scripts_compute():
     assert round(plain, 3) == pytest.approx(0.736)
     assert (multiplied > plain).all(), \
         "the Research page says the rule helps in the ripple band at every point"
+
+
+def test_every_panels_function_a_page_calls_actually_exists():
+    """The check that would have caught the live AttributeError before deploy.
+
+    A page calling `panels.something_new` is fine locally the moment the
+    function is written, and fine on a clean deploy. It is *not* fine when
+    Streamlit re-runs a changed page script while keeping the previously
+    imported module, which is how a new page met an old module in production
+    and blanked the Detectors page. This test fails in CI for the related and
+    simpler mistake of referencing a function that was never added at all.
+    """
+    import re
+
+    app_dir = Path(__file__).resolve().parents[1] / "app"
+    missing = []
+    for path in sorted(app_dir.rglob("*.py")):
+        for name in sorted(set(re.findall(r"\bpanels\.([a-z_][a-z0-9_]*)",
+                                          path.read_text()))):
+            if not hasattr(panels, name):
+                missing.append(f"{path.name} calls panels.{name}, which does not exist")
+    assert not missing, missing
+
+
+def test_the_pages_degrade_rather_than_crash_on_a_stale_module():
+    """The guard itself, so nobody removes it as redundant.
+
+    It is not redundant: the failure it handles is a property of how Streamlit
+    reloads, not of this repository, and it recurs on every deploy that adds a
+    panels function.
+    """
+    app_dir = Path(__file__).resolve().parents[1] / "app"
+    for page, attribute in (("4_Detectors.py", "family_operating_points"),
+                            ("5_Outcome.py", "subpopulation_groups")):
+        source = (app_dir / "pages" / page).read_text()
+        assert "hasattr(panels" in source, f"{page} lost its stale-module guard"
+        assert attribute in source
+        assert "Reboot" in source, f"{page} no longer names the remedy"
