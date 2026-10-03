@@ -342,10 +342,22 @@ def test_the_brain_panel_places_every_channel(built, review):
         review.findings.sort_values("rank")["channel"])
 
 
-def test_the_brain_panel_says_it_is_schematic(built):
-    """The caption is the honesty guard and is not allowed to go missing."""
-    assert "SCHEMATIC" in built.panels["brain"].caption.text()
-    assert "Schematic" in built.panels["brain"].headline.text()
+def test_the_brain_panel_says_it_is_not_anatomy(built):
+    """The caption is the honesty guard and is not allowed to go missing.
+
+    Either wording may apply -- a schematic layout when the electrode names map
+    to structures, a montage diagram when none of them do -- and the headline
+    has to agree with whichever the caption chose, or one of the two reads as
+    boilerplate.
+    """
+    from onset_review.anatomy import NOT_ANATOMY
+
+    caption = built.panels["brain"].caption.text()
+    headline = built.panels["brain"].headline.text()
+    assert NOT_ANATOMY in caption
+    verdict = caption.split("—")[0].strip()
+    assert verdict in ("SCHEMATIC LAYOUT", "MONTAGE DIAGRAM")
+    assert headline.lower().startswith(verdict.lower())
 
 
 def test_the_brain_panel_survives_every_option(built):

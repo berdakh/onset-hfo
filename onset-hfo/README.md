@@ -121,7 +121,7 @@ onset-review                                  # or the applications menu
 onset-review --subject sub-01 --window 0 60 --expert    # straight in
 onset-review --subject sub-01 --window 0 60 --export review.md   # no display
 
-pytest -q        # 563 tests, all offline
+pytest -q        # 570 tests, all offline
 ```
 
 ## What it actually does
@@ -380,7 +380,7 @@ data/outcome/         the outcome study's per-subject tables, for the Patients p
 data/example_analysis/  a real 60 s analysis, so the app works on a fresh clone
 
 notebooks/            seven Colab notebooks (all but 06 built by scripts/build_notebooks.py)
-tests/                563 offline tests (synthetic data + a mock model server)
+tests/                570 offline tests (synthetic data + a mock model server)
 docs/                 everything above
 ```
 

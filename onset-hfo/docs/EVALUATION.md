@@ -850,7 +850,7 @@ python scripts/run_robustness_ablation.py \
 
 ## 7. Test suite
 
-`pytest -q` — 563 tests, entirely offline. They cover the
+`pytest -q` — 570 tests, entirely offline. They cover the
 primitives (robust scale, sliding features, threshold segmentation, bipolar
 pairing), the detectors (hot channels found, events are oscillations, a flat
 channel yields nothing, thresholds behave monotonically, reruns are
@@ -862,7 +862,7 @@ OpenAI-compatible server that replies the way Qwen and Llama servers do —
 including the two ways small models get it wrong).
 
 Three files cover the desktop reviewer, split by what they need.
-`tests/test_review_core.py` (29) and `tests/test_review_anatomy.py` (20)
+`tests/test_review_core.py` (29) and `tests/test_review_anatomy.py` (27)
 import no Qt and run on any machine with the base install: that the reviewer's
 rates agree with its own event list, that annotations land in the trace's time
 base rather than the archive's, that the trend accounts for every event at any

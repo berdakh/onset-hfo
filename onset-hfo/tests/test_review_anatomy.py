@@ -76,15 +76,34 @@ def test_the_layout_is_in_rank_order(review):
 
 
 def test_contacts_along_a_shaft_are_spaced_in_order(review):
-    """Contact numbering is spatially ordered; the drawing has to be too."""
+    """Contact numbering is spatially ordered; the drawing has to be too.
+
+    Evenly spaced rather than spaced at the nominal 5 mm: a long shaft is
+    scaled down to fit inside the head, so the pitch is a property of the shaft
+    and only the evenness is a property of every shaft.
+    """
     layout = electrode_layout(review)
+    checked = 0
     for _, rows in layout.groupby("shaft"):
-        if len(rows) < 2 or set(rows["source"]) != {"inferred"}:
+        if len(rows) < 3 or set(rows["source"]) != {"inferred"}:
             continue
         rows = rows.sort_values("index")
-        steps = np.diff(np.abs(rows["x"].to_numpy()))
-        gaps = np.diff(rows["index"].to_numpy())
-        assert np.allclose(steps, gaps * SHAFT_PITCH_M, atol=1e-9)
+        points = rows[["x", "y", "z"]].to_numpy()
+        steps = np.linalg.norm(np.diff(points, axis=0), axis=1) / np.diff(
+            rows["index"].to_numpy())
+        # Within a few percent of each other, not identical: the outermost
+        # contact of a shaft aimed at the skull gets pulled back inside the
+        # reference head, which shortens its last step by a fraction of a
+        # millimetre. Order and near-even spacing are what the drawing
+        # promises; exact pitch is not, and is not known for these electrodes.
+        assert np.allclose(steps, np.median(steps), rtol=0.05)
+        assert steps.min() > 0
+        # And the contacts march away from the first one rather than doubling
+        # back, which is the property a reviewer actually reads off the shaft.
+        outward = np.linalg.norm(points - points[0], axis=1)
+        assert np.all(np.diff(outward) > 0)
+        checked += 1
+    assert checked, "no multi-contact shaft to check"
 
 
 def test_left_and_right_shafts_land_on_opposite_sides():
@@ -123,9 +142,12 @@ def test_inferred_positions_are_labelled_inferred(review):
 
 
 def test_the_caption_refuses_to_call_a_schematic_anatomy(review):
+    """Whichever of the two captions applies, it denies the same thing."""
+    from onset_review.anatomy import NOT_ANATOMY
+
     caption = layout_caption(electrode_layout(review))
-    assert "SCHEMATIC" in caption
-    assert "not this patient's anatomy" in caption
+    assert NOT_ANATOMY in caption
+    assert caption.split("—")[0].strip() in ("SCHEMATIC LAYOUT", "MONTAGE DIAGRAM")
 
 
 def test_measured_coordinates_are_used_and_declared_when_present(review):
@@ -157,10 +179,11 @@ def test_a_mixed_layout_is_reported_as_partly_schematic(review):
     channels = list(review.findings["channel"])
     one = channels[0].split("-")[0]
     electrodes = pd.DataFrame({"name": [one], "x": [10.0], "y": [0.0], "z": [0.0]})
+    from onset_review.anatomy import NOT_ANATOMY
+
     layout = electrode_layout(review, electrodes=electrodes)
     assert set(layout["source"]) == {"inferred"}
-    caption = layout_caption(layout)
-    assert "SCHEMATIC" in caption
+    assert NOT_ANATOMY in layout_caption(layout)
 
 
 def test_the_resection_is_carried_when_the_dataset_has_one(review):
@@ -200,3 +223,121 @@ def test_the_layout_is_empty_rather_than_failing_with_no_findings(review):
     layout = electrode_layout(empty)
     assert layout.empty
     assert "No channels" in layout_caption(layout)
+
+
+# -- layouts that are not depth electrodes in a named structure ------------
+#
+# The regression these guard is specific and was found by sweeping the other
+# recordings rather than by thinking: on the subdural dataset not one electrode
+# name matches the table, so every contact landed on the single `UNKNOWN`
+# target and seventy of them from a dozen electrodes drew as one blob a few
+# millimetres across. That is worse than useless -- a tight cluster of activity
+# is a finding, and this one was an artifact of having no information at all.
+
+def _ecog_layout():
+    """A subdural montage: strips and a grid, no name in the region table."""
+    import pandas as pd
+
+    channels, ranks = [], []
+    # Real ds003029 shaft names, none of which is in REGIONS. "G" is left out
+    # on purpose: it *is* in the table, as a subdural grid, so it would take
+    # the mapped path and this fixture is about the unmapped one.
+    for shaft, n in (("PST", 4), ("ATT", 8), ("MLT", 32), ("SF", 6)):
+        for i in range(1, n):
+            channels.append(f"{shaft}{i}-{shaft}{i + 1}")
+            ranks.append(len(channels))
+    return pd.DataFrame({
+        "channel": channels, "rank": ranks,
+        "n_events": [1] * len(channels), "rate_per_min": [1.0] * len(channels),
+        "reviewed": [False] * len(channels),
+    })
+
+
+class _Fake:
+    def __init__(self, findings):
+        self.findings = findings
+        self.candidates = []
+        self.reviewed_channels = []
+
+
+def test_unmapped_shafts_are_spread_rather_than_piled_up():
+    layout = electrode_layout(_Fake(_ecog_layout()))
+    assert set(layout["region"]) == {"unmapped"}
+    centres = layout.groupby("shaft")[["x", "y", "z"]].mean().to_numpy()
+    gaps = [np.linalg.norm(a - b)
+            for i, a in enumerate(centres) for b in centres[i + 1:]]
+    # Every pair of electrodes at least a centimetre apart: enough to tell them
+    # apart on screen, which is the only claim being made.
+    assert min(gaps) > 0.010, f"shafts collapsed together: {min(gaps):.4f} m"
+
+
+def test_unmapped_positions_are_stable_between_runs():
+    """`hash()` is salted per process; an electrode that moved every run would
+    make two screenshots of the same analysis disagree."""
+    from onset_review.anatomy import _inferred_position
+
+    first = _inferred_position("PST", 3, 8)
+    assert _inferred_position("PST", 3, 8) == first
+    assert _inferred_position("ATT", 3, 8) != first
+
+
+def test_contacts_along_an_unmapped_shaft_stay_in_order():
+    from onset_review.anatomy import _inferred_position
+
+    points = np.array([_inferred_position("MLT", i, 32) for i in range(1, 33)])
+    steps = np.linalg.norm(np.diff(points, axis=0), axis=1)
+    assert np.allclose(steps, steps[0], atol=1e-9)      # evenly spaced
+    assert steps[0] > 0
+
+
+def test_every_contact_is_drawn_inside_the_head():
+    """A contact floating outside the reference surface reads as a mistake.
+
+    Capping shaft length is not enough on its own: a 16-contact electrode aimed
+    at a lateral structure still reaches past the skull, which is how one
+    subject ended up with half its contacts outside.
+    """
+    from onset_review.anatomy import HEAD_AXES_M, HEAD_FILL
+
+    axes = np.asarray(HEAD_AXES_M)
+    for findings in (_ecog_layout(),
+                     pd.DataFrame({"channel": [f"OTL{i}-OTL{i + 1}"
+                                               for i in range(1, 16)],
+                                   "rank": list(range(1, 16)),
+                                   "n_events": [1] * 15,
+                                   "rate_per_min": [1.0] * 15,
+                                   "reviewed": [False] * 15})):
+        layout = electrode_layout(_Fake(findings))
+        radius = np.linalg.norm(layout[["x", "y", "z"]].to_numpy() / axes, axis=1)
+        assert radius.max() <= HEAD_FILL + 1e-9, f"{radius.max():.3f}"
+
+
+def test_a_long_shaft_is_scaled_rather_than_marching_out():
+    from onset_review.anatomy import MAX_SHAFT_LENGTH_M, _pitch
+
+    assert _pitch(8, MAX_SHAFT_LENGTH_M) == SHAFT_PITCH_M       # fits as it is
+    assert _pitch(32, MAX_SHAFT_LENGTH_M) < SHAFT_PITCH_M       # scaled down
+    assert _pitch(32, MAX_SHAFT_LENGTH_M) * 31 == pytest.approx(
+        MAX_SHAFT_LENGTH_M)
+
+
+def test_a_wholly_unmapped_montage_is_not_called_anatomy():
+    caption = layout_caption(electrode_layout(_Fake(_ecog_layout())))
+    assert "MONTAGE DIAGRAM" in caption
+    assert "no anatomy at all" in caption
+
+
+def test_a_measured_position_is_never_moved_to_fit_the_head():
+    """Containment is for the schematic. A measured contact goes where it was
+    measured, even if that is outside a cartoon skull."""
+    import pandas as pd
+
+    findings = _ecog_layout().head(3)
+    contacts = sorted({c for ch in findings["channel"] for c in ch.split("-")})
+    electrodes = pd.DataFrame({"name": contacts,
+                               "x": [500.0] * len(contacts),   # mm, absurd
+                               "y": [0.0] * len(contacts),
+                               "z": [0.0] * len(contacts)})
+    layout = electrode_layout(_Fake(findings), electrodes=electrodes)
+    assert set(layout["source"]) == {"archive"}
+    assert layout["x"].max() == pytest.approx(0.5)

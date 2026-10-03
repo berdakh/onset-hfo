@@ -46,7 +46,12 @@ import numpy as np
 import pandas as pd
 
 __all__ = ["ContactLayout", "electrode_layout", "parse_channel", "brain_surface",
-           "REGIONS", "SHAFT_PITCH_M", "layout_caption"]
+           "REGIONS", "SHAFT_PITCH_M", "layout_caption", "NOT_ANATOMY"]
+
+#: The one phrase every caption over an inferred layout carries, whichever of
+#: the two it is. A single invariant rather than two wordings, so the interface
+#: and the tests cannot drift into disagreeing about what is being denied.
+NOT_ANATOMY = "not this patient's anatomy"
 
 #: Spacing between neighbouring contacts along a depth electrode, in metres.
 #: 5 mm is the usual pitch for the mesial-temporal depth electrodes this cohort
@@ -88,6 +93,42 @@ REGIONS: dict[str, dict] = {
 #: rather than guessed: an unrecognised electrode gets a position and a label
 #: that both say "we do not know what this is".
 UNKNOWN = {"label": "unmapped", "target": (0.045, 0.000, 0.040)}
+
+#: Where unmapped shafts are laid out: on an arc over the lateral surface,
+#: one bearing per shaft. They used to share `UNKNOWN["target"]`, which on a
+#: subdural dataset -- where no name matches the table -- piled seventy
+#: contacts from ten electrodes into one blob a few millimetres across. That is
+#: worse than useless: it reads as a tight cluster of activity, which is a
+#: finding, and it is an artifact of having no information at all.
+#:
+#: Spreading them claims nothing new. Which shaft a contact is on, and its
+#: order along that shaft, are both real; only the bearing is arbitrary, and it
+#: is derived from the name so it never moves between runs.
+UNMAPPED_RADIUS_M = 0.055
+UNMAPPED_SPAN_DEG = 150.0
+#: Longest any shaft is drawn, in metres, mapped or not. At the 5 mm
+#: depth-electrode pitch a 31-contact grid marches 155 mm and a 16-contact
+#: depth electrode 75 mm -- both straight out of a 144 mm head, which is how
+#: half of one subject's contacts ended up floating outside the reference
+#: surface. Long shafts are scaled to fit instead.
+#:
+#: Nothing is lost: the contact pitch is not known for any of these electrodes,
+#: and what the drawing is for is which contacts share a shaft and their order
+#: along it. Shafts short enough to fit keep the real 5 mm spacing.
+MAX_SHAFT_LENGTH_M = 0.045
+#: Unmapped shafts lie over the surface rather than boring through it, so they
+#: have a little more room.
+UNMAPPED_MAX_LENGTH_M = 0.060
+
+#: Half-axes of the reference head, in metres. Shared by `brain_surface` and by
+#: the containment below so the drawing and the hull cannot disagree about
+#: where the head is.
+HEAD_AXES_M = (0.072, 0.092, 0.062)
+#: How far out a contact may be drawn, as a fraction of those half-axes.
+#: Capping shaft length is not enough on its own -- a shaft aimed at a lateral
+#: structure still reaches past the skull -- and a contact floating outside the
+#: head reads as a mistake rather than as the schematic it is.
+HEAD_FILL = 0.94
 
 
 @dataclass(frozen=True)
@@ -131,7 +172,8 @@ def parse_channel(name: str) -> tuple[str, int, str, str]:
     return shaft, index, hemisphere, region
 
 
-def _inferred_position(shaft: str, index: int) -> tuple[float, float, float]:
+def _inferred_position(shaft: str, index: int,
+                       n_contacts: int = 1) -> tuple[float, float, float]:
     """Place contact `index` of `shaft` in the schematic head.
 
     The shaft runs from its structure's target outward along +x (toward the
@@ -145,15 +187,78 @@ def _inferred_position(shaft: str, index: int) -> tuple[float, float, float]:
     stem = letters[:-1] if letters[-1:] in ("L", "R") else letters
     region = REGIONS.get(stem, REGIONS.get(letters, UNKNOWN))
 
+    if region is UNKNOWN:
+        return _unmapped_position(stem, index, hemisphere, n_contacts)
+
     x, y, z = region["target"]
-    x = x + (index - 1) * SHAFT_PITCH_M
+    x = x + (index - 1) * _pitch(n_contacts, MAX_SHAFT_LENGTH_M)
     if hemisphere == "L":
         x = -x
     # A small deterministic splay on z keeps two electrodes aimed at the same
     # structure (an `A` and an `AH` shaft, say) from drawing on top of each
     # other. Derived from the name so it never moves between runs.
-    splay = (sum(ord(c) for c in stem) % 5 - 2) * 0.0022
+    splay = (_bearing(stem) % 5 - 2) * 0.0022
     return (float(x), float(y), float(z + splay))
+
+
+def _pitch(n_contacts: int, longest: float) -> float:
+    """Spacing to draw a shaft of `n_contacts` at, so it fits inside the head."""
+    gaps = max(1, int(n_contacts) - 1)
+    return min(SHAFT_PITCH_M, longest / gaps)
+
+
+def _bearing(stem: str) -> int:
+    """A stable small integer for a shaft name.
+
+    `hash()` is salted per process, so using it would move every unmapped
+    electrode between runs of the same analysis. CRC32 is stable, cheap, and
+    nothing here needs it to be anything more.
+    """
+    import zlib
+
+    return zlib.crc32(stem.encode("utf-8")) % 997
+
+
+def _unmapped_position(stem: str, index: int, hemisphere: str,
+                       n_contacts: int = 1) -> tuple[float, float, float]:
+    """Lay an unrecognised electrode along its own bearing over the surface.
+
+    Used when a shaft's name matches nothing in `REGIONS`, which on a subdural
+    dataset is every shaft. Each one gets an angle of its own, and its contacts
+    march along the tangent at that angle -- which is how a strip or a grid row
+    actually runs. The arc is centred on the right unless the name says left,
+    for no better reason than that something has to be chosen; the caption says
+    as much.
+    """
+    import math
+
+    angle = math.radians(-UNMAPPED_SPAN_DEG / 2
+                         + (_bearing(stem) / 997.0) * UNMAPPED_SPAN_DEG)
+    side = -1.0 if hemisphere == "L" else 1.0
+    # Start on the surface at that bearing, then step along the tangent so
+    # consecutive contacts stay consecutive.
+    x = side * UNMAPPED_RADIUS_M * math.cos(angle)
+    y = UNMAPPED_RADIUS_M * 1.25 * math.sin(angle)
+    step = (index - 1) * _pitch(n_contacts, UNMAPPED_MAX_LENGTH_M)
+    return (float(x - side * step * math.sin(angle)),
+            float(y + step * math.cos(angle)),
+            float(0.018 + ((_bearing(stem) % 7) - 3) * 0.004))
+
+
+def _contained(point) -> tuple[float, float, float]:
+    """Pull a schematic position back inside the reference head.
+
+    Only ever shrinks, and only along the ray from the centre, so the bearing
+    of a shaft and the order of contacts along it both survive. Real
+    coordinates never reach here: a measured position is drawn where it was
+    measured, even if that is outside a cartoon skull.
+    """
+    axes = np.asarray(HEAD_AXES_M, dtype=float)
+    scaled = np.asarray(point, dtype=float) / axes
+    radius = float(np.linalg.norm(scaled))
+    if radius <= HEAD_FILL or radius == 0.0:
+        return tuple(float(v) for v in point)
+    return tuple(float(v) for v in np.asarray(point) * (HEAD_FILL / radius))
 
 
 def _from_electrodes_tsv(frame: pd.DataFrame) -> dict[str, tuple[float, float, float]]:
@@ -208,6 +313,14 @@ def electrode_layout(session, resection=None, electrodes: pd.DataFrame | None = 
     tied = set(getattr(session, "candidates", []) or [])
     zones = _zones_for(session, resection)
 
+    # Each shaft's length, so an unmapped one can be scaled to fit the head
+    # rather than marching out of it.
+    sizes: dict[str, int] = {}
+    for channel in findings["channel"]:
+        for contact in _contacts_of(str(channel)):
+            shaft, index, _, _ = parse_channel(contact)
+            sizes[shaft] = max(sizes.get(shaft, 0), index)
+
     rows = []
     for record in findings.to_dict("records"):
         channel = str(record["channel"])
@@ -219,7 +332,8 @@ def electrode_layout(session, resection=None, electrodes: pd.DataFrame | None = 
                 sources.append("archive")
             else:
                 shaft, index, _, _ = parse_channel(contact)
-                places.append(_inferred_position(shaft, index))
+                places.append(_contained(
+                    _inferred_position(shaft, index, sizes.get(shaft, 1))))
                 sources.append("inferred")
         centre = np.mean(np.asarray(places, dtype=float), axis=0)
         shaft, index, hemisphere, region = parse_channel(contacts[0])
@@ -289,11 +403,19 @@ def layout_caption(layout: pd.DataFrame) -> str:
         n = int((layout["source"] == "inferred").sum())
         return (f"Measured coordinates, except for {n} channel(s) placed from "
                 f"their electrode names. Those are schematic.")
-    return ("SCHEMATIC LAYOUT — not this patient's anatomy. This archive ships "
-            "no electrode coordinates, so each shaft is drawn at the textbook "
-            "location of the structure its name claims, contacts in order along "
-            "it. Use it to see which shafts are active and how they sit "
-            "relative to the resection; do not read a position off it.")
+    unmapped = float((layout["region"] == UNKNOWN["label"]).mean())
+    if unmapped > 0.5:
+        return (f"MONTAGE DIAGRAM — {NOT_ANATOMY}, and no anatomy at all. This "
+                "archive ships no electrode coordinates, and these electrode "
+                "names match no structure this software knows, so the only "
+                "real information here is which contacts share a shaft and "
+                "their order along it. Shafts are fanned out so they can be "
+                "told apart; their positions and sides mean nothing.")
+    return (f"SCHEMATIC LAYOUT — {NOT_ANATOMY}. This archive ships no electrode "
+            "coordinates, so each shaft is drawn at the textbook location of "
+            "the structure its name claims, contacts in order along it. Use it "
+            "to see which shafts are active and how they sit relative to the "
+            "resection; do not read a position off it.")
 
 
 def brain_surface(n_theta: int = 48, n_phi: int = 32):
@@ -312,8 +434,8 @@ def brain_surface(n_theta: int = 48, n_phi: int = 32):
     phi = np.linspace(0, 2 * np.pi, n_theta)        # azimuth
     theta, phi = np.meshgrid(theta, phi, indexing="ij")
 
-    # Half-axes: wider than tall, longer than wide, as a head is.
-    ax, ay, az = 0.072, 0.092, 0.062
+    # Wider than tall, longer than wide, as a head is.
+    ax, ay, az = HEAD_AXES_M
     x = ax * np.sin(theta) * np.cos(phi)
     y = ay * np.sin(theta) * np.sin(phi)
     z = az * np.cos(theta)

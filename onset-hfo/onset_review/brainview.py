@@ -36,7 +36,7 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
-from onset_review.anatomy import electrode_layout, layout_caption
+from onset_review.anatomy import UNKNOWN, electrode_layout, layout_caption
 
 __all__ = ["BrainPanel", "VIEWS", "ZONE_EDGES"]
 
@@ -306,7 +306,13 @@ class BrainPanel(QWidget):
         if tied > 1:
             title += f" — {tied} contacts tied (*)"
         if "inferred" in set(frame["source"]):
-            title = "Schematic layout · " + title
+            # Match the caption's own verdict rather than saying "schematic"
+            # over a caption that says "no anatomy at all": two different
+            # strengths of warning on one panel reads as one of them being
+            # boilerplate.
+            unmapped = float((frame["region"] == UNKNOWN["label"]).mean())
+            title = ("Montage diagram · " if unmapped > 0.5
+                     else "Schematic layout · ") + title
         self.headline.setText(title)
 
         if self.resection_only.isChecked():

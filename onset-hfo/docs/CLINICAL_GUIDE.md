@@ -189,6 +189,13 @@ view turns to face it. **View** gives you the standard angles.
 > trajectory or margin should be read off it. If you point this software at
 > your own BIDS data and that data has an `electrodes.tsv`, it uses the real
 > coordinates and the banner changes to say so.
+>
+> On a recording whose electrode names match no structure the software knows —
+> most subdural montages, including `ds003029` — the banner says **montage
+> diagram** instead, and means it: the shafts are fanned apart only so you can
+> tell them from each other, and their positions and sides mean nothing at all.
+> Even then, which contacts share an electrode and their order along it are
+> real, and that is usually the question.
 
 ### Detector vs expert
 
