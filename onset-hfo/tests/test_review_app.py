@@ -708,3 +708,282 @@ def test_no_panel_hardcodes_a_colour():
             continue
         hits = re.findall(r"#[0-9a-fA-F]{6}\b", path.read_text())
         assert not hits, f"{path.name} hardcodes {hits}"
+
+
+# -- importing a file from this machine -----------------------------------
+#
+# The one screen in this software whose job is to stop something, rather than
+# to show something. A clinical EDF or BrainVision export declares every
+# channel `eeg` -- including the one real iEEG file this project's own cache
+# holds -- and the pipeline analyses anything typed eeg, ecog or seeg. So an
+# import that trusts the file produces a full review, with rates, intervals and
+# a candidate channel set, for a scalp montage, and says nothing. These tests
+# pin the parts of the dialog that exist to prevent exactly that.
+
+@pytest.fixture(scope="module")
+def recording_file(tmp_path_factory):
+    """A file on disk that declares every channel `eeg`, as exports do."""
+    import mne
+
+    rng = np.random.default_rng(11)
+    names = ["AR1", "AR2", "AR3", "HL1", "EKG", "DC1"]
+    data = rng.normal(0.0, 2e-5, size=(len(names), 20 * 2000))
+    info = mne.create_info(names, 2000.0, ch_types="eeg")
+    raw = mne.io.RawArray(data, info, verbose="ERROR")
+    path = tmp_path_factory.mktemp("import") / "study-001_raw.fif"
+    raw.save(path, overwrite=True, verbose="ERROR")
+    return path
+
+
+def test_the_import_dialog_shows_the_file_s_own_answer_beside_the_choice(
+        qapp, recording_file):
+    from onset_review.importer import ImportDialog
+
+    dialog = ImportDialog(recording_file)
+    assert dialog.error == ""
+    assert dialog.table.rowCount() == 6
+    declared = [dialog.table.item(row, 1).text() for row in range(6)]
+    assert declared == ["eeg"] * 6                 # what the file claims
+    assert "6 × eeg" in dialog._declared_summary()
+    assert set(dialog.channel_types().values()) == {"seeg"}
+
+
+def test_the_import_dialog_refuses_to_open_with_nothing_to_analyse(
+        qapp, recording_file):
+    """The one disabled button in this software that is an argument.
+
+    Everything typed ecg or misc is dropped in preprocessing, so a file where
+    nothing is marked SEEG or ECoG would load, preprocess down to no channels
+    and fail somewhere unhelpful. Refusing here, with the reason on the button,
+    is the same refusal made legible.
+    """
+    from qtpy.QtWidgets import QDialogButtonBox
+
+    from onset_review.importer import ImportDialog
+
+    dialog = ImportDialog(recording_file)
+    button = dialog.buttons.button(QDialogButtonBox.Open)
+    assert button.isEnabled()
+    assert dialog.counts.text() == "6 of 6 will be analysed"
+
+    dialog.set_all("ecg")
+    assert not button.isEnabled()
+    assert dialog.counts.text() == "0 of 6 will be analysed"
+    assert "nothing to analyse" in button.toolTip()
+
+    dialog.set_all("ecog")
+    assert button.isEnabled()
+    assert dialog.counts.text() == "6 of 6 will be analysed"
+
+
+def test_one_channel_changed_by_hand_updates_the_count(qapp, recording_file):
+    from onset_review.importer import ImportDialog
+
+    dialog = ImportDialog(recording_file)
+    ekg = [row for row in range(dialog.table.rowCount())
+           if dialog.table.item(row, 0).text() == "EKG"][0]
+    chooser = dialog.table.cellWidget(ekg, 2)
+    chooser.setCurrentIndex(
+        [i for i in range(chooser.count()) if chooser.itemData(i) == "ecg"][0])
+    assert dialog.counts.text() == "5 of 6 will be analysed"
+    assert dialog.channel_types()["EKG"] == "ecg"
+
+
+def test_the_import_dialog_builds_the_request_it_is_showing(qapp, recording_file):
+    from onset_review.importer import ImportDialog
+
+    dialog = ImportDialog(recording_file)
+    dialog.set_all("seeg")
+    dialog.subject.setText("study-001")
+    dialog.t_stop.setValue(15.0)
+    dialog.line_freq.setCurrentIndex(1)              # 60 Hz
+    request = dialog.request()
+
+    assert request.imported is True
+    assert request.path == recording_file
+    assert request.subject == "study-001"
+    assert (request.t_start, request.t_stop) == (0.0, 15.0)
+    assert request.line_freq == 60.0
+    assert dict(request.channel_types) == {name: "seeg" for name in
+                                           ("AR1", "AR2", "AR3", "HL1",
+                                            "EKG", "DC1")}
+
+
+def test_the_window_cannot_be_set_past_the_end_of_the_file(qapp, recording_file):
+    """A reviewer asking for 0–60 s of a 20 s file is corrected by the spin box.
+
+    Not by an exception after the reader has run: by then they have waited, and
+    the message is about a window rather than about the file being short.
+    """
+    from onset_review.importer import ImportDialog
+
+    dialog = ImportDialog(recording_file)
+    dialog.t_stop.setValue(600.0)
+    assert dialog.t_stop.value() == pytest.approx(20.0, abs=0.01)
+    assert dialog.t_stop.value() <= dialog.info["duration"] + 0.01
+
+
+def test_the_import_dialog_offers_only_the_bands_the_file_can_support(
+        qapp, tmp_path_factory):
+    """The same refusal the launcher makes, made from the file's own header."""
+    import mne
+
+    from onset_review.importer import ImportDialog
+
+    info = mne.create_info(["A1", "A2"], 1000.0, ch_types="eeg")
+    raw = mne.io.RawArray(np.zeros((2, 5000)), info, verbose="ERROR")
+    slow = tmp_path_factory.mktemp("slow") / "slow_raw.fif"
+    raw.save(slow, overwrite=True, verbose="ERROR")
+
+    dialog = ImportDialog(slow)
+    assert [dialog.band.itemData(i) for i in range(dialog.band.count())] == ["ripple"]
+    assert "needs more than 1000 Hz" in _form_text(dialog)
+
+
+def _form_text(dialog) -> str:
+    from qtpy.QtWidgets import QLabel
+
+    return " ".join(label.text() for label in dialog.findChildren(QLabel))
+
+
+def test_an_unreadable_file_is_a_message_rather_than_a_traceback(
+        qapp, tmp_path):
+    from qtpy.QtWidgets import QDialogButtonBox
+
+    from onset_review.importer import ImportDialog
+
+    broken = tmp_path / "truncated_raw.fif"
+    broken.write_bytes(b"not a fif file")
+    dialog = ImportDialog(broken)
+    assert dialog.table is None
+    assert dialog.error
+    assert not dialog.buttons.button(QDialogButtonBox.Open).isEnabled()
+
+
+def test_the_dialog_says_what_an_imported_file_does_not_bring(qapp,
+                                                              recording_file):
+    """Said before the reviewer finds the panels empty, not after."""
+    from onset_review.importer import ImportDialog
+
+    text = _form_text(ImportDialog(recording_file))
+    assert "no expert markings" in text
+    assert "not a medical device" in text
+    assert "declare every channel as scalp EEG" in text
+
+
+def test_the_launcher_offers_a_file_even_with_an_empty_cache(qapp, tmp_path):
+    """An empty archive cache is exactly when someone has their own recording."""
+    from qtpy.QtWidgets import QDialogButtonBox
+
+    from onset_review.launcher import LauncherDialog
+
+    dialog = LauncherDialog(tmp_path)
+    assert not dialog.buttons.button(QDialogButtonBox.Open).isEnabled()
+    assert dialog.import_button.isEnabled()
+    assert "open a file" in dialog.status.text().lower()
+
+
+def test_an_imported_request_keeps_the_launcher_s_analysis_choices(
+        qapp, cache, recording_file, monkeypatch):
+    """The band comes from the file's rate; the detectors come from the dialog.
+
+    Two screens, each answering what it is in a position to answer. Asking for
+    the detector again on the import screen would be a third page nobody needs,
+    and asking for the band on the launcher would offer one the file cannot
+    support.
+    """
+    from onset_review import importer
+    from onset_review.importer import ImportDialog
+    from onset_review.launcher import LauncherDialog
+
+    def fake_choose(parent=None, start=None):
+        dialog = ImportDialog(recording_file)
+        dialog.set_all("seeg")
+        return dialog.request()
+
+    monkeypatch.setattr(importer, "choose_file", fake_choose)
+
+    dialog = LauncherDialog(cache)
+    dialog.threshold.setValue(3.5)
+    dialog.spikes.setChecked(False)
+    dialog.expert.setChecked(True)
+    dialog.open_file()
+
+    request = dialog.request()
+    assert request.imported is True
+    assert request.threshold_sd == 3.5
+    assert request.with_spikes is False
+    assert request.band == "ripple"
+    # The expert overlay belongs to the archive; an imported file has none, so
+    # a checkbox left ticked from a previous choice must not travel with it.
+    assert dialog.overlay_expert() is False
+
+
+def test_a_cancelled_import_leaves_the_launcher_as_it_was(qapp, cache,
+                                                          monkeypatch):
+    from onset_review import importer
+    from onset_review.launcher import LauncherDialog
+
+    monkeypatch.setattr(importer, "choose_file", lambda parent=None, start=None: None)
+    dialog = LauncherDialog(cache)
+    dialog.open_file()
+    assert dialog.request().imported is False
+
+
+def test_the_review_menu_can_open_another_file(qapp, built):
+    """And says so even when it cannot, rather than offering a dead entry."""
+    actions = {action.text(): action
+               for action in built.host.menuBar().actions()[0].menu().actions()}
+    opener = [text for text in actions if "Open a file" in text]
+    assert opener, list(actions)
+    # `built` is decorated without an import callback, so the entry is there to
+    # be found and explicitly disabled.
+    assert not actions[opener[0]].isEnabled()
+    assert "not available" in actions[opener[0]].toolTip()
+
+
+def test_the_patient_panel_says_an_imported_window_has_no_record(qapp, recording):
+    """Not "no record found": no record *exists*, and the difference matters."""
+    import pathlib
+
+    from onset_review.patient import PatientPanel
+
+    request = ReviewRequest(dataset="", subject="study-001",
+                            path=pathlib.Path("study-001_raw.fif"),
+                            t_start=0.0, t_stop=float(recording.duration))
+    review = session_from_recording(recording, request)
+    panel = PatientPanel(review)
+    text = " ".join(label.text() for label in panel.findChildren(qt.QLabel))
+    assert "imported from study-001_raw.fif" in text
+    assert "no participant record, no resected zone" in text
+    # The archive's withheld-demographics note is about a cohort this window is
+    # not part of, so it is not shown.
+    assert "age, sex and handedness" not in text
+
+
+def test_the_command_line_flags_open_the_dialog_on_their_answer(qapp,
+                                                                recording_file):
+    """`--window 0 30 --all-channels-as seeg` is an answer, not a suggestion.
+
+    Discarding it and asking again would make the flags useless for anyone who
+    wants to check what they typed before it runs.
+    """
+    from onset_review.app import _prefill, build_parser
+    from onset_review.importer import ImportDialog
+
+    args = build_parser().parse_args(
+        ["--open", str(recording_file), "--window", "2", "12",
+         "--line-freq", "60", "--subject", "study-001",
+         "--all-channels-as", "seeg", "--channel-type", "EKG=ecg",
+         "--channel-type", "NOT-A-CHANNEL=seeg"])
+
+    dialog = ImportDialog(recording_file)
+    _prefill(dialog, args)
+
+    request = dialog.request()
+    assert (request.t_start, request.t_stop) == (2.0, 12.0)
+    assert request.line_freq == 60.0
+    assert request.subject == "study-001"
+    assert dict(request.channel_types)["EKG"] == "ecg"
+    assert dict(request.channel_types)["AR1"] == "seeg"
+    assert dialog.counts.text() == "5 of 6 will be analysed"

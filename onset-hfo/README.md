@@ -49,6 +49,13 @@ preprocessing chain on controls a reviewer can actually reach, an assistant
 that cites this window or refuses — and, pinned to the status bar
 where it cannot be scrolled past, whether any of it supports a ranking at all.
 
+It opens recordings of your own too, through MNE's readers — EDF, BrainVision,
+Persyst, Nihon Kohden, Nicolet, Blackrock, MEF3 and the rest — with no
+conversion step and no proprietary format. It asks you to confirm which
+channels are intracranial first, because a clinical export declares every
+channel as scalp EEG and this software analyses whatever is typed eeg, ecog or
+seeg.
+
 [`INSTALL.md`](docs/INSTALL.md) · [`CLINICAL_GUIDE.md`](docs/CLINICAL_GUIDE.md)
 
 New to the project? [**Where do seizures start?**](https://berdakh.github.io/onset-hfo/TUTORIAL.html)
@@ -121,6 +128,7 @@ pip install -e ".[app]" && streamlit run app/Home.py
 onset-review                                  # or the applications menu
 onset-review --subject sub-01 --window 0 60 --expert    # straight in
 onset-review --subject sub-01 --window 0 60 --export review.md   # no display
+onset-review --open /data/study-001.edf       # or a recording of your own
 
 pytest -q        # 620 tests, all offline
 ```
@@ -308,6 +316,7 @@ chance — see [`docs/EVALUATION.md`](docs/EVALUATION.md).
 onset_hfo/            the pipeline
   config.py           every threshold and band, in one place, documented
   datasets.py         byte-range loader for the public archive + provenance
+  io.py               a recording off this machine, through MNE's own readers
   synthetic.py        labelled simulator, including the traps
   preprocess.py       channel selection, filtering, bipolar montage
   detectors/          base.py (primitives) · engine.py (the shared loop)
@@ -376,6 +385,7 @@ onset_review/         the desktop reviewer (Qt), installable on Ubuntu
   assistant.py        the agent in a dock: cites this window, or refuses
   window.py           docks them onto MNE's own Qt trace browser
   launcher.py         the open dialog, and loading off the GUI thread
+  importer.py         confirming what a file actually holds before it is analysed
   app.py              onset-review ...
 
 packaging/            install-ubuntu.sh, the .desktop entry and the icon

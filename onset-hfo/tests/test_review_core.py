@@ -554,3 +554,102 @@ def test_every_ilae_class_the_cohort_uses_has_a_description():
         / "participants.csv")
     for value in sorted(participants["ilae"].unique()):
         assert int(value) in ILAE_CLASSES, value
+
+
+# -- opening a file from the command line ----------------------------------
+#
+# `onset_review.app` imports Qt lazily, so the routing, the flag parsing and
+# the one refusal it makes are all checkable here, on a machine with no
+# display. Which is the point: the refusal below is what stands between a
+# scripted batch and a folder full of confident reviews of scalp EEG.
+
+def test_a_file_on_the_command_line_builds_an_imported_request(tmp_path):
+    from onset_review.app import _request_from, build_parser
+
+    recording = tmp_path / "study-001.edf"
+    args = build_parser().parse_args(
+        ["--open", str(recording), "--all-channels-as", "seeg",
+         "--window", "10", "40", "--line-freq", "60", "--band", "fast_ripple"])
+    assert args.open_path == recording
+
+    # `--all-channels-as` reads the file's channel list, which does not exist
+    # here; the named exceptions alone do not.
+    args.all_channels_as = None
+    args.channel_types = ["AR1=seeg", "EKG=ecg"]
+    request = _request_from(args)
+
+    assert request.imported is True
+    assert request.path == recording
+    assert request.subject == "study-001"            # from the filename
+    assert (request.t_start, request.t_stop) == (10.0, 40.0)
+    assert request.line_freq == 60.0
+    assert dict(request.channel_types) == {"AR1": "seeg", "EKG": "ecg"}
+    assert request.dataset == ""
+
+
+def test_a_malformed_channel_type_says_what_the_flag_wants(tmp_path):
+    from onset_review.app import _channel_types, build_parser
+
+    args = build_parser().parse_args(
+        ["--open", str(tmp_path / "a.edf"), "--channel-type", "AR1"])
+    with pytest.raises(SystemExit, match="NAME=TYPE"):
+        _channel_types(args)
+
+
+def test_a_headless_import_with_nothing_said_about_the_channels_is_refused(
+        tmp_path, capsys):
+    """The one refusal in the entry point, and the reason it exists.
+
+    A clinical export declares every channel `eeg`; this pipeline analyses
+    anything typed eeg, ecog or seeg. A scripted `--export` that said nothing
+    about the channels would therefore write a complete review -- rates,
+    Poisson intervals, a candidate channel set -- for whatever happened to be
+    in the file, with no step anywhere having been wrong. Stating the types is
+    one flag. Being wrong silently has no flag at all.
+    """
+    from onset_review.app import EXIT_FAILED, main
+
+    recording = tmp_path / "study-001.edf"
+    recording.write_bytes(b"")
+    assert main(["--open", str(recording), "--export",
+                 str(tmp_path / "out.md")]) == EXIT_FAILED
+    assert "--all-channels-as" in capsys.readouterr().err
+
+    # And the same refusal for a window, where `--no-confirm` is what skips
+    # the dialog that would otherwise have asked.
+    assert main(["--open", str(recording), "--no-confirm"]) == EXIT_FAILED
+
+
+def test_export_still_needs_a_subject_or_a_file(tmp_path, capsys):
+    from onset_review.app import EXIT_FAILED, main
+
+    assert main(["--export", str(tmp_path / "out.md")]) == EXIT_FAILED
+    assert "--subject or --open" in capsys.readouterr().err
+
+
+def test_the_report_names_the_imported_file_where_an_accession_would_go(
+        recording, tmp_path):
+    """An empty Dataset cell reads as a missing value, not an absent one."""
+    path = tmp_path / "study-001_raw.fif"
+    request = ReviewRequest(dataset="", subject="study-001", path=path,
+                            t_start=0.0, t_stop=float(recording.duration))
+    review = session_from_recording(recording, request)
+    text = report.review_markdown(review)
+
+    assert f"local file `{path.name}`" in text
+    assert "not a public archive recording" in text
+    assert path.name in request.label()
+
+
+def test_a_bare_filename_means_the_same_as_open(tmp_path, capsys):
+    """`onset-review study-001.edf`, and what a file manager passes in.
+
+    The same refusal applies: a file arriving by double-click has had nothing
+    said about its channels either.
+    """
+    from onset_review.app import EXIT_FAILED, main
+
+    recording = tmp_path / "study-001.edf"
+    recording.write_bytes(b"")
+    assert main([str(recording), "--no-confirm"]) == EXIT_FAILED
+    assert "--all-channels-as" in capsys.readouterr().err

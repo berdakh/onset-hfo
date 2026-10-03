@@ -101,6 +101,25 @@ makes this dataset worth learning on — see [`DATA.md`](DATA.md).
 
 Everything is cached under `artifacts/data/`, so a window is fetched once.
 
+### Or a recording of your own
+
+**Review → Open a file…**, or the *Open a file…* button in the open dialog,
+reads a file from this machine through MNE's readers — EDF, BDF, GDF,
+BrainVision, Persyst, Nihon Kohden, Nicolet, Curry, Blackrock, Neuralynx,
+MEF3, EEGLAB, EGI, Neuroscan, Eximia, FIF. There is no conversion step and no
+proprietary format; the file becomes the same recording the archive produces,
+and every panel works on it unchanged.
+
+You will be asked to confirm which channels are intracranial before anything is
+analysed, and the dialog will not open the file until something is marked SEEG
+or ECoG. That is not a formality: a clinical export declares every channel as
+scalp EEG — including the real intracranial BrainVision file this project
+caches — and this software analyses whatever is typed eeg, ecog or seeg. See
+[`CLINICAL_GUIDE.md` §5](CLINICAL_GUIDE.md).
+
+Nothing is uploaded anywhere. Nothing here checks de-identification, ethics
+approval or data governance either; those stay yours.
+
 ---
 
 ## Starting it
@@ -110,6 +129,7 @@ Everything is cached under `artifacts/data/`, so a window is fetched once.
 | From the applications menu | search for **Onset Review** |
 | From a terminal | `onset-review` |
 | Straight into a patient | `onset-review --subject sub-01 --window 0 60 --expert` |
+| Straight into your own file | `onset-review --open /data/study-001.edf` |
 | Every option | `onset-review --help` |
 
 ![The open dialog](images/onset-review-open.png)
@@ -124,6 +144,15 @@ its document:
 
 ```bash
 onset-review --subject sub-01 --window 0 60 --export review.md
+```
+
+The same for a file of your own — except that with no dialog to confirm them,
+the channel types have to be stated, and it refuses rather than guessing:
+
+```bash
+onset-review --open /data/study-001.edf \
+             --all-channels-as seeg --channel-type 'EKG=ecg' \
+             --window 0 60 --subject study-001 --export review.md
 ```
 
 ---

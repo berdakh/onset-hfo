@@ -87,8 +87,14 @@ def _header(session: ReviewSession, reviewer: str | None) -> list[str]:
     threshold = ("each detector's measured default"
                  if request.threshold_sd is None
                  else f"{request.threshold_sd:g} robust SD (set by the reviewer)")
+    # An imported window has no accession, and an empty cell in a document
+    # that will be read beside a cohort result reads as a missing value rather
+    # than an absent one.
+    source = (f"local file `{request.path.name}` (not a public archive "
+              f"recording; nothing here has checked its provenance)"
+              if request.imported else f"`{request.dataset}`")
     rows = [
-        ("Dataset", f"`{request.dataset}`"),
+        ("Dataset", source),
         ("Subject", f"`{request.subject}`, run `{request.run}`"),
         ("Window", f"{request.t_start:g}–{request.t_stop:g} s of the original "
                    f"recording ({request.duration:g} s)"),

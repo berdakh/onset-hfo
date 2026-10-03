@@ -95,6 +95,18 @@ class ReviewRequest:
     #: number downstream, so a session reproduced from a report has to carry it.
     #: `None` means the project's measured defaults.
     preprocess: PreprocessConfig | None = None
+    #: A local file to read instead of the archive. When set, `dataset` is
+    #: ignored and `onset_hfo.io` picks the reader from the extension.
+    path: Path | None = None
+    #: The reviewer's correction to the file's channel types, which on most
+    #: clinical exports is not optional: an EDF typically declares every
+    #: channel `eeg`, and the pipeline would analyse a scalp montage as
+    #: intracranial. Only consulted for an imported file.
+    channel_types: tuple[tuple[str, str], ...] = ()
+    #: Mains frequency for an imported file. The archive carries its own; a
+    #: bare EDF does not, and the wrong one leaves the interference in place
+    #: *and* carves a hole where there was none.
+    line_freq: float = 50.0
 
     def __post_init__(self) -> None:
         unknown = [d for d in self.detectors if d not in HFO_DETECTORS]
@@ -156,8 +168,14 @@ class ReviewRequest:
         low, high = self.band_hz
         return f"{self.band.replace('_', ' ')} ({low:.0f}–{high:.0f} Hz)"
 
+    @property
+    def imported(self) -> bool:
+        """True when this window comes from a file rather than the archive."""
+        return self.path is not None
+
     def label(self) -> str:
-        return (f"{self.dataset} · {self.subject} · run-{self.run} · "
+        where = self.path.name if self.imported else self.dataset
+        return (f"{where} · {self.subject} · run-{self.run} · "
                 f"{self.t_start:g}–{self.t_stop:g} s")
 
     def pipeline_config(self) -> PipelineConfig:
@@ -515,11 +533,22 @@ def load_session(request: ReviewRequest, cache_dir: Path | None = None,
         if progress is not None:
             progress(fraction, message)
 
-    say(0.05, f"Fetching {request.subject} {request.t_start:g}–{request.t_stop:g} s")
-    record = fetch_slice(dataset=request.dataset, subject=request.subject,
-                         run=request.run, task=request.task,
-                         t_start=request.t_start, t_stop=request.t_stop,
-                         cache_dir=cache_dir, verbose=False)
+    if request.imported:
+        from onset_hfo.io import open_recording
+
+        say(0.05, f"Reading {request.path.name} "
+                  f"{request.t_start:g}–{request.t_stop:g} s")
+        record = open_recording(
+            request.path, t_start=request.t_start, t_stop=request.t_stop,
+            subject=request.subject, line_freq=request.line_freq,
+            channel_types=dict(request.channel_types), run=request.run)
+    else:
+        say(0.05, f"Fetching {request.subject} "
+                  f"{request.t_start:g}–{request.t_stop:g} s")
+        record = fetch_slice(dataset=request.dataset, subject=request.subject,
+                             run=request.run, task=request.task,
+                             t_start=request.t_start, t_stop=request.t_stop,
+                             cache_dir=cache_dir, verbose=False)
     return session_from_recording(record, request, progress=progress)
 
 
@@ -573,7 +602,7 @@ def session_from_recording(record: Recording, request: ReviewRequest,
 
     say(0.78, "Reading the expert markings")
     expert = _expert_events(record, request.band)
-    resection = _resection_for(record)
+    resection = None if request.imported else _resection_for(record)
     electrodes = _electrodes_for(record)
     reviewed = [c for c in getattr(record, "reviewed_channels", [])
                 if c in set(prep.ch_names)]

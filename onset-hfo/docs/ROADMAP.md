@@ -566,6 +566,18 @@ figures a clinician reads are tested without a display; `panels`, `controls`,
 A `desktop` CI job installs the extra, brings up Xvfb and builds the whole
 window on a synthetic recording.
 
+It also opens recordings that did not come from the archive. `onset_hfo/io.py`
+dispatches on the extension to one of MNE's own readers — Persyst, Nihon
+Kohden, Nicolet, BrainVision, EDF, Curry, Blackrock, MEF3 and the rest — and
+returns the same `Recording`, so there is no proprietary format and nothing
+downstream changed. The question that made it worth doing is not parsing but
+*channel type*: a clinical export declares everything `eeg`, this pipeline
+analyses anything typed eeg, ecog or seeg, and the result would be a complete,
+confident review of a scalp montage. So the import dialog shows the file's own
+declaration beside what it will be analysed as, refuses to open until something
+is marked intracranial, and the command line refuses a scripted import that
+says nothing about the channels at all.
+
 **What is open.** No clinician has used it for an afternoon yet — which is the
 only test that matters and the reason it was built.
 

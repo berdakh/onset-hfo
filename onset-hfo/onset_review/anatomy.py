@@ -405,17 +405,18 @@ def layout_caption(layout: pd.DataFrame) -> str:
                 f"their electrode names. Those are schematic.")
     unmapped = float((layout["region"] == UNKNOWN["label"]).mean())
     if unmapped > 0.5:
-        return (f"MONTAGE DIAGRAM — {NOT_ANATOMY}, and no anatomy at all. This "
-                "archive ships no electrode coordinates, and these electrode "
-                "names match no structure this software knows, so the only "
-                "real information here is which contacts share a shaft and "
-                "their order along it. Shafts are fanned out so they can be "
-                "told apart; their positions and sides mean nothing.")
-    return (f"SCHEMATIC LAYOUT — {NOT_ANATOMY}. This archive ships no electrode "
-            "coordinates, so each shaft is drawn at the textbook location of "
-            "the structure its name claims, contacts in order along it. Use it "
-            "to see which shafts are active and how they sit relative to the "
-            "resection; do not read a position off it.")
+        return (f"MONTAGE DIAGRAM — {NOT_ANATOMY}, and no anatomy at all. No "
+                "electrode coordinates came with this recording, and these "
+                "electrode names match no structure this software knows, so "
+                "the only real information here is which contacts share a "
+                "shaft and their order along it. Shafts are fanned out so "
+                "they can be told apart; their positions and sides mean "
+                "nothing.")
+    return (f"SCHEMATIC LAYOUT — {NOT_ANATOMY}. No electrode coordinates came "
+            "with this recording, so each shaft is drawn at the textbook "
+            "location of the structure its name claims, contacts in order "
+            "along it. Use it to see which shafts are active and how they sit "
+            "relative to the resection; do not read a position off it.")
 
 
 def brain_surface(n_theta: int = 48, n_phi: int = 32):

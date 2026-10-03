@@ -385,7 +385,92 @@ the `On spike` column tells the two apart.
 
 ---
 
-## 5. What this has actually been measured to do
+## 5. Opening a recording of your own
+
+![The import dialog](images/onset-review-import.png)
+
+**Review → Open a file…** (or the *Open a file…* button in the open dialog)
+reads a recording from this machine. There is no conversion step and no
+proprietary format: the file goes to one of MNE's readers and comes back as the
+same recording the archive produces, so every panel, the report and the
+assistant work on it unchanged.
+
+| System | What to open |
+|---|---|
+| Persyst | `.lay` (the `.dat` beside it is found automatically) |
+| Nihon Kohden | `.eeg` |
+| Nicolet | `.data` |
+| Micromed, Natus, most clinical exports | `.edf` / `.bdf` / `.gdf` |
+| BrainVision | `.vhdr` — the header, not the `.eeg` |
+| Blackrock | `.ns3` / `.ns5` |
+| MEF3 | any file inside the `.mefd` bundle |
+| Neuralynx | any `.ncs` in the recording's folder |
+| Curry, EEGLAB, EGI, Neuroscan, Eximia, MNE | `.cdt`, `.set`, `.mff`, `.cnt`, `.nxe`, `.fif` |
+
+`.eeg` is the one ambiguous extension: BrainVision writes the *signal* to
+it beside a `.vhdr` header, Nihon Kohden writes the whole recording to it.
+A sibling `.vhdr` settles which, so either file of a BrainVision triplet
+opens the right one. Anything MNE reads that is missing from this list is
+one line in `onset_hfo/io.py`; a Nicolet `.data` needs its channel type
+supplied, because its header does not carry one.
+
+### The screen that matters is the channel list
+
+A clinical export almost always declares **every channel as scalp EEG**,
+whatever is actually in it — the one real intracranial BrainVision file this
+project caches declares all fifty that way. This software analyses anything
+typed SEEG, ECoG or scalp EEG and drops the rest, so a file taken at its word
+produces a complete review — rates, Poisson intervals, a candidate channel set
+— for the EKG lead and the DC channels as readily as for a depth electrode, and
+nothing anywhere says so.
+
+So the dialog shows you what the file claims, next to what it will be analysed
+as, and will not open until something is marked SEEG or ECoG. Set them all with
+one of the three buttons, then change the exceptions — the EKG, the DC
+channels, the trigger — individually. The count beside the buttons is the
+number that will actually be analysed.
+
+### What else it asks, and why
+
+* **From / To.** Only this window is read. A night of intracranial EEG is tens
+  of gigabytes and this software analyses a minute of it; the range is bounded
+  by the file's own length. Every time it later reports is a time in the
+  original recording, not in your window.
+* **Band.** Offered from the file's sampling rate, so the fast-ripple band
+  disappears below 1000 Hz for the same reason it does for the archive.
+* **Mains.** 50 or 60 Hz, and it is *not* read from the file. Notching the
+  wrong one leaves the interference in place and carves a hole where there was
+  none, and it never announces itself.
+* **Label.** Goes on the report. Use a study code, not a patient name.
+
+![The window on an imported recording](images/onset-review-imported.png)
+
+### What an imported file does not bring
+
+No expert markings, no resected zone, no participant record. *Detector vs
+expert* and the resection overlay say they are unavailable rather than showing
+an empty table, and **Patient** says the record does not exist rather than that
+none was found. The contacts view still places shafts from their names, with
+the same warning it always carries.
+
+**Nothing is uploaded anywhere.** Equally, nothing here checks
+de-identification, ethics approval or data governance — those remain yours.
+
+### From a script
+
+The window route asks for the channel types; a scripted one has to state them:
+
+```bash
+onset-review --open /data/study-001.edf              --all-channels-as seeg --channel-type 'EKG=ecg'              --window 0 60 --subject study-001              --export reviews/study-001.md
+```
+
+Without `--all-channels-as` or `--channel-type` it refuses and says why. That
+refusal is deliberate: a batch run that trusted the file's own answer is the
+one way to produce a folder of confident reviews of the wrong channels.
+
+---
+
+## 6. What this has actually been measured to do
 
 Cohort figures from [`EVALUATION.md`](EVALUATION.md), 20 patients, against the
 annotators' 41,187 marked events, on reviewed channels only.
@@ -422,7 +507,7 @@ candidate sets and a second window.
 
 ---
 
-## 6. The five things never to conclude from this screen
+## 7. The five things never to conclude from this screen
 
 1. **"The busiest channel is the seizure onset zone."** It is the busiest
    channel in one minute of one recording, by one detector, at one threshold.

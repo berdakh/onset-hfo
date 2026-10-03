@@ -17,6 +17,12 @@ Two choices in here are about not wasting a clinician's afternoon:
   pipeline would refuse it anyway. Refusing it in the dialog, with the reason
   visible, teaches something; refusing it after a two-minute load does not.
 
+There is a third way out of this dialog: **Open a file…**, which hands a local
+recording to one of MNE's readers through `onset_hfo.io` and produces the same
+`ReviewRequest`. It sits beside Open rather than behind a menu because a
+reviewer who has their own recording has no cached window to pick first, and
+the archive list they would be staring at is empty.
+
 Loading runs on a worker thread. Not for elegance: preprocessing and detection
 on a 60 s 50-channel slice takes a few seconds, and a frozen window with no
 progress bar is indistinguishable from a crashed one.
@@ -24,6 +30,7 @@ progress bar is indistinguishable from a crashed one.
 
 from __future__ import annotations
 
+import dataclasses
 from pathlib import Path
 
 import pandas as pd
@@ -41,6 +48,7 @@ from qtpy.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QProgressDialog,
+    QPushButton,
     QVBoxLayout,
 )
 
@@ -73,6 +81,10 @@ class LauncherDialog(QDialog):
         self.setMinimumWidth(620)
         self._cache_dir = cache_dir
         self._windows = cached_windows(cache_dir)
+        #: Set when the reviewer came in through "Open a file…" instead. It
+        #: carries its own channel types and mains, so `request` returns it
+        #: whole rather than merging it with the archive fields above.
+        self._imported: ReviewRequest | None = None
 
         self.subject = QComboBox()
         self.window = QComboBox()
@@ -131,6 +143,15 @@ class LauncherDialog(QDialog):
         self.buttons = QDialogButtonBox(QDialogButtonBox.Open | QDialogButtonBox.Cancel)
         self.buttons.accepted.connect(self.accept)
         self.buttons.rejected.connect(self.reject)
+        self.buttons.button(QDialogButtonBox.Open).setProperty("primary", True)
+
+        self.import_button = QPushButton("Open a file…")
+        self.import_button.setToolTip(
+            "Read a recording from this machine — EDF, BrainVision, Persyst, "
+            "Nihon Kohden, Nicolet, Blackrock, MEF3 and the rest of MNE's "
+            "readers. You will be asked to confirm which channels are "
+            "intracranial, because the file's own answer usually is not.")
+        self.import_button.clicked.connect(self.open_file)
 
         banner = QLabel(
             "<b>Research prototype — not a medical device.</b> Public research "
@@ -144,6 +165,7 @@ class LauncherDialog(QDialog):
         layout.addWidget(options)
         layout.addWidget(self.status)
         row = QHBoxLayout()
+        row.addWidget(self.import_button)
         row.addStretch(1)
         row.addWidget(self.buttons)
         layout.addLayout(row)
@@ -157,9 +179,12 @@ class LauncherDialog(QDialog):
         self.subject.clear()
         if self._windows.empty:
             self.status.setText(
-                "No recordings are cached yet. Fetch one first, for example:\n"
+                "No archive recordings are cached yet. Either open a file from "
+                "this machine, or fetch a window first, for example:\n"
                 "    python -m onset_hfo.cli fetch --subject sub-01 "
                 "--t-start 0 --t-stop 60")
+            # Open is disabled, "Open a file…" deliberately is not: an empty
+            # cache is exactly when a reviewer has their own recording.
             self.buttons.button(QDialogButtonBox.Open).setEnabled(False)
             return
         for (dataset, subject), rows in self._windows.groupby(["dataset", "subject"]):
@@ -205,8 +230,36 @@ class LauncherDialog(QDialog):
                          f"was developed on interictal sleep.")
         self.status.setText("  ".join(notes))
 
+    # -- a file from this machine ----------------------------------------
+    def open_file(self) -> None:
+        """Pick a local recording, confirm it, and close this dialog with it.
+
+        Accepting here rather than filling the archive fields in: an imported
+        window has no dataset, no run and no cached metadata, and pretending
+        otherwise would put a file's name in a field that means "OpenNeuro
+        accession" everywhere else in this software.
+        """
+        from onset_review.importer import choose_file
+
+        request = choose_file(self, self._cache_dir)
+        if request is None:
+            return
+        # The band, detectors, threshold and spike setting are this dialog's,
+        # not the import dialog's: they are the same choices whatever the
+        # window came from, and asking twice for them would be the import
+        # screen's third page.
+        chosen = [item.data(Qt.UserRole) for item in self.detectors.selectedItems()]
+        threshold = (None if self.threshold.value() <= self.threshold.minimum()
+                     else float(self.threshold.value()))
+        self._imported = dataclasses.replace(
+            request, detectors=tuple(chosen) or ("rms",),
+            threshold_sd=threshold, with_spikes=self.spikes.isChecked())
+        self.accept()
+
     # -- result ----------------------------------------------------------
     def request(self) -> ReviewRequest:
+        if self._imported is not None:
+            return self._imported
         row = self.window.currentData() or {}
         chosen = [item.data(Qt.UserRole) for item in self.detectors.selectedItems()]
         threshold = (None if self.threshold.value() <= self.threshold.minimum()
@@ -225,7 +278,9 @@ class LauncherDialog(QDialog):
         )
 
     def overlay_expert(self) -> bool:
-        return self.expert.isChecked()
+        # An imported file brings no expert markings, so the checkbox -- which
+        # applies to the archive -- must not travel with it.
+        return self._imported is None and self.expert.isChecked()
 
 
 def _warm_imports() -> None:

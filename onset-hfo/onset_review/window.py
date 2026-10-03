@@ -248,14 +248,15 @@ def goto(figure, t: float, channel: str | None = None,
 
 
 def decorate(figure, session: ReviewSession, show_expert: bool = False,
-             on_preprocess=None) -> ReviewWindowParts:
+             on_preprocess=None, on_import=None) -> ReviewWindowParts:
     """Add the menus, the toolbar, the panels and the caveat to MNE's window.
 
     `on_preprocess` is called with a new `PreprocessConfig` when the reviewer
-    applies one. It is a callback rather than something this module does
-    itself, because re-running the analysis means fetching, detecting and
-    rebuilding every panel -- which is the entry point's job, and keeps this
-    file free of the loader and the progress dialog.
+    applies one. `on_import` is called with no arguments when they ask to open
+    a recording from this machine. Both are callbacks rather than something
+    this module does itself, because re-running the analysis means fetching,
+    detecting and rebuilding every panel -- which is the entry point's job, and
+    keeps this file free of the loader and the progress dialog.
     """
     host = figure if has_dock_host(figure) else QMainWindow()
     display = _Display("selected", session.leader.get("leader"), show_expert)
@@ -356,7 +357,8 @@ def decorate(figure, session: ReviewSession, show_expert: bool = False,
     parts = ReviewWindowParts(figure, host, panels, docks, session)
     parts.display = display
     _wire(figure, host, panels, session, display, parts)
-    _menus(figure, host, panels, docks, session, display, parts)
+    _menus(figure, host, panels, docks, session, display, parts,
+           on_import=on_import)
     _status(host, session)
     if on_preprocess is not None:
         panels["preprocess"].applied.connect(on_preprocess)
@@ -453,11 +455,22 @@ def _status(host: QMainWindow, session: ReviewSession) -> None:
 
 def _menus(figure, host: QMainWindow, panels: dict, docks: dict,
            session: ReviewSession, display: _Display,
-           parts: ReviewWindowParts) -> None:
+           parts: ReviewWindowParts, on_import=None) -> None:
     """Menus and a toolbar, in the vocabulary of the task rather than the code."""
     menubar = host.menuBar()
 
     file_menu = menubar.addMenu("&Review")
+    opener = file_menu.addAction("&Open a file…")
+    opener.setShortcut("Ctrl+O")
+    opener.setEnabled(on_import is not None)
+    opener.setToolTip(
+        "Read a recording from this machine through MNE — EDF, BrainVision, "
+        "Persyst, Nihon Kohden, Nicolet, Blackrock, MEF3 and the rest. This "
+        "window is replaced." if on_import is not None else
+        "Opening another recording is not available in this window")
+    if on_import is not None:
+        opener.triggered.connect(lambda _=False: on_import())
+    file_menu.addSeparator()
     file_menu.addAction("&Export review…", lambda: _export(host, session))
     file_menu.addSeparator()
     file_menu.addAction("&Close window", host.close)

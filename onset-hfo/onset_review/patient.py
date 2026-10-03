@@ -37,6 +37,10 @@ class PatientPanel(QWidget):
         self.palette_tokens = current()
         self._session = session
         self.record = patient_record(str(session.request.subject), data_dir)
+        #: An imported file has no accession and no cohort row, so the two
+        #: paragraphs below that describe the *archive's* record would be
+        #: answering a question nobody asked.
+        self.imported = bool(getattr(session.request, "imported", False))
 
         body = QWidget()
         column = QVBoxLayout(body)
@@ -44,14 +48,20 @@ class PatientPanel(QWidget):
         column.setSpacing(2)
 
         column.addWidget(_title(session.request.subject))
+        where = (f"imported from {session.request.path.name}"
+                 if self.imported else session.request.dataset)
         column.addWidget(muted(
-            f"{session.request.dataset} · run {session.request.run} · "
+            f"{where} · run {session.request.run} · "
             f"{session.request.t_start:g}–{session.request.t_stop:g} s of this "
             f"recording", self.palette_tokens))
 
         if not self.record.get("available"):
             column.addWidget(section_label("Record", self.palette_tokens))
             unavailable = QLabel(
+                "This window was imported from a file, so there is no "
+                "participant record, no resected zone and no expert marking to "
+                "compare against. Nothing in this panel is missing by accident."
+                if self.imported else
                 "No participant record is committed for this subject. "
                 "`data/outcome/participants.csv` carries the cohort this "
                 "software was evaluated on; a recording from elsewhere will "
@@ -90,11 +100,11 @@ class PatientPanel(QWidget):
 
         column.addWidget(section_label("Clinical record", self.palette_tokens))
         empty = QLabel(
-            "<b>This archive carries none of the following.</b> They are listed "
-            "so you can see where a site's own record would appear, and they "
-            "are deliberately blank rather than filled with an example — an "
-            "invented history in a clinical tool is indistinguishable from a "
-            "real one.")
+            "<b>Nothing connected to this software carries the following.</b> "
+            "They are listed so you can see where a site's own record would "
+            "appear, and they are deliberately blank rather than filled with "
+            "an example — an invented history in a clinical tool is "
+            "indistinguishable from a real one.")
         empty.setWordWrap(True)
         empty.setStyleSheet(card("warn", self.palette_tokens))
         column.addWidget(empty)
@@ -102,18 +112,10 @@ class PatientPanel(QWidget):
                                  for name, why in CHART_FIELDS],
                                 self.palette_tokens))
 
-        column.addWidget(section_label("Deliberately not published",
-                                       self.palette_tokens))
-        withheld = QLabel(
-            "The archive's <code>participants.tsv</code> also carries <b>age, "
-            "sex and handedness</b>. They are not committed here: three "
-            "demographic fields published beside pathology, surgical extent and "
-            "outcome narrow a cohort of twenty considerably, and no analysis in "
-            "this project uses any of them. This is a blank by choice, not a "
-            "gap in the data — see <code>data/outcome/README.md</code>.")
-        withheld.setWordWrap(True)
-        withheld.setStyleSheet(card("plain", self.palette_tokens))
-        column.addWidget(withheld)
+        if not self.imported:
+            column.addWidget(section_label("Deliberately not published",
+                                           self.palette_tokens))
+            column.addWidget(_withheld(self.palette_tokens))
         column.addStretch(1)
 
         scroll = QScrollArea()
@@ -202,6 +204,25 @@ class PatientPanel(QWidget):
               "<code>docs/OUTCOME.md</code> before reading a single case as "
               "evidence of anything.")
         self.outcome.setVisible(shown)
+
+
+def _withheld(tokens) -> QLabel:
+    """Why three fields the archive publishes are absent from this repository.
+
+    A blank beside pathology and outcome reads as an oversight unless it says
+    otherwise, so it says otherwise. Only shown for an archive window: an
+    imported file has no cohort for the argument to be about.
+    """
+    label = QLabel(
+        "The archive's <code>participants.tsv</code> also carries <b>age, "
+        "sex and handedness</b>. They are not committed here: three "
+        "demographic fields published beside pathology, surgical extent and "
+        "outcome narrow a cohort of twenty considerably, and no analysis in "
+        "this project uses any of them. This is a blank by choice, not a "
+        "gap in the data — see <code>data/outcome/README.md</code>.")
+    label.setWordWrap(True)
+    label.setStyleSheet(card("plain", tokens))
+    return label
 
 
 def _title(subject: str) -> QLabel:
