@@ -53,7 +53,7 @@ dataset — what the original annotators marked on the same minute.
 │                                               │  · agreement      │
 │                                               │  · provenance     │
 │                                               │  · preprocessing  │
-│                                               │  · data quality   │
+│                                               │  · quality        │
 │                                               │  · assistant      │
 ├───────────────────────────────────────────────┴───────────────────┤
 │  the caveat — always on screen                                    │
@@ -321,6 +321,8 @@ evidence. The panels you have dragged into place stay where you put them.
 
 ### Data quality — which contacts and which seconds were analysed
 
+*(The tab is labelled **Quality**.)*
+
 ![The data quality panel](images/onset-review-quality.png)
 
 A rate ranking is unusually easy to poison, and both ways it fails look like
@@ -352,6 +354,18 @@ table.
 
 That is the general rule here: **it removes only what cannot be real, and
 flags what it cannot judge.**
+
+Here is sub-13 with the stage running. `TR3-TR4`, `TR2-TR3` and `TR1-TR2` hold
+the top three places — and two of them are flagged. Their rates and ranks are
+untouched; what the software is saying is "look at these before you quote
+them".
+
+![sub-13, two of the top three contacts flagged](images/onset-review-quality-window.png)
+
+On the twenty-patient archive this stage changes nothing: the rate tables and
+the leading channel are identical with it on and off for every subject
+checked. It earns its place on a recording from a clinic, not on a curated
+research archive.
 
 **Blank is not zero.** In the Findings table, a contact with rate `0.00` was
 analysed and no events were found — a measurement. A contact with a blank rate

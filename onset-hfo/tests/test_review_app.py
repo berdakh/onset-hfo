@@ -1237,4 +1237,7 @@ def test_the_panel_says_what_it_cannot_tell(qapp, faulted):
 def test_the_quality_dock_is_in_the_window(built):
     assert "quality" in built.panels
     assert "quality" in built.docks
-    assert built.docks["quality"].windowTitle() == "Data quality"
+    # Short, like the others: seven tabs in a 640 px column elide, and the
+    # sentence lives in the tooltip.
+    assert built.docks["quality"].windowTitle() == "Quality"
+    assert "which contacts" in built.docks["quality"].toolTip()

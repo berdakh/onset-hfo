@@ -342,9 +342,10 @@ def decorate(figure, session: ReviewSession, show_expert: bool = False,
     # And beside it, the stage that decides what the preprocessed signal is
     # fit for. The two belong together: one says what was done to the signal,
     # the other says which of it was worth analysing.
-    fit = dock("quality", "Data quality", Qt.RightDockWidgetArea,
+    fit = dock("quality", "Quality", Qt.RightDockWidgetArea,
                panels["quality"],
-               "Which contacts and which seconds were analysed, and why not")
+               "Data quality — which contacts and which seconds were "
+               "analysed, which were only flagged, and why")
     host.tabifyDockWidget(who, brain)
     host.tabifyDockWidget(brain, accord)
     host.tabifyDockWidget(accord, prov)

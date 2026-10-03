@@ -588,6 +588,12 @@ in). So that check now *flags* and never removes. The module sets a contact
 aside only for a fault no physiology produces, and the division is pinned by a
 test over the list itself.
 
+The stage changes no number this project has published. On sub-01, sub-05 and
+sub-13 the rate tables are identical with it on and off, and so is each
+subject's leading channel -- because flagging removes nothing and these
+archives carry none of the unambiguous faults that would. It is a switch
+(`check_quality`) rather than a removal for the same reason.
+
 It also opens recordings that did not come from the archive. `onset_hfo/io.py`
 dispatches on the extension to one of MNE's own readers — Persyst, Nihon
 Kohden, Nicolet, BrainVision, EDF, Curry, Blackrock, MEF3 and the rest — and
