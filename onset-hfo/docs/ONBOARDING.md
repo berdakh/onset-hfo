@@ -85,12 +85,14 @@ For the research framing rather than the code, read
 | `onset_hfo/` | the pipeline — see the table below |
 | `onset_agent/` | the agent and the S0–S3 orchestration ladder |
 | `app/` | Streamlit app: `Home.py` plus nine pages |
-| `docs/` | seventeen documents; reading order at the end of this file |
+| `onset_review/` | **the desktop reviewer** — the thing a clinician opens. `session`/`trends`/`report` are Qt-free and hold every number it shows; `panels`/`window`/`launcher` render and compute nothing |
+| `packaging/` | `install-ubuntu.sh`, the `.desktop` entry and the icon |
+| `docs/` | nineteen documents; reading order at the end of this file |
 | `data/` | **committed extracts** so every published number can be checked from a fresh clone with no download |
 | `artifacts/` | **gitignored** — where runs actually write, and the dataset cache |
 | `notebooks/` | seven notebooks; the first five need no setup |
 | `scripts/` | studies too long for a test: the model ladder, the sub-population screen, the multiplier ablation |
-| `tests/` | thirteen files, 468 tests, all offline |
+| `tests/` | fourteen files, 522 tests, all offline |
 | `paper/` | **the preprint — untracked on purpose. Never commit it.** |
 
 ### `onset_hfo/` — the modules worth knowing first

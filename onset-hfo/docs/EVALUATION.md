@@ -850,7 +850,7 @@ python scripts/run_robustness_ablation.py \
 
 ## 7. Test suite
 
-`pytest -q` — 453 tests, entirely offline. They cover the
+`pytest -q` — 522 tests, entirely offline. They cover the
 primitives (robust scale, sliding features, threshold segmentation, bipolar
 pairing), the detectors (hot channels found, events are oscillations, a flat
 channel yields nothing, thresholds behave monotonically, reruns are
@@ -860,6 +860,15 @@ whole agent (tool schemas, argument validation, scope refusals, citation and
 number verification, and the language-model path against a mock
 OpenAI-compatible server that replies the way Qwen and Llama servers do —
 including the two ways small models get it wrong).
+
+`tests/test_review_app.py` adds 41, covering the desktop reviewer: that its
+rates agree with its own event list, that annotations land in the trace's time
+base rather than the archive's, that the trend accounts for every event at any
+bin width, that the exported review needs no optional dependency, and -- the
+only assumption the window's whole layout rests on -- that MNE's Qt figure is
+still a `QMainWindow` and can host our dock widgets. The Qt half of that file
+skips itself when the `review` extra is absent, so the numbers are checked
+everywhere and the window is checked where there is a display.
 
 `tests/test_orchestration.py` adds 70 of those and `tests/test_localization.py` 60, covering the orchestration
 half: the label layer (including the `S`/`F` outcome inversion and the

@@ -32,6 +32,21 @@ A channel's rate leads to the events behind it, an event leads to the signal it
 was measured on, and the assistant's every citation opens to both. Ask it which
 channels to resect and watch it refuse.
 
+**Or install the desktop reviewer** — the signal itself, with the marks on it:
+
+```bash
+./packaging/install-ubuntu.sh --with-sample && onset-review
+```
+
+![The Onset Review window](docs/images/onset-review.png)
+
+One window: the trend across channels, the trace with the detector's marks in
+blue and the archive annotators' own marks in green, the ranked channels with
+the ones that cannot be told apart from the leader tinted, and — pinned to the
+status bar where it cannot be scrolled past — whether this window supports a
+ranking at all. [`INSTALL.md`](docs/INSTALL.md) ·
+[`CLINICAL_GUIDE.md`](docs/CLINICAL_GUIDE.md).
+
 New to the project? [**Where do seizures start?**](https://berdakh.github.io/onset-hfo/TUTORIAL.html)
 ([source](../site/TUTORIAL.html)) is a standalone
 walkthrough — the research question, the signal, the traps, every measured
@@ -97,7 +112,13 @@ python -m onset_hfo.cli outcome
 #     (or just open https://onsetnu.streamlit.app/)
 pip install -e ".[app]" && streamlit run app/Home.py
 
-pytest -q        # 468 tests, all offline
+# 11. sit with the signal itself: the desktop reviewer, installed on Ubuntu
+./packaging/install-ubuntu.sh --with-sample
+onset-review                                  # or the applications menu
+onset-review --subject sub-01 --window 0 60 --expert    # straight in
+onset-review --subject sub-01 --window 0 60 --export review.md   # no display
+
+pytest -q        # 522 tests, all offline
 ```
 
 ## What it actually does
@@ -336,12 +357,23 @@ app/                  the reading interface (Streamlit), ten pages
   pages/              Recording · Report · Assistant · Detectors · Outcome
                       Patients · Data · Architecture · Research
 
+onset_review/         the desktop reviewer (Qt), installable on Ubuntu
+  session.py          a loaded window: the recording, the detections, the findings
+  trends.py           the trend matrix, the event list, detector-vs-expert agreement
+  report.py           the record a reviewer exports when they are done
+  panels.py           the five dock widgets; renders, computes nothing
+  window.py           docks them onto MNE's own Qt trace browser
+  launcher.py         the open dialog, and loading off the GUI thread
+  app.py              onset-review ...
+
+packaging/            install-ubuntu.sh, the .desktop entry and the icon
+
 data/outcome/         the outcome study's per-subject tables, for the Patients page
 
 data/example_analysis/  a real 60 s analysis, so the app works on a fresh clone
 
 notebooks/            seven Colab notebooks (all but 06 built by scripts/build_notebooks.py)
-tests/                453 offline tests (synthetic data + a mock model server)
+tests/                522 offline tests (synthetic data + a mock model server)
 docs/                 everything above
 ```
 

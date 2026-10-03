@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Onset Review
+GenericName=iEEG HFO reviewer
+Comment=Review high-frequency oscillations in intracranial EEG (research prototype)
+Exec=onset-review
+Icon=onset-review
+Terminal=false
+Categories=Science;MedicalSoftware;Education;
+Keywords=EEG;iEEG;SEEG;epilepsy;HFO;ripple;neurophysiology;
+StartupNotify=true
+StartupWMClass=onset-review
