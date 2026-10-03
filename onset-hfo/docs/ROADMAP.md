@@ -168,7 +168,7 @@ and `onset_agent/scoring.py` already exist.
 
 ---
 
-## 3. Electrode geometry — *blocked on this dataset; needs a different archive*
+## 3. Electrode geometry — *the reading path is written and tested; both archives still ship no coordinates*
 
 **Why it matters.** Bipolar pairs are formed from consecutive contact
 *numbers*. On a grid, numbering wraps at the end of a row, so some pairs join
@@ -176,17 +176,29 @@ contacts that are centimetres apart. Every rate computed on such a pair is
 suspect.
 
 **Why it cannot be done here.** `ds003029` publishes **no `electrodes.tsv` for
-any subject**. There are no coordinates in the archive at all. Anything that
-needs geometry — distance-based pairing, distance-to-neighbour features,
+any subject**, and an S3 listing of `ds003498` confirms the same: neither
+archive contains a single coordinate, nor a `coordsystem.json`. Anything that
+needs real geometry — distance-based pairing, distance-to-neighbour features,
 source localisation — requires a different dataset.
 
-**What to do instead.** Write the code against the BIDS `electrodes.tsv`
-schema so it is ready, pair by Euclidean distance with a maximum where
-coordinates exist, fall back to numbering where they do not, and state which
-rule was used in the report's method section. Then validate it on an archive
-that ships coordinates.
+**What has been done instead.** `onset_review/anatomy.py` reads the BIDS
+`electrodes.tsv` schema, converts its millimetres to metres, and marks every
+contact it places with a `source` of `archive` or `inferred`. With no
+coordinates available it falls back to a **schematic** layout derived from the
+electrode names — `AHR3` is the third contact of the right anterior
+hippocampal depth electrode, and contacts along a depth electrode are numbered
+in spatial order — which is enough to show which shafts are active and how they
+sit relative to the resection, and is not enough for anything metric. The 3D
+view carries that distinction permanently, in the data and on the screen.
+`tests/test_review_anatomy.py` exercises the measured-coordinate path with a
+constructed table so it does not rot untried.
 
-**Touches.** `onset_hfo/preprocess.py`, `onset_hfo/datasets.py`, `report.py`.
+**What is still open.** Distance-based bipolar pairing. The fallback is still
+numbering, which is what makes the grid caveat above real, and nothing can
+validate a distance rule until an archive with coordinates is in hand.
+
+**Touches.** `onset_hfo/preprocess.py`, `onset_hfo/datasets.py`, `report.py`,
+`onset_review/anatomy.py`.
 
 ---
 
@@ -536,9 +548,68 @@ breadth sweep.
 
 ---
 
-## 9. Interface — *done*
+## 9. Interface — *done, twice: a reading interface and a desktop reviewer*
 
-**Status.** `app/` — `streamlit run app/Home.py`, installed with
+**Status, the desktop product.** `onset_review/` —
+`./packaging/install-ubuntu.sh && onset-review`. An installable Ubuntu
+application built around MNE's own Qt iEEG browser, with the activity trend
+above the trace, visible amplitude and scroll controls, the ranked channels
+beside it, the archive annotators' marks overlaid on the signal in their own
+colour, the contacts in 3D with the resection ringed, and the agent in a dock
+where its citations are one click from the signal they were measured on. The
+`leader_separation` sentence is pinned to the status bar.
+
+Its division of labour is the point: `session`, `trends`, `report` and
+`anatomy` import no Qt and hold every number the interface shows, so the
+figures a clinician reads are tested without a display; `panels`, `controls`,
+`brainview`, `assistant`, `window` and `launcher` render and compute nothing.
+A `desktop` CI job installs the extra, brings up Xvfb and builds the whole
+window on a synthetic recording.
+
+And it decides, before any detector runs, which contacts and which seconds
+are fit to analyse (`onset_hfo/quality.py`). Nothing is interpolated: the
+output is a per-contact rate, so a repaired contact's rate would be borrowed
+from its neighbours. Each contact's rate is divided by the time that survived
+rather than by the nominal window, because otherwise rejecting an artifact
+makes the table less accurate than leaving it in.
+
+**What building it caught, twice.** The first segment test rejected on
+amplitude and threw away six seconds of `AR2-AR3` on sub-01 -- the second
+busiest HFO channel in the window -- because an interictal discharge is a
+large deflection. It now tests for a discontinuity, with the threshold
+measured over 20,520 channel-seconds. Then the band-power check, which is the
+one that catches a noisy amplifier, flagged `TR1-TR2` and `TR2-TR3` on
+sub-13 -- and the archive's own annotators had marked 91, 102 and 164 ripples
+on those three contacts. A contact full of real ripples has high band power
+because the ripples are in the band, and no statistic tried here separates
+that from an amplifier (the quietest-second floor comes closest: 26x for a
+planted fault against 5x for `TR1-TR2`, which is not a gap to put a threshold
+in). So that check now *flags* and never removes. The module sets a contact
+aside only for a fault no physiology produces, and the division is pinned by a
+test over the list itself.
+
+The stage changes no number this project has published. On sub-01, sub-05 and
+sub-13 the rate tables are identical with it on and off, and so is each
+subject's leading channel -- because flagging removes nothing and these
+archives carry none of the unambiguous faults that would. It is a switch
+(`check_quality`) rather than a removal for the same reason.
+
+It also opens recordings that did not come from the archive. `onset_hfo/io.py`
+dispatches on the extension to one of MNE's own readers — Persyst, Nihon
+Kohden, Nicolet, BrainVision, EDF, Curry, Blackrock, MEF3 and the rest — and
+returns the same `Recording`, so there is no proprietary format and nothing
+downstream changed. The question that made it worth doing is not parsing but
+*channel type*: a clinical export declares everything `eeg`, this pipeline
+analyses anything typed eeg, ecog or seeg, and the result would be a complete,
+confident review of a scalp montage. So the import dialog shows the file's own
+declaration beside what it will be analysed as, refuses to open until something
+is marked intracranial, and the command line refuses a scripted import that
+says nothing about the channels at all.
+
+**What is open.** No clinician has used it for an afternoon yet — which is the
+only test that matters and the reason it was built.
+
+**Status, the reading interface.** `app/` — `streamlit run app/Home.py`, installed with
 `pip install -e ".[app]"`. Five tabs: ranking (with intervals and the "does
 anything stand out?" verdict above the table), evidence (a channel's citable
 events and the three-panel figure for the one you pick), disagreements (both
