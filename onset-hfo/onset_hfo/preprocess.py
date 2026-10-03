@@ -28,10 +28,10 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from onset_hfo.config import PreprocessConfig
+from onset_hfo.config import BANDS, PreprocessConfig
 from onset_hfo.datasets import Recording
 
-__all__ = ["Prepared", "prepare", "bipolar_pairs"]
+__all__ = ["Prepared", "prepare", "bipolar_pairs", "describe"]
 
 _CONTACT_RE = re.compile(r"^([A-Za-z]+[A-Za-z']*?)(\d{1,3})$")
 #: Channel name prefixes that are never intracranial recordings in this dataset.
@@ -141,6 +141,77 @@ def _check(cfg: PreprocessConfig, sfreq: float) -> None:
     if cfg.notch_width <= 0:
         raise ValueError(f"notch width must be positive, not {cfg.notch_width:g} Hz")
 
+def describe(cfg: PreprocessConfig, band: tuple[float, float],
+             sfreq: float) -> tuple[str, list[str]]:
+    """Plain English for a config, plus everything questionable about it.
+
+    Lives here rather than in the panel that shows it, next to the `_check`
+    whose refusals it mirrors. That is structural: a reviewer should learn that
+    a 150 Hz low-pass is wrong from the red text under the control rather than
+    from a dialog a minute into a re-analysis, and the only way the two stay
+    in step is for them to be read and edited together.
+
+    Returns the sentence and the list of concerns. The concerns that `_check`
+    *raises* on are included, so a caller can tell "do not let this be applied"
+    from "the reviewer should know".
+    """
+    rate = float(cfg.resample) if cfg.resample else float(sfreq)
+    lines = []
+    if cfg.highpass:
+        lines.append(f"high-pass at {cfg.highpass:g} Hz")
+    if cfg.lowpass:
+        lines.append(f"low-pass at {cfg.lowpass:g} Hz")
+    if cfg.notch:
+        mains = f"{cfg.line_freq:g} Hz" if cfg.line_freq else "the mains frequency"
+        lines.append(f"notch {mains}"
+                     + (" and its harmonics" if cfg.notch_harmonics else " only")
+                     + f", {cfg.notch_width:g} Hz wide")
+    if cfg.resample:
+        lines.append(f"resample to {cfg.resample:g} Hz")
+    lines.append("re-reference to neighbouring contacts (bipolar)" if cfg.bipolar
+                 else "re-reference to the common average" if cfg.average_reference
+                 else "leave the recording's own reference")
+    if cfg.drop_bads:
+        lines.append("drop channels the dataset flagged bad")
+    if cfg.exclude:
+        lines.append(f"drop {len(cfg.exclude)} channel(s) you marked")
+
+    warnings = []
+    if cfg.highpass and cfg.lowpass and cfg.lowpass <= cfg.highpass:
+        warnings.append(f"The low-pass ({cfg.lowpass:g} Hz) is at or below the "
+                        f"high-pass ({cfg.highpass:g} Hz). That passes nothing.")
+    if cfg.lowpass and cfg.lowpass >= rate / 2:
+        warnings.append(f"The low-pass ({cfg.lowpass:g} Hz) is at or above the "
+                        f"Nyquist frequency of {rate / 2:g} Hz.")
+    elif cfg.lowpass and cfg.lowpass < band[1]:
+        warnings.append(f"The low-pass ({cfg.lowpass:g} Hz) cuts into the band "
+                        f"being analysed ({band[0]:.0f}–{band[1]:.0f} Hz). The "
+                        f"detector would still run and its rates would mean "
+                        f"nothing.")
+    if not BANDS.usable(rate, band):
+        warnings.append(f"At {rate:g} Hz this recording cannot carry the "
+                        f"{band[1]:.0f} Hz top of the band being analysed; it "
+                        f"needs more than {2 * band[1]:.0f} Hz.")
+    if cfg.highpass and cfg.highpass > band[0]:
+        warnings.append(f"The high-pass ({cfg.highpass:g} Hz) is inside the band "
+                        f"being analysed, which starts at {band[0]:.0f} Hz.")
+    if not cfg.notch:
+        warnings.append("With the notch off, mains harmonics sit inside the HFO "
+                        "bands and are detected as oscillations.")
+    if cfg.notch_width <= 0:
+        warnings.append(f"A notch width of {cfg.notch_width:g} Hz is not a "
+                        f"filter. It must be positive.")
+    if cfg.resample is not None and float(cfg.resample) <= 0:
+        warnings.append(f"A sampling rate of {float(cfg.resample):g} Hz is not "
+                        f"a rate. It must be positive.")
+    if cfg.notch_width > 4.0:
+        warnings.append(f"A {cfg.notch_width:g} Hz notch is wide; its harmonics "
+                        f"carve visible holes in the band being analysed.")
+    if not cfg.bipolar and not cfg.average_reference:
+        warnings.append("Without re-referencing, a shared reference puts the "
+                        "same noise on every channel, which reads as HFOs "
+                        "appearing everywhere at once.")
+    return "; ".join(lines) + ".", warnings
 
 def prepare(rec: Recording, cfg: PreprocessConfig | None = None, verbose: bool = True) -> Prepared:
     """Run the four preprocessing steps and return the array a detector reads.

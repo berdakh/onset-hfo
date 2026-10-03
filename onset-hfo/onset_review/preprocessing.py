@@ -47,8 +47,12 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
-from onset_hfo.config import BANDS, PreprocessConfig
+from onset_hfo.config import PreprocessConfig
+from onset_hfo.preprocess import describe
 
+#: Re-exported: the sentence and the warnings a reviewer reads under these
+#: controls are computed in `onset_hfo.preprocess`, beside the refusals they
+#: mirror, so the two cannot drift. Nothing in this file decides anything.
 __all__ = ["PreprocessPanel", "RESAMPLE_CHOICES", "describe"]
 
 #: Offered downsampling rates. Upsampling is not offered: it adds no
@@ -61,73 +65,6 @@ RESAMPLE_CHOICES = [("Leave as recorded", None), ("2000 Hz", 2000.0),
 #: notching the wrong mains frequency leaves the interference in place *and*
 #: carves a hole where there was none, and it never announces itself.
 MAINS_CHOICES = [("From the dataset", None), ("50 Hz", 50.0), ("60 Hz", 60.0)]
-
-
-def describe(cfg: PreprocessConfig, band: tuple[float, float],
-             sfreq: float) -> tuple[str, list[str]]:
-    """Plain English for a config, plus whatever is wrong with it.
-
-    Pure, so the sentence a reviewer reads before clicking Apply is testable
-    without a display -- and so the warnings cannot drift away from the
-    refusals in `prepare`, which this mirrors.
-    """
-    rate = float(cfg.resample) if cfg.resample else float(sfreq)
-    lines = []
-    if cfg.highpass:
-        lines.append(f"high-pass at {cfg.highpass:g} Hz")
-    if cfg.lowpass:
-        lines.append(f"low-pass at {cfg.lowpass:g} Hz")
-    if cfg.notch:
-        mains = f"{cfg.line_freq:g} Hz" if cfg.line_freq else "the mains frequency"
-        lines.append(f"notch {mains}"
-                     + (" and its harmonics" if cfg.notch_harmonics else " only")
-                     + f", {cfg.notch_width:g} Hz wide")
-    if cfg.resample:
-        lines.append(f"resample to {cfg.resample:g} Hz")
-    lines.append("re-reference to neighbouring contacts (bipolar)" if cfg.bipolar
-                 else "re-reference to the common average" if cfg.average_reference
-                 else "leave the recording's own reference")
-    if cfg.drop_bads:
-        lines.append("drop channels the dataset flagged bad")
-    if cfg.exclude:
-        lines.append(f"drop {len(cfg.exclude)} channel(s) you marked")
-
-    warnings = []
-    if cfg.highpass and cfg.lowpass and cfg.lowpass <= cfg.highpass:
-        warnings.append(f"The low-pass ({cfg.lowpass:g} Hz) is at or below the "
-                        f"high-pass ({cfg.highpass:g} Hz). That passes nothing.")
-    if cfg.lowpass and cfg.lowpass >= rate / 2:
-        warnings.append(f"The low-pass ({cfg.lowpass:g} Hz) is at or above the "
-                        f"Nyquist frequency of {rate / 2:g} Hz.")
-    elif cfg.lowpass and cfg.lowpass < band[1]:
-        warnings.append(f"The low-pass ({cfg.lowpass:g} Hz) cuts into the band "
-                        f"being analysed ({band[0]:.0f}–{band[1]:.0f} Hz). The "
-                        f"detector would still run and its rates would mean "
-                        f"nothing.")
-    if not BANDS.usable(rate, band):
-        warnings.append(f"At {rate:g} Hz this recording cannot carry the "
-                        f"{band[1]:.0f} Hz top of the band being analysed; it "
-                        f"needs more than {2 * band[1]:.0f} Hz.")
-    if cfg.highpass and cfg.highpass > band[0]:
-        warnings.append(f"The high-pass ({cfg.highpass:g} Hz) is inside the band "
-                        f"being analysed, which starts at {band[0]:.0f} Hz.")
-    if not cfg.notch:
-        warnings.append("With the notch off, mains harmonics sit inside the HFO "
-                        "bands and are detected as oscillations.")
-    if cfg.notch_width <= 0:
-        warnings.append(f"A notch width of {cfg.notch_width:g} Hz is not a "
-                        f"filter. It must be positive.")
-    if cfg.resample is not None and float(cfg.resample) <= 0:
-        warnings.append(f"A sampling rate of {float(cfg.resample):g} Hz is not "
-                        f"a rate. It must be positive.")
-    if cfg.notch_width > 4.0:
-        warnings.append(f"A {cfg.notch_width:g} Hz notch is wide; its harmonics "
-                        f"carve visible holes in the band being analysed.")
-    if not cfg.bipolar and not cfg.average_reference:
-        warnings.append("Without re-referencing, a shared reference puts the "
-                        "same noise on every channel, which reads as HFOs "
-                        "appearing everywhere at once.")
-    return "; ".join(lines) + ".", warnings
 
 
 class PreprocessPanel(QWidget):

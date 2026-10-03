@@ -301,7 +301,7 @@ def _describe(**changes):
     from dataclasses import replace as _replace
 
     from onset_hfo.config import PreprocessConfig
-    from onset_review.preprocessing import describe
+    from onset_hfo.preprocess import describe
 
     return describe(_replace(PreprocessConfig(), **changes), (80.0, 250.0), 2000.0)
 
@@ -342,7 +342,7 @@ def test_the_panel_warns_about_exactly_what_the_pipeline_refuses(recording):
         cfg = _replace(PreprocessConfig(), **changes)
         with pytest.raises(ValueError):
             prepare(recording, cfg, verbose=False)
-        from onset_review.preprocessing import describe
+        from onset_hfo.preprocess import describe
 
         assert describe(cfg, (80.0, 250.0), 2000.0)[1], changes
 
@@ -407,3 +407,44 @@ def test_changed_preprocessing_reaches_the_report(recording):
     assert "4 Hz wide" in text
     assert "common average" in text.lower()
     assert session.montage == "average"
+
+
+# -- the boundary this file exists to defend -------------------------------
+
+def test_the_modules_this_file_covers_import_no_qt():
+    """Every module tested here must import on a machine with no Qt at all.
+
+    This is not hypothetical tidiness. The first version of the preprocessing
+    warnings lived in `onset_review.preprocessing`, which imports Qt at module
+    level, and was tested from this file -- so the main CI job, which installs
+    no `review` extra, went red with nine `ModuleNotFoundError`s. The logic
+    moved to `onset_hfo.preprocess`, beside the refusals it mirrors, and this
+    test is what stops it drifting back.
+    """
+    import importlib
+    import subprocess
+    import sys
+
+    modules = ["onset_review.session", "onset_review.trends",
+               "onset_review.report", "onset_review.anatomy",
+               "onset_hfo.preprocess"]
+    # A subprocess with the Qt packages blocked, rather than poking sys.modules
+    # in-process: pytest has already imported Qt by now in a full run, and a
+    # module that reached for it would be handed the live one.
+    script = (
+        "import sys\n"
+        "class Blocked:\n"
+        "    def find_spec(self, name, path=None, target=None):\n"
+        "        if name.split('.')[0] in {'qtpy', 'PySide6', 'PyQt5', 'PyQt6'}:\n"
+        "            raise ImportError(f'{name} is blocked for this check')\n"
+        "        return None\n"
+        "sys.meta_path.insert(0, Blocked())\n"
+        "import importlib\n"
+        f"for name in {modules!r}:\n"
+        "    importlib.import_module(name)\n"
+        "print('clean')\n")
+    done = subprocess.run([sys.executable, "-c", script], capture_output=True,
+                          text=True, timeout=300)
+    assert done.returncode == 0, done.stderr[-1500:]
+    assert "clean" in done.stdout
+    assert importlib  # the import above is the point; keep the linter quiet
