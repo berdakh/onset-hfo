@@ -861,15 +861,24 @@ number verification, and the language-model path against a mock
 OpenAI-compatible server that replies the way Qwen and Llama servers do —
 including the two ways small models get it wrong).
 
-`tests/test_review_app.py` adds 62 and
-`tests/test_review_anatomy.py` 20, covering the desktop reviewer: that its
+Three files cover the desktop reviewer, split by what they need.
+`tests/test_review_core.py` (29) and `tests/test_review_anatomy.py` (20)
+import no Qt and run on any machine with the base install: that the reviewer's
 rates agree with its own event list, that annotations land in the trace's time
 base rather than the archive's, that the trend accounts for every event at any
-bin width, that the exported review needs no optional dependency, and -- the
-only assumption the window's whole layout rests on -- that MNE's Qt figure is
-still a `QMainWindow` and can host our dock widgets. The Qt half of that file
-skips itself when the `review` extra is absent, so the numbers are checked
-everywhere and the window is checked where there is a display.
+bin width, that the exported review needs no optional dependency, and that
+every contact position carries whether it was measured or inferred.
+`tests/test_review_app.py` (33) needs a display and skips itself without the
+`review` extra: that every panel builds, that each control calls the browser
+method it claims to, and -- the only assumption the window's whole layout rests
+on -- that MNE's Qt figure is still a `QMainWindow` and can host our dock
+widgets.
+
+The split is load-bearing rather than tidy. All of it used to live in one file
+under a module-level `importorskip`, and a skip there takes the whole module
+with it: on a machine without Qt, which is what the main CI job is, **none** of
+the numbers were checked while the suite reported green. Verified by installing
+`.[dev]` without the extra -- before, 0 of 62 ran; after, 49 do.
 
 The anatomy file is almost entirely about provenance rather than arithmetic.
 Neither archive ships electrode coordinates, so the 3D view's contact positions

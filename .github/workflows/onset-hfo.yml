@@ -81,7 +81,9 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
           MNE_BROWSER_BACKEND: qt
-        run: xvfb-run -a pytest tests/test_review_app.py tests/test_review_anatomy.py -q
+        run: |
+          xvfb-run -a pytest tests/test_review_app.py tests/test_review_core.py \
+            tests/test_review_anatomy.py -q
       - name: The entry point starts and reports an empty cache honestly
         run: |
           python -m onset_review.app --list --cache-dir /tmp/empty-cache \
