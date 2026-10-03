@@ -287,3 +287,123 @@ def test_cached_windows_survives_a_damaged_entry(tmp_path):
     slice_dir.mkdir(parents=True)
     (slice_dir / "slice.json").write_text("{ not json")
     assert cached_windows(tmp_path).empty
+
+
+# -- what the preprocessing panel promises, before it is clicked -----------
+#
+# `describe` is the sentence and the red text a reviewer reads under the
+# controls. It is pure, so it is tested here; its job is to mirror the refusals
+# in `onset_hfo.preprocess.prepare` exactly, because a reviewer should learn
+# that a 150 Hz low-pass is wrong from the panel, not from a dialog thirty
+# seconds into a re-analysis.
+
+def _describe(**changes):
+    from dataclasses import replace as _replace
+
+    from onset_hfo.config import PreprocessConfig
+    from onset_review.preprocessing import describe
+
+    return describe(_replace(PreprocessConfig(), **changes), (80.0, 250.0), 2000.0)
+
+
+def test_the_defaults_describe_themselves_without_warning():
+    summary, warnings = _describe()
+    assert "high-pass at 1 Hz" in summary
+    assert "bipolar" in summary
+    assert warnings == []
+
+
+@pytest.mark.parametrize("changes,phrase", [
+    ({"lowpass": 150.0}, "cuts into the band"),
+    ({"lowpass": 0.5}, "passes nothing"),
+    ({"resample": 1000.0, "lowpass": 600.0}, "Nyquist"),
+    ({"notch": False}, "mains harmonics sit inside"),
+    ({"notch_width": 6.0}, "is wide"),
+    ({"highpass": 120.0}, "inside the band"),
+    ({"bipolar": False}, "same noise on every channel"),
+])
+def test_a_questionable_setting_is_called_out_before_it_is_applied(changes, phrase):
+    _, warnings = _describe(**changes)
+    assert any(phrase in w for w in warnings), warnings
+
+
+def test_the_panel_warns_about_exactly_what_the_pipeline_refuses(recording):
+    """The two must not drift: a warning the pipeline does not enforce teaches
+    a reviewer to ignore warnings, and a refusal the panel did not predict
+    arrives as a failure after a minute of work."""
+    from dataclasses import replace as _replace
+
+    from onset_hfo.config import PreprocessConfig
+    from onset_hfo.preprocess import prepare
+
+    for changes in ({"lowpass": 0.5}, {"resample": 500.0, "lowpass": 400.0},
+                    {"notch_width": 0.0}, {"resample": 0.0},
+                    {"resample": -250.0}):
+        cfg = _replace(PreprocessConfig(), **changes)
+        with pytest.raises(ValueError):
+            prepare(recording, cfg, verbose=False)
+        from onset_review.preprocessing import describe
+
+        assert describe(cfg, (80.0, 250.0), 2000.0)[1], changes
+
+
+def test_the_request_describes_its_own_preprocessing():
+    from onset_hfo.config import PreprocessConfig
+
+    plain = ReviewRequest(t_start=0, t_stop=60)
+    assert "bipolar montage" in plain.preprocess_label()
+    assert "high-pass 1 Hz" in plain.preprocess_label()
+
+    custom = ReviewRequest(t_start=0, t_stop=60, preprocess=PreprocessConfig(
+        bipolar=False, average_reference=True, resample=1000.0,
+        notch_harmonics=False, exclude=("AR1",)))
+    label = custom.preprocess_label()
+    assert "common average reference" in label
+    assert "resample to 1000 Hz" in label
+    assert "harmonics" not in label
+    assert "1 channel(s) excluded" in label
+
+
+def test_preprocessing_choices_travel_into_the_pipeline_config():
+    """The request is what a session is reproduced from, so it has to carry
+    the filtering as well as the band and the detector."""
+    from onset_hfo.config import PreprocessConfig
+
+    chosen = PreprocessConfig(highpass=2.0, notch_width=4.0, bipolar=False,
+                              average_reference=True)
+    request = ReviewRequest(t_start=0, t_stop=60, preprocess=chosen)
+    assert request.pipeline_config().preprocess == chosen
+    # And the default is still the project's measured one, untouched.
+    assert ReviewRequest(t_start=0, t_stop=60).pipeline_config().preprocess \
+        == PreprocessConfig()
+
+
+def test_a_band_destroying_resample_is_refused_with_the_reason(recording):
+    from onset_hfo.config import PreprocessConfig
+
+    with pytest.raises(ValueError, match="resampled it to 1000 Hz"):
+        session_from_recording(recording, ReviewRequest(
+            t_start=0.0, t_stop=float(recording.duration), band="fast_ripple",
+            preprocess=PreprocessConfig(resample=1000.0)))
+
+
+def test_a_band_destroying_lowpass_is_refused_with_the_reason(recording):
+    from onset_hfo.config import PreprocessConfig
+
+    with pytest.raises(ValueError, match="removes most of the ripple band"):
+        session_from_recording(recording, ReviewRequest(
+            t_start=0.0, t_stop=float(recording.duration),
+            preprocess=PreprocessConfig(lowpass=150.0)))
+
+
+def test_changed_preprocessing_reaches_the_report(recording):
+    from onset_hfo.config import PreprocessConfig
+
+    session = session_from_recording(recording, ReviewRequest(
+        t_start=0.0, t_stop=float(recording.duration),
+        preprocess=PreprocessConfig(notch_width=4.0, bipolar=False,
+                                    average_reference=True)))
+    text = report.review_markdown(session)
+    assert "4 Hz wide" in text
+    assert "common average" in text.lower()
+    assert session.montage == "average"

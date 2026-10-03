@@ -46,6 +46,7 @@ from onset_review.panels import (
     ProvenancePanel,
     TrendsPanel,
 )
+from onset_review.preprocessing import PreprocessPanel
 from onset_review.session import BAND_COLOURS, ReviewSession, annotations_for
 
 __all__ = ["decorate", "open_trace", "has_dock_host", "marks_for",
@@ -245,9 +246,16 @@ def goto(figure, t: float, channel: str | None = None,
                 pass
 
 
-def decorate(figure, session: ReviewSession,
-             show_expert: bool = False) -> ReviewWindowParts:
-    """Add the menus, the toolbar, the panels and the caveat to MNE's window."""
+def decorate(figure, session: ReviewSession, show_expert: bool = False,
+             on_preprocess=None) -> ReviewWindowParts:
+    """Add the menus, the toolbar, the panels and the caveat to MNE's window.
+
+    `on_preprocess` is called with a new `PreprocessConfig` when the reviewer
+    applies one. It is a callback rather than something this module does
+    itself, because re-running the analysis means fetching, detecting and
+    rebuilding every panel -- which is the entry point's job, and keeps this
+    file free of the loader and the progress dialog.
+    """
     host = figure if has_dock_host(figure) else QMainWindow()
     display = _Display("selected", session.leader.get("leader"), show_expert)
     host.setWindowTitle(f"Onset Review — {session.request.label()}")
@@ -260,6 +268,7 @@ def decorate(figure, session: ReviewSession,
         "brain": BrainPanel(session, resection=session.resection,
                             electrodes=session.electrodes),
         "assistant": AssistantPanel(session),
+        "preprocess": PreprocessPanel(session),
         "agreement": AgreementPanel(session),
         "provenance": ProvenancePanel(session),
     }
@@ -306,9 +315,15 @@ def decorate(figure, session: ReviewSession,
                 panels["provenance"])
     helper = dock("assistant", "Assistant", Qt.RightDockWidgetArea,
                   panels["assistant"])
+    # Preprocessing sits with provenance rather than with the working views:
+    # it is the other half of the same question. "How this was produced" says
+    # what was done; the tab next to it is where a reviewer changes it.
+    prep = dock("preprocess", "Preprocessing", Qt.RightDockWidgetArea,
+                panels["preprocess"])
     host.tabifyDockWidget(brain, accord)
     host.tabifyDockWidget(accord, prov)
-    host.tabifyDockWidget(prov, helper)
+    host.tabifyDockWidget(prov, prep)
+    host.tabifyDockWidget(prep, helper)
     brain.raise_()
     # A trend squeezed to a strip is unreadable, and Qt will squeeze it unless
     # the widget itself says otherwise; `resizeDocks` alone loses to the
@@ -316,8 +331,8 @@ def decorate(figure, session: ReviewSession,
     panels["trends"].setMinimumHeight(170)
     panels["controls"].setFixedHeight(panels["controls"].sizeHint().height())
     host.resizeDocks([docks["trends"]], [260], Qt.Vertical)
-    host.resizeDocks([docks["findings"], docks["events"], brain, helper],
-                     [640, 640, 640, 640], Qt.Horizontal)
+    host.resizeDocks([docks["findings"], docks["events"], brain, helper, prep],
+                     [640, 640, 640, 640, 640], Qt.Horizontal)
     # Vertical shares for the right-hand column. Without these the 3D view's
     # own minimum height wins the whole column and the two tables above it are
     # left showing one row each.
@@ -329,6 +344,13 @@ def decorate(figure, session: ReviewSession,
     _wire(figure, host, panels, session, display, parts)
     _menus(figure, host, panels, docks, session, display, parts)
     _status(host, session)
+    if on_preprocess is not None:
+        panels["preprocess"].applied.connect(on_preprocess)
+    else:
+        panels["preprocess"].apply.setEnabled(False)
+        panels["preprocess"].apply.setToolTip(
+            "Re-analysis is not available in this window")
+
     _apply_marks(figure, session, display.scope, display.channel, display.expert)
     # Open on the channel whose marks are being shown. Landing on channel one
     # of forty-three while the marks belong to the busiest one is how a

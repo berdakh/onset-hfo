@@ -321,8 +321,37 @@ class PreprocessConfig:
     bipolar: bool = True
     #: High-pass the continuous signal before anything else (removes drift).
     highpass: float = 1.0
+    #: Low-pass, in Hz. ``None`` -- the default -- means none, which is what an
+    #: HFO analysis wants: the band of interest runs to 500 Hz and anything
+    #: that attenuates it is removing the signal. Exposed because a reviewer
+    #: comparing against a conventional reading may want one, and refused by
+    #: :func:`onset_hfo.preprocess.prepare` when it would cut into the band
+    #: being analysed rather than applied quietly.
+    lowpass: float | None = None
+    #: Width of each notch, in Hz. Narrow on purpose: mains harmonics at
+    #: 180/240 Hz sit inside the ripple band and a wide notch carves a hole in
+    #: the signal being measured.
+    notch_width: float = 2.0
+    #: Notch the harmonics of the mains frequency as well as the fundamental.
+    #: Off leaves 100/150/180/240 Hz interference inside the HFO bands.
+    notch_harmonics: bool = True
+    #: Re-reference to the average of all channels instead of to a neighbour.
+    #: Only consulted when ``bipolar`` is off: the two are alternatives, and a
+    #: common average re-introduces exactly the shared noise that the bipolar
+    #: montage exists to suppress. Offered because it is standard practice
+    #: elsewhere in EEG, with that caveat recorded in the steps.
+    average_reference: bool = False
+    #: Resample to this rate, in Hz. ``None`` keeps the recording's own.
+    #: Downsampling is refused when it would put the analysed band above the
+    #: new Nyquist -- the analysis would still run and the numbers would be
+    #: meaningless.
+    resample: float | None = None
     #: Drop channels flagged ``bad`` in the dataset's channels.tsv.
     drop_bads: bool = True
+    #: Channels the reviewer marked bad themselves, on top of the dataset's.
+    #: Carried here rather than on the recording so that the choice travels
+    #: with the analysis configuration and lands in the report.
+    exclude: tuple[str, ...] = ()
 
 
 @dataclass

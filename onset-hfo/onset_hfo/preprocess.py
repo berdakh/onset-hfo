@@ -113,6 +113,35 @@ def bipolar_pairs(ch_names: list[str], exclude: set[str] | None = None) -> list[
     return pairs
 
 
+def _check(cfg: PreprocessConfig, sfreq: float) -> None:
+    """Refuse settings that would produce numbers rather than a measurement.
+
+    Every one of these runs perfectly well and returns a plausible-looking
+    answer, which is exactly why they are refused here instead of being left to
+    whoever reads the result. A low-pass under the high-pass passes nothing; a
+    low-pass above the new Nyquist after downsampling is asking for a band the
+    signal can no longer carry.
+    """
+    if cfg.highpass and cfg.lowpass and cfg.lowpass <= cfg.highpass:
+        raise ValueError(
+            f"low-pass {cfg.lowpass:g} Hz is at or below the high-pass "
+            f"{cfg.highpass:g} Hz, which passes nothing")
+    # `is not None` rather than truthiness: a resample of 0 Hz is nonsense, and
+    # treating it as "no resampling" would accept it silently.
+    if cfg.resample is not None and float(cfg.resample) <= 0:
+        raise ValueError(
+            f"resample rate must be positive, not {float(cfg.resample):g} Hz")
+    rate = float(cfg.resample) if cfg.resample else float(sfreq)
+    if cfg.lowpass and cfg.lowpass >= rate / 2.0:
+        raise ValueError(
+            f"low-pass {cfg.lowpass:g} Hz is at or above the Nyquist frequency "
+            f"of {rate / 2.0:g} Hz"
+            + (f" that resampling to {rate:g} Hz would leave" if cfg.resample
+               else ""))
+    if cfg.notch_width <= 0:
+        raise ValueError(f"notch width must be positive, not {cfg.notch_width:g} Hz")
+
+
 def prepare(rec: Recording, cfg: PreprocessConfig | None = None, verbose: bool = True) -> Prepared:
     """Run the four preprocessing steps and return the array a detector reads.
 
@@ -121,6 +150,7 @@ def prepare(rec: Recording, cfg: PreprocessConfig | None = None, verbose: bool =
     wrong.
     """
     cfg = cfg or PreprocessConfig()
+    _check(cfg, float(rec.raw.info["sfreq"]))
     raw = rec.raw.copy()
     steps: list[str] = []
 
@@ -139,23 +169,53 @@ def prepare(rec: Recording, cfg: PreprocessConfig | None = None, verbose: bool =
         raw.drop_channels(bads)
         steps.append(f"dropped {len(bads)} channels flagged bad by the dataset: {', '.join(sorted(bads))}")
 
+    # Channels the reviewer excluded themselves. Logged separately from the
+    # dataset's own flags because they are a different kind of claim: one is
+    # the archive's, the other is this reviewer's judgement on this window, and
+    # a report that merged them would attribute the second to the first.
+    marked = [c for c in dict.fromkeys(cfg.exclude) if c in raw.ch_names]
+    if marked:
+        if len(marked) >= len(raw.ch_names):
+            raise ValueError(
+                "excluding those channels would leave nothing to analyse "
+                f"({len(marked)} of {len(raw.ch_names)} channels)")
+        raw.drop_channels(marked)
+        steps.append(f"dropped {len(marked)} channels the reviewer marked bad: "
+                     f"{', '.join(sorted(marked))}")
+
     # 2/3. filtering ------------------------------------------------------
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        if cfg.highpass:
-            raw.filter(l_freq=cfg.highpass, h_freq=None, fir_design="firwin",
-                       phase="zero", verbose="ERROR")
-            steps.append(f"high-pass {cfg.highpass:g} Hz (zero-phase FIR)")
+        if cfg.highpass or cfg.lowpass:
+            raw.filter(l_freq=cfg.highpass or None, h_freq=cfg.lowpass,
+                       fir_design="firwin", phase="zero", verbose="ERROR")
+            if cfg.highpass:
+                steps.append(f"high-pass {cfg.highpass:g} Hz (zero-phase FIR)")
+            if cfg.lowpass:
+                steps.append(f"low-pass {cfg.lowpass:g} Hz (zero-phase FIR)")
         line_freq = cfg.line_freq if cfg.line_freq is not None else rec.line_freq
         if cfg.notch:
             source = "configured" if cfg.line_freq is not None else "from the dataset"
             nyq = raw.info["sfreq"] / 2.0
-            freqs = [f for f in np.arange(line_freq, nyq, line_freq) if f < 0.9 * nyq]
+            freqs = ([f for f in np.arange(line_freq, nyq, line_freq) if f < 0.9 * nyq]
+                     if cfg.notch_harmonics
+                     else ([line_freq] if line_freq < 0.9 * nyq else []))
             if freqs:
-                raw.notch_filter(freqs=freqs, notch_widths=2.0, fir_design="firwin",
-                                 phase="zero", verbose="ERROR")
-                steps.append(f"notch {line_freq:g} Hz ({source}) + harmonics "
-                             f"({', '.join(f'{f:g}' for f in freqs)} Hz, 2 Hz wide)")
+                raw.notch_filter(freqs=freqs, notch_widths=cfg.notch_width,
+                                 fir_design="firwin", phase="zero", verbose="ERROR")
+                harmonics = " + harmonics" if cfg.notch_harmonics else " (fundamental only)"
+                steps.append(f"notch {line_freq:g} Hz ({source}){harmonics} "
+                             f"({', '.join(f'{f:g}' for f in freqs)} Hz, "
+                             f"{cfg.notch_width:g} Hz wide)")
+
+    if cfg.resample and abs(float(cfg.resample) - raw.info["sfreq"]) > 1e-9:
+        target = float(cfg.resample)
+        before = float(raw.info["sfreq"])
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            raw.resample(target, npad="auto", verbose="ERROR")
+        steps.append(f"resampled {before:g} Hz -> {target:g} Hz"
+                     + (" (upsampled; adds no information)" if target > before else ""))
 
     data = raw.get_data(picks="all") * 1e6  # volts -> microvolts
     names = list(raw.ch_names)
@@ -172,7 +232,15 @@ def prepare(rec: Recording, cfg: PreprocessConfig | None = None, verbose: bool =
             data = np.stack([data[idx[a]] - data[idx[b]] for a, b in pairs])
             names = [f"{a}-{b}" for a, b in pairs]
             steps.append(f"bipolar montage: {len(pairs)} pairs of neighbouring contacts")
-    montage = "bipolar" if pairs else "monopolar"
+    elif cfg.average_reference and len(names) > 1:
+        data = data - data.mean(axis=0, keepdims=True)
+        steps.append(
+            f"common average reference across {len(names)} channels — note "
+            f"that this shares every channel's noise with every other, which "
+            f"is the effect the bipolar montage exists to avoid for HFO work")
+    montage = ("bipolar" if pairs
+               else "average" if cfg.average_reference and len(names) > 1
+               else "monopolar")
 
     prepared = Prepared(data=np.ascontiguousarray(data, dtype=np.float64), ch_names=names,
                         sfreq=float(raw.info["sfreq"]), t_offset=rec.t_offset, montage=montage,

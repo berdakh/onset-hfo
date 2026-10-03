@@ -25,7 +25,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from onset_hfo.config import BANDS, DATA_CACHE, PipelineConfig
+from onset_hfo.config import BANDS, DATA_CACHE, PipelineConfig, PreprocessConfig
 from onset_hfo.datasets import Recording, fetch_slice
 from onset_hfo.detectors import DETECTORS, HFO_DETECTORS
 from onset_hfo.detectors.base import Event
@@ -89,6 +89,12 @@ class ReviewRequest:
     #: measured default. Not a shared number: see `_detect`.
     threshold_sd: float | None = None
     with_spikes: bool = True
+    #: What is done to the signal before any detector sees it. Part of the
+    #: request because the request is everything the reviewer chose before the
+    #: signal was read, and a filter choice is exactly that -- it changes every
+    #: number downstream, so a session reproduced from a report has to carry it.
+    #: `None` means the project's measured defaults.
+    preprocess: PreprocessConfig | None = None
 
     def __post_init__(self) -> None:
         unknown = [d for d in self.detectors if d not in HFO_DETECTORS]
@@ -118,6 +124,34 @@ class ReviewRequest:
     def band_hz(self) -> tuple[float, float]:
         return getattr(BANDS, self.band)
 
+    def preprocess_label(self) -> str:
+        """What will be done to the signal, in one line, for a header.
+
+        Built from the config rather than from the steps the pipeline logs,
+        because a header has to say what was *asked for* before a recording is
+        in hand; `Prepared.steps` says what was actually done, and both appear
+        in the report.
+        """
+        cfg = self.preprocess or PreprocessConfig()
+        parts = []
+        if cfg.highpass:
+            parts.append(f"high-pass {cfg.highpass:g} Hz")
+        if cfg.lowpass:
+            parts.append(f"low-pass {cfg.lowpass:g} Hz")
+        if cfg.notch:
+            mains = f"{cfg.line_freq:g} Hz" if cfg.line_freq else "mains"
+            parts.append(f"notch {mains}"
+                         + (" + harmonics" if cfg.notch_harmonics else "")
+                         + f" ({cfg.notch_width:g} Hz wide)")
+        if cfg.resample:
+            parts.append(f"resample to {cfg.resample:g} Hz")
+        parts.append("bipolar montage" if cfg.bipolar
+                     else "common average reference" if cfg.average_reference
+                     else "no re-referencing")
+        if cfg.exclude:
+            parts.append(f"{len(cfg.exclude)} channel(s) excluded by the reviewer")
+        return ", ".join(parts) if parts else "none"
+
     def band_label(self) -> str:
         low, high = self.band_hz
         return f"{self.band.replace('_', ' ')} ({low:.0f}–{high:.0f} Hz)"
@@ -141,6 +175,8 @@ class ReviewRequest:
         and the energy detectors at 2.0.
         """
         cfg = PipelineConfig()
+        if self.preprocess is not None:
+            cfg.preprocess = self.preprocess
         for name in HFO_DETECTORS:
             detector_cfg = replace(getattr(cfg, name), band=self.band_hz)
             if self.threshold_sd is not None:
@@ -507,10 +543,22 @@ def session_from_recording(record: Recording, request: ReviewRequest,
 
     band = request.band_hz
     if not BANDS.usable(prep.sfreq, band):
+        resampled = (cfg.preprocess.resample
+                     and abs(float(cfg.preprocess.resample) - prep.sfreq) < 1.0)
         raise ValueError(
             f"{request.band.replace('_', ' ')}s need a sampling rate above "
-            f"{2 * band[1]:.0f} Hz; this recording is {prep.sfreq:.0f} Hz. "
-            f"Choose the ripple band, or a recording sampled higher.")
+            f"{2 * band[1]:.0f} Hz; this recording is {prep.sfreq:.0f} Hz"
+            + (f", because preprocessing resampled it to "
+               f"{float(cfg.preprocess.resample):g} Hz. Raise or remove the "
+               f"resampling, or choose the ripple band." if resampled else
+               ". Choose the ripple band, or a recording sampled higher."))
+    low_pass = cfg.preprocess.lowpass
+    if low_pass and low_pass < band[1]:
+        raise ValueError(
+            f"the low-pass filter is set to {low_pass:g} Hz, which removes most "
+            f"of the {request.band.replace('_', ' ')} band "
+            f"({band[0]:.0f}–{band[1]:.0f} Hz). Raise it above {band[1]:.0f} Hz "
+            f"or turn it off.")
 
     events: list[Event] = []
     span = 0.3 / len(request.detectors)

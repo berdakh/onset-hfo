@@ -44,9 +44,9 @@ One window: the activity trend across channels, the trace with the detector's
 marks in blue and the archive annotators' own in green, visible amplitude and
 scroll controls over it, the ranked channels with the ones that cannot be told
 apart from the leader tinted, the contacts in 3D with the surgeon's resection
-ringed, an assistant that cites this window or refuses — and, pinned to the
-status bar where it cannot be scrolled past, whether any of it supports a
-ranking at all.
+ringed, the MNE preprocessing chain on controls a reviewer can actually reach,
+an assistant that cites this window or refuses — and, pinned to the status bar
+where it cannot be scrolled past, whether any of it supports a ranking at all.
 
 [`INSTALL.md`](docs/INSTALL.md) · [`CLINICAL_GUIDE.md`](docs/CLINICAL_GUIDE.md)
 
@@ -121,7 +121,7 @@ onset-review                                  # or the applications menu
 onset-review --subject sub-01 --window 0 60 --expert    # straight in
 onset-review --subject sub-01 --window 0 60 --export review.md   # no display
 
-pytest -q        # 570 tests, all offline
+pytest -q        # 606 tests, all offline
 ```
 
 ## What it actually does
@@ -368,6 +368,7 @@ onset_review/         the desktop reviewer (Qt), installable on Ubuntu
   panels.py           the dock widgets; they render and compute nothing
   controls.py         visible amplitude, window, channel and scroll controls
   brainview.py        contacts in 3D: ranked, colour-coded, resection ringed
+  preprocessing.py    the MNE filter/reference/resample chain, mouse-driven
   assistant.py        the agent in a dock: cites this window, or refuses
   window.py           docks them onto MNE's own Qt trace browser
   launcher.py         the open dialog, and loading off the GUI thread
@@ -380,7 +381,7 @@ data/outcome/         the outcome study's per-subject tables, for the Patients p
 data/example_analysis/  a real 60 s analysis, so the app works on a fresh clone
 
 notebooks/            seven Colab notebooks (all but 06 built by scripts/build_notebooks.py)
-tests/                570 offline tests (synthetic data + a mock model server)
+tests/                606 offline tests (synthetic data + a mock model server)
 docs/                 everything above
 ```
 

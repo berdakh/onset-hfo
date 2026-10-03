@@ -22,6 +22,8 @@ from onset_review.session import ReviewRequest, ReviewSession, session_from_reco
 qt = pytest.importorskip("qtpy.QtWidgets", reason="the review extra is not installed")
 pytest.importorskip("mne_qt_browser", reason="the review extra is not installed")
 
+from qtpy.QtCore import Qt  # noqa: E402  (after the import guard, on purpose)
+
 
 @pytest.fixture(scope="module")
 def review(recording) -> ReviewSession:
@@ -67,7 +69,8 @@ def test_mne_figure_can_still_host_our_docks(built):
 
 def test_every_panel_is_docked(built):
     assert set(built.docks) == {"trends", "controls", "findings", "events",
-                                "brain", "agreement", "provenance", "assistant"}
+                                "brain", "agreement", "provenance", "assistant",
+                                "preprocess"}
     assert all(dock.widget() is not None for dock in built.docks.values())
 
 
@@ -506,3 +509,104 @@ def test_the_assistant_keeps_the_window_painting_while_it_works(qapp, review):
         assert panel.isEnabled()          # re-enabled when the answer landed
     finally:
         panel.deleteLater()
+
+
+# -- the preprocessing panel ----------------------------------------------
+
+def test_the_preprocessing_panel_opens_on_the_measured_defaults(built):
+    """Opening it and pressing Apply without touching it must change nothing,
+    so Apply starts disabled and there is nothing to warn about."""
+    from onset_hfo.config import PreprocessConfig
+
+    panel = built.panels["preprocess"]
+    assert panel.config() == PreprocessConfig()
+    assert not panel.apply.isEnabled()
+    assert panel.warnings.text() == ""
+
+
+def test_every_control_reaches_the_config(built):
+    panel = built.panels["preprocess"]
+    try:
+        panel.highpass.setValue(2.0)
+        panel.notch_width.setValue(3.0)
+        panel.harmonics.setChecked(False)
+        panel.average.setChecked(True)
+        cfg = panel.config()
+        assert cfg.highpass == 2.0
+        assert cfg.notch_width == 3.0
+        assert cfg.notch_harmonics is False
+        assert (cfg.bipolar, cfg.average_reference) == (False, True)
+        assert panel.apply.isEnabled()          # something changed
+    finally:
+        panel.reset_to_defaults()
+
+
+def test_reset_returns_to_the_measured_defaults(built):
+    from onset_hfo.config import PreprocessConfig
+
+    panel = built.panels["preprocess"]
+    panel.highpass.setValue(5.0)
+    panel.monopolar.setChecked(True)
+    panel.channels.item(0).setCheckState(Qt.Checked)
+    assert panel.config() != PreprocessConfig()
+    panel.reset_to_defaults()
+    assert panel.config() == PreprocessConfig()
+    assert not panel.apply.isEnabled()
+
+
+def test_marking_a_contact_excludes_it(built):
+    panel = built.panels["preprocess"]
+    try:
+        name = panel.channels.item(0).text()
+        panel.channels.item(0).setCheckState(Qt.Checked)
+        assert panel.config().exclude == (name,)
+        # Contacts, not channels: exclusion happens before the bipolar montage
+        # is built, which is what makes it a preprocessing choice.
+        assert "-" not in name
+    finally:
+        panel.reset_to_defaults()
+
+
+def test_a_band_destroying_setting_is_refused_by_the_panel(built):
+    """Not merely warned about: Apply declines, so the reviewer finds out from
+    the red text rather than from a dialog after a re-analysis."""
+    panel = built.panels["preprocess"]
+    emitted = []
+    panel.applied.connect(emitted.append)
+    try:
+        panel.lowpass.setValue(150.0)
+        # `isVisible` is False for anything inside a window that was never
+        # shown, which is every widget here; what the reviewer reads is the
+        # text, and that is what this is about.
+        assert "cuts into the band" in panel.warnings.text()
+        panel._apply()
+        assert emitted == []
+        assert "Fix this before applying" in panel.warnings.text()
+    finally:
+        panel.reset_to_defaults()
+
+
+def test_a_sound_change_is_emitted(built):
+    panel = built.panels["preprocess"]
+    emitted = []
+    panel.applied.connect(emitted.append)
+    try:
+        panel.notch_width.setValue(3.0)
+        panel._apply()
+        assert len(emitted) == 1
+        assert emitted[0].notch_width == 3.0
+    finally:
+        panel.reset_to_defaults()
+
+
+def test_apply_is_disabled_when_nothing_can_act_on_it(review):
+    """`decorate` without a reload callback must not offer a button that does
+    nothing when pressed."""
+    from onset_review import window as window_module
+
+    figure = window_module.open_trace(review, show=False)
+    parts = window_module.decorate(figure, review)       # no on_preprocess
+    try:
+        assert not parts.panels["preprocess"].apply.isEnabled()
+    finally:
+        figure.close()

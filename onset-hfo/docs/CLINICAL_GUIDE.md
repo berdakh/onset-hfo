@@ -54,6 +54,7 @@ dataset — what the original annotators marked on the same minute.
 │                                               │    expert         │
 │                                               │  · how it was     │
 │                                               │    produced       │
+│                                               │  · preprocessing  │
 │                                               │  · assistant      │
 ├───────────────────────────────────────────────┴───────────────────┤
 │  the caveat — always on screen                                    │
@@ -241,6 +242,52 @@ The numbers it quotes are the numbers in the Findings table, by construction:
 it reads a pipeline result rebuilt from the same band, detectors and thresholds
 the window on screen was produced with.
 
+### Preprocessing — change what is done to the signal
+
+![The preprocessing panel](images/onset-review-preprocessing.png)
+
+Everything here was always being done — the pipeline high-passes, notches and
+re-references before any detector sees the signal — but until now it could only
+be changed by editing Python, which in practice meant nobody changed it and
+nobody checked whether the defaults suited their recording. These are the same
+MNE operations (`filter`, `notch_filter`, `resample`, `drop_channels`), with a
+mouse on them.
+
+| control | what it does | what to watch |
+|---|---|---|
+| **High-pass** | removes drift | anything up to 80 Hz is free; above that it eats the ripple band |
+| **Low-pass** | off by default | an HFO band runs to 500 Hz. A low-pass below that removes the signal and leaves a rate |
+| **Notch** | mains and its harmonics | harmonics at 180 and 240 Hz sit *inside* the ripple band. Turn the notch off and they are detected as oscillations |
+| **Notch width** | 2 Hz by default | wide notches carve visible holes in the band you are measuring |
+| **Re-referencing** | bipolar, common average, or none | see below |
+| **Sampling rate** | downsample | 1000 Hz cannot carry the fast-ripple band at all |
+| **Channels** | tick a contact to exclude it | exclusion happens *before* the bipolar montage, so removing one contact removes both pairs it was part of |
+
+**On re-referencing.** Bipolar is the default and is standard for HFO work: a
+common reference shares its noise with every channel and produces HFOs that
+appear everywhere at once. Common average is standard elsewhere in EEG and is
+offered for comparison, but it re-introduces exactly that shared noise — the
+step it writes into the report says so.
+
+Three things make this safe to play with:
+
+* **Nothing is applied silently.** Every change writes a line into *How this
+  was produced* and into the exported report. Widen the notch to 6 Hz and the
+  report says 6 Hz.
+* **Settings that would produce numbers rather than a measurement are
+  refused.** Set the low-pass to 150 Hz while reviewing ripples and the panel
+  turns red and declines — the detector would run and its rates would mean
+  nothing. You find out from the panel, not from a dialog thirty seconds into a
+  re-analysis.
+* **The defaults are the measured ones.** Open the panel, press Apply without
+  touching anything, and nothing changes — the button is disabled until you do.
+  **Reset** returns to exactly that.
+
+**Apply re-runs the whole window** from the signal up, because every number on
+screen depends on these settings: the rates, the intervals, the tied set, the
+trend, the 3D layout, the agreement with the annotators, the assistant's
+evidence. The panels you have dragged into place stay where you put them.
+
 ### How this was produced
 
 Every step applied to the signal, in order, plus the dataset's own notes and
@@ -265,9 +312,12 @@ its citation. If a number on screen ever has to be defended, it starts here.
    shaft, or scattered? Are they inside what the surgeon removed?
 8. Open the **Assistant** and ask it something you already know the answer to
    from the table. Then ask it which channels to resect, and read the refusal.
-9. Now the same patient's **second minute** (60–120 s). Does the answer hold?
+9. Open **Preprocessing**, widen the notch to 4 Hz, and press Apply. Watch the
+   rates move. That is how much of this number is a filter choice, and it is
+   worth knowing before quoting one.
+10. Now the same patient's **second minute** (60–120 s). Does the answer hold?
 
-Step 9 is the one most worth doing, and the one most likely to surprise you.
+Step 10 is the one most worth doing, and the one most likely to surprise you.
 Across these twenty patients, the annotators' own busiest fast-ripple channel
 is the same channel in only **7 of 20 patients** when you compare one minute of
 a recording against another minute of the *same* recording. That is the

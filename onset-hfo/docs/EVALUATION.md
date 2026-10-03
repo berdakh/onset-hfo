@@ -850,7 +850,7 @@ python scripts/run_robustness_ablation.py \
 
 ## 7. Test suite
 
-`pytest -q` — 570 tests, entirely offline. They cover the
+`pytest -q` — 606 tests, entirely offline. They cover the
 primitives (robust scale, sliding features, threshold segmentation, bipolar
 pairing), the detectors (hot channels found, events are oscillations, a flat
 channel yields nothing, thresholds behave monotonically, reruns are
@@ -862,17 +862,29 @@ OpenAI-compatible server that replies the way Qwen and Llama servers do —
 including the two ways small models get it wrong).
 
 Three files cover the desktop reviewer, split by what they need.
-`tests/test_review_core.py` (29) and `tests/test_review_anatomy.py` (27)
+`tests/test_review_core.py` (43) and `tests/test_review_anatomy.py` (27)
 import no Qt and run on any machine with the base install: that the reviewer's
 rates agree with its own event list, that annotations land in the trace's time
 base rather than the archive's, that the trend accounts for every event at any
 bin width, that the exported review needs no optional dependency, and that
 every contact position carries whether it was measured or inferred.
-`tests/test_review_app.py` (33) needs a display and skips itself without the
+`tests/test_review_app.py` (40) needs a display and skips itself without the
 `review` extra: that every panel builds, that each control calls the browser
 method it claims to, and -- the only assumption the window's whole layout rests
 on -- that MNE's Qt figure is still a `QMainWindow` and can host our dock
 widgets.
+
+`tests/test_pipeline.py` grew a preprocessing section when those steps became
+reachable from the interface. It pins two things: that the measured defaults
+produce byte-identical output to before the controls existed, and that every
+setting which would yield numbers rather than a measurement — a low-pass under
+the high-pass, a low-pass above the Nyquist left by downsampling, a
+non-positive notch width or sampling rate, excluding every channel — raises
+rather than running. A companion test asserts that the panel warns about
+exactly what the pipeline refuses, because a warning the pipeline does not
+enforce teaches a reviewer to ignore warnings, and a refusal the panel did not
+predict arrives as a failure after a minute of work. It has already caught one
+drift in each direction.
 
 The split is load-bearing rather than tidy. All of it used to live in one file
 under a module-level `importorskip`, and a skip there takes the whole module

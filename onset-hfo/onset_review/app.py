@@ -138,7 +138,7 @@ def main(argv: list[str] | None = None) -> int:
               f"display.", file=sys.stderr)
         return EXIT_NO_QT
 
-    from onset_review import launcher, window
+    from onset_review import launcher
 
     app = QApplication.instance() or QApplication(sys.argv[:1])
     app.setApplicationName("Onset Review")
@@ -155,14 +155,77 @@ def main(argv: list[str] | None = None) -> int:
     if session is None:
         return EXIT_FAILED
 
-    figure = window.open_trace(session, show_expert=overlay,
-                               show=args.screenshot is None)
-    parts = window.decorate(figure, session, show_expert=overlay)
-    parts.host.show()
+    review = _Review(app, request, overlay, args)
+    review.open(session)
 
     if args.screenshot is not None:
-        return _screenshot(app, parts, args.screenshot)
+        return _screenshot(app, review.parts, args.screenshot)
     return app.exec_() if hasattr(app, "exec_") else app.exec()
+
+
+class _Review:
+    """Owns the one open window, and replaces it when preprocessing changes.
+
+    Changing a filter changes every number in every panel -- the rates, the
+    intervals, the candidate set, the trend, the 3D layout, the agreement, the
+    assistant's evidence -- so the honest response is to rebuild them all from
+    the signal up rather than to refresh some and leave others stale. MNE's
+    browser cannot be handed a different recording either, so the window itself
+    is replaced.
+
+    What survives is the reviewer's own arrangement: the dock layout is saved
+    and restored across the swap, so applying a filter does not cost someone
+    the panels they had dragged where they wanted them.
+    """
+
+    def __init__(self, app, request, overlay: bool, args):
+        self.app = app
+        self.request = request
+        self.overlay = overlay
+        self.args = args
+        self.parts = None
+
+    def open(self, session) -> None:
+        from onset_review import window
+
+        previous = self.parts
+        state = previous.host.saveState() if previous is not None else None
+
+        figure = window.open_trace(session, show_expert=self.overlay,
+                                   show=self.args.screenshot is None)
+        self.parts = window.decorate(figure, session, show_expert=self.overlay,
+                                     on_preprocess=self.reanalyse)
+        if state is not None:
+            # Restored after the docks exist and before the window is shown, so
+            # the reviewer never sees the default arrangement flash past.
+            self.parts.host.restoreState(state)
+            self.parts.host.resize(previous.host.size())
+        self.parts.host.show()
+        if previous is not None:
+            try:
+                previous.figure.close()
+            except Exception:
+                pass
+
+    def reanalyse(self, preprocess) -> None:
+        """Re-run this window under new preprocessing, and replace the view.
+
+        A failure leaves the current window exactly as it was. `load_with_progress`
+        has already told the reviewer what went wrong, and the alternative --
+        closing a working window because a setting was rejected -- would lose
+        them their place for no reason.
+        """
+        import dataclasses
+
+        from onset_review import launcher
+
+        request = dataclasses.replace(self.request, preprocess=preprocess)
+        session = launcher.load_with_progress(request, self.args.cache_dir,
+                                              parent=self.parts.host)
+        if session is None:
+            return
+        self.request = request
+        self.open(session)
 
 
 def _screenshot(app, parts, path: Path) -> int:
