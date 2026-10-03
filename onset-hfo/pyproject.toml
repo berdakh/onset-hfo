@@ -51,6 +51,9 @@ ml = ["scikit-learn>=1.3"]
 # mne-qt-browser is floored at 0.6 because `addDockWidget` on the figure is what
 # the whole window layout rests on, and qtpy is explicit rather than inherited
 # so the binding resolves the same way in the app as in the tests.
+#
+# Matplotlib is not listed: it is already a core dependency, and the 3D view's
+# `backend_qtagg` needs only the Qt bindings this extra brings.
 review = [
     "PySide6-Essentials>=6.6",
     "mne-qt-browser>=0.6",

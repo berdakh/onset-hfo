@@ -25,7 +25,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from onset_hfo.config import BANDS, DATA_CACHE, DetectorConfig, PipelineConfig
+from onset_hfo.config import BANDS, DATA_CACHE, PipelineConfig
 from onset_hfo.datasets import Recording, fetch_slice
 from onset_hfo.detectors import DETECTORS, HFO_DETECTORS
 from onset_hfo.detectors.base import Event
@@ -126,6 +126,29 @@ class ReviewRequest:
         return (f"{self.dataset} · {self.subject} · run-{self.run} · "
                 f"{self.t_start:g}–{self.t_stop:g} s")
 
+    def pipeline_config(self) -> PipelineConfig:
+        """The project's `PipelineConfig` that reproduces this review exactly.
+
+        One function, so that the detection the reviewer is looking at and any
+        later re-run of the same window are the same analysis rather than two
+        that agree by inspection. The assistant needs this: it answers from a
+        saved pipeline result, and a result built with the default band while
+        the screen shows the fast-ripple one would have it quoting numbers that
+        are nowhere on the display.
+
+        Each detector keeps its own measured threshold unless the reviewer set
+        one, because they are not interchangeable -- line length runs at 3.0 SD
+        and the energy detectors at 2.0.
+        """
+        cfg = PipelineConfig()
+        for name in HFO_DETECTORS:
+            detector_cfg = replace(getattr(cfg, name), band=self.band_hz)
+            if self.threshold_sd is not None:
+                detector_cfg = replace(detector_cfg,
+                                       threshold_sd=float(self.threshold_sd))
+            setattr(cfg, name, detector_cfg)
+        return cfg
+
 
 @dataclass
 class ReviewSession:
@@ -139,6 +162,19 @@ class ReviewSession:
     candidates: list[str]
     expert: list[Event] = field(default_factory=list)
     reviewed_channels: list[str] = field(default_factory=list)
+    #: The surgeon's resected zone for this subject, when the dataset ships a
+    #: clinical sheet. `None` means unknown, which is not the same as "nothing
+    #: was removed" and is why the 3D view greys those contacts rather than
+    #: colouring them "spared".
+    resection: object | None = None
+    #: Measured electrode coordinates from the dataset's `electrodes.tsv`.
+    #: Neither archive here has one; see `onset_review.anatomy`.
+    electrodes: pd.DataFrame | None = None
+    #: The fetched slice itself. Kept so the assistant can run the project's
+    #: own pipeline over the very window on screen rather than answering from
+    #: a differently-configured one; the signal is already in memory as `raw`,
+    #: so holding it costs nothing.
+    recording: object | None = None
     steps: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
     citation: str = ""
@@ -349,23 +385,50 @@ def _expert_events(record: Recording, band: str) -> list[Event]:
             for _, row in rows.iterrows()]
 
 
-def _detect(prep, cfg: PipelineConfig, name: str, band: tuple[float, float],
-            threshold_sd: float | None) -> list[Event]:
-    """Run one detector in one band, at its own measured threshold by default.
+def _resection_for(record: Recording):
+    """The surgeon's resected contacts, when the dataset has a clinical sheet.
 
-    Each detector carries its own `DetectorConfig` on `PipelineConfig` because
-    their thresholds are not interchangeable -- line length runs at 3.0 SD and
-    the energy detectors at 2.0 -- so the default is read from the detector's
-    own entry rather than from a single shared number. An explicit
-    `threshold_sd` from the reviewer overrides it, which is what the launcher's
-    threshold control sets; everything else in the detector's config is left
-    alone.
+    Guarded completely. Only `ds003498` ships one, it is a separate (cached)
+    download, and a review window that refused to open because a surgical
+    sidecar was missing would be useless on every other recording. `None` means
+    "not known", which the interface says rather than silently drawing every
+    contact as spared.
     """
-    base = getattr(cfg, name, None) or DetectorConfig()
-    detector_cfg = replace(base, band=band)
-    if threshold_sd is not None:
-        detector_cfg = replace(detector_cfg, threshold_sd=float(threshold_sd))
-    found = DETECTORS[name](prep, detector_cfg)
+    subject = str(getattr(record, "subject", "") or "")
+    dataset = str(getattr(record, "dataset_id", "") or "")
+    if not subject or not dataset:
+        return None
+    try:
+        from onset_hfo.clinical import resection_map
+
+        return resection_map(dataset).get(subject)
+    except Exception:
+        return None
+
+
+def _electrodes_for(record: Recording):
+    """Measured contact coordinates, if the recording carries any.
+
+    Written against the attribute rather than the archive because no dataset
+    this project reads has an `electrodes.tsv`; this is the seam a site pointing
+    the software at its own BIDS data would come in through, and it is tested
+    with a constructed table so the path does not rot untried.
+    """
+    frame = getattr(record, "electrodes", None)
+    if frame is None or not len(frame):
+        return None
+    return frame
+
+
+def _detect(prep, cfg: PipelineConfig, name: str) -> list[Event]:
+    """Run one detector, reading its settings off the request's own config.
+
+    Nothing is decided here: `ReviewRequest.pipeline_config` already wrote the
+    band and any threshold override onto each detector's entry, which is what
+    makes this review and a `run_pipeline` over the same request the same
+    analysis rather than two implementations of it.
+    """
+    found = DETECTORS[name](prep, getattr(cfg, name))
     validate_events(found, prep, cfg.validation)
     return list(found)
 
@@ -439,7 +502,7 @@ def session_from_recording(record: Recording, request: ReviewRequest,
             progress(fraction, message)
 
     say(0.3, "Preprocessing: high-pass, notch, bipolar montage")
-    cfg = PipelineConfig()
+    cfg = request.pipeline_config()
     prep = prepare(record, cfg.preprocess, verbose=False)
 
     band = request.band_hz
@@ -454,7 +517,7 @@ def session_from_recording(record: Recording, request: ReviewRequest,
     for index, name in enumerate(request.detectors):
         say(0.35 + span * index,
             f"Detecting with {DETECTOR_LABELS.get(name, name).lower()}")
-        events.extend(_detect(prep, cfg, name, band, request.threshold_sd))
+        events.extend(_detect(prep, cfg, name))
 
     if request.with_spikes:
         say(0.68, "Detecting interictal discharges")
@@ -462,6 +525,8 @@ def session_from_recording(record: Recording, request: ReviewRequest,
 
     say(0.78, "Reading the expert markings")
     expert = _expert_events(record, request.band)
+    resection = _resection_for(record)
+    electrodes = _electrodes_for(record)
     reviewed = [c for c in getattr(record, "reviewed_channels", [])
                 if c in set(prep.ch_names)]
 
@@ -482,9 +547,10 @@ def session_from_recording(record: Recording, request: ReviewRequest,
     return ReviewSession(
         request=request, raw=raw, events=events, findings=findings,
         leader=leader, candidates=list(tied), expert=expert,
-        reviewed_channels=reviewed, steps=list(prep.steps),
+        reviewed_channels=reviewed, resection=resection, electrodes=electrodes,
+        steps=list(prep.steps),
         notes=list(getattr(record, "notes", [])),
         citation=str(getattr(record, "citation", "")),
         sfreq=float(prep.sfreq), t_offset=float(prep.t_offset),
-        montage=prep.montage,
+        montage=prep.montage, recording=record,
     )

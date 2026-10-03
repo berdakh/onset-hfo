@@ -37,7 +37,7 @@ from onset_review import trends
 from onset_review.session import ReviewSession
 
 __all__ = ["FindingsPanel", "EventsPanel", "TrendsPanel", "AgreementPanel",
-           "ProvenancePanel", "DataFrameModel"]
+           "ProvenancePanel", "DataFrameModel", "MIN_TABLE_HEIGHT"]
 
 #: Columns renamed for reading. A clinician should never have to learn that
 #: `mean_prominence_db` is how far the oscillation rises above the background.
@@ -165,6 +165,14 @@ def _format(value, name: str) -> str:
     return str(value)
 
 
+#: Floor for a docked table, in pixels: a header plus about six rows. Qt
+#: divides a dock column by the widgets' minimum sizes, so a panel below with a
+#: large minimum (the 3D view) otherwise takes the column and leaves the tables
+#: showing a single row. `resizeDocks` does not win that argument; a minimum
+#: does.
+MIN_TABLE_HEIGHT = 150
+
+
 def _table_view() -> QTableView:
     """A table configured for reading rather than editing.
 
@@ -183,6 +191,7 @@ def _table_view() -> QTableView:
     view.verticalHeader().setDefaultSectionSize(20)
     view.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
     view.horizontalHeader().setStretchLastSection(True)
+    view.setMinimumHeight(MIN_TABLE_HEIGHT)
     return view
 
 

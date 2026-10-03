@@ -850,7 +850,7 @@ python scripts/run_robustness_ablation.py \
 
 ## 7. Test suite
 
-`pytest -q` — 522 tests, entirely offline. They cover the
+`pytest -q` — 563 tests, entirely offline. They cover the
 primitives (robust scale, sliding features, threshold segmentation, bipolar
 pairing), the detectors (hot channels found, events are oscillations, a flat
 channel yields nothing, thresholds behave monotonically, reruns are
@@ -861,7 +861,8 @@ number verification, and the language-model path against a mock
 OpenAI-compatible server that replies the way Qwen and Llama servers do —
 including the two ways small models get it wrong).
 
-`tests/test_review_app.py` adds 41, covering the desktop reviewer: that its
+`tests/test_review_app.py` adds 62 and
+`tests/test_review_anatomy.py` 20, covering the desktop reviewer: that its
 rates agree with its own event list, that annotations land in the trace's time
 base rather than the archive's, that the trend accounts for every event at any
 bin width, that the exported review needs no optional dependency, and -- the
@@ -869,6 +870,15 @@ only assumption the window's whole layout rests on -- that MNE's Qt figure is
 still a `QMainWindow` and can host our dock widgets. The Qt half of that file
 skips itself when the `review` extra is absent, so the numbers are checked
 everywhere and the window is checked where there is a display.
+
+The anatomy file is almost entirely about provenance rather than arithmetic.
+Neither archive ships electrode coordinates, so the 3D view's contact positions
+are inferred from electrode names, and a picture of contacts on a brain is read
+as an implantation plan unless it works hard not to be. The tests pin the
+`source` column on every row, the wording of the caption that has to appear
+under any drawing of it, that a mixed layout is reported as schematic, and that
+the unexercised path -- real coordinates from a BIDS `electrodes.tsv`, in
+millimetres -- is used and declared when one is present.
 
 `tests/test_orchestration.py` adds 70 of those and `tests/test_localization.py` 60, covering the orchestration
 half: the label layer (including the `S`/`F` outcome inversion and the

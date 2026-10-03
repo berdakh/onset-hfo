@@ -40,12 +40,15 @@ channels to resect and watch it refuse.
 
 ![The Onset Review window](docs/images/onset-review.png)
 
-One window: the trend across channels, the trace with the detector's marks in
-blue and the archive annotators' own marks in green, the ranked channels with
-the ones that cannot be told apart from the leader tinted, and — pinned to the
-status bar where it cannot be scrolled past — whether this window supports a
-ranking at all. [`INSTALL.md`](docs/INSTALL.md) ·
-[`CLINICAL_GUIDE.md`](docs/CLINICAL_GUIDE.md).
+One window: the activity trend across channels, the trace with the detector's
+marks in blue and the archive annotators' own in green, visible amplitude and
+scroll controls over it, the ranked channels with the ones that cannot be told
+apart from the leader tinted, the contacts in 3D with the surgeon's resection
+ringed, an assistant that cites this window or refuses — and, pinned to the
+status bar where it cannot be scrolled past, whether any of it supports a
+ranking at all.
+
+[`INSTALL.md`](docs/INSTALL.md) · [`CLINICAL_GUIDE.md`](docs/CLINICAL_GUIDE.md)
 
 New to the project? [**Where do seizures start?**](https://berdakh.github.io/onset-hfo/TUTORIAL.html)
 ([source](../site/TUTORIAL.html)) is a standalone
@@ -118,7 +121,7 @@ onset-review                                  # or the applications menu
 onset-review --subject sub-01 --window 0 60 --expert    # straight in
 onset-review --subject sub-01 --window 0 60 --export review.md   # no display
 
-pytest -q        # 522 tests, all offline
+pytest -q        # 563 tests, all offline
 ```
 
 ## What it actually does
@@ -360,8 +363,12 @@ app/                  the reading interface (Streamlit), ten pages
 onset_review/         the desktop reviewer (Qt), installable on Ubuntu
   session.py          a loaded window: the recording, the detections, the findings
   trends.py           the trend matrix, the event list, detector-vs-expert agreement
+  anatomy.py          where each contact is drawn, and how much of that is known
   report.py           the record a reviewer exports when they are done
-  panels.py           the five dock widgets; renders, computes nothing
+  panels.py           the dock widgets; they render and compute nothing
+  controls.py         visible amplitude, window, channel and scroll controls
+  brainview.py        contacts in 3D: ranked, colour-coded, resection ringed
+  assistant.py        the agent in a dock: cites this window, or refuses
   window.py           docks them onto MNE's own Qt trace browser
   launcher.py         the open dialog, and loading off the GUI thread
   app.py              onset-review ...
@@ -373,7 +380,7 @@ data/outcome/         the outcome study's per-subject tables, for the Patients p
 data/example_analysis/  a real 60 s analysis, so the app works on a fresh clone
 
 notebooks/            seven Colab notebooks (all but 06 built by scripts/build_notebooks.py)
-tests/                522 offline tests (synthetic data + a mock model server)
+tests/                563 offline tests (synthetic data + a mock model server)
 docs/                 everything above
 ```
 

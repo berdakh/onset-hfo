@@ -38,22 +38,31 @@ dataset — what the original annotators marked on the same minute.
 
 ## 2. The window, panel by panel
 
+![The Onset Review window](images/onset-review.png)
+
 ```
-┌──────────────────────────────────────────────┬────────────────────┐
-│  TREND    rate per channel over time         │  FINDINGS          │
-├──────────────────────────────────────────────┤  channels ranked   │
-│                                              ├────────────────────┤
-│  TRACE    the signal, with marks on it       │  EVENTS            │
-│                                              │  one row each      │
-│                                              ├────────────────────┤
-│                                              │  DETECTOR V EXPERT │
-│                                              │  HOW IT WAS MADE   │
-├──────────────────────────────────────────────┴────────────────────┤
+┌───────────────────────────────────────────────┬───────────────────┐
+│  TREND     rate per channel over time         │  FINDINGS         │
+├───────────────────────────────────────────────┤  channels ranked  │
+│  CONTROLS  amplitude · window · channels · at ├───────────────────┤
+├───────────────────────────────────────────────┤  EVENTS           │
+│                                               │  one row each     │
+│  TRACE     the signal, with marks on it       ├───────────────────┤
+│                                               │  WHERE THE        │
+│                                               │  CONTACTS ARE     │
+│                                               │  · detector v     │
+│                                               │    expert         │
+│                                               │  · how it was     │
+│                                               │    produced       │
+│                                               │  · assistant      │
+├───────────────────────────────────────────────┴───────────────────┤
 │  the caveat — always on screen                                    │
 └───────────────────────────────────────────────────────────────────┘
 ```
 
-Every panel can be dragged, floated, closed and reopened from **View**.
+Every panel can be dragged, floated, closed and reopened from **View**. The
+four at the bottom right share a tab stack; drag one out by its title bar to
+give it a window of its own.
 
 ### Trend — read this first
 
@@ -70,6 +79,22 @@ list of rates from the same window looks authoritative.
 Switch **Trend of** to *Expert markings* to see the same window as the original
 annotators marked it. Flipping between the two is the fastest way to develop a
 feel for what the detector is doing.
+
+### Controls — amplitude, window, channels, position
+
+Directly above the trace: a gain control with a readout, how many seconds are
+on screen, how many channels, and where in the window you are, with buttons to
+step and scroll. Everything here also has a key on the trace — these exist
+because a control you cannot see is a control most people never find.
+
+The **amplitude** readout is the height of the scale bar drawn on the trace, so
+the two cannot disagree. Rescaling is the first thing to reach for: an 80 Hz
+oscillation at the wrong gain is a slightly thicker line.
+
+**Window** is the single most useful control in the program. At 10 s a ripple
+is a smudge; at 1 s it is an oscillation you can count the cycles of. Marking
+and rejecting events is done by the detector at full resolution regardless —
+this only changes what you can see.
 
 ### Trace — the signal
 
@@ -132,6 +157,39 @@ oscillation rises above the recording's own background at that frequency. It is
 what separates a real oscillation from the ringing a filter produces when it
 hits a sharp transient, which is the classic way HFO detectors fool themselves.
 
+### Where the contacts are — the 3D view
+
+![The 3D view](images/onset-review-3d.png)
+
+Each contact drawn in a head, coloured by rate, with the busiest numbered in
+rank order and the shafts joined so you can see which contacts belong to the
+same electrode. When the dataset records what the surgeon removed, each contact
+is ringed by it: green inside the resection, orange straddling it, dark outside.
+
+What this gives you that the table cannot is **adjacency**. "`AR1-AR2` and
+`AR2-AR3` lead" reads the same in a table whether they are two neighbouring
+contacts of one electrode or two leaders on opposite sides of the head, and
+those are completely different findings. Here you see which it is.
+
+Click a contact to take the trace to it; pick a channel anywhere else and the
+view turns to face it. **View** gives you the standard angles.
+
+> **Read the orange banner under it.** On this archive — and on every dataset
+> this software currently ships support for — the positions are **not
+> measured**. `ds003498` and `ds003029` contain no `electrodes.tsv` and no
+> stereotactic coordinates for any contact. What the layout uses instead is the
+> electrode *names*, which do carry real information: `AHR3` is the third
+> contact of the right anterior hippocampal depth electrode, and contacts along
+> a depth electrode are numbered in spatial order. So each shaft is drawn at
+> the textbook location of the structure its name claims.
+>
+> That is genuinely useful — it tells you the active contacts are all on right
+> mesial temporal shafts and sit inside the resection, which is true and is the
+> finding. It is **not** this patient's implantation, and no distance,
+> trajectory or margin should be read off it. If you point this software at
+> your own BIDS data and that data has an `electrodes.tsv`, it uses the real
+> coordinates and the banner changes to say so.
+
 ### Detector vs expert
 
 This dataset's annotators marked HFOs channel by channel, so on these
@@ -145,6 +203,36 @@ of detector is and is not for, and no summary statistic substitutes for it.
 
 The percentages on a single minute of one patient are far too noisy to be the
 detector's accuracy. Section 5 has the cohort numbers.
+
+### Assistant — ask about this window
+
+![The assistant](images/onset-review-assistant.png)
+
+A language model that can only quote the analysis in front of you. It chooses
+which read-only queries to run against this window; every number it states is
+checked against what those queries returned, and an answer citing evidence it
+never retrieved is thrown away and replaced with a refusal. Ask it which
+channels to resect and it refuses — before the model is even called.
+
+**The citations are the point.** Each one is a link to a channel and a time, so
+an answer leads to the signal it was measured on. An assistant you cannot check
+is not useful here; one you can check in two clicks is.
+
+It opens on **No model**, which runs the whole loop deterministically with
+nothing generative in it — that is how the guards are tested, and it answers
+instantly. For a real model, install Ollama, run
+
+```bash
+ollama pull qwen2.5:7b-instruct
+```
+
+and pick *Qwen2.5 via Ollama*. Nothing is downloaded on your behalf, nothing
+leaves the machine, and an unreachable server is reported rather than silently
+falling back.
+
+The numbers it quotes are the numbers in the Findings table, by construction:
+it reads a pipeline result rebuilt from the same band, detectors and thresholds
+the window on screen was produced with.
 
 ### How this was produced
 
@@ -166,9 +254,13 @@ its citation. If a number on screen ever has to be defended, it starts here.
 5. Switch the trend to **Expert markings**. Same patch? Different patch?
 6. Open **Detector vs expert**, sort by *Only theirs*, and open three of them
    on the trace. What did the detector miss, and would you have marked it?
-7. Now the same patient's **second minute** (60–120 s). Does the answer hold?
+7. Open **Where the contacts are**. Are the busy contacts neighbours on one
+   shaft, or scattered? Are they inside what the surgeon removed?
+8. Open the **Assistant** and ask it something you already know the answer to
+   from the table. Then ask it which channels to resect, and read the refusal.
+9. Now the same patient's **second minute** (60–120 s). Does the answer hold?
 
-Step 7 is the one most worth doing, and the one most likely to surprise you.
+Step 9 is the one most worth doing, and the one most likely to surprise you.
 Across these twenty patients, the annotators' own busiest fast-ripple channel
 is the same channel in only **7 of 20 patients** when you compare one minute of
 a recording against another minute of the *same* recording. That is the
@@ -243,7 +335,7 @@ candidate sets and a second window.
 
 ---
 
-## 6. The four things never to conclude from this screen
+## 6. The five things never to conclude from this screen
 
 1. **"The busiest channel is the seizure onset zone."** It is the busiest
    channel in one minute of one recording, by one detector, at one threshold.
@@ -260,7 +352,12 @@ candidate sets and a second window.
    same minute disagree substantially. Agreement with one of them bounds how
    well a detector *could* be doing; it does not establish it.
 
-4. **"This tells me what to resect."** It does not. No part of this software
+4. **"The 3D view shows where the electrodes are."** It shows where electrodes
+   *with those names* conventionally go. No dataset this software currently
+   reads contains a measured coordinate for any contact. The view is for
+   adjacency and for the relationship to the resection, not for geometry.
+
+5. **"This tells me what to resect."** It does not. No part of this software
    has been validated against a surgical decision, the cohort is twenty
    patients, five of whom have only a quarter of their resected contacts
    present in the recording at all, and the one outcome comparison it has been

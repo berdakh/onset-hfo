@@ -36,6 +36,9 @@ from qtpy.QtWidgets import (
 )
 
 from onset_review import report
+from onset_review.assistant import AssistantPanel
+from onset_review.brainview import BrainPanel
+from onset_review.controls import AMPLITUDE_STEP, TraceControls
 from onset_review.panels import (
     AgreementPanel,
     EventsPanel,
@@ -251,8 +254,12 @@ def decorate(figure, session: ReviewSession,
 
     panels = {
         "trends": TrendsPanel(session),
+        "controls": TraceControls(figure),
         "findings": FindingsPanel(session),
         "events": EventsPanel(session),
+        "brain": BrainPanel(session, resection=session.resection,
+                            electrodes=session.electrodes),
+        "assistant": AssistantPanel(session),
         "agreement": AgreementPanel(session),
         "provenance": ProvenancePanel(session),
     }
@@ -268,28 +275,54 @@ def decorate(figure, session: ReviewSession,
         docks[key] = item
         return item
 
-    # The trend goes above the trace because that is the order it is read in.
+    # The trend goes above the trace because that is the order it is read in,
+    # and the trace controls go directly under it, against the trace they drive.
     dock("trends", "Trend — rate per channel over time",
          Qt.TopDockWidgetArea, panels["trends"])
+    controls = dock("controls", "Trace controls", Qt.TopDockWidgetArea,
+                    panels["controls"])
+    controls.setFeatures(QDockWidget.DockWidgetMovable
+                         | QDockWidget.DockWidgetFloatable)
+    # Split vertically, or Qt puts two docks in the same area side by side and
+    # the trend loses half its width to a bar that wants one row.
+    host.splitDockWidget(docks["trends"], controls, Qt.Vertical)
     dock("findings", "Findings — channels ranked by rate",
          Qt.RightDockWidgetArea, panels["findings"])
     dock("events", "Events", Qt.RightDockWidgetArea, panels["events"])
     # Agreement and provenance are reference rather than working views, so they
     # share a tab stack and start behind the panels a reviewer uses minute to
     # minute.
+    # The 3D view, the agreement table and the provenance share one tab stack
+    # under the tables. All three answer "what am I actually looking at" rather
+    # than being read minute to minute, and any of them in a column of its own
+    # takes its width from the trace -- which is the one thing on screen that
+    # has to stay wide enough to judge an oscillation on. A reviewer who wants
+    # the 3D view big floats it out of the dock, which is one drag.
+    brain = dock("brain", "Where the contacts are", Qt.RightDockWidgetArea,
+                 panels["brain"])
     accord = dock("agreement", "Detector vs expert", Qt.RightDockWidgetArea,
                   panels["agreement"])
     prov = dock("provenance", "How this was produced", Qt.RightDockWidgetArea,
                 panels["provenance"])
+    helper = dock("assistant", "Assistant", Qt.RightDockWidgetArea,
+                  panels["assistant"])
+    host.tabifyDockWidget(brain, accord)
     host.tabifyDockWidget(accord, prov)
-    accord.raise_()
+    host.tabifyDockWidget(prov, helper)
+    brain.raise_()
     # A trend squeezed to a strip is unreadable, and Qt will squeeze it unless
     # the widget itself says otherwise; `resizeDocks` alone loses to the
     # central widget's own size policy.
-    panels["trends"].setMinimumHeight(230)
+    panels["trends"].setMinimumHeight(170)
+    panels["controls"].setFixedHeight(panels["controls"].sizeHint().height())
     host.resizeDocks([docks["trends"]], [260], Qt.Vertical)
-    host.resizeDocks([docks["findings"], docks["events"], accord],
-                     [620, 620, 620], Qt.Horizontal)
+    host.resizeDocks([docks["findings"], docks["events"], brain, helper],
+                     [640, 640, 640, 640], Qt.Horizontal)
+    # Vertical shares for the right-hand column. Without these the 3D view's
+    # own minimum height wins the whole column and the two tables above it are
+    # left showing one row each.
+    host.resizeDocks([docks["findings"], docks["events"], brain],
+                     [300, 240, 420], Qt.Vertical)
 
     parts = ReviewWindowParts(figure, host, panels, docks, session)
     parts.display = display
@@ -322,11 +355,24 @@ def _wire(figure, host, panels: dict, session: ReviewSession,
             _goto_channel(figure, session, channel)
         else:
             goto(figure, t, channel, session)
+        # The control bar reads its values out of the browser rather than
+        # keeping its own, so anything that moves the view has to tell it to
+        # look again -- otherwise its "At" box says where the reviewer was
+        # before they clicked.
+        panels["controls"].sync()
 
     panels["events"].eventPicked.connect(lambda t, channel: select(channel, t))
     panels["trends"].cellPicked.connect(lambda t, channel: select(channel, t))
     panels["findings"].channelPicked.connect(lambda channel: select(channel))
     panels["agreement"].channelPicked.connect(lambda channel: select(channel))
+    panels["brain"].channelPicked.connect(lambda channel: select(channel))
+    # A citation names a time in the archive's seconds, which is what a report
+    # quotes; the trace runs from zero, so the offset comes off here.
+    panels["assistant"].evidencePicked.connect(
+        lambda channel, t_file: select(channel, float(t_file) - session.t_offset))
+    # ...and the 3D view turns to face whatever was chosen elsewhere, so the
+    # three views never disagree about which contact is under discussion.
+    panels["findings"].channelPicked.connect(panels["brain"].highlight)
     # Picking a channel in the agreement table should move the findings table
     # with it, so the two never disagree about what is selected.
     panels["agreement"].channelPicked.connect(panels["findings"].select_channel)
@@ -408,6 +454,12 @@ def _menus(figure, host: QMainWindow, panels: dict, docks: dict,
     navigate.addAction("Busiest &channel",
                        lambda: _goto_channel(figure, session,
                                              session.leader.get("leader") or ""))
+    navigate.addSeparator()
+    controls = panels["controls"]
+    navigate.addAction("Taller traces", lambda: controls._scale(AMPLITUDE_STEP))
+    navigate.addAction("Smaller traces",
+                       lambda: controls._scale(1 / AMPLITUDE_STEP))
+    navigate.addAction("Back to the start of the window", controls.go_home)
 
     help_menu = menubar.addMenu("&Help")
     help_menu.addAction("What am I looking at?", lambda: _about(host, session))

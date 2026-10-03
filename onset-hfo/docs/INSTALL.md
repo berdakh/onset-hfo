@@ -128,6 +128,33 @@ onset-review --subject sub-01 --window 0 60 --export review.md
 
 ---
 
+## The assistant, with a real model
+
+The **Assistant** tab opens on a deterministic backend that runs no model at
+all, so it works out of the box and answers instantly. To put an open-weight
+model behind it:
+
+```bash
+curl -fsSL https://ollama.com/install.sh | sh    # if you do not have it
+ollama pull qwen2.5:7b-instruct                  # ~4.7 GB, once
+ollama serve                                     # usually already running
+```
+
+Then pick **Qwen2.5 via Ollama** in the panel. The model runs on your machine;
+nothing is sent anywhere. `qwen2.5:7b-instruct` calls tools reliably and wants
+about 8 GB of RAM — `qwen2.5:3b-instruct` works on less and is noticeably
+worse at choosing which query to run.
+
+Any OpenAI-compatible server (vLLM, llama.cpp, LM Studio) works too: pick
+**OpenAI-compatible server** and give it the base URL.
+
+The assistant cannot invent a number whatever model is behind it. Everything it
+states is checked against the queries it actually ran, and an unverifiable
+answer is replaced by a refusal — see [`AGENT.md`](AGENT.md) for the threat
+model.
+
+---
+
 ## If something goes wrong
 
 **`could not load the Qt platform plugin "xcb"`** — a system library is
@@ -155,6 +182,17 @@ one does not dock.
 
 **Over SSH** — X11 forwarding works (`ssh -X`) but is slow for a scrolling
 trace. Prefer running it on the machine with the screen, or use `--export`.
+
+**The 3D view is empty, or says "schematic"** — it says schematic because it
+is. Neither public archive ships electrode coordinates; the positions come from
+the electrode names. [`CLINICAL_GUIDE.md`](CLINICAL_GUIDE.md) §2 explains what
+that view does and does not support. Point the software at BIDS data with an
+`electrodes.tsv` and it uses the real coordinates instead.
+
+**"The model could not be reached"** — Ollama is not running, or not on the
+default port. `ollama serve`, then `curl http://localhost:11434/api/tags` to
+check. Switch to *No model* meanwhile; everything except the generated prose
+works identically.
 
 **Running it headless anyway** (CI, or a screenshot for a talk):
 

@@ -81,9 +81,35 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
           MNE_BROWSER_BACKEND: qt
-        run: xvfb-run -a pytest tests/test_review_app.py -q
+        run: xvfb-run -a pytest tests/test_review_app.py tests/test_review_anatomy.py -q
       - name: The entry point starts and reports an empty cache honestly
         run: |
           python -m onset_review.app --list --cache-dir /tmp/empty-cache \
             && exit 1 || echo "correctly reported an empty cache"
           onset-review --help > /dev/null
+      - name: The whole window builds and renders headless
+        env:
+          QT_QPA_PLATFORM: offscreen
+          MNE_BROWSER_BACKEND: qt
+        run: |
+          python - <<'PY'
+          # Synthetic recording, so this needs no cached slice and no network.
+          # It is the one check that the *window* -- every panel, the 3D view,
+          # the assistant's store -- builds and paints, which no import test
+          # and no unit test establishes.
+          import matplotlib; matplotlib.use("QtAgg")
+          from qtpy.QtWidgets import QApplication
+          app = QApplication([])
+          from onset_hfo.synthetic import make_synthetic_recording
+          from onset_review.session import ReviewRequest, session_from_recording
+          from onset_review import window
+          rec = make_synthetic_recording(duration_s=20, seed=7, verbose=False)
+          s = session_from_recording(rec, ReviewRequest(t_start=0, t_stop=20))
+          fig = window.open_trace(s, show=False)
+          parts = window.decorate(fig, s)
+          parts.host.resize(1400, 900)
+          for _ in range(8):
+              app.processEvents()
+          assert parts.host.grab().save("window.png"), "could not render"
+          print("rendered", sorted(parts.docks))
+          PY

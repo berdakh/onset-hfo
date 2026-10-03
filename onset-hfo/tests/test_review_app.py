@@ -14,6 +14,8 @@ function separate from `load_session`.
 
 from __future__ import annotations
 
+import dataclasses
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -335,8 +337,8 @@ def test_mne_figure_can_still_host_our_docks(built):
 
 
 def test_every_panel_is_docked(built):
-    assert set(built.docks) == {"trends", "findings", "events", "agreement",
-                                "provenance"}
+    assert set(built.docks) == {"trends", "controls", "findings", "events",
+                                "brain", "agreement", "provenance", "assistant"}
     assert all(dock.widget() is not None for dock in built.docks.values())
 
 
@@ -520,3 +522,246 @@ def test_an_empty_cache_disables_opening_and_says_what_to_do(qapp, tmp_path):
     dialog = LauncherDialog(tmp_path)
     assert not dialog.buttons.button(QDialogButtonBox.Open).isEnabled()
     assert "fetch" in dialog.status.text().lower()
+
+
+# -- the trace controls ----------------------------------------------------
+#
+# The bar does not decide anything: it calls MNE's own view methods and reads
+# its readouts back out of MNE. These tests pin exactly that, because the
+# failure mode of a control bar that keeps its own copy of the state is that it
+# silently disagrees with the trace it sits above.
+
+def test_the_controls_read_their_values_from_the_browser(built):
+    controls = built.panels["controls"]
+    state = built.figure.mne
+    assert controls.seconds.value() == pytest.approx(float(state.duration))
+    assert controls.channels.value() == int(state.n_channels)
+    assert controls.position.value() == pytest.approx(float(state.t_start))
+
+
+def test_the_gain_readout_is_mnes_own_scalebar(built):
+    """A readout that disagrees with the scalebar drawn on the trace is worse
+    than no readout."""
+    controls = built.panels["controls"]
+    assert controls.gain.text() in set(built.figure._get_scale_bar_texts())
+
+
+def test_scaling_changes_the_trace_and_the_readout(built):
+    from onset_review.controls import AMPLITUDE_STEP
+
+    controls = built.panels["controls"]
+    before = float(built.figure.mne.scale_factor)
+    controls._scale(AMPLITUDE_STEP)
+    assert float(built.figure.mne.scale_factor) == pytest.approx(
+        before * AMPLITUDE_STEP)
+    assert controls.gain.text() in set(built.figure._get_scale_bar_texts())
+    controls._scale(1 / AMPLITUDE_STEP)        # put it back for other tests
+    assert float(built.figure.mne.scale_factor) == pytest.approx(before)
+
+
+def test_changing_the_window_length_goes_through_the_browser(built):
+    """And lands on the seconds asked for.
+
+    `change_duration` takes a fraction of the current duration, not seconds, so
+    a control that passes the difference in seconds overshoots badly -- 10 s to
+    "12 s" becomes 30 s. That is the bug this asserts against.
+    """
+    controls = built.panels["controls"]
+    before = float(built.figure.mne.duration)
+    controls.seconds.setValue(before + 2.0)
+    assert float(built.figure.mne.duration) == pytest.approx(before + 2.0, abs=0.1)
+    controls.seconds.setValue(before)
+    assert float(built.figure.mne.duration) == pytest.approx(before, abs=0.1)
+
+
+def test_changing_the_channel_count_goes_through_the_browser(built):
+    controls = built.panels["controls"]
+    before = int(built.figure.mne.n_channels)
+    controls.channels.setValue(before + 1)
+    assert int(built.figure.mne.n_channels) == before + 1
+    controls.channels.setValue(before)
+
+
+def test_scrolling_moves_the_window_and_stays_inside_it(built):
+    controls = built.panels["controls"]
+    # A window as long as the recording has nowhere to scroll, and an earlier
+    # test could have left it that way; make the state this test needs.
+    controls.seconds.setValue(min(5.0, float(built.figure.mne.xmax) / 3))
+    controls.go_home()
+    assert controls.position.value() == pytest.approx(0.0)
+    controls._hscroll("right")
+    assert float(built.figure.mne.t_start) > 0.0
+    for _ in range(50):                 # far past the end
+        controls._hscroll("+full")
+    state = built.figure.mne
+    assert float(state.t_start) <= float(state.xmax) - float(state.duration) + 1e-6
+    controls.go_home()
+
+
+def test_a_control_whose_method_is_missing_leaves_the_window_standing(built):
+    """The reviewer still has the keyboard; a dead button must not raise."""
+    controls = built.panels["controls"]
+    controls._call("no_such_method_on_the_browser", step=1)
+
+
+# -- the 3D view -----------------------------------------------------------
+
+def test_the_brain_panel_places_every_channel(built, review):
+    panel = built.panels["brain"]
+    assert len(panel.layout_frame) == len(review.findings)
+    assert list(panel.layout_frame["channel"]) == list(
+        review.findings.sort_values("rank")["channel"])
+
+
+def test_the_brain_panel_says_it_is_schematic(built):
+    """The caption is the honesty guard and is not allowed to go missing."""
+    assert "SCHEMATIC" in built.panels["brain"].caption.text()
+    assert "Schematic" in built.panels["brain"].headline.text()
+
+
+def test_the_brain_panel_survives_every_option(built):
+    panel = built.panels["brain"]
+    for index in range(panel.colour_by.count()):
+        panel.colour_by.setCurrentIndex(index)
+        for labels in (True, False):
+            panel.labels.setChecked(labels)
+            panel.shafts.setChecked(not labels)
+            panel.redraw()
+    panel.colour_by.setCurrentIndex(0)
+    panel.labels.setChecked(True)
+    panel.shafts.setChecked(True)
+
+
+def test_every_preset_view_is_a_real_angle(built):
+    from onset_review.brainview import VIEWS
+
+    panel = built.panels["brain"]
+    for name in VIEWS:
+        panel.set_view(name)
+        assert (panel._elev, panel._azim) == VIEWS[name]
+
+
+def test_highlighting_turns_to_the_right_hemisphere(built):
+    panel = built.panels["brain"]
+    frame = panel.layout_frame
+    for sign, expected in ((1, 0), (-1, 180)):
+        rows = frame[np.sign(frame["x"]) == sign]
+        if rows.empty:
+            continue
+        panel.highlight(str(rows.iloc[0]["channel"]))
+        assert panel._azim == expected
+
+
+# -- the assistant ---------------------------------------------------------
+
+def test_an_evidence_id_resolves_to_a_channel_and_a_time():
+    from onset_review.assistant import parse_evidence_id
+
+    assert parse_evidence_id("sub-01|AR1-AR2|rms|3.505") == ("AR1-AR2", 3.505)
+    assert parse_evidence_id("not an id") is None
+    assert parse_evidence_id("sub-01|AR1-AR2|rms|not-a-number") is None
+
+
+def test_a_clicked_citation_survives_qts_url_encoding(qapp, review):
+    """Qt percent-encodes the `|` in an evidence id on the way into a QUrl.
+
+    Without unquoting, every citation link silently does nothing when clicked
+    -- and the clickable citation is the entire argument that the assistant's
+    answers can be checked rather than trusted.
+    """
+    from qtpy.QtCore import QUrl
+
+    from onset_review.assistant import AssistantPanel
+
+    panel = AssistantPanel(review)
+    seen = []
+    panel.evidencePicked.connect(lambda channel, t: seen.append((channel, t)))
+    panel._citation_clicked(QUrl("evidence:sub-01|AR1-AR2|rms|3.505"))
+    assert seen == [("AR1-AR2", 3.505)]
+    assert "%7C" in QUrl("evidence:sub-01|AR1-AR2").toString()   # the hazard
+    panel.deleteLater()
+
+
+def test_the_assistant_offers_a_question_it_will_refuse():
+    """A reviewer should meet the boundary from the interface, early."""
+    from onset_review.assistant import SUGGESTIONS
+
+    assert any("resect" in question.lower() for question, _ in SUGGESTIONS)
+    assert all(label and len(label) < 24 for _, label in SUGGESTIONS)
+
+
+def test_the_default_backend_runs_no_model():
+    from onset_review.assistant import BACKENDS
+
+    assert BACKENDS[0][1] == "scripted"
+    assert any(kind == "ollama" for _, kind in BACKENDS)
+
+
+def test_the_request_rebuilds_the_config_that_produced_the_review(review):
+    """The assistant answers from a re-run; it has to be the *same* run.
+
+    `pipeline_config` is what makes the review on screen and a `run_pipeline`
+    over the same request one analysis rather than two that happen to agree.
+    """
+    from onset_hfo.detectors import HFO_DETECTORS
+
+    config = review.request.pipeline_config()
+    for name in HFO_DETECTORS:
+        assert getattr(config, name).band == review.request.band_hz
+
+    strict = dataclasses.replace(review.request, threshold_sd=4.25)
+    for name in HFO_DETECTORS:
+        assert getattr(strict.pipeline_config(), name).threshold_sd == 4.25
+
+
+def test_the_assistant_answers_with_the_numbers_on_screen(qapp, review):
+    """The point of the panel, and the thing that would rot silently.
+
+    An assistant quoting rates from a differently-configured run would be worse
+    than none: the numbers would look like the table's and not be them. This
+    builds the store the agent reads and checks it against the session.
+    """
+    from onset_review.assistant import AssistantPanel
+
+    panel = AssistantPanel(review)
+    try:
+        assert panel._ensure_store()
+        rates = panel._store.rates[review.request.primary]
+        mine = review.findings.set_index("channel")["n_events"]
+        theirs = rates.set_index("channel")["n_events"]
+        for channel, count in mine.items():
+            assert int(theirs.get(channel, 0)) == int(count), channel
+    finally:
+        panel.deleteLater()
+
+
+def test_the_assistant_keeps_the_window_painting_while_it_works(qapp, review):
+    """It must not block the GUI thread while a model is thinking.
+
+    `QThread.start()` followed by `wait()` on the GUI thread stops the window
+    repainting entirely: the "Thinking…" line never appears, the panel does not
+    visibly disable, and behind a local model that is half a minute of an
+    application the desktop reports as not responding. The fix is a nested
+    event loop, and this is what keeps it.
+    """
+    import inspect
+
+    from onset_review import assistant
+
+    source = inspect.getsource(assistant)
+    assert "QEventLoop" in source
+    # Exactly one place waits, and it is after the loop has already drained.
+    waits = [line.strip() for line in source.splitlines()
+             if ".wait()" in line and not line.strip().startswith("#")]
+    assert waits == ["worker.wait()"], waits
+
+    panel = assistant.AssistantPanel(review)
+    try:
+        painted = []
+        panel.ask("Which channels have the highest ripple rate?")
+        qapp.processEvents()
+        painted.append(panel.transcript.toPlainText())
+        assert "Thinking" in painted[0]
+        assert panel.isEnabled()          # re-enabled when the answer landed
+    finally:
+        panel.deleteLater()
