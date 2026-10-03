@@ -138,11 +138,16 @@ than the merged rate. Screened across all 20 patients, five 60 s windows each,
 pooled by subject mean, using this study's own metric functions.
 """)
 
-    split = panels.subpopulation_groups("ripple")
-    if split.empty:
+    # Same stale-module guard as the Detectors page; see the note there.
+    if not hasattr(panels, "subpopulation_groups"):
+        split = pd.DataFrame()
+        st.warning(
+            "This tab needs `panels.subpopulation_groups`, which the running app "
+            "has not loaded. That clears on a restart: **Manage app → Reboot**.")
+    elif (split := panels.subpopulation_groups("ripple")).empty:
         st.info("`data/outcome/subpopulation_groups.csv` is missing, so the "
                 "sub-population screen is not shown.")
-    else:
+    if not split.empty:
         st.dataframe(split[["metric", "population", "n_SF", "n_rec",
                             "auc", "p", "p_bonferroni"]].rename(columns={
             "n_SF": "n seizure-free", "n_rec": "n recurrence", "auc": "AUC",
