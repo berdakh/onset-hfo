@@ -32,6 +32,13 @@ from onset_hfo.detectors.base import Event
 from onset_hfo.metrics import channel_rates, leader_separation, rank_channels
 from onset_hfo.outcome import candidate_channels
 from onset_hfo.preprocess import prepare
+from onset_hfo.quality import (
+    analysable_seconds,
+    channel_quality,
+    quality_summary,
+    reject_unusable_events,
+    segment_quality,
+)
 from onset_hfo.validate import validate_events
 
 __all__ = ["ReviewRequest", "ReviewSession", "load_session",
@@ -107,6 +114,15 @@ class ReviewRequest:
     #: bare EDF does not, and the wrong one leaves the interference in place
     #: *and* carves a hole where there was none.
     line_freq: float = 50.0
+    #: Run the data-quality stage: which contacts and which seconds are fit to
+    #: analyse. On by default. Off reproduces the numbers this project
+    #: measured before the stage existed, which is why it is a switch.
+    check_quality: bool = True
+    #: Channels the reviewer reinstated after looking at them, overruling the
+    #: automatic verdict. One-directional on purpose: excluding a channel the
+    #: checks passed is `PreprocessConfig.exclude`, where it is recorded as
+    #: the reviewer's own choice rather than as an override of a verdict.
+    keep_channels: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         unknown = [d for d in self.detectors if d not in HFO_DETECTORS]
@@ -224,6 +240,14 @@ class ReviewSession:
     #: Measured electrode coordinates from the dataset's `electrodes.tsv`.
     #: Neither archive here has one; see `onset_review.anatomy`.
     electrodes: pd.DataFrame | None = None
+    #: One row per channel: the quality measurements and the verdict. Empty
+    #: when the stage was switched off.
+    quality: pd.DataFrame | None = None
+    #: One row per channel per segment: which seconds were usable.
+    segments: pd.DataFrame | None = None
+    #: Channel -> seconds actually analysed. This, not the window length, is
+    #: what every rate in `findings` was divided by.
+    clean_seconds: dict[str, float] = field(default_factory=dict)
     #: The fetched slice itself. Kept so the assistant can run the project's
     #: own pipeline over the very window on screen rather than answering from
     #: a differently-configured one; the signal is already in memory as `raw`,
@@ -487,9 +511,10 @@ def _detect(prep, cfg: PipelineConfig, name: str) -> list[Event]:
     return list(found)
 
 
-def _findings_table(events: list[Event], channels: list[str], duration_s: float,
-                    detector: str, reviewed: list[str],
-                    expert: list[Event]) -> pd.DataFrame:
+def _findings_table(events: list[Event], channels: list[str],
+                    duration_s, detector: str, reviewed: list[str],
+                    expert: list[Event], window_s: float | None = None
+                    ) -> pd.DataFrame:
     """Per-channel rates, ranked, with the two columns a reviewer needs beside.
 
     `channel_rates` already returns counts, rates and the Poisson interval that
@@ -499,6 +524,11 @@ def _findings_table(events: list[Event], channels: list[str], duration_s: float,
     channels was annotated, so a detection elsewhere is unjudged rather than
     wrong, and a reviewer comparing the two sources has to be able to see which
     rows the comparison is even defined on.
+
+    `duration_s` may be one number or a per-channel mapping of analysed
+    seconds. `window_s` is the window's own length, used for the annotators'
+    rate: they marked the whole window, and dividing their count by *our*
+    clean time would credit them with a rate they never claimed.
     """
     table = channel_rates([e for e in events if e.detector == detector],
                           duration_s, channels=channels)
@@ -507,7 +537,8 @@ def _findings_table(events: list[Event], channels: list[str], duration_s: float,
     table = rank_channels(table)
     reviewed_set = set(reviewed)
     table["reviewed"] = [ch in reviewed_set for ch in table["channel"]]
-    minutes = max(duration_s / 60.0, 1e-9)
+    minutes = max(float(window_s if window_s is not None else duration_s) / 60.0,
+                  1e-9)
     expert_counts: dict[str, int] = {}
     for event in expert:
         expert_counts[event.channel] = expert_counts.get(event.channel, 0) + 1
@@ -589,6 +620,15 @@ def session_from_recording(record: Recording, request: ReviewRequest,
             f"({band[0]:.0f}–{band[1]:.0f} Hz). Raise it above {band[1]:.0f} Hz "
             f"or turn it off.")
 
+    # Which contacts and which seconds are fit to analyse, before anything is
+    # detected: the answer changes the denominator every rate is divided by,
+    # and a channel that is set aside should not have events attributed to it.
+    quality = segments = None
+    if cfg.check_quality:
+        say(0.33, "Checking the contacts and the seconds")
+        segments = segment_quality(prep, cfg.quality)
+        quality = channel_quality(prep, cfg.quality, segments=segments)
+
     events: list[Event] = []
     span = 0.3 / len(request.detectors)
     for index, name in enumerate(request.detectors):
@@ -608,8 +648,14 @@ def session_from_recording(record: Recording, request: ReviewRequest,
                 if c in set(prep.ch_names)]
 
     say(0.85, "Measuring rates and confidence intervals")
-    findings = _findings_table(events, list(prep.ch_names), prep.duration,
-                               request.primary, reviewed, expert)
+    if cfg.check_quality:
+        reject_unusable_events(events, segments, quality,
+                               keep=request.keep_channels)
+    clean = analysable_seconds(segments, quality, list(prep.ch_names),
+                               prep.duration, keep=request.keep_channels)
+    findings = _findings_table(events, list(prep.ch_names), clean or prep.duration,
+                               request.primary, reviewed, expert,
+                               window_s=prep.duration)
     leader = leader_separation(findings) if not findings.empty else {}
     counts = (findings.set_index("channel")["n_events"]
               if not findings.empty else pd.Series(dtype=float))
@@ -625,8 +671,12 @@ def session_from_recording(record: Recording, request: ReviewRequest,
         request=request, raw=raw, events=events, findings=findings,
         leader=leader, candidates=list(tied), expert=expert,
         reviewed_channels=reviewed, resection=resection, electrodes=electrodes,
+        quality=quality, segments=segments, clean_seconds=dict(clean or {}),
         steps=list(prep.steps),
-        notes=list(getattr(record, "notes", [])),
+        notes=(list(getattr(record, "notes", []))
+               + ([quality_summary(quality, segments,
+                                   kept=request.keep_channels)]
+                  if cfg.check_quality else [])),
         citation=str(getattr(record, "citation", "")),
         sfreq=float(prep.sfreq), t_offset=float(prep.t_offset),
         montage=prep.montage, recording=record,

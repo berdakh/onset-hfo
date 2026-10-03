@@ -566,6 +566,28 @@ figures a clinician reads are tested without a display; `panels`, `controls`,
 A `desktop` CI job installs the extra, brings up Xvfb and builds the whole
 window on a synthetic recording.
 
+And it decides, before any detector runs, which contacts and which seconds
+are fit to analyse (`onset_hfo/quality.py`). Nothing is interpolated: the
+output is a per-contact rate, so a repaired contact's rate would be borrowed
+from its neighbours. Each contact's rate is divided by the time that survived
+rather than by the nominal window, because otherwise rejecting an artifact
+makes the table less accurate than leaving it in.
+
+**What building it caught, twice.** The first segment test rejected on
+amplitude and threw away six seconds of `AR2-AR3` on sub-01 -- the second
+busiest HFO channel in the window -- because an interictal discharge is a
+large deflection. It now tests for a discontinuity, with the threshold
+measured over 20,520 channel-seconds. Then the band-power check, which is the
+one that catches a noisy amplifier, flagged `TR1-TR2` and `TR2-TR3` on
+sub-13 -- and the archive's own annotators had marked 91, 102 and 164 ripples
+on those three contacts. A contact full of real ripples has high band power
+because the ripples are in the band, and no statistic tried here separates
+that from an amplifier (the quietest-second floor comes closest: 26x for a
+planted fault against 5x for `TR1-TR2`, which is not a gap to put a threshold
+in). So that check now *flags* and never removes. The module sets a contact
+aside only for a fault no physiology produces, and the division is pinned by a
+test over the list itself.
+
 It also opens recordings that did not come from the archive. `onset_hfo/io.py`
 dispatches on the extension to one of MNE's own readers — Persyst, Nihon
 Kohden, Nicolet, BrainVision, EDF, Curry, Blackrock, MEF3 and the rest — and

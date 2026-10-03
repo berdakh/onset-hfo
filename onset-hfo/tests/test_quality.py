@@ -29,6 +29,7 @@ from onset_hfo.config import QualityConfig
 from onset_hfo.preprocess import prepare
 from onset_hfo.quality import (
     REASONS,
+    SET_ASIDE,
     channel_quality,
     clean_seconds,
     quality_summary,
@@ -85,22 +86,36 @@ def test_each_channel_fault_is_caught_and_named(prep, label, reason, fault):
     broken = prep.ch_names[0]
     quality = channel_quality(_with_fault(prep, broken, fault))
     row = quality[quality["channel"] == broken].iloc[0]
-    assert not row["good"], f"{label} was not caught"
     assert row["reason"] == reason, f"{label}: {row['reason']} != {reason}"
+    # Set aside for the unambiguous faults; analysed and flagged for the ones
+    # that could equally be the finding.
+    # `bool(...)`: pandas hands back numpy booleans, which are not `True`.
+    assert bool(row["good"]) is (reason not in SET_ASIDE)
+    assert bool(row["flagged"]) is (reason not in SET_ASIDE)
 
-    collateral = quality[(quality["channel"] != broken) & (~quality["good"])]
-    assert collateral.empty, f"{label} also failed {list(collateral['channel'])}"
+    others = quality[quality["channel"] != broken]
+    collateral = others[(~others["good"]) | others["flagged"]]
+    assert collateral.empty, f"{label} also caught {list(collateral['channel'])}"
 
 
-def test_a_noisy_amplifier_is_the_fault_that_ranks_first(prep):
-    """Why the in-band ratio is checked at all.
+def test_a_noisy_amplifier_is_flagged_and_still_analysed(prep):
+    """Why the in-band ratio is measured, and why it must not remove anything.
 
     A contact with a noisy amplifier does not look broken in a rate table: it
     looks like the finding. Its noise is genuinely oscillatory, so
     `onset_hfo.validate` cannot throw the events out either -- its checks ask
     whether a narrow-band oscillation is present, and one is. This is the only
-    stage that can catch it, which is why the check exists even though a
-    reviewer would never ask for it by name.
+    stage that can see it at all.
+
+    And it cannot tell it from the real thing. A contact full of ripples has
+    elevated band power *because the ripples are in the band*. On sub-13 of
+    ds003498 this check flagged `TR1-TR2` and `TR2-TR3`, and the archive's own
+    annotators marked 91, 102 and 164 ripples on those three contacts. Setting
+    them aside would have deleted the finding.
+
+    So the contract this test exists to hold is: measure it, say it loudly,
+    analyse the channel anyway, and leave the judgement to someone who can
+    look at the trace.
     """
     broken = prep.ch_names[0]
     noisy = _with_fault(
@@ -108,11 +123,43 @@ def test_a_noisy_amplifier_is_the_fault_that_ranks_first(prep):
         lambda x, t: x + np.random.default_rng(2).normal(0, 6 * np.std(x), x.size))
     quality = channel_quality(noisy)
     row = quality[quality["channel"] == broken].iloc[0]
+
     assert row["reason"] == "hf_noise"
-    # And it is an outlier *upward* in band power, not merely different:
-    # the highest in the montage, and flagged as such.
+    assert bool(row["flagged"]) is True
+    assert bool(row["good"]) is True, "a flagged contact must still be analysed"
+    assert "hf_noise" not in SET_ASIDE
+    assert broken in usable_channels(quality)
+
+    # It is an outlier upward in band power, not merely different.
     assert row["hf_ratio"] == quality["hf_ratio"].max()
     assert row["hf_ratio_sd"] > quality.drop(index=row.name)["hf_ratio_sd"].max()
+
+    # And the summary tells the reviewer what to do about it.
+    text = quality_summary(quality)
+    assert "analysed but flagged" in text
+    assert broken in text
+    assert "look at these on the trace" in text
+
+
+def test_a_flagged_contact_keeps_its_rate_and_its_time(prep):
+    """The behavioural half of the same contract, where it would be felt.
+
+    A flagged contact that lost its clean time would have a blank rate, which
+    is removal by another route.
+    """
+    from onset_hfo.quality import analysable_seconds
+
+    broken = prep.ch_names[0]
+    noisy = _with_fault(
+        prep, broken,
+        lambda x, t: x + np.random.default_rng(3).normal(0, 6 * np.std(x), x.size))
+    segments = segment_quality(noisy)
+    quality = channel_quality(noisy, segments=segments)
+    assert quality[quality["channel"] == broken].iloc[0]["flagged"]
+
+    seconds = analysable_seconds(segments, quality, list(prep.ch_names),
+                                 prep.duration)
+    assert seconds[broken] > 0.0
 
 
 def test_every_reason_the_code_can_give_has_a_sentence():
@@ -355,3 +402,21 @@ def test_the_quality_module_needs_no_qt():
         for name in names:
             assert name.split(".")[0] not in {"qtpy", "PySide6", "PyQt5",
                                               "PyQt6", "onset_review"}, name
+
+
+def test_only_unambiguous_faults_remove_a_contact():
+    """The most consequential list in this module, pinned as a list.
+
+    Every reason here says the signal is absent or corrupted in a way no
+    physiology produces, so there is nothing for a human to adjudicate.
+    Everything else is a measurement that is as consistent with the finding as
+    with a fault, and adding one to this tuple means deciding to delete
+    findings. `QualityConfig.max_hf_ratio_sd` records the recording that
+    settled where the line goes.
+    """
+    assert set(SET_ASIDE) == {"flat", "clipped", "line_noise",
+                              "mostly_bad_segments"}
+    assert "hf_noise" not in SET_ASIDE
+    assert "amplitude" not in SET_ASIDE
+    for reason in SET_ASIDE:
+        assert reason in REASONS

@@ -45,7 +45,9 @@ marks in blue and the archive annotators' own in green, visible amplitude and
 scroll controls over it, the ranked channels with the ones that cannot be told
 apart from the leader tinted, the contacts in 3D with the surgeon's resection
 ringed, the patient's record with the gaps named rather than filled, the MNE
-preprocessing chain on controls a reviewer can actually reach, an assistant
+preprocessing chain on controls a reviewer can actually reach, the contacts
+and seconds that were fit to analyse — with the ones it cannot judge flagged
+rather than removed — an assistant
 that cites this window or refuses — and, pinned to the status bar
 where it cannot be scrolled past, whether any of it supports a ranking at all.
 
@@ -317,6 +319,7 @@ onset_hfo/            the pipeline
   config.py           every threshold and band, in one place, documented
   datasets.py         byte-range loader for the public archive + provenance
   io.py               a recording off this machine, through MNE's own readers
+  quality.py          bad contacts and bad seconds; removes only what cannot be real
   synthetic.py        labelled simulator, including the traps
   preprocess.py       channel selection, filtering, bipolar montage
   detectors/          base.py (primitives) · engine.py (the shared loop)
@@ -379,6 +382,7 @@ onset_review/         the desktop reviewer (Qt), installable on Ubuntu
   controls.py         visible amplitude, window, channel and scroll controls
   brainview.py        contacts in 3D: ranked, colour-coded, resection ringed
   preprocessing.py    the MNE filter/reference/resample chain, mouse-driven
+  dataquality.py      which contacts and seconds were analysed, and which only flagged
   record.py           what the archive records about a patient, and what it does not
   patient.py          that record, drawn
   theme.py            one palette, one type scale; no panel writes a colour

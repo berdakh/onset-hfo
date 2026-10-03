@@ -26,6 +26,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from onset_hfo.quality import REASONS, quality_summary
 from onset_review import trends
 from onset_review.session import DETECTOR_LABELS, ReviewSession
 
@@ -169,6 +170,8 @@ def review_markdown(session: ReviewSession, reviewer: str | None = None,
                            "prominence_db", "n_peaks", "with_spike"],
                    limit=max_events)]
 
+    out += _quality_section(session)
+
     out += ["## How the signal was prepared", ""]
     out += [f"{index}. {step}" for index, step in enumerate(session.steps, 1)]
     out += [""]
@@ -226,3 +229,42 @@ def _as_html(text: str, session: ReviewSession) -> str:
         "h1{font-size:1.6rem}h2{font-size:1.2rem;margin-top:2rem;"
         "border-bottom:1px solid #e0e0e0;padding-bottom:.2rem}"
         "</style></head><body>\n" + body + "\n</body></html>\n")
+
+
+def _quality_section(session: ReviewSession) -> list[str]:
+    """Which contacts and seconds were analysed, and which were only flagged.
+
+    In the document rather than only on screen, because the rate table above
+    it is meaningless without it: a blank rate is a contact that was set
+    aside, and a flagged contact's rank is a number the software is explicitly
+    not vouching for.
+    """
+    quality = getattr(session, "quality", None)
+    out = ["## Which contacts and seconds were analysed", ""]
+    if quality is None or not len(quality):
+        return out + ["_The data-quality checks did not run on this window, so "
+                      "every contact was analysed and every rate was divided "
+                      "by the whole window._", ""]
+
+    out += [quality_summary(quality, session.segments,
+                            kept=tuple(session.request.keep_channels)), ""]
+    interesting = quality[(~quality["good"]) | quality["flagged"]]
+    if not len(interesting):
+        return out
+    shown = interesting.assign(
+        verdict=["set aside" if not row.good else "analysed, flagged"
+                 for row in interesting.itertuples()],
+        why=[REASONS.get(row.reason, row.reason)
+             for row in interesting.itertuples()],
+        analysed_s=[session.clean_seconds.get(str(c), float("nan"))
+                    for c in interesting["channel"]])
+    out += [_table(shown, ["channel", "verdict", "why", "amplitude_uv",
+                           "hf_ratio_sd", "line_fraction", "analysed_s"]), ""]
+    if bool(interesting["flagged"].any()):
+        out += ["A flagged contact was analysed and ranked like any other. The "
+                "check that flags it cannot tell a noisy amplifier from a "
+                "contact carrying a great deal of real activity -- both raise "
+                "the share of power in the band -- so it measures, says so, "
+                "and leaves the judgement to whoever can look at the trace.",
+                ""]
+    return out

@@ -39,6 +39,7 @@ from onset_review import report, theme
 from onset_review.assistant import AssistantPanel
 from onset_review.brainview import BrainPanel
 from onset_review.controls import AMPLITUDE_STEP, TraceControls
+from onset_review.dataquality import QualityPanel
 from onset_review.panels import (
     AgreementPanel,
     EventsPanel,
@@ -248,12 +249,15 @@ def goto(figure, t: float, channel: str | None = None,
 
 
 def decorate(figure, session: ReviewSession, show_expert: bool = False,
-             on_preprocess=None, on_import=None) -> ReviewWindowParts:
+             on_preprocess=None, on_import=None,
+             on_quality=None) -> ReviewWindowParts:
     """Add the menus, the toolbar, the panels and the caveat to MNE's window.
 
     `on_preprocess` is called with a new `PreprocessConfig` when the reviewer
-    applies one. `on_import` is called with no arguments when they ask to open
-    a recording from this machine. Both are callbacks rather than something
+    applies one. `on_quality` is called with (check_quality, keep_channels)
+    when they change which contacts are analysed. `on_import` is called with
+    no arguments when they ask to open a recording from this machine. All
+    three are callbacks rather than something
     this module does itself, because re-running the analysis means fetching,
     detecting and rebuilding every panel -- which is the entry point's job, and
     keeps this file free of the loader and the progress dialog.
@@ -272,6 +276,7 @@ def decorate(figure, session: ReviewSession, show_expert: bool = False,
                             electrodes=session.electrodes),
         "assistant": AssistantPanel(session),
         "preprocess": PreprocessPanel(session),
+        "quality": QualityPanel(session),
         "agreement": AgreementPanel(session),
         "provenance": ProvenancePanel(session),
     }
@@ -334,11 +339,18 @@ def decorate(figure, session: ReviewSession, show_expert: bool = False,
     prep = dock("preprocess", "Preprocessing", Qt.RightDockWidgetArea,
                 panels["preprocess"],
                 "What is done to the signal before any detector sees it")
+    # And beside it, the stage that decides what the preprocessed signal is
+    # fit for. The two belong together: one says what was done to the signal,
+    # the other says which of it was worth analysing.
+    fit = dock("quality", "Data quality", Qt.RightDockWidgetArea,
+               panels["quality"],
+               "Which contacts and which seconds were analysed, and why not")
     host.tabifyDockWidget(who, brain)
     host.tabifyDockWidget(brain, accord)
     host.tabifyDockWidget(accord, prov)
     host.tabifyDockWidget(prov, prep)
-    host.tabifyDockWidget(prep, helper)
+    host.tabifyDockWidget(prep, fit)
+    host.tabifyDockWidget(fit, helper)
     brain.raise_()
     # A trend squeezed to a strip is unreadable, and Qt will squeeze it unless
     # the widget itself says otherwise; `resizeDocks` alone loses to the
@@ -347,7 +359,7 @@ def decorate(figure, session: ReviewSession, show_expert: bool = False,
     panels["controls"].setFixedHeight(panels["controls"].sizeHint().height())
     host.resizeDocks([docks["trends"]], [260], Qt.Vertical)
     host.resizeDocks([docks["findings"], docks["events"], brain, helper, prep,
-                      who], [640] * 6, Qt.Horizontal)
+                      fit, who], [640] * 7, Qt.Horizontal)
     # Vertical shares for the right-hand column. Without these the 3D view's
     # own minimum height wins the whole column and the two tables above it are
     # left showing one row each.
@@ -360,6 +372,12 @@ def decorate(figure, session: ReviewSession, show_expert: bool = False,
     _menus(figure, host, panels, docks, session, display, parts,
            on_import=on_import)
     _status(host, session)
+    if on_quality is not None:
+        panels["quality"].applied.connect(on_quality)
+    else:
+        panels["quality"].apply.setEnabled(False)
+        panels["quality"].apply.setToolTip(
+            "Re-analysis is not available in this window")
     if on_preprocess is not None:
         panels["preprocess"].applied.connect(on_preprocess)
     else:

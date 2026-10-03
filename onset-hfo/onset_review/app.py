@@ -319,7 +319,8 @@ class _Review:
                                    show=self.args.screenshot is None)
         self.parts = window.decorate(figure, session, show_expert=self.overlay,
                                      on_preprocess=self.reanalyse,
-                                     on_import=self.import_file)
+                                     on_import=self.import_file,
+                                     on_quality=self.requality)
         if state is not None:
             # Restored after the docks exist and before the window is shown, so
             # the reviewer never sees the default arrangement flash past.
@@ -353,6 +354,16 @@ class _Review:
         self.request, self.overlay = request, False
         self.open(session)
 
+    def requality(self, check: bool, keep) -> None:
+        """Re-run this window with the quality stage on, off, or overruled.
+
+        A separate entry point from `reanalyse` rather than a flag on it,
+        because the two changes are different claims. Changing a filter
+        changes what the signal *is*; changing this changes which of it was
+        worth analysing, and a report has to be able to say which happened.
+        """
+        self._rerun(check_quality=bool(check), keep_channels=tuple(keep))
+
     def reanalyse(self, preprocess) -> None:
         """Re-run this window under new preprocessing, and replace the view.
 
@@ -361,11 +372,15 @@ class _Review:
         closing a working window because a setting was rejected -- would lose
         them their place for no reason.
         """
+        self._rerun(preprocess=preprocess)
+
+    def _rerun(self, **changes) -> None:
+        """Replace the window with the same slice analysed differently."""
         import dataclasses
 
         from onset_review import launcher
 
-        request = dataclasses.replace(self.request, preprocess=preprocess)
+        request = dataclasses.replace(self.request, **changes)
         session = launcher.load_with_progress(request, self.args.cache_dir,
                                               parent=self.parts.host)
         if session is None:

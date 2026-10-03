@@ -70,7 +70,7 @@ def test_mne_figure_can_still_host_our_docks(built):
 def test_every_panel_is_docked(built):
     assert set(built.docks) == {"trends", "controls", "findings", "events",
                                 "brain", "agreement", "provenance", "assistant",
-                                "preprocess", "patient"}
+                                "preprocess", "patient", "quality"}
     assert all(dock.widget() is not None for dock in built.docks.values())
 
 
@@ -1080,3 +1080,161 @@ def test_every_test_that_builds_a_widget_asks_for_the_application():
     assert not offenders, (
         "these build a widget without the qapp fixture, and will abort the "
         "process if test order puts them first: " + ", ".join(offenders))
+
+
+# -- the Data quality panel ------------------------------------------------
+#
+# The panel's numbers are tested in `tests/test_quality.py`, which needs no
+# display. What is here is the part a reviewer touches, and above all the one
+# behaviour that must not regress: a **flagged** contact is analysed, kept in
+# the ranking, and cannot be "reinstated" because it was never taken out. The
+# distinction between flagged and set aside is the whole design, and it was
+# drawn by sub-13 of ds003498, whose annotators had marked 91, 102 and 164
+# ripples on the three contacts this software's band-power check flags.
+
+def _faulted(recording, noisy: int = 0, dead: tuple[int, ...] = (8, 9)):
+    """The synthetic recording with one noisy contact and two dead ones."""
+    import copy
+
+    out = copy.deepcopy(recording)
+    raw = out.raw.load_data()
+    rng = np.random.default_rng(5)
+    row = raw.get_data(picks=[noisy])[0]
+    raw._data[noisy] = row + rng.normal(0, 8 * np.std(row), row.size)
+    for index in dead:
+        raw._data[index] = 0.0
+    return out
+
+
+@pytest.fixture(scope="module")
+def faulted(recording):
+    return session_from_recording(
+        _faulted(recording),
+        ReviewRequest(t_start=0.0, t_stop=float(recording.duration)))
+
+
+def test_the_quality_panel_separates_set_aside_from_flagged(qapp, faulted):
+    from onset_review.dataquality import QualityPanel
+
+    frame = QualityPanel(faulted).rows()
+    aside = frame[~frame["good"]]
+    flagged = frame[frame["flagged"]]
+    assert not aside.empty, "the two dead contacts should have been set aside"
+    assert not flagged.empty, "the noisy contact should have been flagged"
+    assert set(aside["channel"]).isdisjoint(set(flagged["channel"]))
+
+    # Worst first: a reviewer opens this because something is wrong.
+    assert frame.iloc[0]["channel"] in set(aside["channel"])
+    assert "set aside" in frame.iloc[0]["verdict"]
+    assert "analysed, flagged" in flagged.iloc[0]["verdict"]
+
+
+def test_a_flagged_contact_keeps_its_rate_in_the_findings_table(qapp, faulted):
+    """The behaviour the whole flagged/set-aside split exists to protect.
+
+    A contact full of real ripples has high band power because the ripples are
+    in the band, and nothing here can tell that from a noisy amplifier. So a
+    flagged contact is analysed, ranked and rated like any other; only the
+    unambiguous faults lose their rate.
+    """
+    from onset_review.dataquality import QualityPanel
+
+    frame = QualityPanel(faulted).rows()
+    findings = faulted.findings.set_index("channel")
+
+    for channel in frame[frame["flagged"]]["channel"]:
+        row = findings.loc[channel]
+        assert not np.isnan(row["rate_per_min"]), f"{channel} lost its rate"
+        assert row["rank"] >= 1, f"{channel} lost its rank"
+        assert faulted.clean_seconds[channel] > 0
+
+    for channel in frame[~frame["good"]]["channel"]:
+        row = findings.loc[channel]
+        assert np.isnan(row["rate_per_min"])      # no rate is claimed
+        assert row["rank"] == 0                   # and no rank: 0 is "unranked"
+        assert faulted.clean_seconds[channel] == 0.0
+
+
+def test_only_a_set_aside_contact_can_be_reinstated(qapp, faulted):
+    """A flagged contact is in the analysis, so there is nothing to put back.
+
+    The button staying grey on a flagged row is the panel saying exactly that;
+    the thing to do with a flag is look at the trace.
+    """
+    from onset_review.dataquality import QualityPanel
+
+    panel = QualityPanel(faulted)
+    frame = panel.rows()
+
+    def select(channel):
+        rows = [r for r in range(panel.table.rowCount())
+                if panel.table.item(r, 0).text() == channel]
+        panel.table.selectRow(rows[0])
+
+    select(str(frame[frame["flagged"]]["channel"].iloc[0]))
+    assert not panel.reinstate.isEnabled()
+
+    aside = str(frame[~frame["good"]]["channel"].iloc[0])
+    select(aside)
+    assert panel.reinstate.isEnabled()
+    panel.reinstate.click()
+    assert panel.choice() == (True, (aside,))
+    assert panel.apply.isEnabled()
+    assert "reinstated by you" in panel.rows().set_index("channel").loc[aside, "verdict"]
+
+    # And once it is back, there is nothing left to reinstate on that row.
+    select(aside)
+    assert not panel.reinstate.isEnabled()
+
+
+def test_the_panel_applies_nothing_until_something_changes(qapp, faulted):
+    from onset_review.dataquality import QualityPanel
+
+    panel = QualityPanel(faulted)
+    assert not panel.apply.isEnabled()
+
+    panel.enabled.setChecked(False)
+    assert panel.choice() == (False, ())
+    assert panel.apply.isEnabled()
+
+    panel.reset.click()
+    assert panel.choice() == (True, ())
+    assert not panel.apply.isEnabled()
+
+
+def test_the_panel_emits_the_choice_rather_than_acting_on_it(qapp, faulted):
+    """Like the preprocessing panel: it decides nothing and re-runs nothing.
+
+    Setting a contact aside changes every rate, interval and rank, so the
+    entry point rebuilds the whole window rather than refreshing some panels
+    and leaving others stale.
+    """
+    from onset_review.dataquality import QualityPanel
+
+    panel = QualityPanel(faulted)
+    seen = []
+    panel.applied.connect(lambda check, keep: seen.append((check, keep)))
+    panel.enabled.setChecked(False)
+    panel.apply.click()
+    assert seen == [(False, ())]
+
+
+def test_the_panel_says_what_it_cannot_tell(qapp, faulted):
+    """The caveat is on the screen, not only in the source.
+
+    A reviewer reading a flagged row has to know the software is asking a
+    question rather than answering one.
+    """
+    from onset_review.dataquality import QualityPanel
+
+    panel = QualityPanel(faulted)
+    text = " ".join(label.text() for label in panel.findChildren(qt.QLabel))
+    assert "Nothing is repaired" in text
+    assert "analysed and flagged" in text
+    assert "look at these on the trace" in panel._summary_text()
+
+
+def test_the_quality_dock_is_in_the_window(built):
+    assert "quality" in built.panels
+    assert "quality" in built.docks
+    assert built.docks["quality"].windowTitle() == "Data quality"

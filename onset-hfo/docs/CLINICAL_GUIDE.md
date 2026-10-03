@@ -53,6 +53,7 @@ dataset — what the original annotators marked on the same minute.
 │                                               │  · agreement      │
 │                                               │  · provenance     │
 │                                               │  · preprocessing  │
+│                                               │  · data quality   │
 │                                               │  · assistant      │
 ├───────────────────────────────────────────────┴───────────────────┤
 │  the caveat — always on screen                                    │
@@ -318,6 +319,62 @@ screen depends on these settings: the rates, the intervals, the tied set, the
 trend, the 3D layout, the agreement with the annotators, the assistant's
 evidence. The panels you have dragged into place stay where you put them.
 
+### Data quality — which contacts and which seconds were analysed
+
+![The data quality panel](images/onset-review-quality.png)
+
+A rate ranking is unusually easy to poison, and both ways it fails look like
+findings. A contact with a noisy amplifier produces band-limited energy all the
+time; the detector finds it, the artifact check cannot throw it out (its
+question is "is a narrow-band oscillation present?" and the answer is yes), and
+that contact tops the table with a tight interval and agrees with itself in
+every other panel. A dead contact fails the other way: no events, bottom of the
+table, reassuring.
+
+So before anything is detected, each contact gets five measurements and each
+second gets one. **The verdicts come in two kinds, and the difference is the
+most important thing on this screen.**
+
+| | what it means | what happens to the contact |
+|---|---|---|
+| **Set aside** | no physiology produces this: flat, clipped at the amplifier's rail, swamped by mains, or too little surviving time to rate | not analysed. Its rate is **blank**, not zero, and its rank is blank. It keeps its row |
+| **Analysed, flagged** | a measurement is unusual in a way that is *as consistent with the finding as with a fault* | analysed, ranked and rated like any other. You are asked to look at it |
+
+**Why the second row exists.** The band-power check is the one that catches a
+noisy amplifier, and it is the most valuable check here. On **sub-13** it
+flagged `TR1-TR2` and `TR2-TR3` at 10× and 6× the montage's median — and the
+archive's own annotators had marked **91, 102 and 164** ripples on those three
+contacts. They are among the most epileptically active in the recording. A
+contact full of real ripples has high band power *because the ripples are in
+the band*, and nothing in this software can tell that from an amplifier. Had it
+set them aside, it would have deleted the finding and shown you a cleaner
+table.
+
+That is the general rule here: **it removes only what cannot be real, and
+flags what it cannot judge.**
+
+**Blank is not zero.** In the Findings table, a contact with rate `0.00` was
+analysed and no events were found — a measurement. A contact with a blank rate
+and rank 0 was not analysed at all. The difference matters when you are reading
+the bottom of a ranking.
+
+**Seconds, not just contacts.** Each second of each contact is tested for a
+*discontinuity* — a step no physiology produces. It is deliberately not tested
+on amplitude: an interictal discharge is the largest thing in a normal second,
+and an amplitude test throws away exactly the seconds that carry the pathology,
+on the channels that carry it. (It did, on sub-01: six seconds of `AR2-AR3`,
+the second busiest channel in that window. That is why the test changed.)
+Each contact's rate is then divided by **the time that survived**, not by the
+nominal minute — otherwise rejecting an artifact would make the table less
+accurate than leaving it in.
+
+**Two controls, and no more.** *Check data quality* turns the whole stage off,
+which reproduces the numbers this project measured before it existed.
+*Reinstate* puts a **set-aside** contact back after you have looked at it —
+greyed out on a flagged row, because a flagged contact was never taken out.
+To remove a contact the checks passed, use *Channels* on the Preprocessing
+panel, where it is recorded as your decision.
+
 ### How this was produced
 
 Every step applied to the signal, in order, plus the dataset's own notes and
@@ -345,9 +402,13 @@ its citation. If a number on screen ever has to be defended, it starts here.
 9. Open **Preprocessing**, widen the notch to 4 Hz, and press Apply. Watch the
    rates move. That is how much of this number is a filter choice, and it is
    worth knowing before quoting one.
-10. Now the same patient's **second minute** (60–120 s). Does the answer hold?
+10. Open **Data quality**. Any contact flagged there needs looking at on the
+    trace before you read its rank — the software is telling you it cannot
+    tell a noisy amplifier from a great deal of real activity. On sub-13 the
+    two flagged contacts are the ones the annotators marked most heavily.
+11. Now the same patient's **second minute** (60–120 s). Does the answer hold?
 
-Step 10 is the one most worth doing, and the one most likely to surprise you.
+Step 11 is the one most worth doing, and the one most likely to surprise you.
 Across these twenty patients, the annotators' own busiest fast-ripple channel
 is the same channel in only **7 of 20 patients** when you compare one minute of
 a recording against another minute of the *same* recording. That is the

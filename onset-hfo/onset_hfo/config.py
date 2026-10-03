@@ -307,6 +307,16 @@ class ValidationConfig:
 class QualityConfig:
     """Which contacts and which stretches of time are fit to be analysed.
 
+    Two kinds of verdict, and the difference is the most important thing in
+    this class. A contact is **set aside** only for a fault where no
+    physiology could produce the signal: flat, clipped at the amplifier's
+    rail, swamped by mains, or with too little surviving time to rate. It is
+    **flagged** when a measurement is unusual in a way that could equally be a
+    fault or the finding -- and then it is analysed normally, and a human
+    decides. Nothing in this software can tell a noisy amplifier from a
+    contact full of real ripples by looking at band power, and the cost of
+    guessing wrong is deleting the result.
+
     This stage exists because an HFO rate ranking is unusually easy to poison.
     A contact with a noisy amplifier produces ripple-band energy continuously;
     the detector finds it, the validator cannot tell it from signal because it
@@ -344,14 +354,55 @@ class QualityConfig:
     #: than in conventional EEG: the 4th and 5th harmonics of 50 Hz sit at
     #: 200 and 250 Hz, inside the ripple band being counted.
     max_line_fraction: float = 0.30
-    #: Reject a channel whose in-band-to-broadband power ratio is this many
-    #: robust SDs above the montage's own median. The signature of a noisy
-    #: amplifier, and the one failure that puts a channel at the *top* of an
-    #: HFO ranking rather than the bottom.
+    #: **Flag** -- not reject -- a channel whose in-band-to-broadband power
+    #: ratio is this many robust SDs above the montage's own median.
+    #:
+    #: A noisy amplifier produces continuous band-limited energy and tops an
+    #: HFO ranking, which is the worst failure this software can have. This
+    #: statistic finds it. It also finds the opposite: a contact full of real
+    #: ripples has elevated band power *because the ripples are in the band*.
+    #:
+    #: It cannot tell them apart, and that was measured rather than assumed.
+    #: On sub-13 of ds003498 this check flagged `TR1-TR2` and `TR2-TR3` at 10x
+    #: and 6x the montage median -- and the archive's own annotators marked
+    #: **91, 102 and 164** ripples on those three contacts. They are among the
+    #: most epileptically active in the recording. Setting them aside would
+    #: have blanked the finding, which is the same failure the segment test
+    #: made and for the same reason.
+    #:
+    #: The quietest-second floor was tried as a discriminator, since real
+    #: ripples are intermittent and an amplifier is not: a planted noisy
+    #: contact scores 26x the montage's 10th percentile and `TR1-TR2` scores
+    #: 5x. Better than the median, and still not a gap to put a threshold in.
+    #:
+    #: So this check measures and flags; it never removes. The reviewer looks
+    #: at the trace and decides, which is the only thing that can actually
+    #: tell the two apart.
     max_hf_ratio_sd: float = 6.0
-    #: Reject a channel whose overall amplitude is this many robust SDs from
-    #: the montage's median, in either direction.
+    #: Flag a channel whose overall amplitude is this many robust SDs from the
+    #: montage's median, in either direction. Flagged for the same reason: a
+    #: large-amplitude contact may be a gain fault or may be where the
+    #: pathology is, and this cannot tell.
     max_amplitude_sd: float = 6.0
+    #: The amplitude test needs this as well: the channel must differ from the
+    #: montage median by at least this factor, not only by robust SDs.
+    #:
+    #: Because an outlier test needs a population and a montage is often a
+    #: small one. On a fifteen-channel synthetic montage the robust SD across
+    #: channels is small enough that an ordinary contact at 24 uV among
+    #: neighbours at 36 clears 6 SD and would be thrown out -- a third of that
+    #: montage was, before this was added. On a real 43-channel implantation
+    #: nothing was.
+    #:
+    #: It guards the amplitude test **only**, and deliberately not the
+    #: band-ratio one. The in-band share of power is not comparable between
+    #: recordings the way amplitude is: a real intracranial contact puts about
+    #: 0.05% of its power in the ripple band and this project's synthetic
+    #: recording puts 13%, so a factor that is conservative on one is blind on
+    #: the other -- it silenced the noisy-amplifier check entirely on the
+    #: synthetic montage. That check keeps the robust-SD criterion alone,
+    #: which is the one the quantity supports, at a strict 6 SD.
+    amplitude_outlier_ratio: float = 3.0
 
     #: Length of the fixed segments the window is cut into, in seconds. The
     #: unit of time that can be rejected, and the resolution of the clean-time

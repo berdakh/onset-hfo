@@ -64,7 +64,15 @@ from onset_hfo.preprocess import Prepared
 
 __all__ = ["channel_quality", "segment_quality", "clean_seconds",
            "analysable_seconds", "usable_channels", "quality_summary",
-           "reject_unusable_events", "REASONS"]
+           "reject_unusable_events", "REASONS", "SET_ASIDE"]
+
+#: Reasons that **set a contact aside**: faults where no physiology produces
+#: the signal, so there is nothing to adjudicate. Everything else in `REASONS`
+#: that applies to a channel is a flag -- the contact is analysed normally and
+#: a human is asked to look at it, because the measurement is as consistent
+#: with the finding as with a fault. See `QualityConfig.max_hf_ratio_sd` for
+#: the recording that settled which is which.
+SET_ASIDE = ("flat", "clipped", "line_noise", "mostly_bad_segments")
 
 #: What each verdict means, in a sentence a reviewer can act on. The interface
 #: and the report both read these, so there is one wording per reason.
@@ -75,10 +83,13 @@ REASONS: dict[str, str] = {
     "line_noise": "mains interference dominates; its harmonics land inside "
                   "the band being counted",
     "hf_noise": "far more high-frequency energy than the rest of this "
-                "montage — the signature of a noisy amplifier, and the one "
-                "fault that puts a contact at the top of an HFO ranking",
+                "montage. Either a noisy amplifier or a great deal of real "
+                "activity — nothing but looking at the trace can tell, so "
+                "this is analysed and flagged, not removed",
     "amplitude": "overall amplitude far outside what the rest of this "
-                 "montage is doing, in one direction or the other",
+                 "montage is doing. A gain fault looks like this, and so "
+                 "does a contact sitting where the pathology is; analysed "
+                 "and flagged rather than removed",
     "mostly_bad_segments": "too little of the window survived segment "
                            "rejection to call a rate",
     "segment_jump": "the unfiltered signal steps discontinuously here — a "
@@ -98,9 +109,13 @@ def channel_quality(prep: Prepared, cfg: QualityConfig | None = None,
     Every channel is listed, including the ones that pass, because "we looked
     and it was fine" is what makes the ones that failed meaningful.
 
+    ``good`` means the contact was analysed; ``flagged`` means it was
+    analysed *and* something about it is worth a look. The two are different
+    questions and the distinction is the point -- see ``SET_ASIDE``.
+
     Columns: ``channel``, ``amplitude_uv``, ``clipped_fraction``,
     ``line_fraction``, ``hf_ratio``, ``amplitude_sd``, ``hf_ratio_sd``,
-    ``good`` and ``reason``.
+    ``bad_segment_fraction``, ``good``, ``flagged`` and ``reason``.
     """
     cfg = cfg or QualityConfig()
     data, names = prep.data, list(prep.ch_names)
@@ -108,7 +123,8 @@ def channel_quality(prep: Prepared, cfg: QualityConfig | None = None,
         return pd.DataFrame(columns=["channel", "amplitude_uv",
                                      "clipped_fraction", "line_fraction",
                                      "hf_ratio", "amplitude_sd", "hf_ratio_sd",
-                                     "good", "reason"])
+                                     "bad_segment_fraction", "good", "flagged",
+                                     "reason"])
 
     _, scale = robust_scale(data)
     amplitude = scale.ravel().astype(float)
@@ -122,6 +138,12 @@ def channel_quality(prep: Prepared, cfg: QualityConfig | None = None,
     # electrode from a different manufacturer.
     amplitude_sd = _robust_z(np.log(np.maximum(amplitude, 1e-12)))
     hf_ratio_sd = _robust_z(hf_ratio)
+    # ...and, for amplitude only, a plain ratio to the montage median beside
+    # it: a robust SD across fifteen channels is not a reliable scale, and the
+    # SD test alone throws ordinary contacts out of a small montage. The band
+    # ratio gets no such guard, because its absolute value is not comparable
+    # between recordings -- see `QualityConfig.amplitude_outlier_ratio`.
+    amplitude_ratio = _ratio_to_median(amplitude)
 
     bad_fraction = _bad_segment_fraction(segments, names)
 
@@ -136,7 +158,9 @@ def channel_quality(prep: Prepared, cfg: QualityConfig | None = None,
             reason = "line_noise"
         elif hf_ratio_sd[i] > cfg.max_hf_ratio_sd:
             reason = "hf_noise"
-        elif abs(amplitude_sd[i]) > cfg.max_amplitude_sd:
+        elif (abs(amplitude_sd[i]) > cfg.max_amplitude_sd
+                and (amplitude_ratio[i] > cfg.amplitude_outlier_ratio
+                     or amplitude_ratio[i] < 1.0 / cfg.amplitude_outlier_ratio)):
             reason = "amplitude"
         elif bad_fraction.get(name, 0.0) > cfg.max_bad_segment_fraction:
             reason = "mostly_bad_segments"
@@ -149,7 +173,9 @@ def channel_quality(prep: Prepared, cfg: QualityConfig | None = None,
             "amplitude_sd": float(amplitude_sd[i]),
             "hf_ratio_sd": float(hf_ratio_sd[i]),
             "bad_segment_fraction": float(bad_fraction.get(name, 0.0)),
-            "good": not reason,
+            # `good` is "was it analysed", which a flagged contact was.
+            "good": reason not in SET_ASIDE,
+            "flagged": bool(reason) and reason not in SET_ASIDE,
             "reason": reason,
         })
     return pd.DataFrame(rows)
@@ -281,30 +307,45 @@ def usable_channels(quality: pd.DataFrame,
 
 def quality_summary(quality: pd.DataFrame, segments: pd.DataFrame | None = None,
                     kept: tuple[str, ...] = ()) -> str:
-    """One sentence for the status bar and the report."""
+    """One sentence for the status bar and the report.
+
+    Set-aside and flagged are reported separately and always in that order,
+    because they ask different things of the reviewer: one is a channel that
+    was not analysed, the other is a channel that was and wants a look.
+    """
     if quality is None or quality.empty:
         return "No channels were checked."
-    bad = quality[~quality["good"]]
-    names = [str(c) for c in bad["channel"]]
+    aside = quality[~quality["good"]]
+    flagged = quality[quality.get("flagged", False)]
+    names = [str(c) for c in aside["channel"]]
     reinstated = [n for n in names if n in set(kept)]
+
     parts = []
     if names:
-        counts = bad["reason"].value_counts()
         detail = ", ".join(f"{int(n)} {reason.replace('_', ' ')}"
-                           for reason, n in counts.items())
-        parts.append(f"{len(names)} of {len(quality)} channels set aside "
+                           for reason, n in aside["reason"].value_counts().items())
+        parts.append(f"{len(names)} of {len(quality)} contacts set aside "
                      f"({detail})")
         if reinstated:
             parts.append(f"{len(reinstated)} reinstated by the reviewer: "
                          + ", ".join(sorted(reinstated)))
-    else:
-        parts.append(f"All {len(quality)} channels passed the quality checks")
+    if len(flagged):
+        detail = ", ".join(f"{int(n)} {reason.replace('_', ' ')}"
+                           for reason, n in flagged["reason"].value_counts().items())
+        parts.append(
+            f"{len(flagged)} analysed but flagged ({detail}): "
+            + ", ".join(sorted(str(c) for c in flagged["channel"]))
+            + " — look at these on the trace before reading their rank, "
+              "because this cannot tell a noisy amplifier from a contact "
+              "full of real ripples")
+    if not names and not len(flagged):
+        parts.append(f"All {len(quality)} contacts passed the quality checks")
     if segments is not None and not segments.empty:
         dropped = int((~segments["good"]).sum())
         if dropped:
             share = dropped / len(segments)
-            parts.append(f"{share:.1%} of channel-seconds rejected; each "
-                         f"channel's rate is over the time that survived")
+            parts.append(f"{share:.1%} of contact-seconds rejected; each "
+                         f"contact's rate is over the time that survived")
     return ". ".join(parts) + "."
 
 
@@ -386,6 +427,15 @@ def _robust_z(values: np.ndarray) -> np.ndarray:
         return np.zeros_like(values)
     center, scale = robust_scale(values, axis=0)
     return (values - center) / scale
+
+
+def _ratio_to_median(values: np.ndarray) -> np.ndarray:
+    """Each value over the montage's median. The scale-free half of the test."""
+    values = np.asarray(values, dtype=float)
+    median = float(np.median(values))
+    if not np.isfinite(median) or median <= 0:
+        return np.ones_like(values)
+    return values / median
 
 
 def _bad_segment_fraction(segments: pd.DataFrame | None,
