@@ -599,7 +599,7 @@ def test_a_sound_change_is_emitted(built):
         panel.reset_to_defaults()
 
 
-def test_apply_is_disabled_when_nothing_can_act_on_it(review):
+def test_apply_is_disabled_when_nothing_can_act_on_it(qapp, review):
     """`decorate` without a reload callback must not offer a button that does
     nothing when pressed."""
     from onset_review import window as window_module
@@ -629,7 +629,7 @@ def test_the_patient_panel_shows_the_record_and_hides_the_outcome(built, review)
     assert "ILAE" in panel.outcome.text()
 
 
-def test_the_patient_panel_opens_on_a_subject_with_no_record(review):
+def test_the_patient_panel_opens_on_a_subject_with_no_record(qapp, review):
     """A recording from outside the cohort must not take the panel down."""
     import dataclasses
 
@@ -659,7 +659,7 @@ def test_the_theme_sets_a_palette_and_a_stylesheet(qapp):
     theme.apply_theme(qapp, theme.LIGHT)
 
 
-def test_panels_read_the_active_palette_rather_than_importing_one(review):
+def test_panels_read_the_active_palette_rather_than_importing_one(qapp, review):
     """The dark theme's first version rendered tinted rows as light text on a
     light tint, because every panel had imported the light palette by name."""
     from onset_review import theme
@@ -987,3 +987,96 @@ def test_the_command_line_flags_open_the_dialog_on_their_answer(qapp,
     assert dict(request.channel_types)["EKG"] == "ecg"
     assert dict(request.channel_types)["AR1"] == "seeg"
     assert dialog.counts.text() == "5 of 6 will be analysed"
+
+
+def test_the_channel_table_opens_tall_enough_to_be_a_list(qapp,
+                                                          tmp_path_factory):
+    """Fifty contacts behind a four-row window is a field to click past.
+
+    The floor is counted in rows rather than pixels so it survives a different
+    font or display scale, and it shrinks to the montage: an eight-contact
+    strip should not open a dialog two thirds empty. The height the dialog
+    *asks* for is checked rather than the one it gets, because what it gets is
+    clamped to the display, and a headless screen is 1024x768.
+    """
+    import mne
+    from qtpy.QtGui import QGuiApplication
+
+    from onset_review.importer import (
+        VISIBLE_ROWS,
+        VISIBLE_ROWS_MIN,
+        ImportDialog,
+    )
+
+    def written(n_channels, where):
+        names = [f"A{i + 1}" for i in range(n_channels)]
+        info = mne.create_info(names, 2000.0, ch_types="eeg")
+        raw = mne.io.RawArray(np.zeros((n_channels, 4000)), info,
+                              verbose="ERROR")
+        path = tmp_path_factory.mktemp(where) / "rec_raw.fif"
+        raw.save(path, overwrite=True, verbose="ERROR")
+        return path
+
+    many = ImportDialog(written(40, "many"))
+    assert many.table.minimumHeight() == many._rows_tall(VISIBLE_ROWS_MIN)
+    assert many.wanted_height() > many.sizeHint().height()     # asks for more
+    assert many.wanted_height() - many.sizeHint().height() == (
+        many._rows_tall(VISIBLE_ROWS) - many._rows_tall(VISIBLE_ROWS_MIN))
+
+    # Whatever it asked for, it must fit on the display it is opening on. An
+    # Open button below the bottom of a laptop screen is worse than a short
+    # table.
+    cap = int(QGuiApplication.primaryScreen().availableGeometry().height() * 0.9)
+    assert many.height() <= max(cap, many.minimumSizeHint().height())
+
+    few = ImportDialog(written(4, "few"))
+    # Four rows cannot fill seven, and the floor must not invent the other
+    # three as empty space.
+    assert few.table.minimumHeight() == few._rows_tall(4)
+    assert few._rows_tall(VISIBLE_ROWS) == few._rows_tall(4)
+    assert few.wanted_height() == few.sizeHint().height()
+
+
+def test_every_test_that_builds_a_widget_asks_for_the_application():
+    """A missing `qapp` is a crash, not a failure, and only sometimes.
+
+    Qt aborts the process when a `QWidget` is constructed with no
+    `QApplication`. A test that builds one without requesting the fixture
+    therefore passes for as long as some *earlier* test in the file happens to
+    have created the application — and takes the whole run down with `Fatal
+    Python error: Aborted`, no test name and no traceback, the moment it runs
+    without one in front of it. A `-k` selection does that, and so would
+    splitting the file across workers, reordering it, or deleting the test
+    that was holding the fixture up.
+
+    Three tests in this file were in that state, found by a `-k` selection
+    that happened to run one of them alone. The suite had been green
+    throughout, which is the point: whole-file order was hiding them.
+    """
+    import ast
+    import pathlib
+
+    #: Names that mean "this line constructs a widget". Deliberately crude:
+    #: a false positive costs one unused fixture, a false negative costs a
+    #: crash with no name on it.
+    WIDGETY = ("Panel", "Dialog", "Controls", "decorate", "open_trace",
+               "muted", "section_label", "QLabel", "QWidget")
+    #: Fixtures that create or depend on the `QApplication`.
+    PROVIDES_APP = {"qapp", "built"}
+
+    tree = ast.parse(pathlib.Path(__file__).read_text())
+    offenders = []
+    for node in tree.body:
+        if not (isinstance(node, ast.FunctionDef)
+                and node.name.startswith("test_")):
+            continue
+        if node.name == "test_every_test_that_builds_a_widget_asks_for_the_application":
+            continue                       # its own body names every word
+        if PROVIDES_APP & {arg.arg for arg in node.args.args}:
+            continue
+        source = ast.dump(node)
+        if any(word in source for word in WIDGETY):
+            offenders.append(f"{node.name} (line {node.lineno})")
+    assert not offenders, (
+        "these build a widget without the qapp fixture, and will abort the "
+        "process if test order puts them first: " + ", ".join(offenders))

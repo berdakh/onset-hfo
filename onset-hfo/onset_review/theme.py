@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from qtpy.QtGui import QFont, QFontDatabase
 
 __all__ = ["Palette", "LIGHT", "DARK", "apply_theme", "current", "qt_palette",
-           "section_label",
+           "section_label", "plain_buttons",
            "card", "muted", "SPACING", "RADIUS", "FONT_STACK"]
 
 #: The spacing grid, in pixels. Everything is a multiple of four; most things
@@ -359,3 +359,17 @@ def card(kind: str = "info", palette: Palette | None = None) -> str:
     }.get(kind, (p.info_surface, p.text))
     return (f"background:{surface};color:{colour};border-radius:{RADIUS}px;"
             f"padding:{SPACING}px {SPACING + 2}px;font-size:9pt;")
+
+
+def plain_buttons(box) -> None:
+    """Strip the platform's icons from a `QDialogButtonBox`'s buttons.
+
+    Some Qt styles put a folder on Open and a cross on Cancel. Nothing else in
+    this application has an icon on a button, and the two conventions side by
+    side read as two applications. A stylesheet cannot reach an icon, so it is
+    cleared here -- in one place, so the dialogs cannot disagree.
+    """
+    from qtpy.QtGui import QIcon
+
+    for button in box.buttons():
+        button.setIcon(QIcon())

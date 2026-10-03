@@ -52,9 +52,19 @@ from onset_hfo.io import (
     recording_info,
 )
 from onset_review.session import ReviewRequest
-from onset_review.theme import SPACING, card, muted
+from onset_review.theme import SPACING, card, muted, plain_buttons
 
-__all__ = ["ImportDialog", "choose_file", "TYPE_CHOICES"]
+__all__ = ["ImportDialog", "choose_file", "TYPE_CHOICES",
+           "VISIBLE_ROWS", "VISIBLE_ROWS_MIN"]
+
+#: Contacts the dialog opens showing. A typical SEEG implantation is 50 to 150
+#: contacts, so this never shows all of them -- the point is that it reads as a
+#: list to be worked down rather than a field to be clicked past.
+VISIBLE_ROWS = 14
+
+#: And the fewest it will shrink to when the window is dragged smaller. Below
+#: about this the table stops being a list and starts being a peephole.
+VISIBLE_ROWS_MIN = 7
 
 #: Types a reviewer can assign. `seeg` and `ecog` are analysed; everything else
 #: is dropped in preprocessing, which is the point of offering them.
@@ -78,7 +88,7 @@ class ImportDialog(QDialog):
         self.path = Path(path)
         self.format = detect_format(self.path)
         self.setWindowTitle(f"Import {self.path.name}")
-        self.setMinimumSize(760, 760)
+        self.setMinimumWidth(760)
 
         self.error = ""
         try:
@@ -129,8 +139,42 @@ class ImportDialog(QDialog):
         open_button.setEnabled(self.overview is not None)
         self.buttons.accepted.connect(self.accept)
         self.buttons.rejected.connect(self.reject)
+        plain_buttons(self.buttons)
         layout.addWidget(self.buttons)
         self._refresh_counts()
+        self._size_to_channels()
+
+    def wanted_height(self) -> int:
+        """The height that shows `VISIBLE_ROWS` contacts, before any clamp.
+
+        Separate from applying it so the intent can be checked on a machine
+        whose display is too small to grant it -- which is every headless one.
+        """
+        height = self.sizeHint().height()
+        if self.table is None:
+            return height
+        return (height + self._rows_tall(VISIBLE_ROWS)
+                - self._rows_tall(VISIBLE_ROWS_MIN))
+
+    def _size_to_channels(self) -> None:
+        """Open tall enough to work down the channel list, but not off-screen.
+
+        The dialog's natural height only guarantees the minimum, which is the
+        shortest useful table rather than the one worth opening on. So the
+        height is asked for explicitly, and then clamped to what the display
+        actually has: a dialog whose Open button is below the bottom of a
+        laptop screen is worse than a short table.
+        """
+        from qtpy.QtGui import QGuiApplication
+
+        wanted = self.sizeHint()
+        wanted.setHeight(self.wanted_height())
+        screen = QGuiApplication.primaryScreen()
+        if screen is not None:
+            available = screen.availableGeometry()
+            wanted.setHeight(min(wanted.height(), int(available.height() * 0.9)))
+            wanted.setWidth(min(wanted.width(), int(available.width() * 0.9)))
+        self.resize(wanted)
 
     # -- channels ----------------------------------------------------------
     def _channels_group(self) -> QGroupBox:
@@ -156,7 +200,8 @@ class ImportDialog(QDialog):
             tools.addWidget(button)
         tools.addStretch(1)
         self.counts = muted("")
-        tools.addWidget(self.counts)
+        self.counts.setWordWrap(False)   # "50 of 50 will be analysed" on one
+        tools.addWidget(self.counts)     # line, beside the buttons it counts
         box.addLayout(tools)
 
         self.table = QTableWidget(len(self.overview), 3)
@@ -179,13 +224,25 @@ class ImportDialog(QDialog):
             chooser.currentIndexChanged.connect(self._refresh_counts)
             self.table.setCellWidget(row, 2, chooser)
         self.table.resizeColumnsToContents()
-        # Tall enough to show that this is a list to work down rather than a
-        # formality to scroll past. Stretch alone does not do it: the settings
-        # group below has a large size hint, so without a floor of its own the
-        # table is squeezed to four rows of fifty.
-        self.table.setMinimumHeight(300)
+        # Tall enough to be a list you work down rather than a formality you
+        # scroll past. Stretch alone does not do it: the settings group below
+        # has a large size hint, so without a floor of its own the table is
+        # squeezed to four rows of fifty. The floor is counted in rows rather
+        # than pixels, so it survives a different font or display scaling,
+        # and it shrinks for a short montage so an eight-channel strip does
+        # not open a dialog two thirds empty.
+        self.table.setMinimumHeight(self._rows_tall(VISIBLE_ROWS_MIN))
         box.addWidget(self.table)
         return group
+
+    def _rows_tall(self, rows: int) -> int:
+        """The pixel height that shows `rows` of this table, header included."""
+        rows = min(int(rows), self.table.rowCount())
+        row_height = (self.table.rowHeight(0) if self.table.rowCount()
+                      else self.table.verticalHeader().defaultSectionSize())
+        return (self.table.horizontalHeader().height()
+                + rows * max(row_height, 24)
+                + 2 * self.table.frameWidth())
 
     def _declared_summary(self) -> str:
         counts = self.overview["declared"].value_counts()

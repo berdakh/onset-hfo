@@ -61,6 +61,7 @@ from onset_review.session import (
     cached_windows,
     load_session,
 )
+from onset_review.theme import plain_buttons
 
 __all__ = ["LauncherDialog", "LoadWorker", "load_with_progress", "choose_request",
            "DEFAULT_DETECTOR"]
@@ -144,6 +145,7 @@ class LauncherDialog(QDialog):
         self.buttons.accepted.connect(self.accept)
         self.buttons.rejected.connect(self.reject)
         self.buttons.button(QDialogButtonBox.Open).setProperty("primary", True)
+        plain_buttons(self.buttons)
 
         self.import_button = QPushButton("Open a file…")
         self.import_button.setToolTip(
