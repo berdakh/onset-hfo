@@ -1,7 +1,7 @@
 """The end-to-end pipeline: recording in, evidence tables and report out.
 
-    recording -> preprocess -> detect (x2 HFO + 1 spike) -> validate
-              -> rates & ranks -> detector agreement -> report
+    recording -> preprocess -> quality -> detect (x2 HFO + 1 spike)
+              -> validate -> rates & ranks -> detector agreement -> report
 
 One function, :func:`run_pipeline`, does all of it and returns a
 :class:`PipelineResult` that holds every intermediate table. Nothing is
@@ -33,6 +33,13 @@ from onset_hfo.detectors.base import Event, bandpass, events_to_frame
 from onset_hfo.metrics import channel_rates, compare_rankings, detector_agreement, rate_change
 from onset_hfo.populations import population_notes, population_rates
 from onset_hfo.preprocess import Prepared, prepare
+from onset_hfo.quality import (
+    analysable_seconds,
+    channel_quality,
+    quality_summary,
+    reject_unusable_events,
+    segment_quality,
+)
 from onset_hfo.report import Report, build_report
 from onset_hfo.validate import flag_spike_cooccurrence, rejection_summary, validate_events
 
@@ -65,6 +72,14 @@ class PipelineResult:
     #: detector name -> per-channel rates split into the two sub-populations
     #: of roadmap item 6. Never merged back into one number by this class.
     populations: dict[str, pd.DataFrame] = field(default_factory=dict)
+    #: One row per channel: the five quality measurements and the verdict.
+    #: Empty when ``config.check_quality`` is off.
+    quality: pd.DataFrame = field(default_factory=pd.DataFrame)
+    #: One row per channel per segment: which seconds were usable.
+    segments: pd.DataFrame = field(default_factory=pd.DataFrame)
+    #: Channel -> seconds actually analysed. This, not ``duration_s``, is what
+    #: every rate in ``rates`` was divided by.
+    clean_seconds: dict[str, float] = field(default_factory=dict)
 
     # -- access -----------------------------------------------------------
     @property
@@ -96,6 +111,10 @@ class PipelineResult:
         out = Path(directory or RESULTS_DIR) / name
         out.mkdir(parents=True, exist_ok=True)
         self.events_frame().to_csv(out / "events.csv", index=False)
+        if len(self.quality):
+            self.quality.to_csv(out / "quality_channels.csv", index=False)
+        if len(self.segments):
+            self.segments.to_csv(out / "quality_segments.csv", index=False)
         for det, table in self.rates.items():
             table.to_csv(out / f"rates_{det}.csv", index=False)
         self.spike_rates.to_csv(out / "rates_spike.csv", index=False)
@@ -152,6 +171,21 @@ def run_pipeline(recording: Recording, config: PipelineConfig | None = None,
     filtered = bandpass(prep.data, prep.sfreq, cfg.rms.band)
     timings["bandpass"] = time.perf_counter() - t0
 
+    # Before anything is detected: which contacts and which seconds are fit
+    # to be analysed at all. It runs here rather than after detection because
+    # the answer changes the denominator every rate below is divided by, and
+    # because a channel that is set aside should not have events attributed
+    # to it in the first place.
+    quality = pd.DataFrame()
+    segments = pd.DataFrame()
+    if cfg.check_quality:
+        t0 = time.perf_counter()
+        segments = segment_quality(prep, cfg.quality)
+        quality = channel_quality(prep, cfg.quality, segments=segments)
+        timings["quality"] = time.perf_counter() - t0
+        if verbose:
+            print(f"[onset-hfo] {quality_summary(quality, segments)}")
+
     events: dict[str, list[Event]] = {}
     for name in detectors:
         if name not in HFO_DETECTORS:
@@ -179,9 +213,23 @@ def run_pipeline(recording: Recording, config: PipelineConfig | None = None,
                   f"({timings['detect_spikes']:.1f} s)")
 
     duration = prep.duration
-    rates = {name: channel_rates(evs, duration, prep.ch_names) for name, evs in events.items()}
-    spike_rates = channel_rates(spikes, duration, prep.ch_names) if spikes else \
-        channel_rates([], duration, prep.ch_names)
+    # The denominator. One number per channel once any time can be rejected:
+    # dividing a channel that lost four seconds by the window's nominal length
+    # reports a rate per minute of a minute that was not analysed, and the
+    # Poisson interval inherits the error -- which would make rejecting the
+    # artifact worse than leaving it in.
+    clean = analysable_seconds(segments, quality, list(prep.ch_names),
+                               duration) or duration
+    if cfg.check_quality:
+        rejected = sum(reject_unusable_events(evs, segments, quality)
+                       for evs in list(events.values()) + [spikes])
+        if verbose and rejected:
+            print(f"[onset-hfo] {rejected} detections fell on time or channels "
+                  f"the quality checks set aside")
+
+    rates = {name: channel_rates(evs, clean, prep.ch_names) for name, evs in events.items()}
+    spike_rates = channel_rates(spikes, clean, prep.ch_names) if spikes else \
+        channel_rates([], clean, prep.ch_names)
 
     names = list(events)
     if len(names) >= 2:
@@ -211,10 +259,12 @@ def run_pipeline(recording: Recording, config: PipelineConfig | None = None,
     # is the project's largest silent assumption. It cannot be resolved here,
     # so it is at least reported -- two rates, and the caveat that neither
     # sub-population is a label.
-    populations = {name: population_rates(evs, duration, prep.ch_names)
+    populations = {name: population_rates(evs, clean, prep.ch_names)
                    for name, evs in events.items()}
     notes = list(recording.notes or [])
     notes += population_notes(events, duration)
+    if cfg.check_quality:
+        notes.append(quality_summary(quality, segments))
 
     rejections = {name: rejection_summary(evs) for name, evs in events.items()}
     report = build_report(
@@ -227,7 +277,9 @@ def run_pipeline(recording: Recording, config: PipelineConfig | None = None,
                             spikes=spikes, rates=rates, spike_rates=spike_rates,
                             comparison=comparison, agreement=agreement, report=report,
                             rate_change=change_frame, timings=timings,
-                            populations=populations)
+                            populations=populations, quality=quality,
+                            segments=segments,
+                            clean_seconds=(clean if isinstance(clean, dict) else {}))
     if save_to is not None:
         result.save(save_to)
     if verbose:

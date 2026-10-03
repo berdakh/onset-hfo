@@ -15,6 +15,7 @@ the disagreements between them.
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 
 import numpy as np
 import pandas as pd
@@ -103,16 +104,31 @@ def leader_separation(rates, top_k: int = 5) -> dict:
     }
 
 
-def channel_rates(events: list[Event], duration_s: float, channels: list[str] | None = None,
+def channel_rates(events: list[Event],
+                  duration_s: float | Mapping[str, float],
+                  channels: list[str] | None = None,
                   accepted_only: bool = True) -> pd.DataFrame:
     """Per-channel event counts, rates and summary statistics.
 
     Channels with zero events are kept (with rate 0) when ``channels`` is
     given: "we looked and found nothing" is information, and dropping those
     rows is how a ranking silently becomes a list of only the noisy channels.
+
+    ``duration_s`` may be one number for the whole window, or a mapping of
+    channel to the seconds that channel was actually analysed over --
+    :func:`onset_hfo.quality.clean_seconds` produces the latter. The mapping
+    form exists because once any time can be rejected, one shared denominator
+    is wrong: a channel that lost four seconds to an artifact would have its
+    events divided by a minute that was not analysed, and the Poisson interval
+    would inherit the error. Rejecting the artifact would then make the table
+    *less* accurate than leaving it in.
+
+    A channel with no clean time left gets a rate of NaN rather than zero.
+    Zero is a measurement -- "we looked and found none" -- and this is the
+    opposite of one.
     """
     rows = [e for e in events if (e.accepted or not accepted_only)]
-    duration_min = duration_s / 60.0
+    per_channel = isinstance(duration_s, Mapping)
     frame = pd.DataFrame([{
         "channel": e.channel,
         "amplitude_uv": e.peak_amplitude_uv,
@@ -139,19 +155,35 @@ def channel_rates(events: list[Event], duration_s: float, channels: list[str] | 
             "n_with_spike": grouped["with_spike"].sum(),
         }).reindex(index).fillna({"n_events": 0, "n_with_spike": 0}).reset_index()
         out["n_events"] = out["n_events"].astype(int)
-        out["rate_per_min"] = out["n_events"] / duration_min
 
-    ci = [poisson_ci(int(n), duration_min) for n in out["n_events"]]
+    seconds = ([float(duration_s.get(str(c), 0.0)) for c in out["channel"]]
+               if per_channel else [float(duration_s)] * len(out))
+    minutes = [s / 60.0 for s in seconds]
+    out["duration_s"] = seconds
+    out["rate_per_min"] = [
+        (n / m if m > 0 else float("nan"))
+        for n, m in zip(out["n_events"], minutes, strict=True)]
+
+    ci = [poisson_ci(int(n), m) for n, m in zip(out["n_events"], minutes, strict=True)]
     out["rate_ci_low"] = [c[0] for c in ci]
     out["rate_ci_high"] = [c[1] for c in ci]
-    out["duration_s"] = duration_s
     return out.sort_values("rate_per_min", ascending=False).reset_index(drop=True)
 
 
 def rank_channels(rates: pd.DataFrame, by: str = "rate_per_min") -> pd.DataFrame:
-    """Add a 1-based ``rank`` column (1 = highest rate). Ties share a rank."""
-    out = rates.sort_values(by, ascending=False).reset_index(drop=True).copy()
-    out["rank"] = out[by].rank(ascending=False, method="min").astype(int)
+    """Add a 1-based ``rank`` column (1 = highest rate). Ties share a rank.
+
+    A channel with no rate at all -- one whose clean time the quality stage
+    reduced to nothing -- is kept, sorted to the bottom, and given **rank 0**,
+    which is outside the 1-based space and means "not ranked". It is not given
+    the last rank: last place is a measurement, and this channel has none. Its
+    row stays so that "we looked and could not use it" is visible rather than
+    being a gap in the montage.
+    """
+    out = rates.sort_values(by, ascending=False, na_position="last")
+    out = out.reset_index(drop=True).copy()
+    ranked = out[by].rank(ascending=False, method="min")
+    out["rank"] = ranked.fillna(0).astype(int)
     return out
 
 

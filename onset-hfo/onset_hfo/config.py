@@ -304,6 +304,113 @@ class ValidationConfig:
 
 
 @dataclass
+class QualityConfig:
+    """Which contacts and which stretches of time are fit to be analysed.
+
+    This stage exists because an HFO rate ranking is unusually easy to poison.
+    A contact with a noisy amplifier produces ripple-band energy continuously;
+    the detector finds it, the validator cannot tell it from signal because it
+    *is* oscillatory, and that contact tops the ranking. A dead contact
+    produces nothing and sits at the bottom looking reassuring. Neither is a
+    statement about the brain, and neither announces itself in a table of
+    rates.
+
+    **Nothing here interpolates.** A standard M/EEG cleaner (``autoreject``,
+    for one) repairs a bad channel from its neighbours. That is right when the
+    quantity of interest is an evoked response averaged over sensors, and
+    wrong here: the entire output of this software is a *per-channel* rate
+    ranking, and an interpolated channel's rate is borrowed from the contacts
+    beside it. It would read as a finding about that contact. So a bad channel
+    is dropped and named, never repaired. (It is also moot on these datasets:
+    interpolation needs contact coordinates and neither archive ships any.)
+
+    Every threshold below is a floor for the gross cases, not a tuning knob
+    that has been optimised -- no sweep has been run for any of them. They are
+    deliberately loose, because the failure that matters here is rejecting
+    real epileptic time, not keeping a little noise.
+    """
+
+    #: Reject a channel whose robust amplitude is below this, in microvolts:
+    #: a disconnected or shorted contact. Real intracranial background sits
+    #: well above it.
+    flat_uv: float = 0.5
+    #: Reject a channel that spends more than this fraction of the window
+    #: pinned at its own extreme value -- an amplifier at its rail. The signal
+    #: there is not small or noisy, it is absent, and a clipped edge rings
+    #: through an 80-250 Hz filter like a textbook ripple.
+    max_clipped_fraction: float = 0.01
+    #: Reject a channel whose mains-frequency power (fundamental and
+    #: harmonics) exceeds this fraction of its total power. Matters more here
+    #: than in conventional EEG: the 4th and 5th harmonics of 50 Hz sit at
+    #: 200 and 250 Hz, inside the ripple band being counted.
+    max_line_fraction: float = 0.30
+    #: Reject a channel whose in-band-to-broadband power ratio is this many
+    #: robust SDs above the montage's own median. The signature of a noisy
+    #: amplifier, and the one failure that puts a channel at the *top* of an
+    #: HFO ranking rather than the bottom.
+    max_hf_ratio_sd: float = 6.0
+    #: Reject a channel whose overall amplitude is this many robust SDs from
+    #: the montage's median, in either direction.
+    max_amplitude_sd: float = 6.0
+
+    #: Length of the fixed segments the window is cut into, in seconds. The
+    #: unit of time that can be rejected, and the resolution of the clean-time
+    #: denominator each channel's rate is divided by.
+    segment_s: float = 1.0
+    #: Reject one channel's second when the *unfiltered* signal jumps by more
+    #: than this many robust SDs of that channel's own sample-to-sample
+    #: difference.
+    #:
+    #: **Discontinuity, not amplitude.** The first version of this stage
+    #: rejected a segment whose peak-to-peak was 8 robust SDs above the
+    #: channel's own median, which sounds conservative and is not: on sub-01
+    #: of ds003498 it threw away six seconds of `AR2-AR3` -- the second
+    #: busiest HFO channel in that window -- at 4-6x its median. Those
+    #: deflections are 700-1000 uV on a bipolar depth contact, which is a
+    #: textbook interictal discharge, not a fault. Amplitude alone cannot
+    #: tell the pathology from the artifact, and the failure is silent and
+    #: in the one direction that matters: it removes the epileptic seconds
+    #: from the epileptic channel and lowers its rate.
+    #:
+    #: A jump can tell them apart, but not at the threshold the spike detector
+    #: uses: :attr:`SpikeConfig.max_raw_jump_sd` is 10, and that is calibrated
+    #: on a ~50 ms event window. The maximum of a heavy-tailed quantity grows
+    #: with the number of samples it is taken over, and a 1 s segment at
+    #: 2000 Hz has forty times as many, so 10 here rejected a tenth of the
+    #: epileptic channels' seconds.
+    #:
+    #: So this one was measured directly. Over 20,520 channel-seconds from six
+    #: windows of three ds003498 subjects, real intracranial seconds score a
+    #: median of 3.7 SD, a 99th percentile of 10-16, and a maximum anywhere of
+    #: **38**. Planted faults on the same data score **713** (saturation) and
+    #: **1013** (an amplifier step). The gap is a factor of twenty, and 100
+    #: sits in it: 2.6x above anything real that was measured, 7x below the
+    #: mildest fault. A disconnection is caught by the flat test instead,
+    #: which is what it is for.
+    #:
+    #: Its weakness, stated because it is not obvious: the statistic is
+    #: relative to each channel's own sample-to-sample spread, so a recording
+    #: with a lot of genuine high-frequency content has a larger denominator
+    #: and a given fault scores lower against it. This project's own synthetic
+    #: recording is such a case -- its planted transients reach 69 SD where
+    #: real recordings reach 38 -- and a fault has to be about three times
+    #: larger there before it trips. The absolute ceiling below is the
+    #: backstop for that, and a fault milder than both is one a reviewer has
+    #: to see on the trace. This stage is a floor for gross faults, not a
+    #: guarantee of clean data.
+    segment_jump_sd: float = 100.0
+    #: And an absolute ceiling, in microvolts, for a segment no relative test
+    #: would catch -- a window that is nothing but a pop. Set well above
+    #: physiology: an intracranial discharge reaches a millivolt, so a lower
+    #: ceiling would reproduce the mistake above with a constant.
+    segment_ceiling_uv: float = 5000.0
+    #: Drop a channel outright when this fraction of its segments is rejected.
+    #: Below it the channel is kept and its rate divided by the time that
+    #: survived; above it there is not enough left to call a rate.
+    max_bad_segment_fraction: float = 0.5
+
+
+@dataclass
 class PreprocessConfig:
     """Filtering and montage options applied before detection."""
 
@@ -369,6 +476,13 @@ class PipelineConfig:
     short_time_energy: DetectorConfig = field(default_factory=DetectorConfig)
     spikes: SpikeConfig = field(default_factory=SpikeConfig)
     validation: ValidationConfig = field(default_factory=ValidationConfig)
+    quality: QualityConfig = field(default_factory=QualityConfig)
+    #: Run the data-quality stage at all. On by default: a rate ranking with
+    #: a noisy amplifier at the top of it is the failure this project is most
+    #: likely to produce, and the stage costs a fraction of a second. Off
+    #: reproduces every number this project measured before the stage existed,
+    #: which is why it is a switch rather than a removal.
+    check_quality: bool = True
     #: Seconds; the unit in which per-channel event rates are reported.
     rate_window_s: float = 60.0
     #: How many top channels the report lists.
@@ -385,6 +499,8 @@ class PipelineConfig:
             "short_time_energy": asdict(self.short_time_energy),
             "spikes": asdict(self.spikes),
             "validation": asdict(self.validation),
+            "quality": asdict(self.quality),
+            "check_quality": self.check_quality,
             "rate_window_s": self.rate_window_s,
             "top_k": self.top_k,
             "disagreement_ranks": self.disagreement_ranks,
