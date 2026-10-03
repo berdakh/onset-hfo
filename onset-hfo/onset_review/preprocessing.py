@@ -49,6 +49,7 @@ from qtpy.QtWidgets import (
 
 from onset_hfo.config import PreprocessConfig
 from onset_hfo.preprocess import describe
+from onset_review.theme import card
 
 #: Re-exported: the sentence and the warnings a reviewer reads under these
 #: controls are computed in `onset_hfo.preprocess`, beside the refusals they
@@ -168,14 +169,11 @@ class PreprocessPanel(QWidget):
         self.summary = QLabel()
         self.summary.setWordWrap(True)
         self.summary.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Minimum)
-        self.summary.setStyleSheet(
-            "padding:5px;background:#eef4fb;border:1px solid #cfe0f0;font-size:11px;")
+        self.summary.setStyleSheet(card("info"))
         self.warnings = QLabel()
         self.warnings.setWordWrap(True)
         self.warnings.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Minimum)
-        self.warnings.setStyleSheet(
-            "padding:5px;background:#fdf0f0;border:1px solid #e0b0b0;"
-            "color:#8a2020;font-size:11px;")
+        self.warnings.setStyleSheet(card("bad"))
 
         self.apply = QPushButton("Apply and re-analyse")
         self.apply.setToolTip(

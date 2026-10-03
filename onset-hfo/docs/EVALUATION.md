@@ -850,7 +850,7 @@ python scripts/run_robustness_ablation.py \
 
 ## 7. Test suite
 
-`pytest -q` — 606 tests, entirely offline. They cover the
+`pytest -q` — 620 tests, entirely offline. They cover the
 primitives (robust scale, sliding features, threshold segmentation, bipolar
 pairing), the detectors (hot channels found, events are oscillations, a flat
 channel yields nothing, thresholds behave monotonically, reruns are
@@ -862,13 +862,13 @@ OpenAI-compatible server that replies the way Qwen and Llama servers do —
 including the two ways small models get it wrong).
 
 Three files cover the desktop reviewer, split by what they need.
-`tests/test_review_core.py` (43) and `tests/test_review_anatomy.py` (27)
+`tests/test_review_core.py` (51) and `tests/test_review_anatomy.py` (27)
 import no Qt and run on any machine with the base install: that the reviewer's
 rates agree with its own event list, that annotations land in the trace's time
 base rather than the archive's, that the trend accounts for every event at any
 bin width, that the exported review needs no optional dependency, and that
 every contact position carries whether it was measured or inferred.
-`tests/test_review_app.py` (40) needs a display and skips itself without the
+`tests/test_review_app.py` (46) needs a display and skips itself without the
 `review` extra: that every panel builds, that each control calls the browser
 method it claims to, and -- the only assumption the window's whole layout rests
 on -- that MNE's Qt figure is still a `QMainWindow` and can host our dock
@@ -891,6 +891,17 @@ under a module-level `importorskip`, and a skip there takes the whole module
 with it: on a machine without Qt, which is what the main CI job is, **none** of
 the numbers were checked while the suite reported green. Verified by installing
 `.[dev]` without the extra -- before, 0 of 62 ran; after, 49 do.
+
+`test_the_modules_this_file_covers_import_no_qt` keeps the boundary. It parses
+this file's own imports and loads each one in a subprocess with `qtpy`,
+`PySide6`, `PyQt5` and `PyQt6` blocked by a meta-path hook -- a subprocess
+because by then pytest has already imported Qt in a full run, and a module
+reaching for it would be handed the live one and pass. The first version of the
+guard hardcoded its module list and missed the second breach entirely, which is
+why it now reads the file rather than a list. It has caught two: the
+preprocessing warnings, which moved to `onset_hfo.preprocess` beside the
+refusals they mirror, and `patient_record`, which moved to
+`onset_review.record`.
 
 The anatomy file is almost entirely about provenance rather than arithmetic.
 Neither archive ships electrode coordinates, so the 3D view's contact positions

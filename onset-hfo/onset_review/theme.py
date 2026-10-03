@@ -31,7 +31,8 @@ from dataclasses import dataclass
 
 from qtpy.QtGui import QFont, QFontDatabase
 
-__all__ = ["Palette", "LIGHT", "DARK", "apply_theme", "section_label",
+__all__ = ["Palette", "LIGHT", "DARK", "apply_theme", "current", "qt_palette",
+           "section_label",
            "card", "muted", "SPACING", "RADIUS", "FONT_STACK"]
 
 #: The spacing grid, in pixels. Everything is a multiple of four; most things
@@ -99,6 +100,26 @@ DARK = Palette(
 )
 
 
+#: The palette in force. Set once by `apply_theme`; read by every panel as it
+#: builds. A module-level value rather than an argument threaded through six
+#: constructors -- and emphatically not a palette each panel imports by name,
+#: which is what the first version did and why the dark theme rendered tinted
+#: rows as light text on a light tint.
+_CURRENT: Palette = LIGHT
+
+
+def current() -> Palette:
+    """The palette in force. Panels call this; they do not import a palette."""
+    return _CURRENT
+
+
+def set_current(palette: Palette) -> Palette:
+    """Used by `apply_theme`, and by tests that render one theme directly."""
+    global _CURRENT
+    _CURRENT = palette
+    return _CURRENT
+
+
 def best_font() -> str:
     """The first face in `FONT_STACK` that is actually installed."""
     try:
@@ -118,15 +139,46 @@ def apply_theme(app, palette: Palette | None = None) -> Palette:
     scratch; they ask for a token here, which is what keeps one warning red the
     same red as the next.
     """
-    chosen = palette or _detect(app)
+    chosen = set_current(palette or _detect(app))
     family = best_font()
     font = QFont(family) if family else QFont()
     font.setPointSizeF(10.0)
     font.setHintingPreference(QFont.PreferFullHinting)
     app.setFont(font)
+    app.setPalette(qt_palette(chosen))
     app.setStyleSheet(stylesheet(chosen))
     app.setProperty("onset_palette", chosen.name)
     return chosen
+
+
+def qt_palette(p: Palette):
+    """The same colours as a `QPalette`, for everything the stylesheet misses.
+
+    A stylesheet does not reach controls the platform style draws itself --
+    check indicators, spin-box arrows, the text cursor -- so forcing a dark
+    theme with CSS alone leaves those drawn for a light one. It is also what
+    `mne-qt-browser` reads to decide whether its trace is light or dark, which
+    is why the embedded trace follows without being told.
+    """
+    from qtpy.QtGui import QColor, QPalette
+
+    palette = QPalette()
+    window, surface = QColor(p.window), QColor(p.surface)
+    text, muted_text = QColor(p.text), QColor(p.text_muted)
+    for group in (QPalette.Active, QPalette.Inactive, QPalette.Disabled):
+        palette.setColor(group, QPalette.Window, window)
+        palette.setColor(group, QPalette.Base, surface)
+        palette.setColor(group, QPalette.AlternateBase, QColor(p.surface_alt))
+        palette.setColor(group, QPalette.Button, surface)
+        palette.setColor(group, QPalette.ToolTipBase, surface)
+        palette.setColor(group, QPalette.Highlight, QColor(p.accent))
+        palette.setColor(group, QPalette.HighlightedText, QColor(p.accent_text))
+        palette.setColor(group, QPalette.Link, QColor(p.accent))
+        for role in (QPalette.WindowText, QPalette.Text, QPalette.ButtonText,
+                     QPalette.ToolTipText):
+            palette.setColor(group, role,
+                             muted_text if group == QPalette.Disabled else text)
+    return palette
 
 
 def _detect(app) -> Palette:
@@ -272,7 +324,7 @@ def section_label(text: str, palette: Palette | None = None):
     """A small, quiet heading. Type carries the hierarchy; no rule under it."""
     from qtpy.QtWidgets import QLabel
 
-    p = palette or LIGHT
+    p = palette or current()
     label = QLabel(text.upper())
     label.setStyleSheet(
         f"color:{p.text_muted};font-size:8pt;font-weight:700;"
@@ -284,7 +336,7 @@ def muted(text: str, palette: Palette | None = None, size: int = 9):
     """Secondary text: captions, units, the sentence under a control."""
     from qtpy.QtWidgets import QLabel
 
-    p = palette or LIGHT
+    p = palette or current()
     label = QLabel(text)
     label.setWordWrap(True)
     label.setStyleSheet(f"color:{p.text_muted};font-size:{size}pt;")
@@ -298,7 +350,7 @@ def card(kind: str = "info", palette: Palette | None = None) -> str:
     colour. Before this there were four hand-written hex values and two of them
     disagreed.
     """
-    p = palette or LIGHT
+    p = palette or current()
     surface, colour = {
         "info": (p.info_surface, p.text),
         "warn": (p.warn_surface, p.warn),

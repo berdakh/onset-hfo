@@ -36,7 +36,9 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
+from onset_review import theme
 from onset_review.anatomy import UNKNOWN, electrode_layout, layout_caption
+from onset_review.theme import card
 
 __all__ = ["BrainPanel", "VIEWS", "ZONE_EDGES"]
 
@@ -125,9 +127,13 @@ class BrainPanel(QWidget):
         self.headline.setWordWrap(True)
         self.headline.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Minimum)
         self.headline.setStyleSheet(
-            "font-size:12px;padding:1px 4px;color:#1a1a1a;")
+            f"font-size:9pt;padding:1px 4px;color:{theme.current().text};")
 
-        self.figure = Figure(figsize=(5.2, 4.2))
+        # Matplotlib does not see the Qt stylesheet, so a dark window would
+        # otherwise hold one bright white rectangle. Colours come from the same
+        # palette as everything else.
+        tokens = theme.current()
+        self.figure = Figure(figsize=(5.2, 4.2), facecolor=tokens.surface)
         self.canvas = FigureCanvasQTAgg(self.figure)
         self.canvas.setMinimumWidth(240)
         # Low enough to live in a docked column beneath two tables. The panel
@@ -136,6 +142,7 @@ class BrainPanel(QWidget):
         self.canvas.setMinimumHeight(170)
         self.axes = self.figure.add_axes((-0.05, -0.14, 0.99, 1.26),
                                          projection="3d")
+        self.axes.set_facecolor(tokens.surface)
         self._colorbar = None
         self._points = None
 
@@ -144,10 +151,7 @@ class BrainPanel(QWidget):
         self.caption.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Minimum)
         schematic = (not self.layout_frame.empty
                      and "inferred" in set(self.layout_frame["source"]))
-        self.caption.setStyleSheet(
-            "padding:5px;font-size:11px;border:1px solid "
-            + ("#e0c080;background:#fdf6e3;color:#6b4e00;" if schematic
-               else "#cfe0f0;background:#eef4fb;color:#234;"))
+        self.caption.setStyleSheet(card("warn" if schematic else "info"))
 
         box = QVBoxLayout(self)
         box.setContentsMargins(4, 4, 4, 4)
@@ -179,6 +183,7 @@ class BrainPanel(QWidget):
         """Rebuild the scene. Cheap enough at this size to not bother diffing."""
         frame = self.layout_frame
         self.axes.clear()
+        self.axes.set_facecolor(theme.current().surface)
         if self._colorbar is not None:
             try:
                 self._colorbar.ax.remove()
@@ -204,7 +209,8 @@ class BrainPanel(QWidget):
             values = float(values.max()) + 1.0 - values
         sizes = 42.0 + 330.0 * _unit(frame["rate_per_min"].to_numpy(dtype=float))
         edges = ([ZONE_EDGES.get(z, ZONE_EDGES["unknown"]) for z in frame["zone"]]
-                 if self.resection_only.isChecked() else "#303030")
+                 if self.resection_only.isChecked()
+                 else theme.current().text_muted)
 
         self._points = self.axes.scatter(
             frame["x"], frame["y"], frame["z"], c=values, s=sizes,
@@ -215,10 +221,15 @@ class BrainPanel(QWidget):
         if self.labels.isChecked():
             self._draw_ranks(frame)
 
+        tokens = theme.current()
         cax = self.figure.add_axes((0.93, 0.18, 0.018, 0.56))
         bar = self.figure.colorbar(self._points, cax=cax)
+        bar.ax.yaxis.set_tick_params(color=tokens.text_muted,
+                                     labelcolor=tokens.text_muted)
+        bar.outline.set_edgecolor(tokens.separator)
         bar.set_label("events / min" if field == "rate_per_min"
-                      else "rank (1 = busiest)", fontsize=8)
+                      else "rank (1 = busiest)", fontsize=8,
+                      color=tokens.text_muted)
         bar.ax.tick_params(labelsize=7)
         if field == "rank":
             top = float(frame["rank"].max())
@@ -238,17 +249,19 @@ class BrainPanel(QWidget):
         # Faint edges as well as a translucent fill. A smooth low-alpha surface
         # with no edges renders as a flat disc from every angle, which tells a
         # reviewer nothing about which way they are looking.
-        self.axes.plot_trisurf(vertices[:, 0], vertices[:, 1], vertices[:, 2],
-                               triangles=faces, color="#9fb2c6", alpha=0.10,
-                               linewidth=0.12, edgecolor="#7f93a8",
-                               shade=True, zorder=0)
+        tokens = theme.current()
+        self.axes.plot_trisurf(
+            vertices[:, 0], vertices[:, 1], vertices[:, 2], triangles=faces,
+            color=tokens.separator, alpha=0.14 if tokens.dark else 0.10,
+            linewidth=0.12, edgecolor=tokens.text_muted, shade=True, zorder=0)
 
     def _draw_shafts(self, frame) -> None:
         for _, rows in frame.groupby("shaft"):
             rows = rows.sort_values("index")
             if len(rows) < 2:
                 continue
-            self.axes.plot(rows["x"], rows["y"], rows["z"], color="#555555",
+            self.axes.plot(rows["x"], rows["y"], rows["z"],
+                           color=theme.current().text_muted,
                            linewidth=1.0, alpha=0.55, zorder=3)
 
     def _draw_ranks(self, frame) -> None:
@@ -262,7 +275,11 @@ class BrainPanel(QWidget):
         from matplotlib import patheffects
 
         shown = frame.nsmallest(min(8, len(frame)), "rank")
-        halo = [patheffects.withStroke(linewidth=2.6, foreground="white")]
+        tokens = theme.current()
+        # The halo is the panel's own background, not white: on a dark theme a
+        # white outline round dark text makes a bright smear.
+        halo = [patheffects.withStroke(linewidth=2.6,
+                                       foreground=tokens.surface)]
         for position, row in enumerate(shown.itertuples()):
             text = f"{row.rank}" + ("*" if row.tied else "")
             # Alternate the label above and below the contact. Contacts 5 mm
@@ -270,7 +287,7 @@ class BrainPanel(QWidget):
             # and a column of numbers on top of one another is worse than none.
             lift = 0.0075 if position % 2 == 0 else -0.0085
             self.axes.text(row.x, row.y, row.z + lift, text, fontsize=9,
-                           fontweight="bold", color="#101010", ha="center",
+                           fontweight="bold", color=tokens.text, ha="center",
                            va="center", zorder=6, path_effects=halo)
 
     def _finish_axes(self, frame) -> None:
@@ -327,10 +344,12 @@ class BrainPanel(QWidget):
             if handles:
                 # On the figure, not the axes: a 3D axes legend is positioned
                 # against the axes box, which now extends off the canvas.
-                self.figure.legend(handles=handles, loc="lower left", fontsize=7,
-                                   frameon=False, title="surgeon removed",
-                                   title_fontsize=7,
-                                   bbox_to_anchor=(0.01, 0.02))
+                legend = self.figure.legend(
+                    handles=handles, loc="lower left", fontsize=7, frameon=False,
+                    title="surgeon removed", title_fontsize=7,
+                    bbox_to_anchor=(0.01, 0.02),
+                    labelcolor=theme.current().text_muted)
+                legend.get_title().set_color(theme.current().text_muted)
 
     # -- interaction --------------------------------------------------------
     def _picked(self, event) -> None:

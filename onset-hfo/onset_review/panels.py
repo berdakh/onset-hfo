@@ -33,8 +33,9 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
-from onset_review import trends
+from onset_review import theme, trends
 from onset_review.session import ReviewSession
+from onset_review.theme import card
 
 __all__ = ["FindingsPanel", "EventsPanel", "TrendsPanel", "AgreementPanel",
            "ProvenancePanel", "DataFrameModel", "MIN_TABLE_HEIGHT"]
@@ -222,9 +223,9 @@ class FindingsPanel(QWidget):
 
         def highlight(row):
             if row.get("channel") in tied:
-                return "#fff3cd"
+                return theme.current().highlight
             if has_expert and row.get("channel") not in reviewed:
-                return "#f4f4f4"
+                return theme.current().surface_alt
             return None
 
         self.model = DataFrameModel(session.findings, self.COLUMNS, highlight)
@@ -238,7 +239,8 @@ class FindingsPanel(QWidget):
                "so a detection there is unjudged rather than wrong."
                if has_expert else "."))
         caption.setWordWrap(True)
-        caption.setStyleSheet("color:#555;font-size:11px;padding:2px 4px;")
+        caption.setStyleSheet(
+            f"color:{theme.current().text_muted};font-size:9pt;padding:2px 4px;")
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -300,12 +302,13 @@ class EventsPanel(QWidget):
             bar.addWidget(widget)
         bar.addStretch(1)
         self.count = QLabel()
-        self.count.setStyleSheet("color:#555;font-size:11px;")
+        self.count.setStyleSheet(f"color:{theme.current().text_muted};font-size:9pt;")
         bar.addWidget(self.count)
 
         self.model = DataFrameModel(
             self._all, self.COLUMNS,
-            lambda row: "#f8e0e0" if not row.get("accepted", True) else None)
+            lambda row: theme.current().bad_surface if not row.get("accepted", True)
+            else None)
         self.view = _table_view()
         self.view.setModel(self.model)
         self.view.selectionModel().selectionChanged.connect(self._emit)
@@ -399,7 +402,7 @@ class TrendsPanel(QWidget):
         bar.addWidget(self.bin_s)
         bar.addStretch(1)
         self.hint = QLabel("Click a cell to take the trace there.")
-        self.hint.setStyleSheet("color:#555;font-size:11px;")
+        self.hint.setStyleSheet(f"color:{theme.current().text_muted};font-size:9pt;")
         bar.addWidget(self.hint)
 
         self.plot = pg.PlotWidget(background="w")
@@ -494,8 +497,7 @@ class AgreementPanel(QWidget):
         self.statement = QLabel(summary.get("statement") or
                                 summary.get("reason", ""))
         self.statement.setWordWrap(True)
-        self.statement.setStyleSheet(
-            "padding:6px;background:#eef4fb;border:1px solid #cfe0f0;font-size:11px;")
+        self.statement.setStyleSheet(card("info"))
 
         self.model = DataFrameModel(trends.agreement(session), self.COLUMNS)
         self.view = _table_view()

@@ -92,7 +92,7 @@ For the research framing rather than the code, read
 | `artifacts/` | **gitignored** — where runs actually write, and the dataset cache |
 | `notebooks/` | seven notebooks; the first five need no setup |
 | `scripts/` | studies too long for a test: the model ladder, the sub-population screen, the multiplier ablation |
-| `tests/` | sixteen files, 606 tests, all offline |
+| `tests/` | sixteen files, 620 tests, all offline |
 | `paper/` | **the preprint — untracked on purpose. Never commit it.** |
 
 ### `onset_hfo/` — the modules worth knowing first

@@ -31,6 +31,8 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
+from onset_review import theme
+
 __all__ = ["TraceControls", "AMPLITUDE_STEP"]
 
 #: One click of the gain buttons. MNE's own keyboard binding uses the same
@@ -73,7 +75,10 @@ class TraceControls(QWidget):
             "Height of the scale bar on the trace: the amplitude one division "
             "represents. Taken from MNE's own scalebar, so it cannot disagree "
             "with it.")
-        self.gain.setStyleSheet("font-family:monospace;")
+        # Tabular figures: the gain changes by a factor each click and a
+        # proportional font makes the readout jitter sideways as it does.
+        self.gain.setStyleSheet(
+            f"font-family:monospace;color:{theme.current().text};")
 
         self.seconds = QDoubleSpinBox()
         self.seconds.setRange(0.2, 600.0)
@@ -144,7 +149,7 @@ class TraceControls(QWidget):
         # laptop it would otherwise set the floor for the whole window and push
         # the trace off the screen. It shortens instead of clipping the row.
         hint = QLabel("The trace also takes the usual MNE keys; press ? on it.")
-        hint.setStyleSheet("color:#666;font-size:11px;")
+        hint.setStyleSheet(f"color:{theme.current().text_muted};font-size:9pt;")
         hint.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         hint.setMinimumWidth(0)
         layout.addWidget(hint)

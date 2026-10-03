@@ -48,12 +48,10 @@ dataset — what the original annotators marked on the same minute.
 ├───────────────────────────────────────────────┤  EVENTS           │
 │                                               │  one row each     │
 │  TRACE     the signal, with marks on it       ├───────────────────┤
-│                                               │  WHERE THE        │
-│                                               │  CONTACTS ARE     │
-│                                               │  · detector v     │
-│                                               │    expert         │
-│                                               │  · how it was     │
-│                                               │    produced       │
+│                                               │  PATIENT          │
+│                                               │  · contacts (3D)  │
+│                                               │  · agreement      │
+│                                               │  · provenance     │
 │                                               │  · preprocessing  │
 │                                               │  · assistant      │
 ├───────────────────────────────────────────────┴───────────────────┤
@@ -157,6 +155,38 @@ is not marked.
 oscillation rises above the recording's own background at that frequency. It is
 what separates a real oscillation from the ringing a filter produces when it
 hits a sharp transient, which is the classic way HFO detectors fool themselves.
+
+### Patient — who this recording belongs to
+
+![The patient record](images/onset-review-patient.png)
+
+What the archive records: the epilepsy type, whether imaging found a lesion,
+how many nights were recorded, how many channels the annotators reviewed, how
+many contacts the surgeon removed, and whether any were eloquent cortex.
+
+**The resection-coverage line is the one to read.** In five of these twenty
+patients only a quarter of the contacts the surgeon removed appear in the
+recording at all. When that is the case this panel says so in orange, because
+everything the software then says about "inside the resection" for that patient
+describes a quarter of their resection — and the number looks identical either
+way.
+
+**The surgical outcome is hidden until you ask for it.** Knowing a patient
+became seizure-free changes how you read the same rate table, and this software
+is for forming an impression from the signal. Tick the box when you want it.
+
+> **The clinical record is empty, deliberately.** This archive carries no
+> seizure semiology, no imaging report, no scalp EEG, no neuropsychology, no
+> medication list and no surgical history. Those fields are listed on the panel
+> so you can see where a site's own record would appear — and they are left
+> blank rather than filled with a plausible example. An invented history in a
+> clinical tool is indistinguishable from a real one, and that is not a risk
+> worth taking for a nicer demo.
+>
+> Age, sex and handedness *are* in the archive and are **not** published here.
+> Three demographic fields beside pathology, surgical extent and outcome narrow
+> a cohort of twenty considerably, and no analysis in this project uses any of
+> them. That blank is a choice, not missing data.
 
 ### Where the contacts are — the 3D view
 

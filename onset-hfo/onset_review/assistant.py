@@ -44,6 +44,8 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
+from onset_review import theme
+
 __all__ = ["AssistantPanel", "BACKENDS", "SUGGESTIONS", "parse_evidence_id"]
 
 #: The backends offered, in the order a reviewer should try them. Labels say
@@ -321,8 +323,8 @@ class AssistantPanel(QWidget):
         bar.setValue(bar.maximum())
 
     def _say_system(self, body: str) -> None:
-        self._append(f"<div style='color:#555;font-size:11px;margin:6px 0;'>"
-                     f"{body}</div>")
+        self._append(f"<div style='color:{theme.current().text_muted};font-size:11px;"
+                     f"margin:6px 0;'>{body}</div>")
 
     def _say_user(self, text: str) -> None:
         self._append(f"<div style='margin:10px 0 2px;'><b>{html.escape(text)}</b>"
@@ -334,10 +336,11 @@ class AssistantPanel(QWidget):
             return
         if answer.refused:
             self._append(
-                "<div style='margin:2px 0 6px;padding:6px;background:#fdf0f0;"
-                "border-left:3px solid #c04040;'>"
+                f"<div style='margin:2px 0 6px;padding:6px;"
+                f"background:{theme.current().bad_surface};"
+                f"border-left:3px solid {theme.current().bad};'>"
                 f"<b>Refused.</b> {html.escape(answer.text)}"
-                f"<div style='color:#666;font-size:11px;margin-top:3px;'>"
+                f"<div style='color:{theme.current().text_muted};font-size:11px;margin-top:3px;'>"
                 f"{html.escape(answer.reason)}</div></div>")
             return
 

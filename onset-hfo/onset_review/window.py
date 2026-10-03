@@ -35,7 +35,7 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
-from onset_review import report
+from onset_review import report, theme
 from onset_review.assistant import AssistantPanel
 from onset_review.brainview import BrainPanel
 from onset_review.controls import AMPLITUDE_STEP, TraceControls
@@ -46,6 +46,7 @@ from onset_review.panels import (
     ProvenancePanel,
     TrendsPanel,
 )
+from onset_review.patient import PatientPanel
 from onset_review.preprocessing import PreprocessPanel
 from onset_review.session import BAND_COLOURS, ReviewSession, annotations_for
 
@@ -265,6 +266,7 @@ def decorate(figure, session: ReviewSession, show_expert: bool = False,
         "controls": TraceControls(figure),
         "findings": FindingsPanel(session),
         "events": EventsPanel(session),
+        "patient": PatientPanel(session),
         "brain": BrainPanel(session, resection=session.resection,
                             electrodes=session.electrodes),
         "assistant": AssistantPanel(session),
@@ -274,9 +276,15 @@ def decorate(figure, session: ReviewSession, show_expert: bool = False,
     }
     docks = {}
 
-    def dock(key: str, title: str, area, widget: QWidget) -> QDockWidget:
+    def dock(key: str, title: str, area, widget: QWidget,
+             tip: str = "") -> QDockWidget:
+        # Short titles: Qt puts the window title on the tab, and six tabbed
+        # docks in a 640 px column elide into "P...", "Where the contac...",
+        # "Detector vs ...". The sentence goes in the tooltip instead.
         item = QDockWidget(title, host)
         item.setObjectName(f"dock_{key}")
+        if tip:
+            item.setToolTip(tip)
         item.setWidget(widget)
         item.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea
                              | Qt.TopDockWidgetArea | Qt.BottomDockWidgetArea)
@@ -307,19 +315,25 @@ def decorate(figure, session: ReviewSession, show_expert: bool = False,
     # takes its width from the trace -- which is the one thing on screen that
     # has to stay wide enough to judge an oscillation on. A reviewer who wants
     # the 3D view big floats it out of the dock, which is one drag.
-    brain = dock("brain", "Where the contacts are", Qt.RightDockWidgetArea,
-                 panels["brain"])
-    accord = dock("agreement", "Detector vs expert", Qt.RightDockWidgetArea,
-                  panels["agreement"])
-    prov = dock("provenance", "How this was produced", Qt.RightDockWidgetArea,
-                panels["provenance"])
+    who = dock("patient", "Patient", Qt.RightDockWidgetArea, panels["patient"],
+               "Who this recording belongs to, as far as the archive says")
+    brain = dock("brain", "Contacts", Qt.RightDockWidgetArea, panels["brain"],
+                 "Where the contacts are, ranked and relative to the resection")
+    accord = dock("agreement", "Agreement", Qt.RightDockWidgetArea,
+                  panels["agreement"],
+                  "This detector against the archive's own annotators")
+    prov = dock("provenance", "Provenance", Qt.RightDockWidgetArea,
+                panels["provenance"], "How this was produced, step by step")
     helper = dock("assistant", "Assistant", Qt.RightDockWidgetArea,
-                  panels["assistant"])
+                  panels["assistant"],
+                  "Ask about this window; answers cite it or refuse")
     # Preprocessing sits with provenance rather than with the working views:
     # it is the other half of the same question. "How this was produced" says
     # what was done; the tab next to it is where a reviewer changes it.
     prep = dock("preprocess", "Preprocessing", Qt.RightDockWidgetArea,
-                panels["preprocess"])
+                panels["preprocess"],
+                "What is done to the signal before any detector sees it")
+    host.tabifyDockWidget(who, brain)
     host.tabifyDockWidget(brain, accord)
     host.tabifyDockWidget(accord, prov)
     host.tabifyDockWidget(prov, prep)
@@ -331,8 +345,8 @@ def decorate(figure, session: ReviewSession, show_expert: bool = False,
     panels["trends"].setMinimumHeight(170)
     panels["controls"].setFixedHeight(panels["controls"].sizeHint().height())
     host.resizeDocks([docks["trends"]], [260], Qt.Vertical)
-    host.resizeDocks([docks["findings"], docks["events"], brain, helper, prep],
-                     [640, 640, 640, 640, 640], Qt.Horizontal)
+    host.resizeDocks([docks["findings"], docks["events"], brain, helper, prep,
+                      who], [640] * 6, Qt.Horizontal)
     # Vertical shares for the right-hand column. Without these the 3D view's
     # own minimum height wins the whole column and the two tables above it are
     # left showing one row each.
@@ -423,9 +437,13 @@ def _status(host: QMainWindow, session: ReviewSession) -> None:
     label = QLabel(session.caveat())
     label.setWordWrap(False)
     distinguishable = session.leader.get("distinguishable")
+    # The one place the design is not allowed to be quiet. A caveat rendered
+    # in the muted secondary colour would read as a footnote, which is exactly
+    # what it must not be.
     label.setStyleSheet(
-        "padding:2px 8px;font-size:11px;" +
-        ("color:#1a5e1a;" if distinguishable else "color:#8a2020;font-weight:bold;"))
+        "padding:2px 8px;font-size:9pt;"
+        + (f"color:{theme.current().good};" if distinguishable
+           else f"color:{theme.current().bad};font-weight:700;"))
     label.setObjectName("onset_caveat")
     # `addWidget` reparents the label onto the status bar, which then owns it,
     # so no reference is kept here. Naming it is how a caller or a test finds

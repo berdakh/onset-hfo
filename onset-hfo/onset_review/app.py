@@ -56,6 +56,9 @@ def build_parser() -> argparse.ArgumentParser:
                         help="where cached slices live (default artifacts/data)")
     parser.add_argument("--allow-fetch", action="store_true",
                         help="permit downloading a window that is not cached")
+    parser.add_argument("--theme", choices=["auto", "light", "dark"],
+                        default="auto",
+                        help="follow the desktop's setting, or force one")
     parser.add_argument("--list", action="store_true",
                         help="print the cached windows and exit")
     parser.add_argument("--export", type=Path, default=None,
@@ -143,6 +146,11 @@ def main(argv: list[str] | None = None) -> int:
     app = QApplication.instance() or QApplication(sys.argv[:1])
     app.setApplicationName("Onset Review")
     app.setApplicationDisplayName("Onset Review")
+
+    from onset_review import theme
+
+    chosen = {"light": theme.LIGHT, "dark": theme.DARK}.get(args.theme)
+    theme.apply_theme(app, chosen)
 
     if args.subject:
         request, overlay = _request_from(args), args.expert

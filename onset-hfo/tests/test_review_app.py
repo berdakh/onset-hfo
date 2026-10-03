@@ -70,7 +70,7 @@ def test_mne_figure_can_still_host_our_docks(built):
 def test_every_panel_is_docked(built):
     assert set(built.docks) == {"trends", "controls", "findings", "events",
                                 "brain", "agreement", "provenance", "assistant",
-                                "preprocess"}
+                                "preprocess", "patient"}
     assert all(dock.widget() is not None for dock in built.docks.values())
 
 
@@ -610,3 +610,101 @@ def test_apply_is_disabled_when_nothing_can_act_on_it(review):
         assert not parts.panels["preprocess"].apply.isEnabled()
     finally:
         figure.close()
+
+
+# -- the patient panel and the theme ---------------------------------------
+
+def test_the_patient_panel_shows_the_record_and_hides_the_outcome(built, review):
+    """The outcome is hidden behind a deliberate click.
+
+    Knowing the patient became seizure-free changes how the same rate table
+    reads, and this software is for forming an impression from the signal.
+    """
+    panel = built.panels["patient"]
+    if not panel.record.get("available"):
+        pytest.skip("the synthetic recording has no participant record")
+    assert not panel.outcome.isVisibleTo(panel)
+    panel.outcome_shown.setChecked(True)
+    assert panel.outcome.isVisibleTo(panel)
+    assert "ILAE" in panel.outcome.text()
+
+
+def test_the_patient_panel_opens_on_a_subject_with_no_record(review):
+    """A recording from outside the cohort must not take the panel down."""
+    import dataclasses
+
+    from onset_review.patient import PatientPanel
+
+    stranger = dataclasses.replace(
+        review, request=dataclasses.replace(review.request, subject="sub-99"))
+    panel = PatientPanel(stranger)
+    try:
+        assert panel.record["available"] is False
+    finally:
+        panel.deleteLater()
+
+
+def test_the_theme_sets_a_palette_and_a_stylesheet(qapp):
+    """Forcing a theme with CSS alone leaves platform-drawn controls -- check
+    indicators, spin-box arrows -- rendered for the other one."""
+    from onset_review import theme
+
+    for palette in (theme.LIGHT, theme.DARK):
+        chosen = theme.apply_theme(qapp, palette)
+        assert chosen is palette
+        assert theme.current() is palette
+        assert palette.accent in qapp.styleSheet()
+        assert qapp.palette().base().color().name().lower() == \
+            palette.surface.lower()
+    theme.apply_theme(qapp, theme.LIGHT)
+
+
+def test_panels_read_the_active_palette_rather_than_importing_one(review):
+    """The dark theme's first version rendered tinted rows as light text on a
+    light tint, because every panel had imported the light palette by name."""
+    from onset_review import theme
+    from onset_review.panels import FindingsPanel
+
+    try:
+        theme.set_current(theme.DARK)
+        dark = FindingsPanel(review)
+        tinted = [theme.DARK.highlight, theme.DARK.surface_alt, None]
+        row = dark.model.frame.iloc[0]
+        assert dark.model._highlight(row) in tinted
+        dark.deleteLater()
+    finally:
+        theme.set_current(theme.LIGHT)
+
+
+def test_every_warning_in_the_interface_is_the_same_warning_colour():
+    """Before `theme.card` there were four hand-written hex values for this and
+    two of them disagreed."""
+    from onset_review import theme
+
+    for kind in ("info", "warn", "bad", "plain"):
+        assert "border-radius" in theme.card(kind)
+    assert theme.LIGHT.bad in theme.card("bad", theme.LIGHT)
+    assert theme.DARK.bad in theme.card("bad", theme.DARK)
+
+
+def test_no_panel_hardcodes_a_colour():
+    """Colours come from the palette so the two themes cannot diverge.
+
+    Three files are exempt, each for its own reason. `theme.py` is where the
+    colours live. `session.BAND_COLOURS` and `brainview.ZONE_EDGES` are data,
+    not styling -- what a ripple is drawn as, what "inside the resection" is
+    drawn as -- and they mean the same thing on either background. And
+    `report.py` styles an exported HTML document that is read in a browser or
+    printed, which should not inherit whatever theme the application happened
+    to be in when it was written.
+    """
+    import pathlib
+    import re
+
+    root = pathlib.Path(__file__).resolve().parent.parent / "onset_review"
+    allowed = {"theme.py", "session.py", "brainview.py", "report.py"}
+    for path in sorted(root.glob("*.py")):
+        if path.name in allowed:
+            continue
+        hits = re.findall(r"#[0-9a-fA-F]{6}\b", path.read_text())
+        assert not hits, f"{path.name} hardcodes {hits}"

@@ -412,25 +412,43 @@ def test_changed_preprocessing_reaches_the_report(recording):
 # -- the boundary this file exists to defend -------------------------------
 
 def test_the_modules_this_file_covers_import_no_qt():
-    """Every module tested here must import on a machine with no Qt at all.
+    """Every module this file imports must load with no Qt installed at all.
 
-    This is not hypothetical tidiness. The first version of the preprocessing
-    warnings lived in `onset_review.preprocessing`, which imports Qt at module
-    level, and was tested from this file -- so the main CI job, which installs
-    no `review` extra, went red with nine `ModuleNotFoundError`s. The logic
-    moved to `onset_hfo.preprocess`, beside the refusals it mirrors, and this
-    test is what stops it drifting back.
+    Not a hypothetical. It has now happened twice: the preprocessing warnings
+    went into `onset_review.preprocessing`, and `patient_record` into
+    `onset_review.patient`, both of which import Qt at module level, and both
+    were tested from here -- so the main CI job, which installs no `review`
+    extra, went red. Each time the fix was to move the logic to a Qt-free
+    module, because the test was right.
+
+    The first version of this guard hardcoded the module list and so missed the
+    second case entirely. It now reads the imports out of this file, which
+    means it covers whatever the file actually uses rather than whatever was
+    true when it was written.
     """
-    import importlib
+    import ast
+    import pathlib as _pathlib
     import subprocess
     import sys
 
-    modules = ["onset_review.session", "onset_review.trends",
-               "onset_review.report", "onset_review.anatomy",
-               "onset_hfo.preprocess"]
-    # A subprocess with the Qt packages blocked, rather than poking sys.modules
-    # in-process: pytest has already imported Qt by now in a full run, and a
-    # module that reached for it would be handed the live one.
+    source = _pathlib.Path(__file__)
+    tree = ast.parse(source.read_text())
+    wanted = {"onset_review", "onset_hfo"}
+    modules = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module:
+            if node.module.split(".")[0] in wanted:
+                modules.add(node.module)
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.split(".")[0] in wanted:
+                    modules.add(alias.name)
+    assert modules, "found no imports to check; has this file changed shape?"
+
+    # A subprocess with the Qt packages blocked, rather than poking
+    # `sys.modules` in-process: by the time this runs in a full suite pytest
+    # has already imported Qt, and a module reaching for it would be handed the
+    # live one and pass.
     script = (
         "import sys\n"
         "class Blocked:\n"
@@ -440,11 +458,99 @@ def test_the_modules_this_file_covers_import_no_qt():
         "        return None\n"
         "sys.meta_path.insert(0, Blocked())\n"
         "import importlib\n"
-        f"for name in {modules!r}:\n"
+        f"for name in {sorted(modules)!r}:\n"
         "    importlib.import_module(name)\n"
         "print('clean')\n")
     done = subprocess.run([sys.executable, "-c", script], capture_output=True,
                           text=True, timeout=300)
-    assert done.returncode == 0, done.stderr[-1500:]
+    assert done.returncode == 0, (
+        f"a module this file imports needs Qt:\n{done.stderr[-1500:]}")
     assert "clean" in done.stdout
-    assert importlib  # the import above is the point; keep the linter quiet
+
+
+# -- the patient record ----------------------------------------------------
+#
+# The panel that shows this is Qt; the record it shows is not, and the record
+# is the part that matters. These tests are mostly about what it must *not*
+# contain.
+
+def _record(subject, **kwargs):
+    from onset_review.record import patient_record
+
+    return patient_record(subject, **kwargs)
+
+
+def test_the_patient_record_reads_the_committed_tables():
+    """`data/outcome/` exists so a number can be checked from a fresh clone."""
+    record = _record("sub-01")
+    assert record["available"]
+    assert record["epilepsy"] == "TLE"
+    assert record["n_channels"] == 43
+    assert record["n_reviewed"] == 23
+    assert record["rz_coverage"] == pytest.approx(1.0)
+
+
+def test_a_patient_with_partial_resection_coverage_carries_the_missing_contacts():
+    """The single most important caveat for five of these twenty patients.
+
+    In sub-02 only a quarter of the contacts the surgeon removed appear in the
+    recording, so anything said about "inside the resection" describes that
+    quarter. A reviewer who is not told reads it as describing the resection.
+    """
+    record = _record("sub-02")
+    assert record["rz_coverage"] == pytest.approx(0.25)
+    assert record["missing"]
+    assert "ER1" in record["missing"]
+
+
+def test_an_unknown_subject_is_unavailable_rather_than_invented():
+    record = _record("sub-99")
+    assert record["available"] is False
+    assert set(record) == {"subject", "available"}
+
+
+def test_a_missing_data_directory_does_not_raise(tmp_path):
+    assert _record("sub-01", data_dir=tmp_path)["available"] is False
+
+
+def test_the_record_holds_no_demographics():
+    """Age, sex and handedness are in the archive and deliberately not here.
+
+    Three demographic fields published beside pathology, surgical extent and
+    outcome narrow a cohort of twenty considerably, and no analysis in this
+    project uses any of them. `data/outcome/README.md` records the decision;
+    this stops it being undone by accident.
+    """
+    record = _record("sub-01")
+    for field in ("age", "sex", "handedness", "dob", "name"):
+        assert field not in record
+
+
+def test_the_chart_fields_are_named_but_never_filled():
+    """The one thing this record must not do.
+
+    A clinical-looking panel populated with plausible semiology, imaging or
+    medication is a fabricated medical record, and in software a clinician is
+    asked to trust it is indistinguishable from a real one. The fields exist so
+    a site can see where its own data lands; they carry no content.
+    """
+    from onset_review.record import CHART_FIELDS
+
+    names = [name for name, _ in CHART_FIELDS]
+    assert "MRI" in names and "Medication" in names and "Seizure semiology" in names
+    for name, why in CHART_FIELDS:
+        assert why and why[0].islower()      # a description, not a value
+        assert not any(ch.isdigit() for ch in why), f"{name} looks like data"
+
+
+def test_every_ilae_class_the_cohort_uses_has_a_description():
+    """A bare "ILAE 5" means nothing to anyone outside epilepsy surgery."""
+    import pathlib as _pathlib
+
+    from onset_review.record import ILAE_CLASSES
+
+    participants = pd.read_csv(
+        _pathlib.Path(__file__).resolve().parent.parent / "data" / "outcome"
+        / "participants.csv")
+    for value in sorted(participants["ilae"].unique()):
+        assert int(value) in ILAE_CLASSES, value

@@ -56,6 +56,7 @@ the results and is prevented from inventing them.
 | **A small model refuses a lot.** | With Qwen2.5-1.5B many answers fail verification and the agent declines. That is the system working, but it is not a pleasant demo — use a 7B model. |
 | **Absolute amplitudes are only as good as the file header.** The archive declares 1 nV per stored unit; the resulting background is ~120 µV RMS, plausible but high. | Microvolt values in a report are not calibrated measurements. Detection is unaffected — all thresholds are in robust SDs of the channel itself. |
 | **No security model.** No authentication, no audit log, no protection of the results directory. | Anyone who can write to `artifacts/results/` controls what the agent believes. Do not expose this to untrusted users. |
+| **The archive carries no clinical history.** No seizure semiology, imaging report, scalp EEG, neuropsychology, medication or surgical history for any patient. | The reviewer's Patient panel shows those fields *empty*, with where a site would connect its own source. They are deliberately not filled with an example: an invented history in a clinical tool is indistinguishable from a real one. Age, sex and handedness are in the archive and are deliberately not published here either — see `data/outcome/README.md`. |
 | **No privacy controls.** | The public data is already de-identified. If you point this at your own recordings, de-identification, ethics approval and data governance are entirely your responsibility — see `DATA.md`. |
 
 ## The evidence for HFOs themselves is contested
