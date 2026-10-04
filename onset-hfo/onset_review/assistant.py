@@ -21,8 +21,10 @@ page:
   reviewer can check it. That is the whole claim of the design: the assistant
   does not ask to be believed.
 
-The default backend runs no model at all. `ollama pull qwen2.5:7b-instruct` and
-pick Ollama for the real thing; nothing here downloads a model on its own.
+The backend the panel opens on is decided by `assistant_config.load_defaults`:
+what the installer recorded, failing that a live Ollama on this machine with a
+catalogue model pulled, failing that no model at all. Nothing here downloads a
+model or starts a server; `packaging/install-ubuntu.sh --with-assistant` does.
 """
 
 from __future__ import annotations
@@ -251,6 +253,7 @@ class AssistantPanel(QWidget):
         outer.addLayout(row)
 
         self.backend.currentIndexChanged.connect(self._backend_changed)
+        self._apply_defaults()
         self._backend_changed()
         self._say_system(
             "Ask about <b>this window</b>. Every answer is checked against the "
@@ -263,6 +266,21 @@ class AssistantPanel(QWidget):
             "<code>ollama pull qwen2.5:7b-instruct</code> and choose Ollama.")
 
     # -- plumbing ----------------------------------------------------------
+    def _apply_defaults(self) -> None:
+        """Open on whatever `assistant_config` decided, and say where it came
+        from -- a preselected model with no explanation looks like a guess."""
+        from onset_review.assistant_config import load_defaults
+
+        chosen = load_defaults()
+        index = self.backend.findData(chosen.kind)
+        if index >= 0:
+            self.backend.setCurrentIndex(index)
+        if chosen.model:
+            self.model.setText(chosen.model)
+        if chosen.base_url and chosen.kind == "openai_compat":
+            self.base_url.setText(chosen.base_url)
+        self._defaults = chosen
+
     def _backend_changed(self) -> None:
         kind = str(self.backend.currentData() or "scripted")
         self.model.setVisible(kind != "scripted")

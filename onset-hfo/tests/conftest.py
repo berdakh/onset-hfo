@@ -25,6 +25,11 @@ def _no_network():
     archive should fail loudly here rather than pass on a machine with
     network and hang on one without.
     """
+    # The assistant panel probes localhost for an Ollama unless told not to;
+    # a test must not depend on what a developer happens to have running.
+    import os as _os
+    _os.environ["ONSET_ASSISTANT_NO_PROBE"] = "1"
+    _os.environ.pop("ONSET_ASSISTANT_BACKEND", None)
     previous = os.environ.get(OFFLINE_ENV)
     os.environ[OFFLINE_ENV] = "1"
     yield

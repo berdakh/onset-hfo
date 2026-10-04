@@ -36,6 +36,7 @@ channels to resect and watch it refuse.
 
 ```bash
 ./packaging/install-ubuntu.sh --with-sample && onset-review
+# add --with-assistant to set up the local Qwen the assistant panel uses
 ```
 
 ![The Onset Review window](docs/images/onset-review.png)

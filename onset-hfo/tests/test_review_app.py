@@ -1162,6 +1162,33 @@ def test_the_assistant_offers_a_question_it_will_refuse():
     assert all(label and len(label) < 24 for _, label in SUGGESTIONS)
 
 
+def test_the_assistant_opens_on_the_configured_model(qapp, review, monkeypatch):
+    """What the installer's --with-assistant buys: the panel opens on the
+    model it set up, instead of on "No model" with the option left to find."""
+    from onset_review.assistant import AssistantPanel
+
+    monkeypatch.setenv("ONSET_ASSISTANT_BACKEND", "ollama")
+    monkeypatch.setenv("ONSET_ASSISTANT_MODEL", "qwen3:8b")
+    panel = AssistantPanel(review)
+    assert panel.backend.currentData() == "ollama"
+    assert panel.model.text() == "qwen3:8b"
+    assert panel.model.isVisibleTo(panel)
+    assert panel._defaults.source == "environment"
+
+
+def test_the_assistant_still_opens_on_no_model_when_nothing_is_configured(
+        qapp, review, monkeypatch, tmp_path):
+    """The conftest already forbids the localhost probe; with no file and no
+    environment the old default stands."""
+    from onset_review.assistant import AssistantPanel
+
+    monkeypatch.delenv("ONSET_ASSISTANT_BACKEND", raising=False)
+    monkeypatch.setenv("ONSET_REVIEW_CONFIG_DIR", str(tmp_path))
+    panel = AssistantPanel(review)
+    assert panel.backend.currentData() == "scripted"
+    assert "nothing" in panel._defaults.source
+
+
 def test_the_default_backend_runs_no_model():
     from onset_review.assistant import BACKENDS
 
