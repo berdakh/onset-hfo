@@ -366,8 +366,9 @@ def goto(figure, t: float, channel: str | None = None,
 
 
 def decorate(figure, session: ReviewSession, show_expert: bool = False,
-             on_preprocess=None, on_import=None,
-             on_quality=None, on_electrodes=None) -> ReviewWindowParts:
+             on_preprocess=None, on_import=None, on_quality=None,
+             on_electrodes=None, on_window=None,
+             on_step_window=None) -> ReviewWindowParts:
     """Add the menus, the toolbar, the panels and the caveat to MNE's window.
 
     `on_preprocess` is called with a new `PreprocessConfig` when the reviewer
@@ -510,7 +511,8 @@ def decorate(figure, session: ReviewSession, show_expert: bool = False,
     defaults: dict = {}
     _menus(figure, host, panels, docks, session, display, parts,
            defaults, on_import=on_import,
-           on_electrodes=on_electrodes)
+           on_electrodes=on_electrodes, on_window=on_window,
+           on_step_window=on_step_window)
     _set_reader_status(host, session)
     # Opened in a layout rather than with everything showing: eleven docked
     # panels at once is an arrangement a reviewer has to undo before they can
@@ -657,7 +659,8 @@ def _status(host: QMainWindow, session: ReviewSession) -> None:
 def _menus(figure, host: QMainWindow, panels: dict, docks: dict,
            session: ReviewSession, display: _Display,
            parts: ReviewWindowParts, defaults: dict,
-           on_import=None, on_electrodes=None) -> None:
+           on_import=None, on_electrodes=None, on_window=None,
+           on_step_window=None) -> None:
     """Menus and a toolbar, in the vocabulary of the task rather than the code."""
     menubar = host.menuBar()
 
@@ -672,6 +675,9 @@ def _menus(figure, host: QMainWindow, panels: dict, docks: dict,
         "Opening another recording is not available in this window")
     if on_import is not None:
         opener.triggered.connect(lambda _=False: on_import())
+    file_menu.addSeparator()
+    _window_menu(file_menu, host, session, on_window, on_step_window)
+    file_menu.addSeparator()
     places = file_menu.addAction("Electrode &coordinates…")
     places.setToolTip(
         "Place the contacts from a coordinate file — a BIDS electrodes.tsv, "
@@ -1013,6 +1019,64 @@ def _apply_marks(figure, session: ReviewSession, scope: str,
         except Exception:
             return
     _colour_annotations(figure)
+
+
+def _window_menu(menu, host: QMainWindow, session: ReviewSession,
+                 on_window=None, on_step_window=None) -> None:
+    """Move to another stretch of the same recording.
+
+    In the Review menu rather than Navigate, because Navigate moves the view
+    over signal already loaded and this re-analyses: a different window is a
+    different set of detections, a different ranking and a different read.
+    Mixing the two in one menu would make a two-second operation look like a
+    two-minute one, or the other way round.
+    """
+    length = session.request.t_stop - session.request.t_start
+    forward = menu.addAction("Ne&xt window")
+    forward.setShortcut("Ctrl+Shift+Right")
+    forward.setToolTip(
+        f"Re-analyse the next {length:g} s of this recording. The question "
+        f"worth asking: does the ranking hold?")
+    back = menu.addAction("Previous &window")
+    back.setShortcut("Ctrl+Shift+Left")
+    back.setToolTip(f"Re-analyse the previous {length:g} s")
+    pick = menu.addAction("&Go to window…")
+    pick.setShortcut("Ctrl+G")
+
+    for action in (forward, back, pick):
+        action.setEnabled(on_window is not None)
+    if on_step_window is not None:
+        forward.triggered.connect(lambda _=False: on_step_window(+1))
+        back.triggered.connect(lambda _=False: on_step_window(-1))
+    if on_window is not None:
+        pick.triggered.connect(
+            lambda _=False: _ask_window(host, session, on_window))
+
+
+def _ask_window(host: QMainWindow, session: ReviewSession, on_window) -> None:
+    """Where to, and how long for. Two numbers, in the units the report uses.
+
+    Original-recording seconds, not seconds from the start of what is loaded:
+    that is what every time in this software is quoted in, and asking for one
+    convention while displaying another is how someone ends up reviewing a
+    different minute than the one they meant.
+    """
+    from qtpy.QtWidgets import QInputDialog
+
+    request = session.request
+    length = request.t_stop - request.t_start
+    start, ok = QInputDialog.getDouble(
+        host, "Go to window",
+        "Start, in seconds from the beginning of the original recording:",
+        float(request.t_start), 0.0, 1e7, 1)
+    if not ok:
+        return
+    span, ok = QInputDialog.getDouble(
+        host, "Go to window", "Length, in seconds:", float(length), 1.0,
+        3600.0, 1)
+    if not ok:
+        return
+    on_window(float(start), float(start) + float(span))
 
 
 def _load_coordinates(host: QMainWindow, session: ReviewSession, panels: dict,

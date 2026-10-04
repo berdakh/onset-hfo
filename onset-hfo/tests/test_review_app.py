@@ -162,6 +162,120 @@ def test_restoring_the_default_layout_undoes_a_dock_drag(built):
         brain.setFloating(was_floating)
 
 
+# -- moving through the recording -------------------------------------------
+
+
+def test_the_review_menu_moves_to_another_window(built):
+    menu = [action.menu() for action in built.host.menuBar().actions()
+            if "Review" in action.text()][0]
+    entries = {action.text().replace("&", ""): action for action in menu.actions()
+               if action.text()}
+    assert "Next window" in entries
+    assert "Previous window" in entries
+    assert "Go to window…" in entries
+    assert entries["Next window"].shortcut().toString() == "Ctrl+Shift+Right"
+    # Disabled rather than missing when the caller cannot re-analyse: an entry
+    # that silently does nothing is worse than one that says it cannot.
+    assert not entries["Next window"].isEnabled()
+
+
+def test_stepping_asks_for_the_next_window_of_the_same_length(review):
+    """The arithmetic, without the loader: a window is moved by its own length,
+    and never before the start of the recording."""
+    import dataclasses
+
+    from onset_review.app import _Review
+
+    asked = []
+
+    class _Fake(_Review):
+        def __init__(self):
+            self.request = dataclasses.replace(review.request, t_start=60.0,
+                                               t_stop=120.0)
+            self.parts = None
+
+        def _rerun(self, **changes):
+            asked.append(changes)
+
+    mover = _Fake()
+    mover.step_window(+1)
+    assert asked == [{"t_start": 120.0, "t_stop": 180.0}]
+
+    asked.clear()
+    mover.step_window(-1)
+    assert asked == [{"t_start": 0.0, "t_stop": 60.0}]
+
+
+def test_the_first_window_does_not_step_back_past_the_start(review):
+    import dataclasses
+
+    from onset_review.app import _Review
+
+    asked = []
+
+    class _Fake(_Review):
+        def __init__(self):
+            self.request = dataclasses.replace(review.request, t_start=0.0,
+                                               t_stop=60.0)
+            self.parts = None
+
+        def _rerun(self, **changes):
+            asked.append(changes)
+
+    mover = _Fake()
+    mover.step_window(-1)
+    assert asked == []
+
+
+def test_a_window_of_no_length_is_refused(review):
+    import dataclasses
+
+    from onset_review.app import _Review
+
+    asked = []
+
+    class _Fake(_Review):
+        def __init__(self):
+            self.request = dataclasses.replace(review.request)
+            self.parts = None
+
+        def _rerun(self, **changes):
+            asked.append(changes)
+
+    mover = _Fake()
+    mover.go_to_window(30.0, 30.0)
+    mover.go_to_window(30.0, 10.0)
+    assert asked == []
+
+
+def test_the_reader_is_carried_to_the_next_window(review):
+    """A reviewer who named themselves and then moved to the next minute is
+    the same person. Being asked again at every window is how a reader learns
+    to click past the question."""
+    import dataclasses
+    import types
+
+    from onset_review.adjudication import Adjudication
+    from onset_review.app import _Review
+
+    previous = types.SimpleNamespace(
+        session=types.SimpleNamespace(read=Adjudication(reader="Dr Smith")))
+
+    class _Fake(_Review):
+        def __init__(self):
+            self.request = review.request
+            self.parts = previous
+            self.args = types.SimpleNamespace(reader=None)
+
+    nxt = dataclasses.replace(review, read=Adjudication())
+    nxt.request = dataclasses.replace(review.request, t_start=600.0,
+                                      t_stop=660.0)
+    _Fake()._attach_read(nxt)
+    assert nxt.read.reader == "Dr Smith"
+    # ...and the verdicts do not come with them: they were about other signal.
+    assert nxt.read.counts()["judged"] == 0
+
+
 # -- electrode coordinates --------------------------------------------------
 
 

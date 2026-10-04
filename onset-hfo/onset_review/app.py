@@ -327,7 +327,9 @@ class _Review:
                                      on_preprocess=self.reanalyse,
                                      on_import=self.import_file,
                                      on_quality=self.requality,
-                                     on_electrodes=self.use_coordinates)
+                                     on_electrodes=self.use_coordinates,
+                                     on_window=self.go_to_window,
+                                     on_step_window=self.step_window)
         maximised = False
         if state is not None:
             # Restored after the docks exist and before the window is shown, so
@@ -374,10 +376,42 @@ class _Review:
         from onset_review import adjudication
 
         stored = adjudication.load(session.request)
-        if self.args.reader and not stored.reader:
-            stored.reader = self.args.reader.strip()
+        if not stored.reader:
+            # Carried from the window being replaced. A reviewer who named
+            # themselves and then moved to the next minute is the same person,
+            # and being asked again at every window is how a reader learns to
+            # click past the question.
+            carried = (self.parts.session.read.reader
+                       if self.parts is not None else "")
+            stored.reader = (carried or (self.args.reader or "")).strip()
         session.read = adjudication.reconcile(stored, session.events)
         self._orphans = len(session.read.orphaned)
+
+    def go_to_window(self, t_start: float, t_stop: float) -> None:
+        """Analyse a different stretch of the same recording.
+
+        The question this software exists to make someone ask is whether the
+        answer holds in the next minute -- across these twenty patients the
+        annotators' own busiest fast-ripple channel is the same channel in only
+        7 of 20 when one minute is compared against another of the same
+        recording. Making that cost a trip back through the open dialog is
+        making it cost more than it is worth.
+        """
+        t_start = max(0.0, float(t_start))
+        t_stop = float(t_stop)
+        if t_stop <= t_start:
+            return
+        self._rerun(t_start=t_start, t_stop=t_stop)
+
+    def step_window(self, direction: int) -> None:
+        """The same window length, one window forward or back."""
+        length = self.request.t_stop - self.request.t_start
+        start = self.request.t_start + direction * length
+        if start < 0:
+            start = 0.0
+        if start == self.request.t_start:
+            return
+        self.go_to_window(start, start + length)
 
     def use_coordinates(self, path) -> None:
         """Remember the coordinate file, without re-running the analysis.
@@ -442,6 +476,14 @@ class _Review:
         session = launcher.load_with_progress(request, self.args.cache_dir,
                                               parent=self.parts.host)
         if session is None:
+            # The loader has already said what went wrong in its own dialog.
+            # This is the sentence that says what it was trying to do, because
+            # "could not fetch" without "the minute you asked for" leaves a
+            # reviewer wondering what they just lost.
+            self.parts.host.statusBar().showMessage(
+                f"Still showing {self.request.t_start:g}–"
+                f"{self.request.t_stop:g} s: the window you asked for could "
+                f"not be loaded.", 12000)
             return
         self.request = request
         self.open(session)

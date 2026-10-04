@@ -72,6 +72,13 @@ deleted. The exported review says how much of the window you actually judged,
 which events you rejected and why, and quotes a confirmed rate only for the
 contacts you finished.
 
+**Review → Next window** re-analyses the next stretch of the same recording
+without a trip back through the open dialog, carrying your name, your
+coordinates and your layout. That is the one step this software most wants you
+to take: across these twenty patients the annotators' own busiest fast-ripple
+channel is the same channel in only 7 of 20 when one minute is compared with
+another minute of the *same* recording.
+
 The 3D view says *schematic* because neither public archive ships
 `electrodes.tsv`. Your patients have coordinates — a post-implant CT
 coregistered to the planning MRI — so **Review → Electrode coordinates…** takes

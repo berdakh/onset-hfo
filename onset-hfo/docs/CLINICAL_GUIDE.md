@@ -623,7 +623,12 @@ its citation. If a number on screen ever has to be defended, it starts here.
     the report under your name — including the ones where you disagreed. Mark
     the contact itself *Ignore it* if the answer is that its signal is not
     worth counting.
-12. Now the same patient's **second minute** (60–120 s). Does the answer hold?
+12. Now the same patient's **second minute** — **Review → Next window**
+    (`Ctrl+Shift+Right`), which re-analyses the next stretch of the same
+    length and keeps your name, your coordinates and your panel layout.
+    **Go to window…** (`Ctrl+G`) takes you anywhere in the recording, in the
+    same original-recording seconds every time in this software is quoted in.
+    Does the answer hold?
 
 Step 12 is the one most worth doing, and the one most likely to surprise you.
 Across these twenty patients, the annotators' own busiest fast-ripple channel
