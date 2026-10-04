@@ -130,11 +130,65 @@ directory can change what the agent believes.
 | `ollama` | a local machine | `ollama pull qwen2.5:7b-instruct && ollama serve`, then `--backend ollama` |
 | `openai_compat` | vLLM, llama.cpp server, LM Studio, a GPU box | `--backend openai_compat --model <name> --base-url http://host:8000/v1` |
 | `transformers` | Colab, in-process | `--backend transformers --model Qwen/Qwen2.5-7B-Instruct` |
+| `auto` | you do not know what your machine can run | `--backend auto` |
 
 ```bash
 python -m onset_agent.cli --results artifacts/results/sub-pt01_ictal_run-01 \
        --backend ollama --model qwen2.5:7b-instruct --chat
 ```
+
+### Letting it choose the model
+
+`--backend auto` looks at the machine, picks the largest Qwen2.5-Instruct that
+will actually run on it, downloads the weights if they are not cached, and
+loads them. To see the decision without committing to a download:
+
+```bash
+python -m onset_agent.cli --hardware          # needs no --results
+```
+
+```
+[onset-agent] cuda, 8 core(s), 32.0 GB RAM, 500.0 GB free
+[onset-agent] GPU: NVIDIA GeForce RTX 4090, 24.0 GB
+
+model        Qwen/Qwen2.5-7B-Instruct
+load as      fp16 on cuda
+needs        18.1 GB of a 24.0 GB budget
+download     15.3 GB
+fits         yes
+```
+
+The sizing lives in [`onset_agent/hardware.py`](../onset_agent/hardware.py) as
+a pure function of a described machine, so the policy is tested against a 4 GB
+laptop GPU, an Apple unified-memory box and a Raspberry Pi without owning any
+of them.
+
+**What the policy is, and why it is not "biggest that fits".**
+
+1. Among models that fit at **fp16**, take the largest. Quantization trades
+   accuracy for room; it is a concession to a small card, not a way to claim a
+   bigger parameter count.
+2. If nothing at or above 7B fits unquantised, take **7B quantised** rather
+   than a larger model at a more aggressive quantization. On a 16 GB card both
+   7B-at-8-bit and 14B-at-4-bit fit — and 7B is the only size whose tool
+   calling this project has actually watched work.
+3. Only then go smaller, and say so bluntly.
+
+**Three things it will not do.** It never selects 8-bit or 4-bit without CUDA,
+because `bitsandbytes` has no CPU or Metal path and discovering that *after* a
+15 GB download is a bad afternoon. It refuses a download before spending a byte
+if the disk cannot hold the result. And it never silently substitutes a smaller
+model for one you asked for by name — a caller who requested 14B and quietly
+got 1.5B would draw conclusions about weights they never ran.
+
+**What it does not tell you.** Whether the chosen size is *good enough at this
+task*. Fitting in memory and being competent at tool-constrained evidence work
+are different properties, and this project has measured the second for no Qwen
+size at all — [`onset_agent/benchmark.py`](../onset_agent/benchmark.py) exists
+to measure it and has never been run under a real model. Every choice carries
+that warning in its own output, because a 3B model that loads cleanly and then
+fails the guards looks like broken software rather than a model out of its
+depth.
 
 **On model size.** Qwen2.5-7B-Instruct calls these tools reliably.
 Qwen2.5-1.5B-Instruct (the free-Colab default) does not, and that is worth
