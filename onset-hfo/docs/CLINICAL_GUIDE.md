@@ -60,9 +60,33 @@ dataset — what the original annotators marked on the same minute.
 └───────────────────────────────────────────────────────────────────┘
 ```
 
-Every panel can be dragged, floated, closed and reopened from **View**. The
-four at the bottom right share a tab stack; drag one out by its title bar to
-give it a window of its own.
+There are eleven panels and the window does not show them all at once, because
+a screen with eleven docked panels on it is one you have to tidy before you can
+use it. **View** opens with three layouts, one per stage of the work:
+
+| layout | | what it shows | for |
+|---|---|---|---|
+| **Screening** | `Alt+1` | trend, trace, findings, events, contacts | is there anything in this window, and where? |
+| **Reading** | `Alt+2` | trace, findings, events, this event, assistant | is this particular event real, and what do I think of it? |
+| **Reporting** | `Alt+3` | findings, quality, preprocessing, provenance, agreement, patient | what was done to the signal, and against what |
+
+They are not modes. Nothing is destroyed or disabled — every panel is one tick
+away further down **View**, **Everything at once** shows the lot, and a panel
+you tick back on stays on. The layouts are starting arrangements, not rules.
+
+Every panel can also be dragged, floated, closed and reopened. Panels in the
+same corner share a tab stack; drag one out by its title bar to give it a
+window of its own — worth doing for the 3D view and for **This event**, both of
+which are better large.
+
+The window opens at the size of your screen and no larger — maximised if it
+would otherwise have overflowed. The rest of **View** is about the window
+itself: **Restore the default layout** puts dragged panels back, **Fit the
+window to this screen** (`Ctrl+0`) is for after a second monitor or an
+over-wide layout, and **Maximise window** and **Full screen** (`F11`) work
+whatever your window manager does with title bars. On a short screen a panel
+scrolls rather than the window overflowing; the 3D view in particular is worth
+more height than a laptop's tab stack has, which is why it is floatable.
 
 ### Trend — read this first
 
@@ -96,6 +120,16 @@ is a smudge; at 1 s it is an oscillation you can count the cycles of. Marking
 and rejecting events is done by the detector at full resolution regardless —
 this only changes what you can see.
 
+The amplitude readout is in **microvolts**. It is MNE's own scale bar — the one
+drawn on the trace, so the two cannot disagree — converted from the millivolts
+it is written in, because nobody judging a 90 µV ripple wants to do arithmetic
+around "0.1 mV".
+
+Hovering **Window** tells you the paper speed that length corresponds to: ten
+seconds is a standard clinical page, 300 mm at 30 mm/s, so five seconds is
+60 mm/s and twenty is 15. It is an equivalence and the tooltip says so — this
+software does not know how wide your monitor is and does not pretend to.
+
 ### Trace — the signal
 
 This is `mne-qt-browser`, the viewer MNE-Python ships, embedded rather than
@@ -127,6 +161,8 @@ Sorted by events per minute, busiest first. The columns that matter:
 |---|---|
 | **Rate /min** | events per minute on that channel |
 | **95% low / high** | the range the true rate plausibly lies in, given how few events a minute holds |
+| **My read** | your own verdict on the contact — see [**Recording your read**](#recording-your-read) |
+| **Judged** | how many of its ranked events you have given a verdict on |
 | **Expert looked** | whether the archive's annotators reviewed this channel at all |
 | **Expert events / min** | what they marked on it |
 
@@ -152,10 +188,115 @@ interictal discharge.
 reason — useful when you can see something on the trace and want to know why it
 is not marked.
 
+The **My read** column and the row of buttons under the table are yours; see
+below.
+
 `Prom dB` is the one column that is not self-explanatory: how far the
 oscillation rises above the recording's own background at that frequency. It is
 what separates a real oscillation from the ringing a filter produces when it
 hits a sharp transient, which is the classic way HFO detectors fool themselves.
+
+### This event — the picture the judgement is made on
+
+Select an event anywhere and this panel shows it three ways on one time axis.
+It is the view to use before you press `A` or `D`, and the reason the two keys
+mean anything.
+
+**Top — wideband.** The signal as the detector saw it: high-passed, notched and
+re-referenced. *Not* unprocessed, and the panel says so, because the one view
+whose job is to let you check the analysis must not claim to show you something
+it is not showing you. What you are looking for here is whatever the event is
+sitting on — a discharge, a step, a movement artifact.
+
+**Middle — the detector's band.** What made it fire. On its own this is not
+evidence, which is exactly why it is not shown on its own.
+
+**Bottom — time-frequency.** This is the discriminator, and the single most
+useful picture in the software:
+
+> **A real oscillation is an island.** Energy confined to a band of frequencies
+> and lasting several cycles.
+>
+> **Filter ringing is a column.** A sharp transient is broadband by definition,
+> so its energy runs the whole height of the plot at one instant — and the
+> middle trace, which looks like a perfectly good ripple, is the filter's work
+> and not the brain's.
+
+Band-passing an interictal spike produces something with the right frequency,
+the right duration and a plausible amplitude. It is the largest single source
+of false HFO detections in the literature and no amount of counting
+distinguishes it. Two of these pictures side by side do, immediately.
+
+The colours are decibels above the 0.4 s either side of the event, not an
+absolute scale: every brain recording has far more energy at 10 Hz than at
+200 Hz, so an absolute scale would show the bottom of the plot lit and nothing
+else. The frequency axis deliberately runs wider than the detector's band in
+both directions — down, so you can see the discharge a ripple is riding on, and
+up, so you can see an HFO riding on a discharge. A plot restricted to the
+detector's own band would agree with the detector by construction.
+
+`onset_hfo.validate` already rejects candidates on a spectral-peak criterion
+for this reason, and `Prom dB` on every event is that criterion's number. This
+panel does not second-guess it; it shows you what it was computed from, so that
+agreeing or disagreeing with the software is something you do from evidence.
+
+### Recording your read
+
+Everything above this line is an algorithm's opinion. This part is yours, and
+it is kept separate from the detector's output everywhere — on screen, in the
+stored file and in the exported report — because the two are different kinds of
+claim. The detector's output is reproducible; yours is not, which is exactly
+why it carries your name and the time you gave it.
+
+**Say who you are first.** The window asks once, before it records the first
+verdict, and will not record an anonymous one. A judgement nobody can be asked
+about afterwards cannot be used for anything — not a report, not a second
+opinion, not a disagreement. `onset-review --reader "Dr Smith"` skips the
+question. The status bar shows whose read it is and how much has been judged.
+
+**Judging an event.** Select it in the **Events** list and press one key:
+
+| key | verdict | meaning |
+|---|---|---|
+| `A` | real | a genuine event |
+| `D` | not real | artifact, filter ringing, or not an oscillation |
+| `U` | cannot tell | genuinely ambiguous — recorded as such, and counted as neither |
+| `Backspace` | — | take the verdict back |
+| `N` | — | add a sentence saying why |
+
+The selection moves on by itself after each one, so a long list is one key per
+event. The letters work while the events list has focus; **Read → …**
+(`Ctrl+1`, `Ctrl+2`, `Ctrl+3`) does the same from anywhere, and **Read → Next
+unjudged event** (`Ctrl+J`) skips what you have already done.
+
+**Judging a contact.** In **Findings**, *Count it*, *Ignore it* or *Cannot
+tell*. "Ignore it" does not delete anything or change a rate — the number stays
+on screen and your verdict goes in the report beside it. Nothing in this
+software removes a measurement because a person disagreed with it; it records
+that they did.
+
+**Read → Note on this window…** is where your conclusion goes. It is exported
+with the review.
+
+#### What is saved, and what survives
+
+Every verdict is written to disk the moment you give it. There is no save
+button and nothing to lose.
+
+Your verdicts are filed against the *recording and the window* — not against
+the detector settings. So changing a filter, a threshold or the quality stage
+and re-running keeps them: the software re-attaches each one to the matching
+event, allowing for the few milliseconds an onset moves when a threshold
+changes. A verdict with no matching event left is **not deleted**. It is kept
+in the file, counted in the report, and comes back if you undo the change. The
+status bar tells you when that has happened and how many.
+
+The report says three things whether or not they flatter the read: how much of
+the window was actually judged, which events you rejected and why, and how many
+verdicts no longer match an event. A partial read is labelled as one, and a
+**confirmed rate** is quoted for a contact only when every one of its ranked
+events carries a verdict — anywhere else it would be a confirmed count divided
+by the whole window, which would understate a contact you had not finished.
 
 ### Patient — who this recording belongs to
 
@@ -228,6 +369,43 @@ view turns to face it. **View** gives you the standard angles.
 > tell them from each other, and their positions and sides mean nothing at all.
 > Even then, which contacts share an electrode and their order along it are
 > real, and that is usually the question.
+
+#### Giving it the real coordinates
+
+Everything above is true of a recording that arrives without electrode
+positions, which is every recording in both public archives. It is not true of
+your patients. A post-implant CT coregistered to the planning MRI gives real
+coordinates for every contact; they are simply in the planning system rather
+than in the archive.
+
+**Review → Electrode coordinates…** takes that file. A BIDS `electrodes.tsv`,
+or a CSV out of anything else — the columns may be called `name`/`label` and
+`x`/`y`/`z` or `R`/`A`/`S`, in any order, comma- or tab-separated, with or
+without a header. Millimetres and metres are told apart by magnitude and the
+software says which way it read them.
+
+Before anything moves you are told what the file would do: *"47 of 64 contacts
+placed, read as millimetres. 17 contacts are not in the file and stay
+schematic: …"*. That is a thing to decide about rather than discover from a
+picture that looks finished and is half guessed. A file whose names match
+nothing is refused outright, and a contact written `n/a` is left unplaced
+rather than drawn at the origin, where it would form a cluster at the centre of
+the head that looks like a finding.
+
+Once applied, the caption stops saying *schematic* and names the file instead —
+it does not claim the dataset supplied them, because it did not. Sides come
+from the coordinates rather than from the electrode names, so names with no
+`L`/`R` stop reading "side unknown". The file is remembered, so widening a
+notch and re-running does not mean finding it again.
+
+Two things this still does not do. The surface stays a reference shape, not
+your patient's cortex: positions relative to each other are what the clinical
+question needs and what a coordinate file gives. And nothing here can check
+*which space* the coordinates are in — scanner, MNI and a planning system's own
+frame all look identical in a four-column file.
+
+**Nothing about a rate changes.** Coordinates move dots; they do not move
+events.
 
 ### Detector vs expert
 
@@ -425,6 +603,67 @@ its citation. If a number on screen ever has to be defended, it starts here.
 
 ---
 
+## Analysing more than a minute
+
+A minute is enough to demonstrate a method and not enough to measure a patient.
+Clinical HFO rates are quoted from ten-minute or hour-long interictal windows,
+and an hour of 2 kHz signal on 64 channels is 3.7 GB before a single filter
+runs — which is why, until now, this software analysed what it could hold.
+
+```bash
+onset-review --open /data/study.edf --window 0 60 --span 600
+```
+
+**Analyse ten minutes, look at one of them.** The ranking, the confidence
+intervals, the trend, the event list and the quality verdicts all cover the
+whole span; the trace holds the minute you asked for. The status bar says so in
+as many words, because every rate on the screen is then over ten minutes while
+the signal under it is over one, and that is not a thing to leave anyone to
+work out.
+
+**Click any event and the minute it is in loads.** Nothing is re-analysed —
+the ranking, the events and your own verdicts belong to the span and would be
+wrong to recompute. The trend is the place to look first: it is the one view
+that shows all ten minutes at once, so a bright patch at 7:20 is how you find
+the minute worth loading.
+
+Times in the tables count from the start of the **span**, not from the start of
+the loaded trace, and `File time s` is the recording's own seconds as always.
+Your verdicts are filed against the span, so working a ten-minute read does not
+leave ten separate files behind.
+
+### What it costs, exactly
+
+The analysis runs in chunks with the signal let go between them, and reads the
+recording twice — once to measure every detector's threshold over the *whole*
+span, once to detect with those fixed numbers. That second pass is the price of
+an answer that does not depend on where the chunk boundaries fell, and it is
+the defect this project refuses to reintroduce: a busy five minutes that
+measured its own threshold would hide its own events.
+
+Measured on 200 s of synthetic signal, chunks of 30 s, 60 s and 100 s give
+**byte-identical** HFO events — same channels, same onsets to the last decimal.
+Against the same signal analysed in one piece they are the same events, one for
+one, with onsets agreeing to floating point where the baseline sketch holds
+every sample and to within 6.5 ms where it subsamples.
+
+Two things are not chunk-independent, and the software says both rather than
+leaving you to find them:
+
+* **Discharge counts move a little.** The spike detector takes its threshold
+  from the data it is given and has no baseline to inject. Over that same
+  200 s, 30/60/100 s chunks give 597/600/601 discharges — a spread of 0.7%.
+* **Quality verdicts are per chunk.** There is no honest way to merge ten
+  chunks' medians into one whole-span median without rewriting the stage, so
+  this does not pretend to: each chunk is judged, a contact set aside in any
+  chunk is set aside for the span, and the Quality panel's `chunks_bad` column
+  says how many chunks condemned it. Conservative on purpose — a contact flat
+  for one minute in ten is not one whose ten-minute rate means anything — and
+  visible, so you can disagree.
+
+Below 180 s nothing is chunked: the span fits in memory, the direct path is
+simpler, and none of the caveats above apply.
+
 ## 3. Working through a patient
 
 1. Open **sub-01**, the first minute, the ripple band. Leave the threshold at
@@ -449,9 +688,20 @@ its citation. If a number on screen ever has to be defended, it starts here.
     trace before you read its rank — the software is telling you it cannot
     tell a noisy amplifier from a great deal of real activity. On sub-13 the
     two flagged contacts are the ones the annotators marked most heavily.
-11. Now the same patient's **second minute** (60–120 s). Does the answer hold?
+11. Now **work the list**. Select the busiest channel, filter Events to it, and
+    press `A`/`D`/`U` down the list. Twenty events will tell you more about
+    whether to believe the rate than any column will, and your verdicts go in
+    the report under your name — including the ones where you disagreed. Mark
+    the contact itself *Ignore it* if the answer is that its signal is not
+    worth counting.
+12. Now the same patient's **second minute** — **Review → Next window**
+    (`Ctrl+Shift+Right`), which re-analyses the next stretch of the same
+    length and keeps your name, your coordinates and your panel layout.
+    **Go to window…** (`Ctrl+G`) takes you anywhere in the recording, in the
+    same original-recording seconds every time in this software is quoted in.
+    Does the answer hold?
 
-Step 11 is the one most worth doing, and the one most likely to surprise you.
+Step 12 is the one most worth doing, and the one most likely to surprise you.
 Across these twenty patients, the annotators' own busiest fast-ripple channel
 is the same channel in only **7 of 20 patients** when you compare one minute of
 a recording against another minute of the *same* recording. That is the

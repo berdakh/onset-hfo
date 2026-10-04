@@ -35,11 +35,12 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
-from onset_review import report, theme
+from onset_review import adjudication, report, theme
 from onset_review.assistant import AssistantPanel
 from onset_review.brainview import BrainPanel
 from onset_review.controls import AMPLITUDE_STEP, TraceControls
 from onset_review.dataquality import QualityPanel
+from onset_review.eventview import EventDetailPanel
 from onset_review.panels import (
     AgreementPanel,
     EventsPanel,
@@ -52,6 +53,7 @@ from onset_review.preprocessing import PreprocessPanel
 from onset_review.session import BAND_COLOURS, ReviewSession, annotations_for
 
 __all__ = ["decorate", "open_trace", "has_dock_host", "marks_for",
+           "fit_to_screen", "work_area",
            "ReviewWindowParts", "MARK_SCOPES"]
 
 #: How much of the detection gets drawn on the trace. This is the single most
@@ -79,6 +81,114 @@ DEFAULT_N_CHANNELS = 12
 #: Volts per display unit. 50 µV is the scale the HFO literature plots filtered
 #: ripples at; the reviewer rescales with the usual MNE keys from there.
 DEFAULT_SCALING = 50e-6
+
+#: The three stages of a read, and which panels each one needs. Eleven docks
+#: visible at once is a developer's dashboard: the tabs elide to "Prepro...",
+#: nothing has room, and a reviewer has to curate the window before they can
+#: use it. These are not modes -- every panel stays one click away in View,
+#: and a reviewer who drags something back is not fought -- they are the
+#: starting arrangements for the three things someone actually does here.
+#:
+#: Screening: is there anything in this window, and where? Reading: is this
+#: particular event real, and what do I think of it? Reporting: what was done
+#: to the signal, what was fit to analyse, and against what.
+#: Each entry is (what the stage is for, the panels it shows, the one to put
+#: in front). The third field is explicit rather than "the first tabbed one",
+#: because which panels share a tab stack is a layout detail of `decorate` and
+#: a layout that opened on whichever tab happened to be in front is not a
+#: layout.
+LAYOUTS = {
+    "Screening": ("Look for the activity",
+                  ("trends", "controls", "findings", "events", "brain"),
+                  "brain"),
+    "Reading": ("Judge it event by event",
+                ("controls", "findings", "events", "detail", "assistant"),
+                "detail"),
+    "Reporting": ("Check what was done and against what",
+                  ("findings", "quality", "preprocess", "provenance",
+                   "agreement", "patient"),
+                  "quality"),
+}
+
+#: The layout a window opens in. Screening, because the first question about a
+#: window is always whether there is anything in it.
+DEFAULT_LAYOUT = "Screening"
+
+#: Window-wide shortcuts for the reader's verdicts, as `Ctrl`+digit. The
+#: events panel also binds the bare letters A/D/U while it has focus; these
+#: are the discoverable half of the same pair, and digits rather than letters
+#: because `Ctrl+A` is select-all everywhere in the world.
+EVENT_SHORTCUTS = {"agree": "1", "disagree": "2", "unsure": "3"}
+
+#: The opening layout, as a fraction of the screen's work area with pixel
+#: bounds: the right-hand column of panels, then the trend strip above the
+#: trace. Fractions rather than fixed pixels because the fixed pixels were
+#: chosen against a 1680-wide window, and on a 1366x768 laptop they gave a
+#: 640 px column of panels beside a 700 px trace -- the wrong way round, since
+#: the trace is the thing being judged and the panels only describe it.
+COLUMN_FRACTION, COLUMN_BOUNDS = 0.34, (380, 640)
+TREND_FRACTION, TREND_BOUNDS = 0.22, (150, 260)
+
+#: Vertical shares of the right-hand column: the findings table, the events
+#: table, and the tab stack under them. Qt scales them to whatever height the
+#: column has, so they are a ratio as much as a size.
+COLUMN_SPLIT = (300, 240, 420)
+
+
+def work_area(widget=None):
+    """The usable rectangle of the screen `widget` is on, or None if headless.
+
+    `availableGeometry` rather than `geometry`: the taskbar, dock or top panel
+    is exactly the strip a maximised window may not have, and a window sized
+    to the full screen height opens with its status bar -- the one carrying the
+    not-a-medical-device caveat -- hidden underneath it.
+    """
+    from qtpy.QtGui import QGuiApplication
+
+    screen = None
+    if widget is not None:
+        try:
+            screen = widget.screen()
+        except AttributeError:      # Qt < 5.14 has no QWidget.screen()
+            screen = None
+    screen = screen or QGuiApplication.primaryScreen()
+    return None if screen is None else screen.availableGeometry()
+
+
+def fit_to_screen(host) -> bool:
+    """Bring `host` inside the screen's work area, and say if it did not fit.
+
+    A True return is the caller's cue to open the window maximised instead of
+    at this size.
+
+    MNE's browser picks its own opening size, around 1680x1160. That is most
+    of a 1920x1200 desktop and larger than a laptop screen in both directions,
+    so the window opened with its right-hand edge and its status bar off the
+    screen. It also opened *without a maximise button*, which is the same bug
+    seen from the window manager's side: a window whose minimum size does not
+    fit the work area cannot be maximised into it, so the button is withheld.
+    Hence both halves of the fix -- the panels' minimums came down (see
+    `theme.scrolled` and `panels.MIN_TABLE_HEIGHT`) so that the window *can*
+    fit, and this clamps the opening size so that it *does*.
+    """
+    area = work_area(host)
+    if area is None:
+        return False
+    want = host.size().expandedTo(host.minimumSizeHint())
+    over = want.width() > area.width() or want.height() > area.height()
+    host.resize(min(want.width(), area.width()),
+                min(want.height(), area.height()))
+    # Centred on what is left rather than left where it was: a window that was
+    # just made smaller is otherwise still anchored to a corner off the screen.
+    size = host.size()
+    host.move(area.x() + max(0, area.width() - size.width()) // 2,
+              area.y() + max(0, area.height() - size.height()) // 2)
+    return over
+
+
+def _share(extent: int, fraction: float, bounds: tuple) -> int:
+    low, high = bounds
+    return max(low, min(high, int(extent * fraction)))
 
 
 class ReviewWindowParts:
@@ -243,14 +353,22 @@ def goto(figure, t: float, channel: str | None = None,
             top = min(max(0, row - on_screen // 2),
                       max(0, len(names) - on_screen))
             try:
-                figure.mne.plt.setYRange(top, top + on_screen, padding=0.0)
+                # `+ 1` because that is MNE's own convention, and getting it
+                # wrong is not a cosmetic error: the browser recomputes
+                # `n_channels` as `round(y1 - y0 - 1)` whenever the range
+                # changes, so a range of exactly `on_screen` tells it to show
+                # one channel fewer. Every click on an event cost a channel,
+                # and after a dozen the trace was empty and MNE raised inside
+                # its own redraw. Showing N channels spans N + 1 units.
+                figure.mne.plt.setYRange(top, top + on_screen + 1, padding=0.0)
             except Exception:
                 pass
 
 
 def decorate(figure, session: ReviewSession, show_expert: bool = False,
-             on_preprocess=None, on_import=None,
-             on_quality=None) -> ReviewWindowParts:
+             on_preprocess=None, on_import=None, on_quality=None,
+             on_electrodes=None, on_window=None, on_step_window=None,
+             on_trace_at=None) -> ReviewWindowParts:
     """Add the menus, the toolbar, the panels and the caveat to MNE's window.
 
     `on_preprocess` is called with a new `PreprocessConfig` when the reviewer
@@ -274,6 +392,7 @@ def decorate(figure, session: ReviewSession, show_expert: bool = False,
         "patient": PatientPanel(session),
         "brain": BrainPanel(session, resection=session.resection,
                             electrodes=session.electrodes),
+        "detail": EventDetailPanel(session),
         "assistant": AssistantPanel(session),
         "preprocess": PreprocessPanel(session),
         "quality": QualityPanel(session),
@@ -312,6 +431,13 @@ def decorate(figure, session: ReviewSession, show_expert: bool = False,
     dock("findings", "Findings — channels ranked by rate",
          Qt.RightDockWidgetArea, panels["findings"])
     dock("events", "Events", Qt.RightDockWidgetArea, panels["events"])
+    # The detail view goes in the working tab stack, not with the reference
+    # panels: it is read event by event alongside the list, which is the only
+    # thing in this window that is used as often as the trace.
+    close_up = dock("detail", "This event", Qt.RightDockWidgetArea,
+                    panels["detail"],
+                    "The selected event wideband, filtered and in "
+                    "time-frequency — is it an oscillation or filter ringing?")
     # Agreement and provenance are reference rather than working views, so they
     # share a tab stack and start behind the panels a reviewer uses minute to
     # minute.
@@ -346,33 +472,57 @@ def decorate(figure, session: ReviewSession, show_expert: bool = False,
                panels["quality"],
                "Data quality — which contacts and which seconds were "
                "analysed, which were only flagged, and why")
+    host.tabifyDockWidget(close_up, who)
     host.tabifyDockWidget(who, brain)
     host.tabifyDockWidget(brain, accord)
     host.tabifyDockWidget(accord, prov)
     host.tabifyDockWidget(prov, prep)
     host.tabifyDockWidget(prep, fit)
     host.tabifyDockWidget(fit, helper)
-    brain.raise_()
+    # The detail view opens in front: the first thing a reviewer does with a
+    # detection is look at it.
+    close_up.raise_()
     # A trend squeezed to a strip is unreadable, and Qt will squeeze it unless
     # the widget itself says otherwise; `resizeDocks` alone loses to the
     # central widget's own size policy.
-    panels["trends"].setMinimumHeight(170)
+    panels["trends"].setMinimumHeight(100)
     panels["controls"].setFixedHeight(panels["controls"].sizeHint().height())
-    host.resizeDocks([docks["trends"]], [260], Qt.Vertical)
-    host.resizeDocks([docks["findings"], docks["events"], brain, helper, prep,
-                      fit, who], [640] * 7, Qt.Horizontal)
+    area = work_area(host)
+    width = area.width() if area is not None else 1680
+    height = area.height() if area is not None else 1050
+    host.resizeDocks([docks["trends"]],
+                     [_share(height, TREND_FRACTION, TREND_BOUNDS)],
+                     Qt.Vertical)
+    column = [docks["findings"], docks["events"], brain, helper, prep, fit, who,
+              close_up]
+    host.resizeDocks(column,
+                     [_share(width, COLUMN_FRACTION, COLUMN_BOUNDS)]
+                     * len(column), Qt.Horizontal)
     # Vertical shares for the right-hand column. Without these the 3D view's
     # own minimum height wins the whole column and the two tables above it are
     # left showing one row each.
-    host.resizeDocks([docks["findings"], docks["events"], brain],
-                     [300, 240, 420], Qt.Vertical)
+    host.resizeDocks([docks["findings"], docks["events"], close_up],
+                     list(COLUMN_SPLIT), Qt.Vertical)
 
     parts = ReviewWindowParts(figure, host, panels, docks, session)
     parts.display = display
-    _wire(figure, host, panels, session, display, parts)
-    _menus(figure, host, panels, docks, session, display, parts,
-           on_import=on_import)
+    _wire(figure, host, panels, session, display, parts,
+          on_trace_at=on_trace_at)
     _status(host, session)
+    defaults: dict = {}
+    _menus(figure, host, panels, docks, session, display, parts,
+           defaults, on_import=on_import,
+           on_electrodes=on_electrodes, on_window=on_window,
+           on_step_window=on_step_window)
+    _set_reader_status(host, session)
+    # Opened in a layout rather than with everything showing: eleven docked
+    # panels at once is an arrangement a reviewer has to undo before they can
+    # work, and the first question about a window is always whether there is
+    # anything in it.
+    apply_layout(docks, DEFAULT_LAYOUT)
+    # Captured here, after the opening layout: "the default layout" has to mean
+    # what the window actually opened as, panels hidden and all.
+    defaults["state"] = host.saveState()
     if on_quality is not None:
         panels["quality"].applied.connect(on_quality)
     else:
@@ -397,7 +547,8 @@ def decorate(figure, session: ReviewSession, show_expert: bool = False,
 
 
 def _wire(figure, host, panels: dict, session: ReviewSession,
-          display: _Display, parts: ReviewWindowParts) -> None:
+          display: _Display, parts: ReviewWindowParts,
+          on_trace_at=None) -> None:
     """Make every panel's selection move the one trace, and the marks with it.
 
     The second half is what makes the default mark scope workable: choosing a
@@ -410,8 +561,22 @@ def _wire(figure, host, panels: dict, session: ReviewSession,
             parts.refresh_marks()
         if t is None:
             _goto_channel(figure, session, channel)
-        else:
-            goto(figure, t, channel, session)
+            panels["controls"].sync()
+            return
+        # When the analysed span is longer than the trace, most of the events
+        # in the list are not in the signal on screen. Scrolling to the edge
+        # of the loaded minute and stopping there would look like the trace
+        # had gone to the event; this loads the minute the event is actually
+        # in instead. Nothing is re-analysed -- see `session.reload_trace`.
+        if not _on_screen(session, t):
+            if on_trace_at is None:
+                return
+            on_trace_at(_file_time(session, t))
+            return
+        # `goto` works in the trace's own seconds, which are the span's only
+        # while the trace starts where the span does.
+        goto(figure, _file_time(session, t) - float(session.t_offset),
+             channel, session)
         # The control bar reads its values out of the browser rather than
         # keeping its own, so anything that moves the view has to tell it to
         # look again -- otherwise its "At" box says where the reviewer was
@@ -419,20 +584,60 @@ def _wire(figure, host, panels: dict, session: ReviewSession,
         panels["controls"].sync()
 
     panels["events"].eventPicked.connect(lambda t, channel: select(channel, t))
+    # The detail view follows the event list and nothing else: one place in
+    # the window decides which event is under discussion.
+    panels["events"].eventKeyPicked.connect(panels["detail"].show_key)
     panels["trends"].cellPicked.connect(lambda t, channel: select(channel, t))
     panels["findings"].channelPicked.connect(lambda channel: select(channel))
     panels["agreement"].channelPicked.connect(lambda channel: select(channel))
     panels["brain"].channelPicked.connect(lambda channel: select(channel))
     # A citation names a time in the archive's seconds, which is what a report
-    # quotes; the trace runs from zero, so the offset comes off here.
+    # quotes; the panels count from the start of the analysed span, so that
+    # comes off here.
     panels["assistant"].evidencePicked.connect(
-        lambda channel, t_file: select(channel, float(t_file) - session.t_offset))
+        lambda channel, t_file: select(channel,
+                                       float(t_file) - session.span[0]))
     # ...and the 3D view turns to face whatever was chosen elsewhere, so the
     # three views never disagree about which contact is under discussion.
     panels["findings"].channelPicked.connect(panels["brain"].highlight)
     # Picking a channel in the agreement table should move the findings table
     # with it, so the two never disagree about what is selected.
     panels["agreement"].channelPicked.connect(panels["findings"].select_channel)
+
+    # The reader's verdicts. There is no save button: a reviewer who has
+    # worked through three hundred events and lost them to a crash will not
+    # use this software again, and the write is a few kilobytes of JSON.
+    def keep_read(*_) -> None:
+        try:
+            adjudication.save(session.request, session.read)
+        except OSError as error:
+            # Said once, on the status bar, rather than in a modal that
+            # interrupts a reader mid-list. Losing the verdicts silently is
+            # the thing not to do; stopping the review is also not the thing
+            # to do.
+            host.statusBar().showMessage(
+                f"Could not save your read: {error}", 10000)
+
+    panels["events"].judged.connect(keep_read)
+    panels["findings"].channelJudged.connect(keep_read)
+    # Judging an event changes how much of its channel has been judged, which
+    # the findings table shows. Without this the progress column goes stale
+    # the moment the reader starts working.
+    panels["events"].judged.connect(
+        lambda *_: panels["findings"].refresh(
+            keep=panels["findings"].selected_channel()))
+
+
+def _file_time(session: ReviewSession, t_span: float) -> float:
+    """Span seconds, as the panels quote them, back to recording seconds."""
+    return float(t_span) + float(session.span[0])
+
+
+def _on_screen(session: ReviewSession, t_span: float) -> bool:
+    """Whether a time the panels quote is inside the signal the trace holds."""
+    when = _file_time(session, t_span)
+    return (float(session.request.t_start) - 1e-6 <= when
+            < float(session.request.t_stop) + 1e-6)
 
 
 def _goto_channel(figure, session: ReviewSession, channel: str) -> None:
@@ -471,10 +676,31 @@ def _status(host: QMainWindow, session: ReviewSession) -> None:
     # it again without an attribute smuggled onto someone else's widget.
     host.statusBar().addWidget(label, 1)
 
+    if session.scope():
+        # Between the caveat and the reader, because it is the same kind of
+        # statement as the caveat: a thing about the numbers that a reviewer
+        # must not have to go looking for.
+        scope = QLabel(session.scope())
+        scope.setObjectName("onset_scope")
+        scope.setStyleSheet(
+            f"padding:2px 8px;font-size:9pt;color:{theme.current().warn};")
+        host.statusBar().addWidget(scope)
+
+    # Whose read this is, on the right, permanently. The caveat says what the
+    # software thinks; this says who has signed up to it so far, and it is not
+    # something to have to open a menu to check.
+    reader = QLabel()
+    reader.setObjectName("onset_reader")
+    reader.setStyleSheet(
+        f"padding:2px 8px;font-size:9pt;color:{theme.current().text_muted};")
+    host.statusBar().addPermanentWidget(reader)
+
 
 def _menus(figure, host: QMainWindow, panels: dict, docks: dict,
            session: ReviewSession, display: _Display,
-           parts: ReviewWindowParts, on_import=None) -> None:
+           parts: ReviewWindowParts, defaults: dict,
+           on_import=None, on_electrodes=None, on_window=None,
+           on_step_window=None) -> None:
     """Menus and a toolbar, in the vocabulary of the task rather than the code."""
     menubar = host.menuBar()
 
@@ -490,11 +716,39 @@ def _menus(figure, host: QMainWindow, panels: dict, docks: dict,
     if on_import is not None:
         opener.triggered.connect(lambda _=False: on_import())
     file_menu.addSeparator()
+    _window_menu(file_menu, host, session, on_window, on_step_window)
+    file_menu.addSeparator()
+    places = file_menu.addAction("Electrode &coordinates…")
+    places.setToolTip(
+        "Place the contacts from a coordinate file — a BIDS electrodes.tsv, "
+        "or a CSV from a surgical planning system. The 3D view stops being a "
+        "montage diagram and becomes this patient's head.")
+    places.triggered.connect(
+        lambda _=False: _load_coordinates(host, session, panels, on_electrodes))
+    file_menu.addSeparator()
     file_menu.addAction("&Export review…", lambda: _export(host, session))
     file_menu.addSeparator()
     file_menu.addAction("&Close window", host.close)
 
     view = menubar.addMenu("&View")
+    # The layouts come first because they are the entries a reviewer wants
+    # most of the time; the eleven individual toggles below them are for the
+    # one panel the layout did not include.
+    for index, (name, (what, _, _focus)) in enumerate(LAYOUTS.items(), start=1):
+        entry = view.addAction(f"&{name}")
+        entry.setShortcut(f"Alt+{index}")
+        entry.setToolTip(what)
+        entry.triggered.connect(
+            lambda _=False, name=name: (
+                apply_layout(docks, name),
+                host.statusBar().showMessage(f"{name}: {LAYOUTS[name][0]}.",
+                                             6000)))
+    everything = view.addAction("E&verything at once")
+    everything.setToolTip("Every panel visible. There are eleven of them, and "
+                          "the tabs will not all fit.")
+    everything.triggered.connect(
+        lambda _=False: [dock.setVisible(True) for dock in docks.values()])
+    view.addSeparator()
     for dock_widget in docks.values():
         view.addAction(dock_widget.toggleViewAction())
     view.addSeparator()
@@ -519,6 +773,9 @@ def _menus(figure, host: QMainWindow, panels: dict, docks: dict,
     expert.toggled.connect(
         lambda on: (setattr(display, "expert", bool(on)), parts.refresh_marks()))
 
+    view.addSeparator()
+    _window_actions(view, host, docks, defaults)
+
     navigate = menubar.addMenu("&Navigate")
     navigate.addAction("&Next event", lambda: panels["events"].step(+1))
     navigate.addAction("&Previous event", lambda: panels["events"].step(-1))
@@ -533,10 +790,246 @@ def _menus(figure, host: QMainWindow, panels: dict, docks: dict,
                        lambda: controls._scale(1 / AMPLITUDE_STEP))
     navigate.addAction("Back to the start of the window", controls.go_home)
 
+    _read_menu(menubar, host, panels, session)
+
     help_menu = menubar.addMenu("&Help")
     help_menu.addAction("What am I looking at?", lambda: _about(host, session))
     help_menu.addAction("Keyboard shortcuts (MNE trace)",
                         lambda: _shortcuts(figure, host))
+
+
+def apply_layout(docks: dict, name: str) -> bool:
+    """Show the panels `name` calls for and hide the rest. False if unknown.
+
+    Hidden, not destroyed: every panel is still built, still wired and still
+    one click away in View, so switching layouts costs nothing and loses
+    nothing. A reviewer who wants the 3D view while reading gets it by
+    ticking it, and this does not fight them for it afterwards.
+    """
+    wanted = LAYOUTS.get(name)
+    if wanted is None:
+        return False
+    _, keep, focus = wanted
+    for key, dock in docks.items():
+        dock.setVisible(key in set(keep))
+    # `isHidden`, not `isVisible`: a dock inside a window that has not been
+    # shown yet is not "visible", and this runs during `decorate`, before the
+    # window is shown. The question being asked is whether this layout hid it.
+    if focus in docks and not docks[focus].isHidden():
+        docks[focus].raise_()
+    return True
+
+
+def _name_mnes_widgets(host: QMainWindow) -> None:
+    """Give MNE's own dock and toolbar an `objectName`, so state can be saved.
+
+    `QMainWindow.saveState` keys everything by object name and warns on stderr
+    about each widget that has none -- and MNE's annotation dock and tool bar
+    have none. Naming them here both silences that and makes the saved state
+    complete, so restoring a layout puts MNE's widgets back too rather than
+    leaving them wherever they happened to be.
+    """
+    from qtpy.QtWidgets import QToolBar
+
+    for widget in host.findChildren(QDockWidget) + host.findChildren(QToolBar):
+        if not widget.objectName():
+            widget.setObjectName(f"mne_{type(widget).__name__}")
+
+
+def _ask_reader(host: QMainWindow, session: ReviewSession) -> str:
+    """Who is reviewing. Asked once, before the first verdict is recorded.
+
+    Prefilled from the login name because typing it is friction and the
+    machine usually knows -- but confirmed by a person, because `root` in a
+    container is not a clinician and a report that quietly attributes a
+    judgement to a login name is worse than one with a blank where the name
+    should be.
+    """
+    from qtpy.QtWidgets import QInputDialog
+
+    name, ok = QInputDialog.getText(
+        host, "Who is reviewing?",
+        "Your verdicts are recorded against this name, with the time you gave "
+        "them.\nIt goes in the exported report.",
+        text=session.read.reader or adjudication.reader_name())
+    name = name.strip() if ok else ""
+    if name:
+        session.read.reader = name
+        try:
+            adjudication.save(session.request, session.read)
+        except OSError:
+            pass
+        _set_reader_status(host, session)
+    return name
+
+
+def _set_reader_status(host: QMainWindow, session: ReviewSession) -> None:
+    label = host.statusBar().findChild(QLabel, "onset_reader")
+    if label is None:
+        return
+    read = session.read
+    counts = read.counts()
+    if not read.reader and not counts["judged"]:
+        label.setText("")
+        return
+    label.setText(f"Read by {read.reader or 'nobody named'} — "
+                  f"{counts['judged']} judged")
+
+
+def _read_menu(menubar, host: QMainWindow, panels: dict,
+               session: ReviewSession) -> None:
+    """The reader's own menu: say who you are, and say what you think.
+
+    A menu of its own rather than entries scattered through the others,
+    because recording a judgement is a different activity from navigating or
+    changing the display, and because it is the one activity in this window
+    whose output has the reader's name on it.
+
+    The shortcuts here are `Ctrl`-modified and work anywhere in the window;
+    the bare letters on the events panel do the same thing while that panel
+    has focus. Two sets on purpose: the bare letters are how the work is
+    actually done, and a modified key is what someone finds by looking.
+    """
+    events, findings = panels["events"], panels["findings"]
+    menu = menubar.addMenu("&Read")
+
+    who = menu.addAction("&Who is reviewing…")
+    who.setShortcut("Ctrl+Shift+R")
+    who.setToolTip("The name your verdicts are recorded against")
+    who.triggered.connect(lambda _=False: _ask_reader(host, session))
+    menu.addSeparator()
+
+    # `_key` is the bare letter the events panel binds while it has focus;
+    # these entries use the Ctrl-digit pair instead, so it is not read here.
+    for verdict, text, _key, tip in events.KEYS:
+        action = menu.addAction(text.replace("&", "") + " — this event")
+        action.setShortcut(f"Ctrl+{EVENT_SHORTCUTS[verdict]}")
+        action.setToolTip(tip)
+        action.triggered.connect(
+            lambda _=False, verdict=verdict: events.judge(verdict))
+    undo = menu.addAction("Clear this event's verdict")
+    undo.setShortcut("Ctrl+Backspace")
+    undo.triggered.connect(lambda _=False: events.judge(""))
+    note = menu.addAction("&Note on this event…")
+    note.triggered.connect(lambda _=False: events._write_note())
+    menu.addSeparator()
+
+    nxt = menu.addAction("Next &unjudged event")
+    nxt.setShortcut("Ctrl+J")
+    nxt.setToolTip("Skip to the next event you have not given a verdict on")
+    nxt.triggered.connect(
+        lambda _=False: events.step_unjudged(+1) or host.statusBar().showMessage(
+            "Nothing left unjudged in this list.", 4000))
+    menu.addSeparator()
+
+    for verdict, text, tip in findings.CHANNEL_KEYS:
+        action = menu.addAction(f"{text} — this contact")
+        action.setToolTip(tip)
+        action.triggered.connect(
+            lambda _=False, verdict=verdict: findings.judge_channel(verdict))
+    menu.addSeparator()
+
+    about = menu.addAction("Note on this &window…")
+    about.setToolTip("What you concluded, in your own words. It goes in the "
+                     "report.")
+    about.triggered.connect(lambda _=False: _window_note(host, session))
+
+    prompt = lambda: _ask_reader(host, session)      # noqa: E731
+    events.reader_prompt = prompt
+    findings.reader_prompt = prompt
+    for panel in (events, findings):
+        signal = (panel.judged if panel is events else panel.channelJudged)
+        signal.connect(lambda *_: _set_reader_status(host, session))
+
+
+def _window_note(host: QMainWindow, session: ReviewSession) -> None:
+    """The sentence a reader writes at the end: what they concluded."""
+    from qtpy.QtWidgets import QInputDialog
+
+    text, ok = QInputDialog.getMultiLineText(
+        host, "Note on this window",
+        "Your conclusion, in your own words. It is exported with the review.",
+        session.read.note)
+    if not ok:
+        return
+    session.read.note = text.strip()
+    try:
+        adjudication.save(session.request, session.read)
+    except OSError as error:
+        host.statusBar().showMessage(f"Could not save your read: {error}", 10000)
+
+
+def _window_actions(view, host: QMainWindow, docks: dict,
+                    defaults: dict) -> None:
+    """Fit, maximise and full screen, in the View menu.
+
+    The window manager's own buttons are the usual way to do this, and they
+    are kept -- but they are not reliable here. A window larger than the work
+    area gets its maximise button withheld by some window managers, and under
+    a tiling or a minimal one there is no title bar to put a button on. A menu
+    entry with a shortcut works in every case, and "fit to this screen" is
+    something no title bar offers at all: it is the one to reach for after
+    moving the window to a second monitor, or after a dock layout has pushed
+    the window wider than the screen.
+
+    `triggered` rather than `toggled` for the two checkable entries, so that
+    re-syncing the ticks when the menu opens does not itself maximise the
+    window.
+
+    The fourth entry, restoring the default dock layout, is here for the same
+    reason: it is the way back from an arrangement that no longer fits.
+    """
+    # The default arrangement, kept because the docks are rearrangeable and a
+    # dragged-out panel is easy to lose: Qt has no undo for a dock drag. Filled
+    # in by `decorate` once the opening layout has been applied -- captured
+    # here it would be the arrangement with every panel showing, which is the
+    # one state the window never opens in.
+    _name_mnes_widgets(host)
+
+    restore = view.addAction("&Restore the default layout")
+    restore.setToolTip("Put the panels back where they started")
+    restore.triggered.connect(
+        lambda _=False: host.restoreState(defaults.get("state")
+                                          or host.saveState()))
+
+    shrink = view.addAction("&Fit the window to this screen")
+    shrink.setShortcut("Ctrl+0")
+    shrink.setToolTip("Resize the window to fit the screen it is on, and "
+                      "centre it")
+    # `showNormal` first: it restores the geometry the window had before it
+    # was maximised, which would otherwise undo the resize.
+    shrink.triggered.connect(lambda _=False: (host.showNormal(),
+                                              fit_to_screen(host)))
+
+    big = view.addAction("Ma&ximise window")
+    big.setShortcut("Ctrl+Shift+M")
+    big.setCheckable(True)
+    big.triggered.connect(
+        lambda on: host.showMaximized() if on else host.showNormal())
+
+    whole = view.addAction("F&ull screen")
+    whole.setShortcut("F11")
+    whole.setCheckable(True)
+
+    def set_full(on: bool) -> None:
+        if on:
+            # Remembered, because leaving full screen with `showNormal` would
+            # otherwise un-maximise a window that was maximised on the way in.
+            host.setProperty("onset_was_maximised", host.isMaximized())
+            host.showFullScreen()
+        elif host.property("onset_was_maximised"):
+            host.showMaximized()
+        else:
+            host.showNormal()
+
+    whole.triggered.connect(lambda on: set_full(bool(on)))
+
+    def sync() -> None:
+        big.setChecked(host.isMaximized())
+        whole.setChecked(host.isFullScreen())
+
+    view.aboutToShow.connect(sync)
+    sync()
 
 
 def _apply_marks(figure, session: ReviewSession, scope: str,
@@ -560,6 +1053,104 @@ def _apply_marks(figure, session: ReviewSession, scope: str,
         except Exception:
             return
     _colour_annotations(figure)
+
+
+def _window_menu(menu, host: QMainWindow, session: ReviewSession,
+                 on_window=None, on_step_window=None) -> None:
+    """Move to another stretch of the same recording.
+
+    In the Review menu rather than Navigate, because Navigate moves the view
+    over signal already loaded and this re-analyses: a different window is a
+    different set of detections, a different ranking and a different read.
+    Mixing the two in one menu would make a two-second operation look like a
+    two-minute one, or the other way round.
+    """
+    length = session.request.t_stop - session.request.t_start
+    forward = menu.addAction("Ne&xt window")
+    forward.setShortcut("Ctrl+Shift+Right")
+    forward.setToolTip(
+        f"Re-analyse the next {length:g} s of this recording. The question "
+        f"worth asking: does the ranking hold?")
+    back = menu.addAction("Previous &window")
+    back.setShortcut("Ctrl+Shift+Left")
+    back.setToolTip(f"Re-analyse the previous {length:g} s")
+    pick = menu.addAction("&Go to window…")
+    pick.setShortcut("Ctrl+G")
+
+    for action in (forward, back, pick):
+        action.setEnabled(on_window is not None)
+    if on_step_window is not None:
+        forward.triggered.connect(lambda _=False: on_step_window(+1))
+        back.triggered.connect(lambda _=False: on_step_window(-1))
+    if on_window is not None:
+        pick.triggered.connect(
+            lambda _=False: _ask_window(host, session, on_window))
+
+
+def _ask_window(host: QMainWindow, session: ReviewSession, on_window) -> None:
+    """Where to, and how long for. Two numbers, in the units the report uses.
+
+    Original-recording seconds, not seconds from the start of what is loaded:
+    that is what every time in this software is quoted in, and asking for one
+    convention while displaying another is how someone ends up reviewing a
+    different minute than the one they meant.
+    """
+    from qtpy.QtWidgets import QInputDialog
+
+    request = session.request
+    length = request.t_stop - request.t_start
+    start, ok = QInputDialog.getDouble(
+        host, "Go to window",
+        "Start, in seconds from the beginning of the original recording:",
+        float(request.t_start), 0.0, 1e7, 1)
+    if not ok:
+        return
+    span, ok = QInputDialog.getDouble(
+        host, "Go to window", "Length, in seconds:", float(length), 1.0,
+        3600.0, 1)
+    if not ok:
+        return
+    on_window(float(start), float(start) + float(span))
+
+
+def _load_coordinates(host: QMainWindow, session: ReviewSession, panels: dict,
+                      on_electrodes=None) -> None:
+    """Place the contacts from a file the reviewer picks.
+
+    The match is shown before anything moves. "47 of 64 contacts placed, the
+    rest stay schematic" is a thing to decide about, not to discover from a
+    picture that looks finished and is half guessed.
+    """
+    from onset_review import coordinates
+
+    path, _ = QFileDialog.getOpenFileName(
+        host, "Electrode coordinates", str(Path.home()),
+        coordinates.FILE_FILTER)
+    if not path:
+        return
+    read = coordinates.read_coordinates(path, session)
+    if not read.usable:
+        QMessageBox.warning(host, "These coordinates cannot be used",
+                            read.summary())
+        return
+    answer = QMessageBox.question(
+        host, "Place the contacts from this file?",
+        f"{read.summary()}\n\nThe 3D view will use these positions instead of "
+        f"the schematic layout. Nothing else in the analysis changes — "
+        f"coordinates do not affect a rate.",
+        QMessageBox.Yes | QMessageBox.Cancel, QMessageBox.Yes)
+    if answer != QMessageBox.Yes:
+        return
+    session.electrodes = read.frame
+    panels["brain"].set_electrodes(
+        read.frame,
+        origin=f"the coordinate file you supplied ({read.path.name}), read as "
+               f"{read.units}")
+    if on_electrodes is not None:
+        # So that a later re-analysis keeps them: a filter change does not
+        # move an electrode.
+        on_electrodes(Path(path))
+    host.statusBar().showMessage(read.summary(), 15000)
 
 
 def _export(host: QMainWindow, session: ReviewSession) -> None:

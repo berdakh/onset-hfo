@@ -27,6 +27,7 @@ import pandas as pd
 
 from onset_hfo.detectors.base import Event
 from onset_hfo.metrics import match_events
+from onset_review import adjudication
 from onset_review.session import ReviewSession
 
 __all__ = ["rate_matrix", "rate_curve", "event_table", "agreement",
@@ -48,7 +49,10 @@ def _bins(session: ReviewSession, bin_s: float) -> np.ndarray:
     the tail is how an event goes missing from an overview that claims to be
     complete.
     """
-    duration = max(float(session.request.duration), float(bin_s))
+    # The span, not the trace window: when a long span is analysed the trend
+    # is the one view that shows all of it, which is what makes it the place
+    # to find the busy minute before loading it.
+    duration = max(float(session.span_duration), float(bin_s))
     n = max(1, int(np.ceil(duration / float(bin_s))))
     edges = np.arange(n + 1, dtype=float) * float(bin_s)
     edges[-1] = max(edges[-1], duration)
@@ -56,8 +60,13 @@ def _bins(session: ReviewSession, bin_s: float) -> np.ndarray:
 
 
 def _local(event: Event, session: ReviewSession) -> float:
-    """An event's start in window-local seconds (the trace's own time base)."""
-    return float(event.start) - float(session.t_offset)
+    """An event's start in seconds from the beginning of the analysed span."""
+    # Relative to the **span**, not to the loaded trace. They are the same
+    # number until a span is longer than the window on screen, and then they
+    # stop being: the trend's own axis runs across the whole span, so a time
+    # counted from the trace would put an event in the wrong column the
+    # moment the reviewer scrolled the trace to a different minute.
+    return float(event.start) - float(session.span[0])
 
 
 def rate_matrix(session: ReviewSession, bin_s: float = DEFAULT_BIN_S,
@@ -151,10 +160,15 @@ def event_table(session: ReviewSession, include_rejected: bool = False) -> pd.Da
             "with_spike": bool(event.co_occurs_with_spike),
             "accepted": bool(event.accepted),
             "reject_reason": event.reject_reason or "",
+            # What a reader's verdict is filed under. Built here rather than
+            # in the panel so that the exported report and the interface
+            # cannot disagree about which event was judged.
+            "key": adjudication.event_key(event.channel, event.start,
+                                          event.detector),
         })
     columns = ["t_local", "t_file", "channel", "kind", "detector", "duration_ms",
                "amplitude_uv", "frequency_hz", "prominence_db", "n_peaks",
-               "with_spike", "accepted", "reject_reason"]
+               "with_spike", "accepted", "reject_reason", "key"]
     return pd.DataFrame(rows, columns=columns)
 
 

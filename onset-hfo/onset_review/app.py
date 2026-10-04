@@ -66,6 +66,18 @@ def build_parser() -> argparse.ArgumentParser:
                              "intracranial.")
     parser.add_argument("--line-freq", type=float, default=50.0,
                         help="mains frequency for --open (default: %(default)s)")
+    parser.add_argument("--span", type=float, default=None, metavar="SECONDS",
+                        help="analyse this many seconds from the window's "
+                             "start, while the trace shows only --window. "
+                             "Above 180 s the analysis is streamed in chunks, "
+                             "so ten minutes of contacts can be ranked on a "
+                             "laptop. Clicking an event outside the loaded "
+                             "window loads the minute it is in.")
+    parser.add_argument("--reader", default=None, metavar="NAME",
+                        help="who is reviewing. Your verdicts are recorded "
+                             "against this name and it goes in the exported "
+                             "report; without it the window asks before the "
+                             "first verdict.")
     parser.add_argument("--detector", action="append", dest="detectors",
                         help="repeatable; default rms")
     parser.add_argument("--threshold-sd", type=float, default=None,
@@ -100,9 +112,16 @@ def _request_from(args) -> object:
     """Build a request from the flags alone, for `--subject` and `--open`."""
     from onset_review.session import ReviewRequest
 
+    t_start, t_stop = float(args.window[0]), float(args.window[1])
+    # `--span` is a length on the command line because that is how someone
+    # says "ten minutes"; it is stored as absolute bounds because the trace
+    # window moves inside the span and a span measured from the trace would
+    # slide with it.
+    span = float(args.span) if getattr(args, "span", None) else None
     common = dict(
-        run=args.run, task=args.task,
-        t_start=float(args.window[0]), t_stop=float(args.window[1]),
+        run=args.run, task=args.task, t_start=t_start, t_stop=t_stop,
+        span_start=t_start if span else None,
+        span_stop=(t_start + span) if span else None,
         detectors=tuple(args.detectors or ("rms",)), band=args.band,
         threshold_sd=args.threshold_sd, with_spikes=not args.no_spikes)
 
@@ -314,24 +333,143 @@ class _Review:
 
         previous = self.parts
         state = previous.host.saveState() if previous is not None else None
+        self._attach_read(session)
 
         figure = window.open_trace(session, show_expert=self.overlay,
                                    show=self.args.screenshot is None)
         self.parts = window.decorate(figure, session, show_expert=self.overlay,
                                      on_preprocess=self.reanalyse,
                                      on_import=self.import_file,
-                                     on_quality=self.requality)
+                                     on_quality=self.requality,
+                                     on_electrodes=self.use_coordinates,
+                                     on_window=self.go_to_window,
+                                     on_step_window=self.step_window,
+                                     on_trace_at=self.trace_at)
+        maximised = False
         if state is not None:
             # Restored after the docks exist and before the window is shown, so
             # the reviewer never sees the default arrangement flash past.
             self.parts.host.restoreState(state)
             self.parts.host.resize(previous.host.size())
-        self.parts.host.show()
+            maximised = previous.host.isMaximized()
+        # MNE chooses the browser's opening size and chooses it large -- wider
+        # and taller than a laptop screen. Clamped to the screen's work area
+        # here, and opened maximised when even the clamped size was a
+        # reduction, which is what someone on a small screen wants anyway.
+        # Not on the screenshot path: that one sets its own size, and a
+        # maximised window would ignore it.
+        oversized = (self.args.screenshot is None
+                     and window.fit_to_screen(self.parts.host))
+        if oversized or maximised:
+            self.parts.host.showMaximized()
+        else:
+            self.parts.host.show()
         if previous is not None:
             try:
                 previous.figure.close()
             except Exception:
                 pass
+        # Said out loud, because the alternative is a reviewer noticing later
+        # that some of their verdicts are no longer on the screen and having
+        # to guess whether the software lost them. It did not: they are in the
+        # file, under the settings they were given under.
+        if getattr(self, "_orphans", 0):
+            self.parts.host.statusBar().showMessage(
+                f"{self._orphans} of your verdicts no longer match an event "
+                f"in this analysis. They are kept, and come back if you undo "
+                f"the change.", 15000)
+
+    def _attach_read(self, session) -> None:
+        """Bring the reader's previous verdicts onto this analysis.
+
+        Every path into a window comes through `open`, including the re-runs
+        after a preprocessing or quality change, which is exactly when this
+        matters: those rebuild every event object, and without this the
+        reviewer's work would appear to vanish because the objects it was
+        attached to no longer exist.
+        """
+        from onset_review import adjudication
+
+        stored = adjudication.load(session.request)
+        if not stored.reader:
+            # Carried from the window being replaced. A reviewer who named
+            # themselves and then moved to the next minute is the same person,
+            # and being asked again at every window is how a reader learns to
+            # click past the question.
+            carried = (self.parts.session.read.reader
+                       if self.parts is not None else "")
+            stored.reader = (carried or (self.args.reader or "")).strip()
+        session.read = adjudication.reconcile(stored, session.events)
+        self._orphans = len(session.read.orphaned)
+
+    def trace_at(self, t_file: float) -> None:
+        """Put the signal around `t_file` under the analysis already on screen.
+
+        Only the trace moves. The ranking, the events, the quality verdicts
+        and the reviewer's own read all belong to the analysed span and would
+        be wrong to recompute — and recomputing them is what clicking an event
+        would otherwise cost on a ten-minute span.
+        """
+        from onset_review.session import reload_trace
+
+        session = self.parts.session
+        loaded = session.request.t_stop - session.request.t_start
+        span_start, span_stop = session.span
+        start = min(max(span_start, float(t_file) - loaded / 2.0),
+                    max(span_start, span_stop - loaded))
+        if abs(start - session.request.t_start) < 1e-6:
+            return
+        host = self.parts.host
+        host.statusBar().showMessage(
+            f"Loading {start:g}–{start + loaded:g} s…", 4000)
+        try:
+            moved = reload_trace(session, start, start + loaded,
+                                 self.args.cache_dir)
+        except Exception as error:          # noqa: BLE001
+            host.statusBar().showMessage(
+                f"Could not load {start:g}–{start + loaded:g} s: {error}",
+                12000)
+            return
+        self.request = moved.request
+        self.open(moved)
+
+    def go_to_window(self, t_start: float, t_stop: float) -> None:
+        """Analyse a different stretch of the same recording.
+
+        The question this software exists to make someone ask is whether the
+        answer holds in the next minute -- across these twenty patients the
+        annotators' own busiest fast-ripple channel is the same channel in only
+        7 of 20 when one minute is compared against another of the same
+        recording. Making that cost a trip back through the open dialog is
+        making it cost more than it is worth.
+        """
+        t_start = max(0.0, float(t_start))
+        t_stop = float(t_stop)
+        if t_stop <= t_start:
+            return
+        self._rerun(t_start=t_start, t_stop=t_stop)
+
+    def step_window(self, direction: int) -> None:
+        """The same window length, one window forward or back."""
+        length = self.request.t_stop - self.request.t_start
+        start = self.request.t_start + direction * length
+        if start < 0:
+            start = 0.0
+        if start == self.request.t_start:
+            return
+        self.go_to_window(start, start + length)
+
+    def use_coordinates(self, path) -> None:
+        """Remember the coordinate file, without re-running the analysis.
+
+        Recorded on the request rather than only on the session because every
+        re-analysis builds a new session from the request -- and a reviewer
+        who placed their contacts and then widened a notch should not have to
+        find the file again.
+        """
+        import dataclasses
+
+        self.request = dataclasses.replace(self.request, electrodes_path=path)
 
     def import_file(self) -> None:
         """Open a recording from this machine, replacing this window.
@@ -384,6 +522,14 @@ class _Review:
         session = launcher.load_with_progress(request, self.args.cache_dir,
                                               parent=self.parts.host)
         if session is None:
+            # The loader has already said what went wrong in its own dialog.
+            # This is the sentence that says what it was trying to do, because
+            # "could not fetch" without "the minute you asked for" leaves a
+            # reviewer wondering what they just lost.
+            self.parts.host.statusBar().showMessage(
+                f"Still showing {self.request.t_start:g}–"
+                f"{self.request.t_stop:g} s: the window you asked for could "
+                f"not be loaded.", 12000)
             return
         self.request = request
         self.open(session)

@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from qtpy.QtGui import QFont, QFontDatabase
 
 __all__ = ["Palette", "LIGHT", "DARK", "apply_theme", "current", "qt_palette",
-           "section_label", "plain_buttons",
+           "section_label", "plain_buttons", "scrolled",
            "card", "muted", "SPACING", "RADIUS", "FONT_STACK"]
 
 #: The spacing grid, in pixels. Everything is a multiple of four; most things
@@ -373,3 +373,32 @@ def plain_buttons(box) -> None:
 
     for button in box.buttons():
         button.setIcon(QIcon())
+
+
+def scrolled(body):
+    """Put `body` in a frameless scroll area that fills the space it is given.
+
+    Used by the docked panels whose content does not shrink on its own -- the
+    ones built from stacked rows of labels and controls rather than from a
+    table -- and for a reason that is about the window rather than the panel:
+    Qt builds a main window's minimum size by summing its docks' minimums down
+    each column, so a panel that insists on 360 px makes the whole window
+    insist on it too. A few such panels and the window no longer fits a laptop
+    -- at which point most window managers also withhold the maximise button,
+    because a window that cannot shrink to the work area cannot be maximised
+    into it.
+
+    A scroll area breaks that chain: the panel keeps its own preferred size,
+    the window stops inheriting it as a floor, and the one screen small enough
+    to matter gets a scrollbar instead of a window with its status bar off the
+    bottom. `setWidgetResizable` is what keeps it invisible on a large screen:
+    the body is given the whole viewport whenever the viewport is big enough,
+    so nothing scrolls until something has to.
+    """
+    from qtpy.QtWidgets import QFrame, QScrollArea
+
+    area = QScrollArea()
+    area.setWidget(body)
+    area.setWidgetResizable(True)
+    area.setFrameShape(QFrame.NoFrame)
+    return area

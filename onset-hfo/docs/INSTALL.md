@@ -203,6 +203,16 @@ echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
 **"No recordings are cached yet"** — nothing has been fetched. See
 [**Getting a recording**](#getting-a-recording).
 
+**The window does not fit the screen, or has no maximise button** — it should
+now do both by itself: the window opens clamped to the screen's work area, and
+maximised when that was a reduction. If a dock layout you have dragged about
+has pushed it wider than the screen again, **View → Fit the window to this
+screen** (`Ctrl+0`) puts it back, **View → Maximise window** and **View → Full
+screen** (`F11`) are there whatever your window manager does with title bars,
+and **View → Restore the default layout** undoes the dragging. The window can
+be made as small as 963 × 753 px; below that, panels scroll inside their docks
+rather than the window growing past the screen.
+
 **It opens but there is no trace** — check the window actually loaded:
 `onset-review --list` should show the window you picked. If the recording is
 there but the trace is blank, run with `MNE_BROWSER_BACKEND=qt` set explicitly;

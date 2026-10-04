@@ -185,6 +185,126 @@ def test_agreement_restricts_itself_to_reviewed_channels():
 
 # -- the exported review ---------------------------------------------------
 
+def _judge_everything(session, verdict="agree", reader="Dr Smith"):
+    from onset_review.adjudication import Adjudication, event_key
+
+    session.read = Adjudication(reader=reader)
+    for event in session.events:
+        if event.accepted:
+            session.read.judge_event(
+                event_key(event.channel, event.start, event.detector), verdict)
+    return session.read
+
+
+def test_an_unread_window_says_so_rather_than_saying_nothing(review):
+    """A report with no reader section would read as a complete review."""
+    text = report.review_markdown(review)
+    assert "## The reader's own read" in text
+    assert "Nobody has recorded a verdict" in text
+
+
+def test_a_partial_read_is_labelled_as_one(review):
+    from onset_review.adjudication import Adjudication, event_key
+
+    previous = review.read
+    try:
+        review.read = Adjudication(reader="Dr Smith")
+        first = next(e for e in review.events if e.accepted)
+        review.read.judge_event(
+            event_key(first.channel, first.start, first.detector), "agree")
+        text = report.review_markdown(review)
+        assert "**This is a partial read.**" in text
+        assert "must not be read as one" in text
+    finally:
+        review.read = previous
+
+
+def test_the_confirmed_rate_reproduces_the_detectors_rate_when_all_agreed(review):
+    """The arithmetic test for the whole feature.
+
+    If a reader agrees with every event the detector found on a contact, their
+    rate for that contact must come out identical to the detector's -- same
+    events, same denominator. Any mismatch means the confirmed rate is
+    measuring something other than what the column above it measures, which
+    would be worse than not reporting it.
+    """
+    previous = review.read
+    try:
+        _judge_everything(review)
+        confirmed = report._confirmed_rates(review)
+        assert confirmed, "no channel came out complete"
+        for _, row in review.findings.iterrows():
+            channel = str(row["channel"])
+            if channel in confirmed:
+                assert float(confirmed[channel]) == pytest.approx(
+                    float(row["rate_per_min"]), abs=0.01)
+    finally:
+        review.read = previous
+
+
+def test_disagreeing_with_everything_zeroes_the_confirmed_rate(review):
+    previous = review.read
+    try:
+        _judge_everything(review, verdict="disagree")
+        confirmed = report._confirmed_rates(review)
+        assert confirmed
+        assert set(confirmed.values()) == {"0.00"}
+    finally:
+        review.read = previous
+
+
+def test_a_half_judged_contact_gets_no_confirmed_rate(review):
+    """It would be a confirmed count divided by the whole window."""
+    from onset_review.adjudication import event_key
+
+    previous = review.read
+    try:
+        read = _judge_everything(review)
+        channel = next(iter(report._confirmed_rates(review)))
+        victim = next(e for e in review.events
+                      if e.accepted and e.channel == channel
+                      and e.detector == review.request.primary)
+        read.clear_event(event_key(victim.channel, victim.start, victim.detector))
+        assert channel not in report._confirmed_rates(review)
+    finally:
+        review.read = previous
+
+
+def test_the_report_names_the_reader_and_lists_what_they_rejected(review):
+    from onset_review.adjudication import Adjudication, event_key
+
+    previous = review.read
+    try:
+        review.read = Adjudication(reader="Dr Smith")
+        first = next(e for e in review.events if e.accepted)
+        review.read.judge_event(
+            event_key(first.channel, first.start, first.detector),
+            "disagree", note="ringing on a sharp transient")
+        text = report.review_markdown(review)
+        assert "| Reviewer | Dr Smith |" in text
+        assert "### Events the reader rejected" in text
+        assert "ringing on a sharp transient" in text
+    finally:
+        review.read = previous
+
+
+def test_the_report_owns_up_to_orphaned_verdicts(review):
+    """A verdict the analysis no longer matches is named, not quietly dropped."""
+    from onset_review.adjudication import Adjudication, Judgement
+
+    previous = review.read
+    try:
+        review.read = Adjudication(
+            reader="Dr Smith",
+            orphaned={"ZZ1-ZZ2|9.999|rms": Judgement(
+                "agree", "Dr Smith", "2026-01-01T00:00:00Z")})
+        text = report.review_markdown(review)
+        assert "1 earlier verdict(s) no longer match" in text
+        assert "not deleted" in text
+    finally:
+        review.read = previous
+
+
 def test_the_report_leads_with_the_disclaimer(review):
     text = report.review_markdown(review)
     assert text.index(report.DISCLAIMER) < text.index("## What was reviewed")

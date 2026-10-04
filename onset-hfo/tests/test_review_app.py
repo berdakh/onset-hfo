@@ -69,9 +69,662 @@ def test_mne_figure_can_still_host_our_docks(built):
 
 def test_every_panel_is_docked(built):
     assert set(built.docks) == {"trends", "controls", "findings", "events",
-                                "brain", "agreement", "provenance", "assistant",
-                                "preprocess", "patient", "quality"}
+                                "detail", "brain", "agreement", "provenance",
+                                "assistant", "preprocess", "patient", "quality"}
     assert all(dock.widget() is not None for dock in built.docks.values())
+
+
+#: The smallest screen this has to work on: the 1366x768 panel still shipped
+#: on budget laptops, minus a 40 px top bar or taskbar. A window whose minimum
+#: is larger than this does not merely overflow -- X11 window managers read the
+#: size hints and withhold the maximise button from a window that cannot be
+#: maximised into the work area, which is how the symptom was first reported.
+SMALL_SCREEN = (1366, 728)
+
+
+def test_the_window_can_shrink_to_a_small_laptop_screen(built):
+    """Nothing in the window is allowed to put a floor under the whole thing.
+
+    Qt builds a main window's minimum size by summing each dock column's
+    minimums, so one panel that insists on 360 px of height makes the window
+    insist on it too. This is the test that keeps that from creeping back: the
+    preferred sizes are free to be generous, the minimums are not.
+    """
+    minimum = built.host.minimumSizeHint()
+    assert minimum.width() <= SMALL_SCREEN[0], (
+        f"window cannot be made narrower than {minimum.width()} px")
+    assert minimum.height() <= SMALL_SCREEN[1], (
+        f"window cannot be made shorter than {minimum.height()} px")
+
+
+def test_fitting_to_the_screen_reports_whether_it_had_to_clamp(qapp):
+    """`fit_to_screen` is the launcher's cue to open maximised instead.
+
+    Against a bare `QMainWindow` rather than the review window, because this
+    is the geometry rule on its own and it has to be testable on whatever
+    screen the suite is running against -- including the 800x800 one Qt's
+    offscreen platform reports, which is smaller than the review window's
+    minimum and so could never exercise the "already fits" branch.
+    """
+    from onset_review import window
+
+    host = qt.QMainWindow()
+    try:
+        area = window.work_area(host)
+        assert area is not None, "no screen to fit to"
+
+        host.resize(area.width() + 400, area.height() + 400)
+        assert window.fit_to_screen(host) is True
+        assert host.size().width() <= area.width()
+        assert host.size().height() <= area.height()
+        # Centred on what is left, not abandoned at a corner off the screen.
+        assert area.contains(host.geometry())
+
+        # A window that already fits is left exactly as it was.
+        host.resize(area.width() // 2, area.height() // 2)
+        kept = host.size()
+        assert window.fit_to_screen(host) is False
+        assert host.size() == kept
+    finally:
+        host.close()
+
+
+def test_the_view_menu_can_maximise_and_go_full_screen(built):
+    """The menu entries exist, and they are the ones a shortcut can reach.
+
+    Asserted rather than assumed because the window manager's own buttons are
+    not dependable here -- that is the whole reason these were added.
+    """
+    view = [action.menu() for action in built.host.menuBar().actions()
+            if "View" in action.text()][0]
+    entries = {action.text().replace("&", ""): action
+               for action in view.actions() if action.text()}
+    assert "Fit the window to this screen" in entries
+    assert entries["Maximise window"].isCheckable()
+    assert entries["Full screen"].shortcut().toString() == "F11"
+    assert "Restore the default layout" in entries
+
+
+def test_restoring_the_default_layout_undoes_a_dock_drag(built):
+    """A dragged-out panel has to be recoverable; Qt has no undo for one."""
+    view = [action.menu() for action in built.host.menuBar().actions()
+            if "View" in action.text()][0]
+    restore = [action for action in view.actions()
+               if action.text().replace("&", "") == "Restore the default layout"][0]
+    brain = built.docks["brain"]
+    was_floating = brain.isFloating()
+    try:
+        brain.setFloating(True)
+        assert brain.isFloating()
+        restore.trigger()
+        assert not brain.isFloating()
+    finally:
+        brain.setFloating(was_floating)
+
+
+# -- a span longer than the trace -------------------------------------------
+
+
+def test_the_three_time_bases_are_kept_straight(review):
+    """`_file_time` and `_on_screen` are the whole of the arithmetic that keeps
+    a table counting from the span and a trace counting from itself."""
+    import dataclasses
+
+    from onset_review import window
+
+    spanned = dataclasses.replace(
+        review,
+        request=dataclasses.replace(review.request, t_start=300.0,
+                                    t_stop=360.0, span_start=0.0,
+                                    span_stop=600.0),
+        span_start=0.0, span_stop=600.0)
+    assert spanned.streamed
+
+    # A table time of 310 s is 310 s into the recording, and the trace holds
+    # 300-360, so it is on screen.
+    assert window._file_time(spanned, 310.0) == pytest.approx(310.0)
+    assert window._on_screen(spanned, 310.0) is True
+    # 30 s into the span is not: that minute is not loaded.
+    assert window._on_screen(spanned, 30.0) is False
+    assert window._on_screen(spanned, 599.0) is False
+
+    # And on an ordinary window, where span and trace are the same, every
+    # event in the table is on screen — the behaviour before spans existed.
+    assert not review.streamed
+    assert window._on_screen(review, 0.0) is True
+    assert window._on_screen(review, review.request.duration - 0.1) is True
+
+
+def test_an_ordinary_window_says_nothing_about_a_span(built, review):
+    """The sentence is only worth having when the two differ."""
+    assert review.scope() == ""
+    assert built.host.statusBar().findChild(qt.QLabel, "onset_scope") is None
+
+
+def test_decorate_takes_the_trace_loader(qapp):
+    """The callback exists and is optional, so a caller that cannot reload the
+    trace gets a window that simply does not scroll off its own signal.
+
+    Takes `qapp` only to satisfy the guard below, which matches on the word
+    `decorate` and is crude on purpose — a false positive costs one unused
+    fixture and a false negative costs a crash with no name on it.
+    """
+    import inspect
+
+    from onset_review import window
+
+    assert "on_trace_at" in inspect.signature(window.decorate).parameters
+
+
+# -- moving through the recording -------------------------------------------
+
+
+def test_the_review_menu_moves_to_another_window(built):
+    menu = [action.menu() for action in built.host.menuBar().actions()
+            if "Review" in action.text()][0]
+    entries = {action.text().replace("&", ""): action for action in menu.actions()
+               if action.text()}
+    assert "Next window" in entries
+    assert "Previous window" in entries
+    assert "Go to window…" in entries
+    assert entries["Next window"].shortcut().toString() == "Ctrl+Shift+Right"
+    # Disabled rather than missing when the caller cannot re-analyse: an entry
+    # that silently does nothing is worse than one that says it cannot.
+    assert not entries["Next window"].isEnabled()
+
+
+def test_stepping_asks_for_the_next_window_of_the_same_length(review):
+    """The arithmetic, without the loader: a window is moved by its own length,
+    and never before the start of the recording."""
+    import dataclasses
+
+    from onset_review.app import _Review
+
+    asked = []
+
+    class _Fake(_Review):
+        def __init__(self):
+            self.request = dataclasses.replace(review.request, t_start=60.0,
+                                               t_stop=120.0)
+            self.parts = None
+
+        def _rerun(self, **changes):
+            asked.append(changes)
+
+    mover = _Fake()
+    mover.step_window(+1)
+    assert asked == [{"t_start": 120.0, "t_stop": 180.0}]
+
+    asked.clear()
+    mover.step_window(-1)
+    assert asked == [{"t_start": 0.0, "t_stop": 60.0}]
+
+
+def test_the_first_window_does_not_step_back_past_the_start(review):
+    import dataclasses
+
+    from onset_review.app import _Review
+
+    asked = []
+
+    class _Fake(_Review):
+        def __init__(self):
+            self.request = dataclasses.replace(review.request, t_start=0.0,
+                                               t_stop=60.0)
+            self.parts = None
+
+        def _rerun(self, **changes):
+            asked.append(changes)
+
+    mover = _Fake()
+    mover.step_window(-1)
+    assert asked == []
+
+
+def test_a_window_of_no_length_is_refused(review):
+    import dataclasses
+
+    from onset_review.app import _Review
+
+    asked = []
+
+    class _Fake(_Review):
+        def __init__(self):
+            self.request = dataclasses.replace(review.request)
+            self.parts = None
+
+        def _rerun(self, **changes):
+            asked.append(changes)
+
+    mover = _Fake()
+    mover.go_to_window(30.0, 30.0)
+    mover.go_to_window(30.0, 10.0)
+    assert asked == []
+
+
+def test_the_reader_is_carried_to_the_next_window(review):
+    """A reviewer who named themselves and then moved to the next minute is
+    the same person. Being asked again at every window is how a reader learns
+    to click past the question."""
+    import dataclasses
+    import types
+
+    from onset_review.adjudication import Adjudication
+    from onset_review.app import _Review
+
+    previous = types.SimpleNamespace(
+        session=types.SimpleNamespace(read=Adjudication(reader="Dr Smith")))
+
+    class _Fake(_Review):
+        def __init__(self):
+            self.request = review.request
+            self.parts = previous
+            self.args = types.SimpleNamespace(reader=None)
+
+    nxt = dataclasses.replace(review, read=Adjudication())
+    nxt.request = dataclasses.replace(review.request, t_start=600.0,
+                                      t_stop=660.0)
+    _Fake()._attach_read(nxt)
+    assert nxt.read.reader == "Dr Smith"
+    # ...and the verdicts do not come with them: they were about other signal.
+    assert nxt.read.counts()["judged"] == 0
+
+
+# -- electrode coordinates --------------------------------------------------
+
+
+def test_the_review_menu_offers_to_place_the_contacts(built):
+    menu = [action.menu() for action in built.host.menuBar().actions()
+            if "Review" in action.text()][0]
+    entries = {action.text().replace("&", "") for action in menu.actions()
+               if action.text()}
+    assert "Electrode coordinates…" in entries
+
+
+def test_supplied_coordinates_replace_the_schematic_view(built, review, tmp_path):
+    """And say in the caption that they came from a file, not the dataset."""
+    from onset_review import coordinates
+    from onset_review.anatomy import ARCHIVE_ORIGIN, NOT_ANATOMY
+
+    brain = built.panels["brain"]
+    before = brain.caption.text()
+    assert NOT_ANATOMY in before
+
+    names = coordinates.contacts_of(review)
+    path = tmp_path / "electrodes.tsv"
+    path.write_text("name\tx\ty\tz\n" + "".join(
+        f"{name}\t{-30 if index % 2 else 30}\t{-20 + index * 3}\t-15\n"
+        for index, name in enumerate(names)), encoding="utf-8")
+    read = coordinates.read_coordinates(path, review)
+    assert read.usable
+    try:
+        brain.set_electrodes(read.frame, origin="the file you supplied")
+        assert NOT_ANATOMY not in brain.caption.text()
+        assert "the file you supplied" in brain.caption.text()
+        assert ARCHIVE_ORIGIN not in brain.caption.text()
+        assert set(brain.layout_frame["source"]) == {"archive"}
+    finally:
+        brain.set_electrodes(review.electrodes)
+    assert NOT_ANATOMY in brain.caption.text()
+
+
+def test_the_coordinate_file_is_remembered_on_the_request(review, tmp_path):
+    """So a reviewer who placed their contacts and then widened a notch does
+    not have to find the file again."""
+    import dataclasses
+
+    request = dataclasses.replace(review.request, electrodes_path=tmp_path / "e.tsv")
+    assert request.electrodes_path == tmp_path / "e.tsv"
+    # And replacing something else keeps it, which is the whole point.
+    again = dataclasses.replace(request, band="fast_ripple")
+    assert again.electrodes_path == tmp_path / "e.tsv"
+
+
+# -- task layouts ----------------------------------------------------------
+
+
+def test_a_window_opens_in_a_layout_rather_than_showing_everything(built):
+    """Eleven docked panels at once is an arrangement a reviewer has to undo
+    before they can work."""
+    from onset_review import window
+
+    # `isHidden` rather than `isVisible`: nothing in this fixture's window has
+    # been shown, so every widget in it is "not visible" whatever the layout.
+    visible = {key for key, dock in built.docks.items() if not dock.isHidden()}
+    assert visible == set(window.LAYOUTS[window.DEFAULT_LAYOUT][1])
+    assert len(visible) < len(built.docks)
+
+
+def test_every_layout_names_panels_that_exist(built):
+    """The cheapest way for a layout to break is a renamed dock key."""
+    from onset_review import window
+
+    for name, (what, keys, focus) in window.LAYOUTS.items():
+        assert what, name
+        assert set(keys) <= set(built.docks), name
+        assert focus in keys, name
+
+
+def test_switching_layout_shows_its_panels_and_hides_the_rest(built):
+    from onset_review import window
+
+    try:
+        for name, (_, keys, focus) in window.LAYOUTS.items():
+            assert window.apply_layout(built.docks, name) is True
+            shown = {key for key, dock in built.docks.items()
+                     if not dock.isHidden()}
+            assert shown == set(keys), name
+            # And the layout decides which tab is in front, rather than
+            # inheriting whichever one happened to be there.
+            assert not built.docks[focus].isHidden()
+    finally:
+        window.apply_layout(built.docks, window.DEFAULT_LAYOUT)
+
+
+def test_a_hidden_panel_is_hidden_and_not_destroyed(built):
+    """Switching layouts has to cost nothing and lose nothing: every panel
+    stays built and wired, one tick away in View."""
+    from onset_review import window
+
+    try:
+        window.apply_layout(built.docks, "Reporting")
+        assert built.docks["detail"].isHidden()
+        assert built.docks["detail"].widget() is built.panels["detail"]
+        # Still wired: selecting an event still draws it, unseen.
+        built.panels["events"].view.selectRow(2)
+        assert built.panels["detail"]._snapshot is not None
+    finally:
+        window.apply_layout(built.docks, window.DEFAULT_LAYOUT)
+
+
+def test_an_unknown_layout_changes_nothing(built):
+    from onset_review import window
+
+    before = {key: dock.isHidden() for key, dock in built.docks.items()}
+    assert window.apply_layout(built.docks, "Radiology") is False
+    assert {k: d.isHidden() for k, d in built.docks.items()} == before
+
+
+def test_the_view_menu_leads_with_the_layouts(built):
+    from onset_review import window
+
+    view = [action.menu() for action in built.host.menuBar().actions()
+            if "View" in action.text()][0]
+    texts = [action.text().replace("&", "") for action in view.actions()
+             if action.text()]
+    for index, name in enumerate(window.LAYOUTS):
+        assert texts[index] == name
+    assert texts[len(window.LAYOUTS)] == "Everything at once"
+
+
+# -- the event detail view -------------------------------------------------
+
+
+def test_selecting_an_event_draws_it_close_up(built):
+    """One place decides which event is under discussion: the list."""
+    events, close_up = built.panels["events"], built.panels["detail"]
+    events.view.selectRow(0)
+    key = events.selected_key()
+    assert key
+    assert close_up._snapshot is not None
+    assert close_up._snapshot.channel == str(
+        events.model.row_value(0, "channel"))
+    assert "µV" in close_up.headline.text() or "ms" in close_up.headline.text()
+
+
+def test_the_detail_view_says_the_signal_is_not_unprocessed(built):
+    """The one view whose job is to let someone check the analysis must not
+    claim to show them something it is not showing them."""
+    events, close_up = built.panels["events"], built.panels["detail"]
+    events.view.selectRow(1)
+    text = close_up.caption.text().lower()
+    assert "not unprocessed" in text
+    assert "island" in text and "column" in text
+
+
+def test_a_key_with_no_event_leaves_the_panel_standing(built):
+    close_up = built.panels["detail"]
+    assert close_up.show_key("ZZ9-ZZ10|999.000|rms") is False
+    assert close_up._snapshot is None
+    assert "not in this analysis" in close_up.caption.text()
+
+
+# -- the reader's own verdicts ---------------------------------------------
+
+
+@pytest.fixture
+def judging(built, review):
+    """A window with a named reader and a clean slate of verdicts.
+
+    Function-scoped against a module-scoped window, so each test starts from
+    no verdicts without paying to rebuild the whole thing.
+    """
+    from onset_review.adjudication import Adjudication
+
+    previous = review.read
+    review.read = Adjudication(reader="Dr Smith")
+    built.panels["events"].refilter()
+    built.panels["findings"].refresh()
+    yield built
+    review.read = previous
+    built.panels["events"].refilter()
+    built.panels["findings"].refresh()
+
+
+def test_a_verdict_lands_on_the_selected_event(judging, review):
+    events = judging.panels["events"]
+    events.view.selectRow(0)
+    key = events.selected_key()
+    assert key
+    assert events.judge("agree") == key
+    assert review.read.verdict_of(key) == "agree"
+    assert review.read.events[key].reader == "Dr Smith"
+
+
+def test_judging_advances_to_the_next_event(judging):
+    """Four hundred events is four hundred key presses; reaching for the arrow
+    key between each pair would double that for no reason."""
+    events = judging.panels["events"]
+    events.view.selectRow(3)
+    events.judge("disagree")
+    assert events.view.selectionModel().selectedRows()[0].row() == 4
+
+
+def test_the_verdict_shows_in_the_table_and_can_be_taken_back(judging, review):
+    events = judging.panels["events"]
+    events.view.selectRow(0)
+    key = events.judge("agree")
+    assert events.model.row_value(0, "verdict") == "real"
+
+    events.view.selectRow(0)
+    events.judge("")
+    assert review.read.verdict_of(key) == ""
+    assert events.model.row_value(0, "verdict") == ""
+
+
+def test_an_unattributed_verdict_is_refused(built, review):
+    """The whole value of a recorded judgement is that someone can be asked
+    about it. A file of anonymous opinions cannot be used for anything."""
+    from onset_review.adjudication import Adjudication
+
+    previous = review.read
+    review.read = Adjudication()          # nobody named
+    events = built.panels["events"]
+    events.reader_prompt = lambda: ""     # and they decline to say
+    try:
+        events.view.selectRow(0)
+        key = events.selected_key()
+        assert events.judge("agree") == ""
+        assert review.read.verdict_of(key) == ""
+
+        events.reader_prompt = lambda: "Dr Jones"
+        assert events.judge("agree") == key
+        assert review.read.events[key].reader == "Dr Jones"
+    finally:
+        review.read = previous
+        events.reader_prompt = None
+        events.refilter()
+
+
+def test_asking_who_is_reviewing_actually_runs(built, review, monkeypatch):
+    """Exercised end to end rather than stubbed out.
+
+    Every other test here injects `reader_prompt` directly, so `_ask_reader`
+    itself was never executed — and it had a block of someone else's code
+    pasted into it, referring to names that do not exist in its scope. It
+    would have raised `NameError` the first time any reviewer was asked their
+    name, which is the first verdict for anyone not passing `--reader`. The
+    linter found it; this is what should have.
+    """
+    from onset_review import adjudication, window
+
+    previous = review.read
+    try:
+        review.read = adjudication.Adjudication()
+        monkeypatch.setattr(
+            "qtpy.QtWidgets.QInputDialog.getText",
+            staticmethod(lambda *args, **kwargs: ("Dr Jones", True)))
+        assert window._ask_reader(built.host, review) == "Dr Jones"
+        assert review.read.reader == "Dr Jones"
+        # And the status bar picks it up, which is the other half of its job.
+        label = built.host.statusBar().findChild(qt.QLabel, "onset_reader")
+        assert "Dr Jones" in label.text()
+
+        # Declining leaves the read unattributed rather than half-named.
+        review.read = adjudication.Adjudication()
+        monkeypatch.setattr(
+            "qtpy.QtWidgets.QInputDialog.getText",
+            staticmethod(lambda *args, **kwargs: ("", False)))
+        assert window._ask_reader(built.host, review) == ""
+        assert review.read.reader == ""
+    finally:
+        review.read = previous
+
+
+def test_the_next_unjudged_event_skips_the_judged_ones(judging):
+    events = judging.panels["events"]
+    events.view.selectRow(0)
+    events.judge("agree")        # judges row 0, lands on row 1
+    events.judge("agree")        # judges row 1, lands on row 2
+    events.view.selectRow(0)
+    assert events.step_unjudged(+1) is True
+    assert events.view.selectionModel().selectedRows()[0].row() == 2
+
+
+def test_a_channel_verdict_shows_in_the_findings_table(judging, review):
+    findings = judging.panels["findings"]
+    findings.view.selectRow(0)
+    channel = findings.selected_channel()
+    assert findings.judge_channel("ignore") == channel
+    assert review.read.channel_verdict(channel) == "ignore"
+    assert findings.model.row_value(0, "my_read") == "Ignore this contact"
+
+
+def test_judging_an_event_updates_the_channel_progress_column(judging, review):
+    """Without the refresh wiring the progress column goes stale the moment
+    the reader starts working, which is the moment it starts mattering."""
+    findings, events = judging.panels["findings"], judging.panels["events"]
+    events.view.selectRow(0)
+    channel = str(events._shown.iloc[0]["channel"])
+    findings.select_channel(channel)
+    before = findings.model.row_value(
+        findings.model.frame.index[
+            findings.model.frame["channel"] == channel][0], "judged")
+    events.judge("agree")
+    after = findings.model.row_value(
+        findings.model.frame.index[
+            findings.model.frame["channel"] == channel][0], "judged")
+    assert before != after
+    assert after.startswith("1 of")
+
+
+def test_every_verdict_is_written_to_disk_without_being_asked(judging, review):
+    """There is no save button, on purpose: a reader who loses three hundred
+    verdicts to a crash will not use this software again."""
+    from onset_review import adjudication
+
+    events = judging.panels["events"]
+    events.view.selectRow(0)
+    key = events.judge("agree")
+    stored = adjudication.load(review.request)
+    assert stored.verdict_of(key) == "agree"
+    assert stored.reader == "Dr Smith"
+
+
+def test_clicking_a_header_actually_sorts(built):
+    """The arrow was decoration: `setSortingEnabled` draws it and calls
+    `QAbstractItemModel.sort`, whose base implementation does nothing. Every
+    header in this window was a control that moved and changed nothing."""
+    events = built.panels["events"]
+    column = events.model.column_index("amplitude_uv")
+    try:
+        events.view.sortByColumn(column, Qt.DescendingOrder)
+        values = [float(events.model.row_value(row, "amplitude_uv"))
+                  for row in range(min(8, events.model.rowCount()))]
+        assert values == sorted(values, reverse=True)
+        assert events.model.rowCount() == len(events._shown)
+    finally:
+        events.view.sortByColumn(events.model.column_index("t_local"),
+                                 Qt.AscendingOrder)
+
+
+def test_a_verdict_follows_the_row_it_was_given_on_after_a_sort(judging, review):
+    """The hazard sorting introduces: if a selected row were turned back into
+    an event through a frame held beside the model, sorting one and not the
+    other would file the verdict against a different event."""
+    events = judging.panels["events"]
+    try:
+        events.view.sortByColumn(events.model.column_index("amplitude_uv"),
+                                 Qt.DescendingOrder)
+        events.view.selectRow(0)
+        key = events.selected_key()
+        biggest = float(events.model.row_value(0, "amplitude_uv"))
+        assert events.judge("agree") == key
+        assert review.read.verdict_of(key) == "agree"
+        # And the key really is the biggest event, not the first in time.
+        matching = events._shown[events._shown["key"] == key]
+        assert float(matching.iloc[0]["amplitude_uv"]) == pytest.approx(biggest)
+    finally:
+        events.view.sortByColumn(events.model.column_index("t_local"),
+                                 Qt.AscendingOrder)
+
+
+def test_the_sort_arrow_points_at_the_order_the_rows_are_in(built):
+    events, findings = built.panels["events"], built.panels["findings"]
+    header = events.view.horizontalHeader()
+    assert events.model.column_name(header.sortIndicatorSection()) == "t_local"
+    header = findings.view.horizontalHeader()
+    assert findings.model.column_name(header.sortIndicatorSection()) == "rank"
+
+
+def test_the_read_menu_offers_the_verdicts_and_names_the_reader(built):
+    menu = [action.menu() for action in built.host.menuBar().actions()
+            if "Read" in action.text()][0]
+    entries = {action.text().replace("&", "") for action in menu.actions()
+               if action.text()}
+    assert "Who is reviewing…" in entries
+    assert "Next unjudged event" in entries
+    assert any(text.startswith("Real") for text in entries)
+    assert any(text.startswith("Ignore it") for text in entries)
+
+
+def test_the_status_bar_says_whose_read_this_is(judging, review):
+    events = judging.panels["events"]
+    events.view.selectRow(0)
+    events.judge("agree")
+    label = judging.host.statusBar().findChild(qt.QLabel, "onset_reader")
+    assert label is not None
+    assert "Dr Smith" in label.text()
+    assert "1 judged" in label.text()
+
+
+def test_the_single_letter_keys_are_scoped_to_the_events_panel(built):
+    """A window-wide `A` would take MNE's annotation key away from the trace."""
+    events = built.panels["events"]
+    contexts = {shortcut.context() for shortcut in events.shortcuts}
+    assert contexts == {Qt.WidgetWithChildrenShortcut}
+    assert {shortcut.key().toString() for shortcut in events.shortcuts} >= {
+        "A", "D", "U"}
 
 
 def test_the_caveat_is_on_the_status_bar(built, review):
@@ -271,11 +924,82 @@ def test_the_controls_read_their_values_from_the_browser(built):
     assert controls.position.value() == pytest.approx(float(state.t_start))
 
 
+def test_clicking_through_events_does_not_shrink_the_trace(built):
+    """Found by the adjudication tests, which click far more than any test did.
+
+    MNE recomputes `n_channels` as `round(y1 - y0 - 1)` every time the Y range
+    changes, so scrolling to a channel with a range of exactly `n_channels`
+    told it to show one fewer. Each click on an event cost a channel; after a
+    dozen the trace was empty and MNE raised inside its own redraw. A reviewer
+    walking an event list is exactly the person who would have hit it.
+    """
+    events = built.panels["events"]
+    before = int(built.figure.mne.n_channels)
+    assert before > 0
+    for row in range(min(12, events.model.rowCount())):
+        events.view.selectRow(row)
+    assert int(built.figure.mne.n_channels) == before
+
+
+def _microvolts(text: str) -> float:
+    import re
+
+    match = re.match(r"\s*([-+]?[\d.]+)\s*([munµ]?)V\s*$", text)
+    assert match, f"not an amplitude: {text!r}"
+    return float(match.group(1)) * {"": 1e6, "m": 1e3, "u": 1.0, "µ": 1.0,
+                                    "n": 1e-3}[match.group(2)]
+
+
+def test_the_microvolt_conversion_refuses_what_it_cannot_parse():
+    """A wrong number beside a right one is worse than one number."""
+    from onset_review.controls import as_microvolts
+
+    assert as_microvolts("0.1 mV") == "100 µV"
+    assert as_microvolts("50.0 µV") == "50 µV"
+    assert as_microvolts("1.0 mV") == "1000 µV"
+    for nonsense in ("", "auto", "nonsense", "mV", "0.1 mA"):
+        assert as_microvolts(nonsense) == ""
+
+
+def test_the_window_length_is_also_given_as_a_paper_speed(built):
+    """The pairing every reader has in their hands: ten seconds at 30 mm/s.
+
+    In the tooltip rather than as a second label on the bar, because that bar's
+    width is the whole window's minimum width and a 1024 px screen is still a
+    screen.
+    """
+    from onset_review.controls import paper_speed
+
+    assert paper_speed(10.0) == "≈ 30 mm/s"
+    assert paper_speed(5.0) == "≈ 60 mm/s"
+    assert paper_speed(20.0) == "≈ 15 mm/s"
+    assert paper_speed(0.0) == ""
+
+    controls = built.panels["controls"]
+    controls.sync()
+    tip = controls.seconds.toolTip()
+    assert paper_speed(controls.seconds.value()).lstrip("≈ ") in tip
+    # Nothing here knows how wide the monitor is, and X11 reports a DPI that
+    # is wrong as often as it is right, so it is called what it is.
+    assert "equivalence, not a measurement" in tip
+    assert "does not know the physical size" in tip
+
+
 def test_the_gain_readout_is_mnes_own_scalebar(built):
     """A readout that disagrees with the scalebar drawn on the trace is worse
-    than no readout."""
+    than no readout.
+
+    Agreement is now checked as the same *amplitude* rather than the same
+    string: the readout is MNE's text converted to microvolts, which is the
+    unit intracranial EEG is read in and the one nobody judging a 90 µV ripple
+    wants to do arithmetic around. The number is the same number.
+    """
     controls = built.panels["controls"]
-    assert controls.gain.text() in set(built.figure._get_scale_bar_texts())
+    drawn = [text for text in built.figure._get_scale_bar_texts() if text]
+    assert drawn
+    assert controls.gain.text().endswith("µV")
+    assert any(_microvolts(controls.gain.text()) == pytest.approx(
+        _microvolts(text), rel=1e-6) for text in drawn)
 
 
 def test_scaling_changes_the_trace_and_the_readout(built):
@@ -286,7 +1010,11 @@ def test_scaling_changes_the_trace_and_the_readout(built):
     controls._scale(AMPLITUDE_STEP)
     assert float(built.figure.mne.scale_factor) == pytest.approx(
         before * AMPLITUDE_STEP)
-    assert controls.gain.text() in set(built.figure._get_scale_bar_texts())
+    # The readout still names the same amplitude as the bar on the trace; it
+    # names it in microvolts, which is the unit, not a different number.
+    drawn = [text for text in built.figure._get_scale_bar_texts() if text]
+    assert any(_microvolts(controls.gain.text()) == pytest.approx(
+        _microvolts(text), rel=1e-6) for text in drawn)
     controls._scale(1 / AMPLITUDE_STEP)        # put it back for other tests
     assert float(built.figure.mne.scale_factor) == pytest.approx(before)
 
@@ -1061,8 +1789,11 @@ def test_every_test_that_builds_a_widget_asks_for_the_application():
     #: crash with no name on it.
     WIDGETY = ("Panel", "Dialog", "Controls", "decorate", "open_trace",
                "muted", "section_label", "QLabel", "QWidget")
-    #: Fixtures that create or depend on the `QApplication`.
-    PROVIDES_APP = {"qapp", "built"}
+    #: Fixtures that create or depend on the `QApplication`. Transitive
+    #: dependencies are listed by hand: this check parses the file rather than
+    #: resolving pytest's fixture graph, so a fixture that takes `built` has
+    #: to be named here too.
+    PROVIDES_APP = {"qapp", "built", "judging"}
 
     tree = ast.parse(pathlib.Path(__file__).read_text())
     offenders = []

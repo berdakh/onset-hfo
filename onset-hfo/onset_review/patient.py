@@ -15,16 +15,14 @@ from pathlib import Path
 from qtpy.QtCore import Qt
 from qtpy.QtWidgets import (
     QCheckBox,
-    QFrame,
     QGridLayout,
     QLabel,
-    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
 
 from onset_review.record import CHART_FIELDS, ILAE_CLASSES, patient_record
-from onset_review.theme import SPACING, card, current, muted, section_label
+from onset_review.theme import SPACING, card, current, muted, scrolled, section_label
 
 __all__ = ["PatientPanel", "patient_record", "CHART_FIELDS", "ILAE_CLASSES"]
 
@@ -118,13 +116,9 @@ class PatientPanel(QWidget):
             column.addWidget(_withheld(self.palette_tokens))
         column.addStretch(1)
 
-        scroll = QScrollArea()
-        scroll.setWidget(body)
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.NoFrame)
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
-        outer.addWidget(scroll)
+        outer.addWidget(scrolled(body))
 
     # -- the rows ----------------------------------------------------------
     def _epilepsy_rows(self):

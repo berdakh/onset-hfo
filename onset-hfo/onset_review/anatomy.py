@@ -46,7 +46,8 @@ import numpy as np
 import pandas as pd
 
 __all__ = ["ContactLayout", "electrode_layout", "parse_channel", "brain_surface",
-           "REGIONS", "SHAFT_PITCH_M", "layout_caption", "NOT_ANATOMY"]
+           "REGIONS", "SHAFT_PITCH_M", "layout_caption", "NOT_ANATOMY",
+           "ARCHIVE_ORIGIN"]
 
 #: The one phrase every caption over an inferred layout carries, whichever of
 #: the two it is. A single invariant rather than two wordings, so the interface
@@ -337,6 +338,14 @@ def electrode_layout(session, resection=None, electrodes: pd.DataFrame | None = 
                 sources.append("inferred")
         centre = np.mean(np.asarray(places, dtype=float), axis=0)
         shaft, index, hemisphere, region = parse_channel(contacts[0])
+        # A measured position says which side the contact is on, whatever the
+        # name does or does not say. `x < 0` is left in every convention iEEG
+        # coordinates are written in (RAS, and the scanner frames that follow
+        # it), and plenty of real electrode names carry no L or R -- so a
+        # layout built from coordinates should not keep reporting "side
+        # unknown" about something it has just been told.
+        if sources and set(sources) == {"archive"} and abs(centre[0]) > 1e-4:
+            hemisphere = "L" if centre[0] < 0 else "R"
         rows.append({
             "channel": channel,
             "contact_a": contacts[0],
@@ -385,7 +394,15 @@ def _zones_for(session, resection) -> dict[str, str]:
     return {str(r.channel): str(r.zone) for r in table.itertuples()}
 
 
-def layout_caption(layout: pd.DataFrame) -> str:
+#: Where measured coordinates came from, when nobody says otherwise. Named
+#: rather than written into the sentence, because once a reviewer can supply
+#: their own file the sentence "the dataset's own coordinates" becomes a false
+#: provenance claim -- and a false provenance claim in the caption of a view
+#: that exists to say what is and is not known is the worst place for one.
+ARCHIVE_ORIGIN = "the dataset's own measured coordinates (electrodes.tsv)"
+
+
+def layout_caption(layout: pd.DataFrame, origin: str = ARCHIVE_ORIGIN) -> str:
     """The sentence that has to sit under any drawing of this layout.
 
     Returned from here rather than written into the panel so that the window,
@@ -397,12 +414,11 @@ def layout_caption(layout: pd.DataFrame) -> str:
         return "No channels to place."
     sources = set(layout["source"])
     if sources == {"archive"}:
-        return ("Contact positions are the dataset's own measured coordinates "
-                "(electrodes.tsv).")
+        return f"Contact positions are {origin}."
     if "archive" in sources:
         n = int((layout["source"] == "inferred").sum())
-        return (f"Measured coordinates, except for {n} channel(s) placed from "
-                f"their electrode names. Those are schematic.")
+        return (f"Contact positions are {origin}, except for {n} channel(s) "
+                f"placed from their electrode names. Those are schematic.")
     unmapped = float((layout["region"] == UNKNOWN["label"]).mean())
     if unmapped > 0.5:
         return (f"MONTAGE DIAGRAM — {NOT_ANATOMY}, and no anatomy at all. No "

@@ -37,7 +37,7 @@ from qtpy.QtWidgets import (
 )
 
 from onset_review import theme
-from onset_review.anatomy import UNKNOWN, electrode_layout, layout_caption
+from onset_review.anatomy import ARCHIVE_ORIGIN, UNKNOWN, electrode_layout, layout_caption
 from onset_review.theme import card
 
 __all__ = ["BrainPanel", "VIEWS", "ZONE_EDGES"]
@@ -77,6 +77,11 @@ class BrainPanel(QWidget):
         from matplotlib.figure import Figure
 
         self._session = session
+        self._resection = resection
+        #: Where the measured coordinates, if any, came from. Said in the
+        #: caption, because "the dataset's own coordinates" is false the moment
+        #: a reviewer supplies a file of their own.
+        self._origin = ARCHIVE_ORIGIN
         self.layout_frame = electrode_layout(session, resection=resection,
                                              electrodes=electrodes)
 
@@ -133,33 +138,58 @@ class BrainPanel(QWidget):
         # otherwise hold one bright white rectangle. Colours come from the same
         # palette as everything else.
         tokens = theme.current()
-        self.figure = Figure(figsize=(5.2, 4.2), facecolor=tokens.surface)
+        # A short default figure, not because the scene wants to be short --
+        # it takes the whole dock when there is room -- but because `figsize`
+        # is where the canvas's size *hint* comes from, and that hint is the
+        # height the scroll area lays the panel out at. A 4.2 in hint made the
+        # panel 554 px tall inside a 144 px dock on a laptop screen, so the
+        # visible slice was all chrome and no scene.
+        self.figure = Figure(figsize=(5.2, 2.6), facecolor=tokens.surface)
         self.canvas = FigureCanvasQTAgg(self.figure)
         self.canvas.setMinimumWidth(240)
         # Low enough to live in a docked column beneath two tables. The panel
         # is worth more space than this and says so by being floatable: one
         # drag gives it a window.
-        self.canvas.setMinimumHeight(170)
+        self.canvas.setMinimumHeight(150)
         self.axes = self.figure.add_axes((-0.05, -0.14, 0.99, 1.26),
                                          projection="3d")
         self.axes.set_facecolor(tokens.surface)
         self._colorbar = None
         self._points = None
 
-        self.caption = QLabel(layout_caption(self.layout_frame))
+        self.caption = QLabel(layout_caption(self.layout_frame,
+                                             self._origin))
         self.caption.setWordWrap(True)
         self.caption.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Minimum)
         schematic = (not self.layout_frame.empty
                      and "inferred" in set(self.layout_frame["source"]))
         self.caption.setStyleSheet(card("warn" if schematic else "info"))
 
-        box = QVBoxLayout(self)
+        # The contents go in a scroll area rather than straight on the panel.
+        # Docked, this is the tallest thing in the right-hand column -- a row
+        # of controls, a wrapped headline, a 3D scene and a wrapped caption --
+        # and a main window takes its minimum height from the sum of its
+        # column, so without this the window could not shrink to a laptop
+        # screen. See `theme.scrolled`.
+        body = QWidget()
+        box = QVBoxLayout(body)
         box.setContentsMargins(4, 4, 4, 4)
         box.setSpacing(4)
         box.addLayout(bar)
-        box.addWidget(self.headline)
+        # The scene first, the two lines of text under it as a figure caption.
+        # Reading order aside, this is what the panel looks like when it is
+        # squeezed: the scroll area shows the top of the body, so whatever is
+        # first is what a reviewer sees. With the headline above, a short dock
+        # showed a row of controls, a line of text and then blank canvas --
+        # which looks like a panel that failed to draw rather than one that
+        # needs more room.
         box.addWidget(self.canvas)
+        box.addWidget(self.headline)
         box.addWidget(self.caption)
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(theme.scrolled(body))
 
         self.colour_by.currentIndexChanged.connect(self.redraw)
         for toggle in (self.labels, self.shafts, self.resection_only):
@@ -169,6 +199,28 @@ class BrainPanel(QWidget):
         self._elev, self._azim = VIEWS["Oblique"]
         if not self.layout_frame.empty:
             # Open facing the hemisphere the busiest contact is in.
+            self._azim = -40 if float(
+                self.layout_frame.iloc[0]["x"]) >= 0 else -140
+        self.redraw()
+
+    def set_electrodes(self, electrodes, origin: str = ARCHIVE_ORIGIN) -> None:
+        """Re-place every contact from a coordinate table, and redraw.
+
+        Rebuilding the layout rather than nudging the points: which hemisphere
+        a contact is on, which shaft it belongs to and whether it is inside the
+        resection are all derived alongside its position, and a view that moved
+        the dots without re-deriving the rest would be drawing a different
+        patient's geometry with this one's labels.
+        """
+        self._origin = origin
+        self.layout_frame = electrode_layout(self._session,
+                                             resection=self._resection,
+                                             electrodes=electrodes)
+        self.caption.setText(layout_caption(self.layout_frame, self._origin))
+        schematic = (not self.layout_frame.empty
+                     and "inferred" in set(self.layout_frame["source"]))
+        self.caption.setStyleSheet(card("warn" if schematic else "info"))
+        if not self.layout_frame.empty:
             self._azim = -40 if float(
                 self.layout_frame.iloc[0]["x"]) >= 0 else -140
         self.redraw()

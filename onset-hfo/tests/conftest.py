@@ -38,6 +38,24 @@ from onset_hfo.preprocess import prepare
 from onset_hfo.synthetic import make_synthetic_recording
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _reads_go_to_a_temporary_directory(tmp_path_factory):
+    """Keep the suite's verdicts out of the project's artifacts directory.
+
+    The reviewer's read autosaves on every verdict -- that is the point of it
+    -- so a test that judges an event writes a file. Without this it would
+    write into `artifacts/reads/`, where it would be indistinguishable from a
+    real read of the same window.
+    """
+    previous = os.environ.get("ONSET_REVIEW_READS")
+    os.environ["ONSET_REVIEW_READS"] = str(tmp_path_factory.mktemp("reads"))
+    yield
+    if previous is None:
+        os.environ.pop("ONSET_REVIEW_READS", None)
+    else:
+        os.environ["ONSET_REVIEW_READS"] = previous
+
+
 @pytest.fixture(scope="session")
 def recording():
     """A short labelled synthetic recording (seed fixed, so tests are stable)."""

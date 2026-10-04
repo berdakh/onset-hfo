@@ -51,6 +51,49 @@ rather than removed — an assistant
 that cites this window or refuses — and, pinned to the status bar
 where it cannot be scrolled past, whether any of it supports a ranking at all.
 
+It opens in one of three layouts — screening, reading, reporting — rather than
+showing all eleven panels at once, because a window you have to tidy before you
+can use it is a window that does not get used.
+
+Select any event and it opens **close up**: the wideband signal, the same
+signal through the detector's band, and the time-frequency plot under both. A
+real oscillation is an island — energy confined in frequency, lasting several
+cycles. Filter ringing on an interictal spike is a column running the whole
+height of the plot at one instant, and it is the largest single source of false
+HFO detections there is. The filtered trace alone cannot tell them apart; these
+three together can, at a glance.
+
+And the one column in it that is not an algorithm's output: **your own
+verdict**. `A`, `D` or `U` on the selected event — real, not real, cannot tell
+— recorded under your name with the time you gave it, saved the moment you
+give it, and carried onto the next analysis if you change a filter. A verdict
+the new analysis cannot match is kept and named in the report rather than
+deleted. The exported review says how much of the window you actually judged,
+which events you rejected and why, and quotes a confirmed rate only for the
+contacts you finished.
+
+**Analyse ten minutes, look at one of them.** `--span 600` ranks the contacts
+over ten minutes while the trace holds the minute you asked for; click any
+event and the minute it is in loads, with nothing re-analysed. The analysis
+runs in chunks with the signal let go between them, and measures every
+detector threshold over the whole span rather than per chunk — so the answer
+does not depend on where the boundaries fell. Measured: 30 s, 60 s and 100 s
+chunks give byte-identical HFO events.
+
+**Review → Next window** re-analyses the next stretch of the same recording
+without a trip back through the open dialog, carrying your name, your
+coordinates and your layout. That is the one step this software most wants you
+to take: across these twenty patients the annotators' own busiest fast-ripple
+channel is the same channel in only 7 of 20 when one minute is compared with
+another minute of the *same* recording.
+
+The 3D view says *schematic* because neither public archive ships
+`electrodes.tsv`. Your patients have coordinates — a post-implant CT
+coregistered to the planning MRI — so **Review → Electrode coordinates…** takes
+that file, in whatever shape the planning system exported it, tells you how
+many contacts it would place before anything moves, and then stops calling the
+view a montage diagram.
+
 It opens recordings of your own too, through MNE's readers — EDF, BrainVision,
 Persyst, Nihon Kohden, Nicolet, Blackrock, MEF3 and the rest — with no
 conversion step and no proprietary format. It asks you to confirm which
@@ -331,6 +374,7 @@ onset_hfo/            the pipeline
   report.py           the structured, cited report (no recommendation field)
   viz.py              the four figures
   pipeline.py         end to end
+  longrun.py          a whole span analysed chunk by chunk, quality and all
   streaming.py        recordings longer than memory, in chunks that cannot
                       change the answer
   populations.py      ripples split by discharge co-occurrence, reported
@@ -377,6 +421,10 @@ onset_review/         the desktop reviewer (Qt), installable on Ubuntu
   session.py          a loaded window: the recording, the detections, the findings
   trends.py           the trend matrix, the event list, detector-vs-expert agreement
   anatomy.py          where each contact is drawn, and how much of that is known
+  coordinates.py      a coordinate file from a planning system, read and checked
+  detail.py           one event wideband, filtered and in time-frequency
+  eventview.py        that triptych, drawn
+  adjudication.py     the reader's own verdicts: attributed, saved, never dropped
   report.py           the record a reviewer exports when they are done
   panels.py           the dock widgets; they render and compute nothing
   controls.py         visible amplitude, window, channel and scroll controls

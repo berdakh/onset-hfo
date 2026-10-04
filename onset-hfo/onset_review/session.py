@@ -40,6 +40,7 @@ from onset_hfo.quality import (
     segment_quality,
 )
 from onset_hfo.validate import validate_events
+from onset_review.adjudication import Adjudication
 
 __all__ = ["ReviewRequest", "ReviewSession", "load_session",
            "session_from_recording", "annotations_for",
@@ -123,6 +124,24 @@ class ReviewRequest:
     #: checks passed is `PreprocessConfig.exclude`, where it is recorded as
     #: the reviewer's own choice rather than as an override of a verdict.
     keep_channels: tuple[str, ...] = ()
+    #: What to *analyse*, when that is more than the trace shows, in
+    #: original-recording seconds. `None` means the two are the same, which is
+    #: how this software worked until a span could be longer than memory.
+    #: Above `onset_hfo.longrun.STREAM_ABOVE_S` the analysis is streamed in
+    #: chunks and only `t_start`–`t_stop` is held as signal, so a reviewer can
+    #: rank ten minutes of contacts and look at one of them.
+    #:
+    #: Absolute rather than a length from `t_start`, because the trace window
+    #: moves inside the span -- clicking an event eight minutes in loads that
+    #: minute -- and a span defined relative to the trace would slide along
+    #: with it, which would mean every rate quietly changed when the reviewer
+    #: scrolled.
+    span_start: float | None = None
+    span_stop: float | None = None
+    #: A coordinate file the reviewer pointed the software at, when the
+    #: recording itself carries none. Carried on the request so that it
+    #: survives a re-analysis: a filter change does not move an electrode.
+    electrodes_path: Path | None = None
 
     def __post_init__(self) -> None:
         unknown = [d for d in self.detectors if d not in HFO_DETECTORS]
@@ -138,6 +157,27 @@ class ReviewRequest:
         if self.t_stop <= self.t_start:
             raise ValueError(f"window ends at or before it starts "
                              f"({self.t_start:g}–{self.t_stop:g} s)")
+
+    def span(self) -> tuple[float, float]:
+        """What is analysed, which is at least what is shown."""
+        if self.span_start is None or self.span_stop is None:
+            return float(self.t_start), float(self.t_stop)
+        start, stop = float(self.span_start), float(self.span_stop)
+        if stop - start <= self.duration:
+            return float(self.t_start), float(self.t_stop)
+        return start, stop
+
+    @property
+    def span_duration(self) -> float:
+        start, stop = self.span()
+        return stop - start
+
+    @property
+    def streamed(self) -> bool:
+        """Whether this request needs the chunked path to be analysable."""
+        from onset_hfo.longrun import STREAM_ABOVE_S
+
+        return self.span_duration > STREAM_ABOVE_S
 
     @property
     def duration(self) -> float:
@@ -253,12 +293,38 @@ class ReviewSession:
     #: a differently-configured one; the signal is already in memory as `raw`,
     #: so holding it costs nothing.
     recording: object | None = None
+    #: What the *reader* decided, as opposed to what the detector decided.
+    #: Empty until someone gives a verdict; loaded from disk and reconciled
+    #: against these events by the launcher. See `onset_review.adjudication`.
+    read: Adjudication = field(default_factory=Adjudication)
     steps: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
     citation: str = ""
     sfreq: float = 0.0
     t_offset: float = 0.0
     montage: str = "bipolar"
+    #: What was analysed, in original-recording seconds. Equal to the trace
+    #: window unless the request asked for a longer span, in which case every
+    #: rate, every rank and the trend cover this and the trace covers a slice
+    #: of it. Zero-zero means "the same as the trace window" and is what every
+    #: session built before spans existed carries.
+    span_start: float = 0.0
+    span_stop: float = 0.0
+
+    @property
+    def span(self) -> tuple[float, float]:
+        if self.span_stop > self.span_start:
+            return self.span_start, self.span_stop
+        return float(self.request.t_start), float(self.request.t_stop)
+
+    @property
+    def span_duration(self) -> float:
+        start, stop = self.span
+        return stop - start
+
+    @property
+    def streamed(self) -> bool:
+        return self.span_duration > self.request.duration + 1e-9
 
     @property
     def accepted(self) -> list[Event]:
@@ -275,7 +341,8 @@ class ReviewSession:
 
     @property
     def duration_min(self) -> float:
-        return self.request.duration / 60.0
+        """Minutes **analysed**, which is what every rate is divided by."""
+        return self.span_duration / 60.0
 
     @property
     def has_expert(self) -> bool:
@@ -300,7 +367,26 @@ class ReviewSession:
             "n_candidates": len(self.candidates),
             "expert_events": len(self.expert),
             "n_reviewed": len(self.reviewed_channels),
+            "analysed_s": self.span_duration,
+            "trace_s": self.request.duration,
         }
+
+    def scope(self) -> str:
+        """What the numbers are over, when that is not what the trace shows.
+
+        Empty for an ordinary window, where the two are the same thing and a
+        sentence saying so would be noise. Not empty the moment they differ,
+        because every rate on screen is then over ten minutes while the signal
+        under it is one, and a reviewer who assumed otherwise would be reading
+        the table wrong in the direction that matters.
+        """
+        if not self.streamed:
+            return ""
+        start, stop = self.span
+        return (f"Rates and ranks are over {start:g}–{stop:g} s "
+                f"({self.span_duration / 60:.1f} min). The trace holds "
+                f"{self.request.t_start:g}–{self.request.t_stop:g} s; click any "
+                f"event to load the minute it is in.")
 
     def caveat(self) -> str:
         """The one sentence that has to be on screen whatever else is.
@@ -396,7 +482,8 @@ def _label_for(event: Event) -> str:
 
 
 def annotations_for(events: list[Event], t_offset: float = 0.0,
-                    accepted_only: bool = True, prefix: str = ""):
+                    accepted_only: bool = True, prefix: str = "",
+                    window_s: float | None = None):
     """Detections as MNE annotations, in the Raw's own time base.
 
     Event times are archive-file seconds so a window quoted in a report can be
@@ -413,7 +500,14 @@ def annotations_for(events: list[Event], t_offset: float = 0.0,
     for event in events:
         if accepted_only and not event.accepted:
             continue
-        onsets.append(max(0.0, float(event.start) - float(t_offset)))
+        onset = float(event.start) - float(t_offset)
+        # An event outside the loaded trace is not drawn at its edge. When the
+        # analysed span is longer than the trace, most events are outside it,
+        # and clamping them to zero would pile ten minutes of marks onto the
+        # first sample of the minute on screen.
+        if onset < 0 or (window_s is not None and onset >= float(window_s)):
+            continue
+        onsets.append(onset)
         durations.append(max(0.0, float(event.stop) - float(event.start)))
         labels.append(f"{prefix}{_label_for(event)}" if prefix else _label_for(event))
         channels.append((event.channel,) if event.channel else ())
@@ -498,6 +592,25 @@ def _electrodes_for(record: Recording):
     return frame
 
 
+def _electrodes_from_file(path, session_like):
+    """Coordinates a reviewer pointed the software at, or None.
+
+    Failures are silent here and loud in the interface: this runs on every
+    re-analysis, and a file that has since been moved should not stop the
+    window rebuilding -- the view falls back to the schematic layout it had
+    before anyone supplied coordinates, which is the honest thing to show.
+    """
+    if not path:
+        return None
+    from onset_review.coordinates import read_coordinates
+
+    try:
+        read = read_coordinates(path, session_like)
+    except Exception:                       # noqa: BLE001
+        return None
+    return read.frame if read.usable else None
+
+
 def _detect(prep, cfg: PipelineConfig, name: str) -> list[Event]:
     """Run one detector, reading its settings off the request's own config.
 
@@ -564,6 +677,9 @@ def load_session(request: ReviewRequest, cache_dir: Path | None = None,
         if progress is not None:
             progress(fraction, message)
 
+    if request.streamed:
+        return streamed_session(request, cache_dir, progress)
+
     if request.imported:
         from onset_hfo.io import open_recording
 
@@ -581,6 +697,171 @@ def load_session(request: ReviewRequest, cache_dir: Path | None = None,
                              t_start=request.t_start, t_stop=request.t_stop,
                              cache_dir=cache_dir, verbose=False)
     return session_from_recording(record, request, progress=progress)
+
+
+def source_for(request: ReviewRequest, cache_dir: Path | None = None):
+    """A callable that produces any stretch of this request's recording.
+
+    One seam for both halves of the streamed path: the chunks the analysis
+    reads, and the window the trace holds. They must come from the same place
+    or the trace would show a different recording from the one that was
+    ranked.
+    """
+    if request.imported:
+        from onset_hfo.io import open_recording
+
+        def read_file(t_start: float, t_stop: float) -> Recording:
+            return open_recording(
+                request.path, t_start=t_start, t_stop=t_stop,
+                subject=request.subject, line_freq=request.line_freq,
+                channel_types=dict(request.channel_types), run=request.run)
+
+        return read_file
+
+    def read_archive(t_start: float, t_stop: float) -> Recording:
+        return fetch_slice(dataset=request.dataset, subject=request.subject,
+                           run=request.run, task=request.task,
+                           t_start=t_start, t_stop=t_stop,
+                           cache_dir=cache_dir, verbose=False)
+
+    return read_archive
+
+
+def streamed_session(request: ReviewRequest, cache_dir: Path | None = None,
+                     progress=None) -> ReviewSession:
+    """Analyse a span longer than memory; hold one window of it as signal.
+
+    The division of labour is the whole feature. Rates, ranks, the trend, the
+    event list and the quality stage cover `request.span()`; `raw` covers
+    `t_start`–`t_stop` and nothing else. A reviewer ranks ten minutes of
+    contacts and looks at one of them, which is how the work is actually done
+    and what a one-minute tool could never support.
+    """
+    from onset_hfo.longrun import analyse_span
+
+    def say(fraction: float, message: str) -> None:
+        if progress is not None:
+            progress(fraction, message)
+
+    cfg = request.pipeline_config()
+    span_start, span_stop = request.span()
+    source = source_for(request, cache_dir)
+
+    # Expert markings live on the `Recording`, not in the signal, so they are
+    # harvested chunk by chunk as the analysis goes past. Comparing a span's
+    # detections against one window's annotations would make every detection
+    # outside that window look like a false positive.
+    experts: list[Event] = []
+    seen_marks: set = set()
+    reviewed: list[str] = []
+
+    def harvest(record, plan) -> None:
+        for event in _expert_events(record, request.band):
+            key = (event.channel, round(float(event.start), 4))
+            if key not in seen_marks:
+                seen_marks.add(key)
+                experts.append(event)
+        for channel in getattr(record, "reviewed_channels", []):
+            if channel not in reviewed:
+                reviewed.append(channel)
+
+    analysis = analyse_span(
+        source, span_start, span_stop, cfg,
+        detectors=tuple(request.detectors), with_spikes=request.with_spikes,
+        check_quality=request.check_quality,
+        progress=lambda fraction, message: say(0.03 + 0.80 * fraction, message),
+        collect=harvest)
+
+    say(0.86, f"Loading {request.t_start:g}–{request.t_stop:g} s to look at")
+    record = source(request.t_start, request.t_stop)
+    prep = prepare(record, cfg.preprocess, verbose=False)
+    raw = _to_raw(prep.data, list(prep.ch_names), prep.sfreq)
+
+    events = analysis.events
+    say(0.92, "Measuring rates over the whole span")
+    if request.check_quality:
+        reject_unusable_events(events, analysis.segments, analysis.quality,
+                               keep=request.keep_channels)
+    clean = analysable_seconds(analysis.segments, analysis.quality,
+                               list(analysis.ch_names),
+                               analysis.duration, keep=request.keep_channels)
+    reviewed = [c for c in reviewed if c in set(analysis.ch_names)]
+    findings = _findings_table(events, list(analysis.ch_names),
+                               clean or analysis.duration, request.primary,
+                               reviewed, experts, window_s=analysis.duration)
+    leader = leader_separation(findings) if not findings.empty else {}
+    counts = (findings.set_index("channel")["n_events"]
+              if not findings.empty else pd.Series(dtype=float))
+    tied = (candidate_channels(counts, max(analysis.duration / 60.0, 1e-9))
+            if len(counts) else [])
+
+    # Only the events the trace actually holds become annotations; the rest
+    # are in the tables, where they belong.
+    raw.set_annotations(annotations_for(events, prep.t_offset,
+                                        window_s=prep.duration))
+
+    notes = list(getattr(record, "notes", []))
+    notes.append(
+        f"analysed {analysis.duration:g} s ({span_start:g}–{span_stop:g} s) in "
+        f"{analysis.chunks} chunks; the trace holds "
+        f"{request.t_start:g}–{request.t_stop:g} s of it, and every rate above "
+        f"is over the whole span")
+    if request.check_quality and analysis.quality is not None:
+        notes.append(quality_summary(analysis.quality, analysis.segments,
+                                     kept=request.keep_channels))
+
+    say(1.0, "Ready")
+    session = ReviewSession(
+        request=request, raw=raw, events=events, findings=findings,
+        leader=leader, candidates=list(tied), expert=experts,
+        reviewed_channels=reviewed, resection=_resection_for(record)
+        if not request.imported else None,
+        electrodes=_electrodes_for(record),
+        quality=analysis.quality, segments=analysis.segments,
+        clean_seconds=dict(clean or {}), steps=list(analysis.steps),
+        notes=notes, citation=str(getattr(record, "citation", "")),
+        sfreq=float(prep.sfreq), t_offset=float(prep.t_offset),
+        montage=prep.montage, recording=record,
+        span_start=float(span_start), span_stop=float(span_stop))
+    supplied = _electrodes_from_file(request.electrodes_path, session)
+    if supplied is not None:
+        session.electrodes = supplied
+    return session
+
+
+def reload_trace(session: ReviewSession, t_start: float, t_stop: float,
+                 cache_dir: Path | None = None) -> ReviewSession:
+    """The same analysis, a different stretch of signal underneath it.
+
+    This is what makes a long span navigable. The detections, the ranking, the
+    quality verdicts and the reviewer's own read all belong to the span and
+    must not move; only the minute of signal the trace holds does. Re-running
+    the analysis to look at a different minute of it would cost minutes and
+    change the numbers under the reviewer, which is the opposite of what
+    clicking an event should do.
+
+    A new `ReviewSession` rather than a mutated one, because the window is
+    rebuilt around it and a half-swapped session seen by a panel mid-rebuild
+    is the kind of bug that only shows up on someone else's machine.
+    """
+    import dataclasses
+
+    span_start, span_stop = session.span
+    start = max(span_start, float(t_start))
+    stop = min(span_stop, float(t_stop))
+    if stop <= start:
+        return session
+
+    request = dataclasses.replace(session.request, t_start=start, t_stop=stop,
+                                  span_start=span_start, span_stop=span_stop)
+    record = source_for(request, cache_dir)(start, stop)
+    prep = prepare(record, request.pipeline_config().preprocess, verbose=False)
+    raw = _to_raw(prep.data, list(prep.ch_names), prep.sfreq)
+    raw.set_annotations(annotations_for(session.events, prep.t_offset,
+                                        window_s=prep.duration))
+    return dataclasses.replace(
+        session, request=request, raw=raw, recording=record,
+        t_offset=float(prep.t_offset), sfreq=float(prep.sfreq))
 
 
 def session_from_recording(record: Recording, request: ReviewRequest,
@@ -667,7 +948,7 @@ def session_from_recording(record: Recording, request: ReviewRequest,
     raw.set_annotations(annotations_for(events, prep.t_offset))
 
     say(1.0, "Ready")
-    return ReviewSession(
+    session = ReviewSession(
         request=request, raw=raw, events=events, findings=findings,
         leader=leader, candidates=list(tied), expert=expert,
         reviewed_channels=reviewed, resection=resection, electrodes=electrodes,
@@ -681,3 +962,10 @@ def session_from_recording(record: Recording, request: ReviewRequest,
         sfreq=float(prep.sfreq), t_offset=float(prep.t_offset),
         montage=prep.montage, recording=record,
     )
+    # A coordinate file the reviewer supplied outranks whatever the archive
+    # shipped, which for every dataset here is nothing. Applied after the
+    # session exists because matching the names needs the channel list.
+    supplied = _electrodes_from_file(request.electrodes_path, session)
+    if supplied is not None:
+        session.electrodes = supplied
+    return session
