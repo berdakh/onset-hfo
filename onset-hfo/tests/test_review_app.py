@@ -162,6 +162,56 @@ def test_restoring_the_default_layout_undoes_a_dock_drag(built):
         brain.setFloating(was_floating)
 
 
+# -- electrode coordinates --------------------------------------------------
+
+
+def test_the_review_menu_offers_to_place_the_contacts(built):
+    menu = [action.menu() for action in built.host.menuBar().actions()
+            if "Review" in action.text()][0]
+    entries = {action.text().replace("&", "") for action in menu.actions()
+               if action.text()}
+    assert "Electrode coordinates…" in entries
+
+
+def test_supplied_coordinates_replace_the_schematic_view(built, review, tmp_path):
+    """And say in the caption that they came from a file, not the dataset."""
+    from onset_review import coordinates
+    from onset_review.anatomy import ARCHIVE_ORIGIN, NOT_ANATOMY
+
+    brain = built.panels["brain"]
+    before = brain.caption.text()
+    assert NOT_ANATOMY in before
+
+    names = coordinates.contacts_of(review)
+    path = tmp_path / "electrodes.tsv"
+    path.write_text("name\tx\ty\tz\n" + "".join(
+        f"{name}\t{-30 if index % 2 else 30}\t{-20 + index * 3}\t-15\n"
+        for index, name in enumerate(names)), encoding="utf-8")
+    read = coordinates.read_coordinates(path, review)
+    assert read.usable
+    try:
+        brain.set_electrodes(read.frame, origin="the file you supplied")
+        assert NOT_ANATOMY not in brain.caption.text()
+        assert "the file you supplied" in brain.caption.text()
+        assert ARCHIVE_ORIGIN not in brain.caption.text()
+        assert set(brain.layout_frame["source"]) == {"archive"}
+    finally:
+        brain.set_electrodes(review.electrodes)
+    assert NOT_ANATOMY in brain.caption.text()
+
+
+def test_the_coordinate_file_is_remembered_on_the_request(review, tmp_path):
+    """So a reviewer who placed their contacts and then widened a notch does
+    not have to find the file again."""
+    import dataclasses
+
+    request = dataclasses.replace(review.request, electrodes_path=tmp_path / "e.tsv")
+    assert request.electrodes_path == tmp_path / "e.tsv"
+    # And replacing something else keeps it, which is the whole point.
+    again = dataclasses.replace(request, band="fast_ripple")
+    assert again.electrodes_path == tmp_path / "e.tsv"
+
+
 # -- task layouts ----------------------------------------------------------
 
 

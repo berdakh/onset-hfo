@@ -72,6 +72,13 @@ deleted. The exported review says how much of the window you actually judged,
 which events you rejected and why, and quotes a confirmed rate only for the
 contacts you finished.
 
+The 3D view says *schematic* because neither public archive ships
+`electrodes.tsv`. Your patients have coordinates — a post-implant CT
+coregistered to the planning MRI — so **Review → Electrode coordinates…** takes
+that file, in whatever shape the planning system exported it, tells you how
+many contacts it would place before anything moves, and then stops calling the
+view a montage diagram.
+
 It opens recordings of your own too, through MNE's readers — EDF, BrainVision,
 Persyst, Nihon Kohden, Nicolet, Blackrock, MEF3 and the rest — with no
 conversion step and no proprietary format. It asks you to confirm which
@@ -398,6 +405,7 @@ onset_review/         the desktop reviewer (Qt), installable on Ubuntu
   session.py          a loaded window: the recording, the detections, the findings
   trends.py           the trend matrix, the event list, detector-vs-expert agreement
   anatomy.py          where each contact is drawn, and how much of that is known
+  coordinates.py      a coordinate file from a planning system, read and checked
   detail.py           one event wideband, filtered and in time-frequency
   eventview.py        that triptych, drawn
   adjudication.py     the reader's own verdicts: attributed, saved, never dropped

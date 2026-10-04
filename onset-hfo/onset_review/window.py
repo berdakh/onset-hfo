@@ -367,7 +367,7 @@ def goto(figure, t: float, channel: str | None = None,
 
 def decorate(figure, session: ReviewSession, show_expert: bool = False,
              on_preprocess=None, on_import=None,
-             on_quality=None) -> ReviewWindowParts:
+             on_quality=None, on_electrodes=None) -> ReviewWindowParts:
     """Add the menus, the toolbar, the panels and the caveat to MNE's window.
 
     `on_preprocess` is called with a new `PreprocessConfig` when the reviewer
@@ -509,7 +509,8 @@ def decorate(figure, session: ReviewSession, show_expert: bool = False,
     _status(host, session)
     defaults: dict = {}
     _menus(figure, host, panels, docks, session, display, parts,
-           defaults, on_import=on_import)
+           defaults, on_import=on_import,
+           on_electrodes=on_electrodes)
     _set_reader_status(host, session)
     # Opened in a layout rather than with everything showing: eleven docked
     # panels at once is an arrangement a reviewer has to undo before they can
@@ -656,7 +657,7 @@ def _status(host: QMainWindow, session: ReviewSession) -> None:
 def _menus(figure, host: QMainWindow, panels: dict, docks: dict,
            session: ReviewSession, display: _Display,
            parts: ReviewWindowParts, defaults: dict,
-           on_import=None) -> None:
+           on_import=None, on_electrodes=None) -> None:
     """Menus and a toolbar, in the vocabulary of the task rather than the code."""
     menubar = host.menuBar()
 
@@ -671,6 +672,13 @@ def _menus(figure, host: QMainWindow, panels: dict, docks: dict,
         "Opening another recording is not available in this window")
     if on_import is not None:
         opener.triggered.connect(lambda _=False: on_import())
+    places = file_menu.addAction("Electrode &coordinates…")
+    places.setToolTip(
+        "Place the contacts from a coordinate file — a BIDS electrodes.tsv, "
+        "or a CSV from a surgical planning system. The 3D view stops being a "
+        "montage diagram and becomes this patient's head.")
+    places.triggered.connect(
+        lambda _=False: _load_coordinates(host, session, panels, on_electrodes))
     file_menu.addSeparator()
     file_menu.addAction("&Export review…", lambda: _export(host, session))
     file_menu.addSeparator()
@@ -1005,6 +1013,46 @@ def _apply_marks(figure, session: ReviewSession, scope: str,
         except Exception:
             return
     _colour_annotations(figure)
+
+
+def _load_coordinates(host: QMainWindow, session: ReviewSession, panels: dict,
+                      on_electrodes=None) -> None:
+    """Place the contacts from a file the reviewer picks.
+
+    The match is shown before anything moves. "47 of 64 contacts placed, the
+    rest stay schematic" is a thing to decide about, not to discover from a
+    picture that looks finished and is half guessed.
+    """
+    from onset_review import coordinates
+
+    path, _ = QFileDialog.getOpenFileName(
+        host, "Electrode coordinates", str(Path.home()),
+        coordinates.FILE_FILTER)
+    if not path:
+        return
+    read = coordinates.read_coordinates(path, session)
+    if not read.usable:
+        QMessageBox.warning(host, "These coordinates cannot be used",
+                            read.summary())
+        return
+    answer = QMessageBox.question(
+        host, "Place the contacts from this file?",
+        f"{read.summary()}\n\nThe 3D view will use these positions instead of "
+        f"the schematic layout. Nothing else in the analysis changes — "
+        f"coordinates do not affect a rate.",
+        QMessageBox.Yes | QMessageBox.Cancel, QMessageBox.Yes)
+    if answer != QMessageBox.Yes:
+        return
+    session.electrodes = read.frame
+    panels["brain"].set_electrodes(
+        read.frame,
+        origin=f"the coordinate file you supplied ({read.path.name}), read as "
+               f"{read.units}")
+    if on_electrodes is not None:
+        # So that a later re-analysis keeps them: a filter change does not
+        # move an electrode.
+        on_electrodes(Path(path))
+    host.statusBar().showMessage(read.summary(), 15000)
 
 
 def _export(host: QMainWindow, session: ReviewSession) -> None:

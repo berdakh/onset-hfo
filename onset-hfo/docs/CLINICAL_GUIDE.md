@@ -360,6 +360,43 @@ view turns to face it. **View** gives you the standard angles.
 > Even then, which contacts share an electrode and their order along it are
 > real, and that is usually the question.
 
+#### Giving it the real coordinates
+
+Everything above is true of a recording that arrives without electrode
+positions, which is every recording in both public archives. It is not true of
+your patients. A post-implant CT coregistered to the planning MRI gives real
+coordinates for every contact; they are simply in the planning system rather
+than in the archive.
+
+**Review → Electrode coordinates…** takes that file. A BIDS `electrodes.tsv`,
+or a CSV out of anything else — the columns may be called `name`/`label` and
+`x`/`y`/`z` or `R`/`A`/`S`, in any order, comma- or tab-separated, with or
+without a header. Millimetres and metres are told apart by magnitude and the
+software says which way it read them.
+
+Before anything moves you are told what the file would do: *"47 of 64 contacts
+placed, read as millimetres. 17 contacts are not in the file and stay
+schematic: …"*. That is a thing to decide about rather than discover from a
+picture that looks finished and is half guessed. A file whose names match
+nothing is refused outright, and a contact written `n/a` is left unplaced
+rather than drawn at the origin, where it would form a cluster at the centre of
+the head that looks like a finding.
+
+Once applied, the caption stops saying *schematic* and names the file instead —
+it does not claim the dataset supplied them, because it did not. Sides come
+from the coordinates rather than from the electrode names, so names with no
+`L`/`R` stop reading "side unknown". The file is remembered, so widening a
+notch and re-running does not mean finding it again.
+
+Two things this still does not do. The surface stays a reference shape, not
+your patient's cortex: positions relative to each other are what the clinical
+question needs and what a coordinate file gives. And nothing here can check
+*which space* the coordinates are in — scanner, MNI and a planning system's own
+frame all look identical in a four-column file.
+
+**Nothing about a rate changes.** Coordinates move dots; they do not move
+events.
+
 ### Detector vs expert
 
 This dataset's annotators marked HFOs channel by channel, so on these

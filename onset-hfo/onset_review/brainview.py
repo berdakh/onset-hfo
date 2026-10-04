@@ -37,7 +37,8 @@ from qtpy.QtWidgets import (
 )
 
 from onset_review import theme
-from onset_review.anatomy import UNKNOWN, electrode_layout, layout_caption
+from onset_review.anatomy import (ARCHIVE_ORIGIN, UNKNOWN,
+                                  electrode_layout, layout_caption)
 from onset_review.theme import card
 
 __all__ = ["BrainPanel", "VIEWS", "ZONE_EDGES"]
@@ -77,6 +78,11 @@ class BrainPanel(QWidget):
         from matplotlib.figure import Figure
 
         self._session = session
+        self._resection = resection
+        #: Where the measured coordinates, if any, came from. Said in the
+        #: caption, because "the dataset's own coordinates" is false the moment
+        #: a reviewer supplies a file of their own.
+        self._origin = ARCHIVE_ORIGIN
         self.layout_frame = electrode_layout(session, resection=resection,
                                              electrodes=electrodes)
 
@@ -152,7 +158,8 @@ class BrainPanel(QWidget):
         self._colorbar = None
         self._points = None
 
-        self.caption = QLabel(layout_caption(self.layout_frame))
+        self.caption = QLabel(layout_caption(self.layout_frame,
+                                             self._origin))
         self.caption.setWordWrap(True)
         self.caption.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Minimum)
         schematic = (not self.layout_frame.empty
@@ -193,6 +200,28 @@ class BrainPanel(QWidget):
         self._elev, self._azim = VIEWS["Oblique"]
         if not self.layout_frame.empty:
             # Open facing the hemisphere the busiest contact is in.
+            self._azim = -40 if float(
+                self.layout_frame.iloc[0]["x"]) >= 0 else -140
+        self.redraw()
+
+    def set_electrodes(self, electrodes, origin: str = ARCHIVE_ORIGIN) -> None:
+        """Re-place every contact from a coordinate table, and redraw.
+
+        Rebuilding the layout rather than nudging the points: which hemisphere
+        a contact is on, which shaft it belongs to and whether it is inside the
+        resection are all derived alongside its position, and a view that moved
+        the dots without re-deriving the rest would be drawing a different
+        patient's geometry with this one's labels.
+        """
+        self._origin = origin
+        self.layout_frame = electrode_layout(self._session,
+                                             resection=self._resection,
+                                             electrodes=electrodes)
+        self.caption.setText(layout_caption(self.layout_frame, self._origin))
+        schematic = (not self.layout_frame.empty
+                     and "inferred" in set(self.layout_frame["source"]))
+        self.caption.setStyleSheet(card("warn" if schematic else "info"))
+        if not self.layout_frame.empty:
             self._azim = -40 if float(
                 self.layout_frame.iloc[0]["x"]) >= 0 else -140
         self.redraw()

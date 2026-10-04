@@ -124,6 +124,10 @@ class ReviewRequest:
     #: checks passed is `PreprocessConfig.exclude`, where it is recorded as
     #: the reviewer's own choice rather than as an override of a verdict.
     keep_channels: tuple[str, ...] = ()
+    #: A coordinate file the reviewer pointed the software at, when the
+    #: recording itself carries none. Carried on the request so that it
+    #: survives a re-analysis: a filter change does not move an electrode.
+    electrodes_path: Path | None = None
 
     def __post_init__(self) -> None:
         unknown = [d for d in self.detectors if d not in HFO_DETECTORS]
@@ -503,6 +507,25 @@ def _electrodes_for(record: Recording):
     return frame
 
 
+def _electrodes_from_file(path, session_like):
+    """Coordinates a reviewer pointed the software at, or None.
+
+    Failures are silent here and loud in the interface: this runs on every
+    re-analysis, and a file that has since been moved should not stop the
+    window rebuilding -- the view falls back to the schematic layout it had
+    before anyone supplied coordinates, which is the honest thing to show.
+    """
+    if not path:
+        return None
+    from onset_review.coordinates import read_coordinates
+
+    try:
+        read = read_coordinates(path, session_like)
+    except Exception:                       # noqa: BLE001
+        return None
+    return read.frame if read.usable else None
+
+
 def _detect(prep, cfg: PipelineConfig, name: str) -> list[Event]:
     """Run one detector, reading its settings off the request's own config.
 
@@ -672,7 +695,7 @@ def session_from_recording(record: Recording, request: ReviewRequest,
     raw.set_annotations(annotations_for(events, prep.t_offset))
 
     say(1.0, "Ready")
-    return ReviewSession(
+    session = ReviewSession(
         request=request, raw=raw, events=events, findings=findings,
         leader=leader, candidates=list(tied), expert=expert,
         reviewed_channels=reviewed, resection=resection, electrodes=electrodes,
@@ -686,3 +709,10 @@ def session_from_recording(record: Recording, request: ReviewRequest,
         sfreq=float(prep.sfreq), t_offset=float(prep.t_offset),
         montage=prep.montage, recording=record,
     )
+    # A coordinate file the reviewer supplied outranks whatever the archive
+    # shipped, which for every dataset here is nothing. Applied after the
+    # session exists because matching the names needs the channel list.
+    supplied = _electrodes_from_file(request.electrodes_path, session)
+    if supplied is not None:
+        session.electrodes = supplied
+    return session

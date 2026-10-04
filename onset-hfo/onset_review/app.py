@@ -326,7 +326,8 @@ class _Review:
         self.parts = window.decorate(figure, session, show_expert=self.overlay,
                                      on_preprocess=self.reanalyse,
                                      on_import=self.import_file,
-                                     on_quality=self.requality)
+                                     on_quality=self.requality,
+                                     on_electrodes=self.use_coordinates)
         maximised = False
         if state is not None:
             # Restored after the docks exist and before the window is shown, so
@@ -377,6 +378,18 @@ class _Review:
             stored.reader = self.args.reader.strip()
         session.read = adjudication.reconcile(stored, session.events)
         self._orphans = len(session.read.orphaned)
+
+    def use_coordinates(self, path) -> None:
+        """Remember the coordinate file, without re-running the analysis.
+
+        Recorded on the request rather than only on the session because every
+        re-analysis builds a new session from the request -- and a reviewer
+        who placed their contacts and then widened a notch should not have to
+        find the file again.
+        """
+        import dataclasses
+
+        self.request = dataclasses.replace(self.request, electrodes_path=path)
 
     def import_file(self) -> None:
         """Open a recording from this machine, replacing this window.

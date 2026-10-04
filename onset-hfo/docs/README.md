@@ -122,6 +122,7 @@ Read in this order:
 | How is the outcome study computed, and what are its statistics? | [`onset_hfo/outcome.py`](../onset_hfo/outcome.py) |
 | What does the interface decide, and what does it only display? | [`app/panels.py`](../app/panels.py) |
 | What does the desktop window show, and where does each number come from? | [`onset_review/session.py`](../onset_review/session.py) and [`onset_review/trends.py`](../onset_review/trends.py) |
+| How are real electrode coordinates taken in, and what is checked about them? | [`onset_review/coordinates.py`](../onset_review/coordinates.py) |
 | Is this event an oscillation or filter ringing, and how is that decided? | [`onset_review/detail.py`](../onset_review/detail.py) |
 | Where does the reviewer's own judgement go, and what happens to it when the analysis changes? | [`onset_review/adjudication.py`](../onset_review/adjudication.py) |
 | Does a result survive a change of analysis window? | [`onset_hfo/stability.py`](../onset_hfo/stability.py) |
