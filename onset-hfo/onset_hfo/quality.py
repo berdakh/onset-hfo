@@ -58,7 +58,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from onset_hfo.config import BANDS, QualityConfig
+from onset_hfo.config import BANDS, RAYLEIGH_BURSTINESS, QualityConfig
 from onset_hfo.detectors.base import robust_scale
 from onset_hfo.preprocess import Prepared
 
@@ -83,9 +83,14 @@ REASONS: dict[str, str] = {
     "line_noise": "mains interference dominates; its harmonics land inside "
                   "the band being counted",
     "hf_noise": "far more high-frequency energy than the rest of this "
-                "montage. Either a noisy amplifier or a great deal of real "
-                "activity — nothing but looking at the trace can tell, so "
-                "this is analysed and flagged, not removed",
+                "montage, and it arrives as a steady carpet rather than as "
+                "events — which is what a noisy or poorly-coupled contact "
+                "looks like. Analysed and flagged, not removed: look at it",
+    "hf_active": "far more high-frequency energy than the rest of this "
+                 "montage, and it arrives in discrete bursts over a quiet "
+                 "floor rather than as a steady carpet. That is what a "
+                 "contact full of real ripples looks like — and also what a "
+                 "repeating artifact looks like. Open it on the trace",
     "amplitude": "overall amplitude far outside what the rest of this "
                  "montage is doing. A gain fault looks like this, and so "
                  "does a contact sitting where the pathology is; analysed "
@@ -114,23 +119,28 @@ def channel_quality(prep: Prepared, cfg: QualityConfig | None = None,
     questions and the distinction is the point -- see ``SET_ASIDE``.
 
     Columns: ``channel``, ``amplitude_uv``, ``clipped_fraction``,
-    ``line_fraction``, ``hf_ratio``, ``amplitude_sd``, ``hf_ratio_sd``,
-    ``bad_segment_fraction``, ``good``, ``flagged`` and ``reason``.
+    ``line_fraction``, ``hf_ratio``, ``burstiness``, ``amplitude_sd``,
+    ``hf_ratio_sd``, ``bad_segment_fraction``, ``good``, ``flagged`` and
+    ``reason``.
     """
     cfg = cfg or QualityConfig()
     data, names = prep.data, list(prep.ch_names)
     if not names:
         return pd.DataFrame(columns=["channel", "amplitude_uv",
                                      "clipped_fraction", "line_fraction",
-                                     "hf_ratio", "amplitude_sd", "hf_ratio_sd",
-                                     "bad_segment_fraction", "good", "flagged",
-                                     "reason"])
+                                     "hf_ratio", "burstiness", "amplitude_sd",
+                                     "hf_ratio_sd", "bad_segment_fraction",
+                                     "good", "flagged", "reason"])
 
     _, scale = robust_scale(data)
     amplitude = scale.ravel().astype(float)
     clipped = np.array([_clipped_fraction(row) for row in data])
     line = _line_fraction(data, prep.sfreq, prep.line_freq)
     hf_ratio = _band_fraction(data, prep.sfreq, BANDS.ripple)
+    # Within-channel dynamic range of the band envelope. Unlike the ratio
+    # above it needs no comparison with the montage, which is what lets it
+    # say *why* a contact's band power is high.
+    burstiness = _burstiness(data, prep.sfreq, BANDS.ripple)
 
     # Both outlier tests are against *this montage's* own distribution rather
     # than an absolute number, because a depth contact in white matter and one
@@ -157,7 +167,12 @@ def channel_quality(prep: Prepared, cfg: QualityConfig | None = None,
         elif line[i] > cfg.max_line_fraction:
             reason = "line_noise"
         elif hf_ratio_sd[i] > cfg.max_hf_ratio_sd:
-            reason = "hf_noise"
+            # Both are flags and neither removes anything; the split only
+            # changes which sentence the reviewer reads, and the measured
+            # ratio is shown beside it.
+            reason = ("hf_active"
+                      if burstiness[i] >= cfg.bursty_ratio * RAYLEIGH_BURSTINESS
+                      else "hf_noise")
         elif (abs(amplitude_sd[i]) > cfg.max_amplitude_sd
                 and (amplitude_ratio[i] > cfg.amplitude_outlier_ratio
                      or amplitude_ratio[i] < 1.0 / cfg.amplitude_outlier_ratio)):
@@ -170,6 +185,7 @@ def channel_quality(prep: Prepared, cfg: QualityConfig | None = None,
             "clipped_fraction": float(clipped[i]),
             "line_fraction": float(line[i]),
             "hf_ratio": float(hf_ratio[i]),
+            "burstiness": float(burstiness[i]),
             "amplitude_sd": float(amplitude_sd[i]),
             "hf_ratio_sd": float(hf_ratio_sd[i]),
             "bad_segment_fraction": float(bad_fraction.get(name, 0.0)),
@@ -399,6 +415,38 @@ def _band_fraction(data: np.ndarray, sfreq: float,
     total = np.where(total <= 0, np.finfo(float).eps, total)
     mask = (freqs >= low) & (freqs <= min(high, sfreq / 2))
     return (power[:, mask].sum(axis=1) / total).astype(float)
+
+
+def _burstiness(data: np.ndarray, sfreq: float,
+                band: tuple[float, float]) -> np.ndarray:
+    """99th percentile of each channel's band envelope over its 10th.
+
+    The question this answers is *how* a contact's band power is delivered.
+    Rare large excursions over a quiet floor are events; a steady carpet is
+    not. It is a ratio within the channel, so a 2 uV contact and a 200 uV one
+    are directly comparable and no montage-wide calibration is needed --
+    which matters, because the band-power ratio it accompanies is unreliable
+    for exactly the opposite reason.
+
+    Its floor is algebra rather than a measurement: band-passed Gaussian noise
+    has a Rayleigh envelope, for which this ratio is
+    :data:`onset_hfo.config.RAYLEIGH_BURSTINESS` whatever the amplitude.
+
+    What it does **not** do is tell real activity from a repeating artifact.
+    An electrode popping once a second is bursty too, and scores like a
+    hippocampus full of ripples. It separates *events* from *carpet*, which is
+    one of the two questions a reviewer has; the other one still needs the
+    trace.
+    """
+    from scipy.signal import hilbert
+
+    from onset_hfo.detectors.base import bandpass
+
+    if sfreq / 2 <= band[0]:
+        return np.full(data.shape[0], float(RAYLEIGH_BURSTINESS))
+    envelope = np.abs(hilbert(bandpass(data, sfreq, band), axis=-1))
+    low, high = np.percentile(envelope, [10, 99], axis=-1)
+    return high / np.maximum(low, np.finfo(float).eps)
 
 
 def _spectrum(data: np.ndarray, sfreq: float) -> tuple[np.ndarray, np.ndarray]:

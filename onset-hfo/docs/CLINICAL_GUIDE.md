@@ -355,6 +355,35 @@ table.
 That is the general rule here: **it removes only what cannot be real, and
 flags what it cannot judge.**
 
+**Burstiness says which way a band-power flag leans.** High band power on its
+own cannot tell a noisy amplifier from a contact full of ripples. *How* that
+power arrives can: events are tall spikes over a quiet floor, an amplifier is
+a raised carpet. The column is the 99th percentile of the ripple-band envelope
+over its 10th — and **6.6 is the value a contact with no events in it takes,
+whatever its amplitude**, because band-passed noise has a Rayleigh envelope and
+the ratio falls out of the algebra rather than out of this cohort.
+
+| burstiness | reads as |
+|---|---|
+| ≈ 6.6 | *hf noise* — no event structure at all; a noisy or poorly-coupled contact |
+| well above | *hf active* — the energy arrives in bursts |
+
+On sub-16 this splits one shaft cleanly: `TL1-TL2` scores **38.7** and carries
+170 expert-marked ripples; `TL6`–`TL10` score **6.5–6.7** and carry none
+between them. Both ends were flagged by band power alone.
+
+![Why a band-power flag needs a second look](images/onset-review-burstiness.png)
+
+Read the middle panel: `TL1-TL2` in blue is bursts over near-silence,
+`TL7-TL8` in red is a thin flat line with no events in it at all.
+
+It is a lean, not a verdict, and it has two limits worth knowing. It separates
+*events* from *carpet*, not real from artifactual — an electrode popping once a
+second is bursty too, and scores like a hippocampus full of ripples. And the
+separation rests on 11 contacts against 11 from this one archive. Which is why
+the number is shown beside the label: neither reading removes anything, and
+both still say *open it on the trace*.
+
 Here is sub-13 with the stage running. `TR3-TR4`, `TR2-TR3` and `TR1-TR2` hold
 the top three places — and two of them are flagged. Their rates and ranks are
 untouched; what the software is saying is "look at these before you quote

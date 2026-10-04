@@ -25,7 +25,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from onset_hfo.config import QualityConfig
+from onset_hfo.config import RAYLEIGH_BURSTINESS, QualityConfig
 from onset_hfo.preprocess import prepare
 from onset_hfo.quality import (
     REASONS,
@@ -356,11 +356,18 @@ def test_a_channel_that_is_mostly_rejected_is_dropped_rather_than_rated(prep):
 
 
 def test_a_channel_popping_once_a_second_is_caught_before_that(prep):
-    """The realistic version, and why the residual rule is rarely reached.
+    """The realistic version, and the limit of the burstiness split.
 
-    A contact that pops briefly every second loses every segment -- and is
-    also, measurably, a noisy channel. The band-ratio check sees it first and
-    says something more useful than "not enough clean time".
+    A contact that pops briefly every second loses every segment, and the
+    band-ratio check sees it first and says something more useful than "not
+    enough clean time".
+
+    It is called `hf_active` rather than `hf_noise`, and that is correct for
+    what burstiness measures and wrong for what a reviewer wants to know: a
+    repeating pop *is* delivered as discrete bursts over a quiet floor, which
+    is exactly what a contact full of ripples looks like. Burstiness
+    separates events from carpet, not real from artifactual. The reason's
+    wording says so, and this test exists so that stays true.
     """
     def popping(x, t):
         out = x.copy()
@@ -374,7 +381,9 @@ def test_a_channel_popping_once_a_second_is_caught_before_that(prep):
     segments = segment_quality(broken)
     mine = segments[segments["channel"] == prep.ch_names[0]]
     assert not mine["good"].any()           # every second rejected
-    assert channel_quality(broken, segments=segments).iloc[0]["reason"] == "hf_noise"
+    row = channel_quality(broken, segments=segments).iloc[0]
+    assert row["reason"] == "hf_active"
+    assert "repeating artifact" in REASONS[row["reason"]]
 
 
 def test_the_summary_says_what_was_set_aside_and_what_it_costs(prep):
@@ -420,3 +429,120 @@ def test_only_unambiguous_faults_remove_a_contact():
     assert "amplitude" not in SET_ASIDE
     for reason in SET_ASIDE:
         assert reason in REASONS
+
+
+# -- telling the two populations apart ------------------------------------
+#
+# The band-power check finds a noisy amplifier and a contact full of real
+# ripples, and cannot tell them apart from band power alone -- that is why it
+# flags rather than removes, and the cohort sweep put numbers on it: of the
+# contacts it flagged that the archive's annotators had reviewed, 47% carried
+# no marking at all and 32% were at or above the cohort median.
+#
+# Burstiness separates them, and its floor is algebra rather than a fitted
+# threshold, which is what these tests are mostly about.
+
+def test_the_noise_floor_of_burstiness_is_a_constant_not_a_calibration():
+    """Band-passed Gaussian noise has a Rayleigh envelope, so p99/p10 is fixed.
+
+    `sigma` cancels: the ratio is the same for a 2 µV contact and a 200 µV
+    one. That is what makes the threshold derived rather than tuned, and it
+    is worth a test because the whole argument for splitting the flag rests
+    on it.
+    """
+    from onset_hfo.quality import _burstiness
+
+    closed_form = np.sqrt(-2 * np.log(0.01)) / np.sqrt(-2 * np.log(0.90))
+    assert closed_form == pytest.approx(RAYLEIGH_BURSTINESS, abs=0.01)
+
+    # And through this project's own filter, at two amplitudes two orders of
+    # magnitude apart.
+    for amplitude in (2.0, 200.0):
+        noise = np.random.default_rng(0).normal(0, amplitude, (3, 60 * 2000))
+        measured = _burstiness(noise, 2000.0, (80.0, 250.0))
+        assert measured == pytest.approx(RAYLEIGH_BURSTINESS, abs=0.4), amplitude
+
+
+def test_bursts_over_a_quiet_floor_score_far_above_that_floor(prep):
+    """The other half: events raise the ratio, a louder carpet does not."""
+    from onset_hfo.quality import _burstiness
+
+    channel = prep.ch_names[0]
+    row = prep.data[prep.ch_names.index(channel)]
+    sfreq = prep.sfreq
+
+    def bursts(x, t):
+        out = x.copy()
+        for at in np.arange(1.0, prep.duration - 1.0, 1.0):
+            start = int(at * sfreq)
+            width = int(0.040 * sfreq)
+            ring = np.sin(2 * np.pi * 150 * np.arange(width) / sfreq)
+            out[start:start + width] += 400.0 * ring * np.hanning(width)
+        return out
+
+    louder = _burstiness(np.atleast_2d(row * 8.0), sfreq, (80.0, 250.0))[0]
+    bursty = _burstiness(
+        np.atleast_2d(bursts(row, None)), sfreq, (80.0, 250.0))[0]
+    plain = _burstiness(np.atleast_2d(row), sfreq, (80.0, 250.0))[0]
+
+    assert louder == pytest.approx(plain, rel=0.01), (
+        "burstiness must not move when a channel is merely amplified")
+    assert bursty > 1.5 * plain, f"bursts {bursty:.1f} vs plain {plain:.1f}"
+
+
+def test_the_band_power_flag_says_which_way_it_leans(prep):
+    """Two reasons, one for each population, and neither removes anything.
+
+    On sub-16 this is the same shaft: `TL1-TL2` carries 170 expert-marked
+    ripples and scores 38.7, while `TL6-TL10` carry none between them and sit
+    at 6.5-6.7 -- the noise null to a rounding error. Both are flagged by band
+    power; only the wording differs, and the measured ratio is shown beside
+    it so a reviewer is not taking the label on trust.
+    """
+    quiet = prep.ch_names[0]
+    active = prep.ch_names[1]
+    sfreq, duration = prep.sfreq, prep.duration
+
+    def carpet(x, t):
+        return x + np.random.default_rng(7).normal(0, 6 * np.std(x), x.size)
+
+    def bursts(x, t):
+        out = x.copy()
+        for at in np.arange(0.5, duration - 0.5, 0.5):
+            start = int(at * sfreq)
+            width = int(0.040 * sfreq)
+            ring = np.sin(2 * np.pi * 150 * np.arange(width) / sfreq)
+            out[start:start + width] += 600.0 * ring * np.hanning(width)
+        return out
+
+    # One fault per montage: with fifteen channels, two modified contacts
+    # move the robust reference the other is compared against, and the test
+    # would be measuring that rather than the split.
+    noisy = channel_quality(_with_fault(prep, quiet, carpet)).set_index("channel")
+    active_q = channel_quality(_with_fault(prep, active, bursts)).set_index("channel")
+
+    assert noisy.loc[quiet, "reason"] == "hf_noise"
+    assert active_q.loc[active, "reason"] == "hf_active"
+    assert noisy.loc[quiet, "burstiness"] < active_q.loc[active, "burstiness"]
+
+    # The contract that matters: neither is removed.
+    for frame, channel in ((noisy, quiet), (active_q, active)):
+        assert bool(frame.loc[channel, "flagged"]) is True
+        assert bool(frame.loc[channel, "good"]) is True
+    assert "hf_noise" not in SET_ASIDE and "hf_active" not in SET_ASIDE
+
+
+def test_the_lean_is_biased_toward_calling_it_activity():
+    """Erring toward "real" is the safe side, and the default says so.
+
+    Calling a noisy contact active costs a reviewer a look at the trace.
+    Calling a real contact noisy makes them under-weight a finding, which is
+    the error this stage has twice had to be stopped from making.
+    """
+    cfg = QualityConfig()
+    cut = cfg.bursty_ratio * RAYLEIGH_BURSTINESS
+    # Above the noise null by a clear margin...
+    assert cut > RAYLEIGH_BURSTINESS * 1.1
+    # ...and below the least bursty contact the ds003498 annotators marked
+    # heavily, which scored 8.2.
+    assert cut < 8.2

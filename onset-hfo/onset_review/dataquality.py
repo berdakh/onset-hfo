@@ -72,8 +72,14 @@ COLUMNS: list[tuple[str, str, str]] = [
      "Robust amplitude (1.4826 × MAD). Near zero is a dead contact"),
     ("hf_ratio_sd", "HF outlier",
      "How far this contact's in-band share of power sits above the rest of "
-     "the montage, in robust SDs. The fault that puts a contact at the TOP "
-     "of an HFO ranking"),
+     "the montage, in robust SDs. High on a noisy amplifier — and high on a "
+     "contact full of real ripples, because the ripples are in the band"),
+    ("burstiness", "Burstiness",
+     "How that band power arrives: the 99th percentile of the ripple-band "
+     "envelope over its 10th. 6.6 is the value for pure noise, whatever the "
+     "amplitude — a contact sitting there has no events in it. Well above "
+     "means discrete bursts, which is what ripples look like (and what a "
+     "repeating artifact looks like)"),
     ("line_fraction", "Mains share",
      "Share of power at the mains frequency and its harmonics. The 4th and "
      "5th harmonics of 50 Hz land at 200 and 250 Hz, inside the ripple band"),
@@ -134,6 +140,12 @@ class QualityPanel(QWidget):
             "could equally be the finding — far more band power than its "
             "neighbours, say — it is analysed and flagged instead, and the "
             "judgement is yours: open it on the trace.", self.tokens))
+        column.addWidget(muted(
+            "Burstiness says which way a band-power flag leans. 6.6 is the "
+            "value a contact carrying no events at all takes, whatever its "
+            "amplitude — it falls out of the algebra, not out of this "
+            "cohort. Far above it means the energy arrives in bursts.",
+            self.tokens))
 
         self.table = QTableWidget(0, len(COLUMNS))
         self.table.setHorizontalHeaderLabels([label for _, label, _ in COLUMNS])
@@ -310,6 +322,8 @@ def _format(name: str, value) -> str:
         return str(value)
     if name in ("line_fraction", "clipped_fraction", "bad_segment_fraction"):
         return f"{float(value):.1%}"
+    if name == "burstiness":
+        return f"{float(value):.1f}"
     if name == "analysed_s":
         return "—" if float(value) <= 0 else f"{float(value):.0f}"
     return f"{float(value):.2f}"

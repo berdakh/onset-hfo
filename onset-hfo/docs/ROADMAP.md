@@ -615,6 +615,29 @@ place of the single-window observation it started from.
 It is stable: 35 distinct contacts are ever flagged, 17 of them in every window
 of their subject. It measures the contact, not the minute.
 
+**And looking at one of them produced a discriminator.** `TL1-TL2` of sub-16,
+flagged with 170 expert-marked ripples, turns out on the trace to be discrete
+ripple bursts over a floor *below* the montage's own; `TL7-TL8`, flagged on the
+same shaft with one marking, is a flat carpet whose spectrum sits an order of
+magnitude below the montage everywhere under 200 Hz. The mechanism was not what
+the check assumed: `hf_ratio` is a *ratio*, and a quiet poorly-coupled contact
+scores high on it because its total power is low, not because its band power is
+high. Two different physical situations, one number.
+
+Burstiness -- the 99th percentile of the ripple-band envelope over its 10th --
+separates them, and its floor is algebra rather than a fitted threshold: a
+band-passed Gaussian signal has a Rayleigh envelope, for which that ratio is
+**6.611** whatever the amplitude. Across the sweep the 11 distinct contacts
+flagged with no expert marking score 6.6-6.9, the null to a rounding error; the
+11 flagged with heavy marking score 8.2-60.6. No overlap. So the band-power flag
+now splits into `hf_noise` and `hf_active`, which changes the sentence a
+reviewer reads and nothing else -- neither removes a contact, and the measured
+ratio is shown beside the label.
+
+Its limits are recorded with it: burstiness separates events from carpet, not
+real from artifactual (an electrode popping once a second is bursty), and 11
+contacts against 11 from one archive is not an out-of-sample validation.
+
 The sweep also caught an error in its own reporting script, which printed "the
 flag tracks the pathology" whatever the numbers said -- a conclusion written
 before the measurement, in the tool meant to check for exactly that. It now

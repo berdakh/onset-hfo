@@ -303,6 +303,16 @@ class ValidationConfig:
     min_cycles: float = 2.0
 
 
+#: Burstiness (envelope p99/p10) of a channel carrying no events at all.
+#:
+#: Band-pass Gaussian noise and its envelope is Rayleigh-distributed, whose
+#: quantiles are ``sigma * sqrt(-2 ln(1 - p))`` -- so the ratio of the 99th
+#: percentile to the 10th is a pure number, the same for a 2 uV contact and a
+#: 200 uV one. That is what makes it usable as a floor without calibration:
+#: a channel at this value has no event structure in it, whatever its gain.
+RAYLEIGH_BURSTINESS: float = 6.611
+
+
 @dataclass
 class QualityConfig:
     """Which contacts and which stretches of time are fit to be analysed.
@@ -375,10 +385,46 @@ class QualityConfig:
     #: contact scores 26x the montage's 10th percentile and `TR1-TR2` scores
     #: 5x. Better than the median, and still not a gap to put a threshold in.
     #:
-    #: So this check measures and flags; it never removes. The reviewer looks
-    #: at the trace and decides, which is the only thing that can actually
-    #: tell the two apart.
+    #: So this check measures and flags; it never removes. What it *can* do is
+    #: say which way it leans -- see :attr:`bursty_ratio`.
     max_hf_ratio_sd: float = 6.0
+    #: How many times the noise null a contact's envelope burstiness must
+    #: reach before a band-power flag is described as activity rather than
+    #: noise. Both are flags; neither removes anything. This only changes the
+    #: sentence a reviewer reads, and the measured ratio is shown beside it.
+    #:
+    #: Burstiness is the 99th percentile of the ripple-band envelope over its
+    #: 10th -- a within-channel dynamic range, so unlike the band-power ratio
+    #: it carries no amplitude scale and needs no comparison to the montage.
+    #: A contact full of ripples is tall spikes over a quiet floor; a noisy or
+    #: poorly-coupled one is a raised carpet.
+    #:
+    #: **Its threshold is derived, not fitted.** For a channel whose
+    #: band-passed signal is Gaussian noise the envelope is Rayleigh, so the
+    #: ratio is a constant independent of amplitude:
+    #: ``sqrt(-2 ln 0.01) / sqrt(-2 ln 0.90)`` = **6.611**
+    #: (:data:`RAYLEIGH_BURSTINESS`; simulation through this project's own
+    #: filter gives 6.65 +/- 0.08). A contact at that value is
+    #: indistinguishable from filtered noise.
+    #:
+    #: The cohort agrees with the algebra. Across the ds003498 sweep, the 11
+    #: distinct contacts that this stage flagged and the archive's annotators
+    #: marked **not at all** score 6.6-6.9 -- the null, to within a rounding
+    #: error. The 11 it flagged that they marked heavily score 8.2-60.6,
+    #: median 29.4. No overlap.
+    #:
+    #: 1.2 sits in that gap, and deliberately near the bottom of it: calling a
+    #: real contact noisy makes a reviewer under-weight a finding, which is
+    #: the error this whole stage keeps making and keeps having to be stopped
+    #: from. Erring toward "activity" is the safe side.
+    #:
+    #: Two limits, both of which are why this still only changes wording.
+    #: The separation rests on 11 contacts against 11, from ten subjects of
+    #: which only three carry both kinds, and is not validated out of sample.
+    #: And burstiness separates *events* from *carpet*, not real from
+    #: artifactual: an electrode popping once a second is bursty, and scores
+    #: like a hippocampus full of ripples.
+    bursty_ratio: float = 1.2
     #: Flag a channel whose overall amplitude is this many robust SDs from the
     #: montage's median, in either direction. Flagged for the same reason: a
     #: large-amplitude contact may be a gain fault or may be where the
