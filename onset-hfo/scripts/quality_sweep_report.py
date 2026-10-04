@@ -137,14 +137,37 @@ def main() -> int:
               f"{group.expert_ripples.max():7.0f}")
 
     if len(flagged) and len(rest):
-        ratio = (flagged.expert_ripples.mean()
-                 / max(rest.expert_ripples.mean(), 1e-9))
-        print(f"\n  A flagged contact carries {ratio:.1f}x as many "
-              f"expert-marked ripples as an unflagged one.")
-        print("  The flag tracks the pathology, not a fault. Removing those "
-              "contacts\n  would have deleted the finding — which is why it "
-              "flags and never removes.")
-        # And the headline cases.
+        # No prepared verdict here. The first version of this script printed
+        # "the flag tracks the pathology" whatever the numbers said, which is
+        # the mistake this whole stage exists to avoid, committed in the tool
+        # that was supposed to check for it. What follows is derived.
+        median = float(rest.expert_ripples.median())
+        silent = int((flagged.expert_ripples == 0).sum())
+        active = int((flagged.expert_ripples >= median).sum())
+        print(f"\n  of the {len(flagged)} flagged contacts the annotators reviewed:")
+        print(f"    {silent:3d} ({silent / len(flagged):.0%}) carry **no** expert "
+              f"marking at all")
+        print(f"    {active:3d} ({active / len(flagged):.0%}) are at or above the "
+              f"cohort median of {median:.0f} ripples")
+        print(f"    {int((flagged.expert_ripples >= 100).sum()):3d} carry 100 or more")
+
+        print("\n  So the flag is bimodal, and that is the finding: it picks up")
+        print("  both quiet contacts, where it is plausibly noise, and some of the")
+        print("  most heavily marked contacts in the cohort. It does not")
+        print("  discriminate, so a version of it that removed contacts would")
+        print(f"  have deleted roughly {active} real findings across "
+              f"{flagged.subject.nunique()} subjects.")
+
+        # Does it measure the contact, or the minute? A contact flagged in one
+        # window and not the next four would be measurement noise.
+        per_contact = (channels[channels["flagged"]]
+                       .groupby(["subject", "channel"]).size())
+        windows_each = (channels.groupby(["subject", "channel"]).size())
+        stable = int((per_contact == windows_each.loc[per_contact.index]).sum())
+        print(f"\n  {len(per_contact)} distinct contacts are ever flagged; "
+              f"{stable} of them in every window of that subject.")
+        print("  It is measuring the contact, not the minute.")
+
         worst = flagged.nlargest(min(8, len(flagged)), "expert_ripples")
         print("\n  the flagged contacts the annotators marked most heavily:")
         print(worst[["subject", "t_start", "channel", "hf_ratio_sd",

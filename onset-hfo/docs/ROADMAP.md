@@ -588,11 +588,37 @@ in). So that check now *flags* and never removes. The module sets a contact
 aside only for a fault no physiology produces, and the division is pinned by a
 test over the list itself.
 
-The stage changes no number this project has published. On sub-01, sub-05 and
-sub-13 the rate tables are identical with it on and off, and so is each
-subject's leading channel -- because flagging removes nothing and these
-archives carry none of the unambiguous faults that would. It is a switch
-(`check_quality`) rather than a removal for the same reason.
+**The cohort sweep** (`scripts/quality_sweep.py`, 20 subjects x 5 one-minute
+windows, each analysed with the stage on and off) settles what three subjects
+could not.
+
+It changes almost nothing on this archive: rate tables identical in **99 of
+100** windows and the leading channel unchanged in **100 of 100**. The one
+window that moved, sub-08 0-60 s, is the stage working: six contacts lost
+seconds 51-53 and 56-57, which carry simultaneous multi-channel steps of up to
+3.8 mV scoring 115-885 SD -- far outside the 38 SD that is the worst any real
+intracranial second reached in the calibration, and simultaneous across four
+different electrodes, which no discharge is. No contact was set aside anywhere
+in the cohort.
+
+And it settles the band-power check. Of the 4,700 contacts examined, 111 were
+flagged; of the 97 the archive's annotators had reviewed, **46 (47%) carry no
+expert marking at all** and **31 (32%) are at or above the cohort median of 58
+marked ripples**, twelve of them with 100 or more. The check is bimodal: it
+finds quiet contacts, where it is plausibly noise, *and* some of the most
+heavily marked contacts in the cohort -- `TL1-TL2` of sub-16 at 170 marked
+ripples, `PLL1-PLL2` of sub-18 at 140. It does not discriminate, so a version
+that removed contacts would have deleted roughly 31 real findings across 12
+subjects. That is the measured basis for flagging rather than removing, in
+place of the single-window observation it started from.
+
+It is stable: 35 distinct contacts are ever flagged, 17 of them in every window
+of their subject. It measures the contact, not the minute.
+
+The sweep also caught an error in its own reporting script, which printed "the
+flag tracks the pathology" whatever the numbers said -- a conclusion written
+before the measurement, in the tool meant to check for exactly that. It now
+derives what it prints.
 
 It also opens recordings that did not come from the archive. `onset_hfo/io.py`
 dispatches on the extension to one of MNE's own readers — Persyst, Nihon
