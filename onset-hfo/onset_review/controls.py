@@ -33,11 +33,63 @@ from qtpy.QtWidgets import (
 
 from onset_review import theme
 
-__all__ = ["TraceControls", "AMPLITUDE_STEP"]
+__all__ = ["TraceControls", "AMPLITUDE_STEP", "PAGE_MM", "as_microvolts",
+           "paper_speed"]
+
+#: Width of a standard clinical EEG page, in millimetres. Ten seconds at
+#: 30 mm/s, which is the pairing every reader has in their hands. It is the
+#: constant that lets a window length in seconds be quoted as the paper speed
+#: it corresponds to, without this software pretending to know the physical
+#: size of anybody's monitor -- which it cannot, since X11 reports a DPI that
+#: is wrong as often as it is right.
+PAGE_MM = 300.0
 
 #: One click of the gain buttons. MNE's own keyboard binding uses the same
 #: ratio, so a click and a keypress move the trace by the same amount.
 AMPLITUDE_STEP = 1.1
+
+
+def as_microvolts(scalebar: str) -> str:
+    """MNE's scalebar text in the unit intracranial EEG is read in.
+
+    `0.1 mV` is a correct statement and not one anybody working on a 90 µV
+    ripple wants to do arithmetic on. Returns "" for anything it cannot parse
+    rather than a guess: a wrong number beside a right one is worse than one
+    number.
+    """
+    import re
+
+    match = re.match(r"\s*([-+]?[\d.]+)\s*([munµ]?)V\s*$", str(scalebar))
+    if not match:
+        return ""
+    try:
+        value = float(match.group(1))
+    except ValueError:
+        return ""
+    factor = {"": 1e6, "m": 1e3, "u": 1.0, "µ": 1.0, "n": 1e-3}[match.group(2)]
+    microvolts = value * factor
+    if not (0 < microvolts < 1e7):
+        return ""
+    return (f"{microvolts:.0f} µV" if microvolts >= 10
+            else f"{microvolts:.1f} µV")
+
+
+def paper_speed(seconds: float) -> str:
+    """The window length as the paper speed a reader would recognise.
+
+    A clinical page is ten seconds across 300 mm, so 300/seconds is the speed
+    in mm/s that puts the same amount of signal in front of someone. Quoted as
+    an equivalence because that is what it is: nothing here knows how wide the
+    monitor is.
+    """
+    try:
+        seconds = float(seconds)
+    except (TypeError, ValueError):
+        return ""
+    if seconds <= 0:
+        return ""
+    speed = PAGE_MM / seconds
+    return f"≈ {speed:.0f} mm/s" if speed >= 1 else f"≈ {speed:.1f} mm/s"
 
 
 def _button(text: str, tooltip: str, slot) -> QToolButton:
@@ -73,8 +125,10 @@ class TraceControls(QWidget):
         self.gain.setAlignment(Qt.AlignCenter)
         self.gain.setToolTip(
             "Height of the scale bar on the trace: the amplitude one division "
-            "represents. Taken from MNE's own scalebar, so it cannot disagree "
-            "with it.")
+            "represents. It is MNE's own scalebar text, converted to "
+            "microvolts — the unit intracranial EEG is read in, and the one "
+            "nobody judging a 90 µV ripple wants to do arithmetic around. The "
+            "number is the same number; only the unit is ours.")
         # Tabular figures: the gain changes by a factor each click and a
         # proportional font makes the readout jitter sideways as it does.
         self.gain.setStyleSheet(
@@ -88,6 +142,8 @@ class TraceControls(QWidget):
         self.seconds.setToolTip(
             "Seconds of signal on screen. Shorter is the only way to see an "
             "80 Hz oscillation as an oscillation rather than a thicker line.")
+
+
 
         self.channels = QSpinBox()
         self.channels.setRange(1, 512)
@@ -176,11 +232,23 @@ class TraceControls(QWidget):
             return
         self._updating = True
         try:
-            self.gain.setText(self._gain_text())
+            # Converted where it can be, MNE's own text where it cannot: a
+            # readout that guessed at a unit it could not parse would be the
+            # one thing this label must never be, which is wrong.
+            scalebar = self._gain_text()
+            self.gain.setText(as_microvolts(scalebar) or scalebar)
             duration = float(getattr(state, "duration", 10.0))
             xmax = float(getattr(state, "xmax", duration))
             self.seconds.setMaximum(max(duration, xmax))
             self.seconds.setValue(duration)
+            self.seconds.setToolTip(
+                "Seconds of signal on screen — the same amount of signal a "
+                f"clinical page holds at {paper_speed(duration).lstrip('≈ ')}, "
+                "ten seconds across 300 mm. That is an equivalence, not a "
+                "measurement: this software does not know the physical size of "
+                "your monitor and does not pretend to.\n\n"
+                "Shorter is the only way to see an 80 Hz oscillation as an "
+                "oscillation rather than a thicker line.")
             # `len`, not `or`: the browser's `ch_names` is a NumPy array and
             # `array or default` asks for its truth value, which raises.
             names = getattr(state, "ch_names", None)

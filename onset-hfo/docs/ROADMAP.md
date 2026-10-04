@@ -168,7 +168,7 @@ and `onset_agent/scoring.py` already exist.
 
 ---
 
-## 3. Electrode geometry — *the reading path is written and tested; both archives still ship no coordinates*
+## 3. Electrode geometry — *the reading path is written, tested and now has a door; both archives still ship no coordinates*
 
 **Why it matters.** Bipolar pairs are formed from consecutive contact
 *numbers*. On a grid, numbering wraps at the end of a row, so some pairs join
@@ -841,6 +841,41 @@ difference between a replication and another exploratory run.
 `docs/DATA.md`.
 
 ---
+
+## Deliberately not built
+
+Two things a clinician might reasonably expect, looked at and left out. Both
+are recorded here so that nobody re-derives the reasoning, and so that
+anybody who disagrees can see exactly what they are disagreeing with.
+
+* **Negative-up polarity.** The scalp-EEG convention, and asked for by
+  anybody who learned to read on paper. `mne-qt-browser` has no inversion
+  setting; the obvious trick — a negative entry in `mne.scalings` — is
+  accepted without complaint and then collapses the trace to a flat line
+  (measured: amplitude 1.70 → 0.0001 with the deviations still perfectly
+  correlated). The remaining route is negating `raw._data`, which means the
+  display convention silently rewrites the array every other view reads
+  from. For intracranial HFO review the prize is small: polarity convention
+  is far less standardised for iEEG than for scalp, and an oscillation looks
+  the same either way up. Not worth a mutated signal array.
+
+* **A referential montage.** Bipolar and common-average are both available in
+  Preprocessing. Referential-to-a-chosen-contact is the third montage a
+  reader reaches for — but here the montage is not a display choice. It
+  determines what the detectors see, what the quality stage judges, where the
+  3D view places a channel and what a rate is a rate *of*. Adding a montage
+  that the HFO literature specifically argues against for this measurement,
+  and that would ripple through all of that, buys a familiar view at the cost
+  of numbers that look the same and mean something else. The honest version
+  of this feature is a display-only montage on the trace, which means not
+  using MNE's browser for the trace, which is a different project.
+
+What *was* done for the same complaint: the amplitude readout is in
+microvolts rather than MNE's millivolts, and the window length carries the
+paper speed it corresponds to on a standard clinical page (ten seconds across
+300 mm). Both are conversions of numbers already on screen — no new claim,
+and in particular no claim about the physical size of anybody's monitor,
+which this software does not know.
 
 ## Open questions worth someone's attention
 

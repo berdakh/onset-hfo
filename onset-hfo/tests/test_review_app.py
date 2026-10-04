@@ -852,11 +852,65 @@ def test_clicking_through_events_does_not_shrink_the_trace(built):
     assert int(built.figure.mne.n_channels) == before
 
 
+def _microvolts(text: str) -> float:
+    import re
+
+    match = re.match(r"\s*([-+]?[\d.]+)\s*([munµ]?)V\s*$", text)
+    assert match, f"not an amplitude: {text!r}"
+    return float(match.group(1)) * {"": 1e6, "m": 1e3, "u": 1.0, "µ": 1.0,
+                                    "n": 1e-3}[match.group(2)]
+
+
+def test_the_microvolt_conversion_refuses_what_it_cannot_parse():
+    """A wrong number beside a right one is worse than one number."""
+    from onset_review.controls import as_microvolts
+
+    assert as_microvolts("0.1 mV") == "100 µV"
+    assert as_microvolts("50.0 µV") == "50 µV"
+    assert as_microvolts("1.0 mV") == "1000 µV"
+    for nonsense in ("", "auto", "nonsense", "mV", "0.1 mA"):
+        assert as_microvolts(nonsense) == ""
+
+
+def test_the_window_length_is_also_given_as_a_paper_speed(built):
+    """The pairing every reader has in their hands: ten seconds at 30 mm/s.
+
+    In the tooltip rather than as a second label on the bar, because that bar's
+    width is the whole window's minimum width and a 1024 px screen is still a
+    screen.
+    """
+    from onset_review.controls import paper_speed
+
+    assert paper_speed(10.0) == "≈ 30 mm/s"
+    assert paper_speed(5.0) == "≈ 60 mm/s"
+    assert paper_speed(20.0) == "≈ 15 mm/s"
+    assert paper_speed(0.0) == ""
+
+    controls = built.panels["controls"]
+    controls.sync()
+    tip = controls.seconds.toolTip()
+    assert paper_speed(controls.seconds.value()).lstrip("≈ ") in tip
+    # Nothing here knows how wide the monitor is, and X11 reports a DPI that
+    # is wrong as often as it is right, so it is called what it is.
+    assert "equivalence, not a measurement" in tip
+    assert "does not know the physical size" in tip
+
+
 def test_the_gain_readout_is_mnes_own_scalebar(built):
     """A readout that disagrees with the scalebar drawn on the trace is worse
-    than no readout."""
+    than no readout.
+
+    Agreement is now checked as the same *amplitude* rather than the same
+    string: the readout is MNE's text converted to microvolts, which is the
+    unit intracranial EEG is read in and the one nobody judging a 90 µV ripple
+    wants to do arithmetic around. The number is the same number.
+    """
     controls = built.panels["controls"]
-    assert controls.gain.text() in set(built.figure._get_scale_bar_texts())
+    drawn = [text for text in built.figure._get_scale_bar_texts() if text]
+    assert drawn
+    assert controls.gain.text().endswith("µV")
+    assert any(_microvolts(controls.gain.text()) == pytest.approx(
+        _microvolts(text), rel=1e-6) for text in drawn)
 
 
 def test_scaling_changes_the_trace_and_the_readout(built):
@@ -867,7 +921,11 @@ def test_scaling_changes_the_trace_and_the_readout(built):
     controls._scale(AMPLITUDE_STEP)
     assert float(built.figure.mne.scale_factor) == pytest.approx(
         before * AMPLITUDE_STEP)
-    assert controls.gain.text() in set(built.figure._get_scale_bar_texts())
+    # The readout still names the same amplitude as the bar on the trace; it
+    # names it in microvolts, which is the unit, not a different number.
+    drawn = [text for text in built.figure._get_scale_bar_texts() if text]
+    assert any(_microvolts(controls.gain.text()) == pytest.approx(
+        _microvolts(text), rel=1e-6) for text in drawn)
     controls._scale(1 / AMPLITUDE_STEP)        # put it back for other tests
     assert float(built.figure.mne.scale_factor) == pytest.approx(before)
 

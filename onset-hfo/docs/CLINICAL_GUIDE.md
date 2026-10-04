@@ -120,6 +120,16 @@ is a smudge; at 1 s it is an oscillation you can count the cycles of. Marking
 and rejecting events is done by the detector at full resolution regardless —
 this only changes what you can see.
 
+The amplitude readout is in **microvolts**. It is MNE's own scale bar — the one
+drawn on the trace, so the two cannot disagree — converted from the millivolts
+it is written in, because nobody judging a 90 µV ripple wants to do arithmetic
+around "0.1 mV".
+
+Hovering **Window** tells you the paper speed that length corresponds to: ten
+seconds is a standard clinical page, 300 mm at 30 mm/s, so five seconds is
+60 mm/s and twenty is 15. It is an equivalence and the tooltip says so — this
+software does not know how wide your monitor is and does not pretend to.
+
 ### Trace — the signal
 
 This is `mne-qt-browser`, the viewer MNE-Python ships, embedded rather than
