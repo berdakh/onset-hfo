@@ -548,8 +548,14 @@ def _assemble(machine: Machine, spec: ModelSpec, quantization: str,
                        f"{machine.cores} core(s)")
     reasons.append(f"{spec.family} at {quantization} needs about {needs:.1f} GB "
                    f"of a {budget:.1f} GB budget")
-    if quantization != "fp16":
+    if quantization in ("8bit", "4bit"):
         reasons.append(f"{quantization} chosen because fp16 would not fit")
+    elif quantization == "fp32":
+        # Not a fallback from fp16 -- it costs twice as much. It is simply the
+        # only dtype a CPU should be given, so saying "fp16 would not fit"
+        # here would be backwards.
+        reasons.append("fp32 because that is what a CPU loads, not as a "
+                       "fallback: it costs twice fp16, and is budgeted so")
     if machine.accelerator == "cpu":
         reasons.append("no CUDA device, so bitsandbytes cannot quantise here; "
                        "a CPU loads fp32, which is twice the memory of the "

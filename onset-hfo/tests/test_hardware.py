@@ -340,15 +340,53 @@ def test_a_missing_extra_is_its_own_error_naming_the_remedy():
     assert "openai_compat" in str(raised.value)
 
 
-def test_a_missing_hub_is_not_reported_as_a_disk_problem():
+def test_a_missing_hub_is_not_reported_as_a_disk_problem(monkeypatch):
     """`NotEnoughRoom` and `MissingDependency` have completely different
-    remedies -- 'free some disk' versus 'pip install'."""
+    remedies -- 'free some disk' versus 'pip install'.
+
+    The absence is simulated rather than assumed: this test used to pass only
+    because the llm extra was not installed, and silently became a test of the
+    network path the moment it was.
+    """
+    import builtins
+
     from onset_agent.hardware import MissingDependency
 
+    real_import = builtins.__import__
+
+    def without_hub(name, *args, **kwargs):
+        if name == "huggingface_hub":
+            raise ImportError("pretend it is absent")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", without_hub)
     box = cuda(80.0)
     with pytest.raises(MissingDependency) as raised:
         ensure_model(choose(box), machine=box)
     assert raised.value.module == "huggingface_hub"
+
+
+@pytest.mark.skipif(
+    __import__("importlib.util", fromlist=["util"]).find_spec("huggingface_hub") is None,
+    reason="needs the llm extra")
+def test_a_blocked_hub_says_so_instead_of_leaking_a_library_error():
+    """The usual symptom of a proxy or an allowlist is a connection error from
+    deep inside `huggingface_hub` that reads like a bug in this project.
+
+    Verified against a real refusal: the container this was written in cannot
+    reach huggingface.co, so the 403 path is exercised rather than imagined.
+    """
+    box = cuda(80.0, free_disk_gb=500.0)
+    try:
+        ensure_model(choose(box), machine=box)
+    except ConnectionError as error:
+        assert "huggingface.co" in str(error)
+        assert "--backend openai_compat" in str(error)
+        assert "local directory" in str(error)
+    except Exception as error:                 # a reachable Hub, or no auth
+        pytest.skip(f"the Hub behaved differently here: {type(error).__name__}")
+    else:
+        pytest.skip("the Hub is reachable from this machine")
 
 
 def test_backend_kwargs_are_what_the_loader_accepts():

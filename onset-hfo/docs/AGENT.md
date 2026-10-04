@@ -198,6 +198,36 @@ if the disk cannot hold the result. And it never silently substitutes a smaller
 model for one you asked for by name — a caller who requested 14B and quietly
 got 1.5B would draw conclusions about weights they never ran.
 
+**What has actually been run.** The sizing arithmetic, the refusals and the
+error paths are covered by 90 tests. The *loader* is covered too, by
+[`tests/test_local_model.py`](../tests/test_local_model.py), which builds a real
+Qwen2 checkpoint at toy size — two layers, 64 hidden, ~107k random parameters —
+and drives the shipped code through it: that `choose().backend_kwargs()` are
+accepted verbatim, that a CPU really does end up with `float32` tensors, that
+the chat template reaches the model *with the tools attached*, and that a
+generation round trip returns the shape the agent loop consumes. It skips
+without the `llm` extra, so CI does not pay for a torch download; run
+`pip install -e '.[llm]'` to include it. Checked against `torch 2.14` and
+`transformers 5.18`.
+
+The last test in that file is the one worth reading. A 107k-parameter model with
+random weights is the worst possible agent, and it must be *caught*: the
+citation and number checks reject it and the CLI refuses. Run by hand:
+
+```
+[onset-agent] backend: transformers:/tmp/tinyqwen (in-process)
+Q: Which channel had the highest ripple rate?
+[refused] I could not produce an answer I can stand behind: the checks on
+          citations and numbers did not pass.
+  reason: verification failed
+```
+
+**What has not been run: a real download.** No Qwen weights have been fetched
+in this project's development container — `huggingface.co` is blocked there, and
+the 403 is what verifies the "the Hub may be blocked" error path rather than
+leaving it imagined. So `ensure_model` against the real Hub is the one step in
+the chain still unexercised. If it misbehaves, that is where to look first.
+
 **What it does not tell you.** Whether the chosen size is *good enough at this
 task*. Fitting in memory and being competent at tool-constrained evidence work
 are different properties, and this project has measured the second for no Qwen
