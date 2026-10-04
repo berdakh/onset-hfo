@@ -18,7 +18,7 @@ authors:
   - family-names: Abibullaev
     given-names: Berdakh
     email: berdakho@gmail.com
-    # orcid: "https://orcid.org/0000-0000-0000-0000"   # <- add yours here
+    orcid: "https://orcid.org/0000-0002-8623-5526"
 repository-code: "https://github.com/berdakh/onset-hfo"
 url: "https://berdakh.github.io/onset/"
 license: MIT
