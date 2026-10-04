@@ -60,9 +60,24 @@ dataset — what the original annotators marked on the same minute.
 └───────────────────────────────────────────────────────────────────┘
 ```
 
-Every panel can be dragged, floated, closed and reopened from **View**. The
-four at the bottom right share a tab stack; drag one out by its title bar to
-give it a window of its own.
+There are eleven panels and the window does not show them all at once, because
+a screen with eleven docked panels on it is one you have to tidy before you can
+use it. **View** opens with three layouts, one per stage of the work:
+
+| layout | | what it shows | for |
+|---|---|---|---|
+| **Screening** | `Alt+1` | trend, trace, findings, events, contacts | is there anything in this window, and where? |
+| **Reading** | `Alt+2` | trace, findings, events, this event, assistant | is this particular event real, and what do I think of it? |
+| **Reporting** | `Alt+3` | findings, quality, preprocessing, provenance, agreement, patient | what was done to the signal, and against what |
+
+They are not modes. Nothing is destroyed or disabled — every panel is one tick
+away further down **View**, **Everything at once** shows the lot, and a panel
+you tick back on stays on. The layouts are starting arrangements, not rules.
+
+Every panel can also be dragged, floated, closed and reopened. Panels in the
+same corner share a tab stack; drag one out by its title bar to give it a
+window of its own — worth doing for the 3D view and for **This event**, both of
+which are better large.
 
 The window opens at the size of your screen and no larger — maximised if it
 would otherwise have overflowed. The rest of **View** is about the window
@@ -170,6 +185,50 @@ below.
 oscillation rises above the recording's own background at that frequency. It is
 what separates a real oscillation from the ringing a filter produces when it
 hits a sharp transient, which is the classic way HFO detectors fool themselves.
+
+### This event — the picture the judgement is made on
+
+Select an event anywhere and this panel shows it three ways on one time axis.
+It is the view to use before you press `A` or `D`, and the reason the two keys
+mean anything.
+
+**Top — wideband.** The signal as the detector saw it: high-passed, notched and
+re-referenced. *Not* unprocessed, and the panel says so, because the one view
+whose job is to let you check the analysis must not claim to show you something
+it is not showing you. What you are looking for here is whatever the event is
+sitting on — a discharge, a step, a movement artifact.
+
+**Middle — the detector's band.** What made it fire. On its own this is not
+evidence, which is exactly why it is not shown on its own.
+
+**Bottom — time-frequency.** This is the discriminator, and the single most
+useful picture in the software:
+
+> **A real oscillation is an island.** Energy confined to a band of frequencies
+> and lasting several cycles.
+>
+> **Filter ringing is a column.** A sharp transient is broadband by definition,
+> so its energy runs the whole height of the plot at one instant — and the
+> middle trace, which looks like a perfectly good ripple, is the filter's work
+> and not the brain's.
+
+Band-passing an interictal spike produces something with the right frequency,
+the right duration and a plausible amplitude. It is the largest single source
+of false HFO detections in the literature and no amount of counting
+distinguishes it. Two of these pictures side by side do, immediately.
+
+The colours are decibels above the 0.4 s either side of the event, not an
+absolute scale: every brain recording has far more energy at 10 Hz than at
+200 Hz, so an absolute scale would show the bottom of the plot lit and nothing
+else. The frequency axis deliberately runs wider than the detector's band in
+both directions — down, so you can see the discharge a ripple is riding on, and
+up, so you can see an HFO riding on a discharge. A plot restricted to the
+detector's own band would agree with the detector by construction.
+
+`onset_hfo.validate` already rejects candidates on a spectral-peak criterion
+for this reason, and `Prom dB` on every event is that criterion's number. This
+panel does not second-guess it; it shows you what it was computed from, so that
+agreeing or disagreeing with the software is something you do from evidence.
 
 ### Recording your read
 

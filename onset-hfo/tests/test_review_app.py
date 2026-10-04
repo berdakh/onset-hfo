@@ -69,8 +69,8 @@ def test_mne_figure_can_still_host_our_docks(built):
 
 def test_every_panel_is_docked(built):
     assert set(built.docks) == {"trends", "controls", "findings", "events",
-                                "brain", "agreement", "provenance", "assistant",
-                                "preprocess", "patient", "quality"}
+                                "detail", "brain", "agreement", "provenance",
+                                "assistant", "preprocess", "patient", "quality"}
     assert all(dock.widget() is not None for dock in built.docks.values())
 
 
@@ -160,6 +160,115 @@ def test_restoring_the_default_layout_undoes_a_dock_drag(built):
         assert not brain.isFloating()
     finally:
         brain.setFloating(was_floating)
+
+
+# -- task layouts ----------------------------------------------------------
+
+
+def test_a_window_opens_in_a_layout_rather_than_showing_everything(built):
+    """Eleven docked panels at once is an arrangement a reviewer has to undo
+    before they can work."""
+    from onset_review import window
+
+    # `isHidden` rather than `isVisible`: nothing in this fixture's window has
+    # been shown, so every widget in it is "not visible" whatever the layout.
+    visible = {key for key, dock in built.docks.items() if not dock.isHidden()}
+    assert visible == set(window.LAYOUTS[window.DEFAULT_LAYOUT][1])
+    assert len(visible) < len(built.docks)
+
+
+def test_every_layout_names_panels_that_exist(built):
+    """The cheapest way for a layout to break is a renamed dock key."""
+    from onset_review import window
+
+    for name, (what, keys, focus) in window.LAYOUTS.items():
+        assert what, name
+        assert set(keys) <= set(built.docks), name
+        assert focus in keys, name
+
+
+def test_switching_layout_shows_its_panels_and_hides_the_rest(built):
+    from onset_review import window
+
+    try:
+        for name, (_, keys, focus) in window.LAYOUTS.items():
+            assert window.apply_layout(built.docks, name) is True
+            shown = {key for key, dock in built.docks.items()
+                     if not dock.isHidden()}
+            assert shown == set(keys), name
+            # And the layout decides which tab is in front, rather than
+            # inheriting whichever one happened to be there.
+            assert not built.docks[focus].isHidden()
+    finally:
+        window.apply_layout(built.docks, window.DEFAULT_LAYOUT)
+
+
+def test_a_hidden_panel_is_hidden_and_not_destroyed(built):
+    """Switching layouts has to cost nothing and lose nothing: every panel
+    stays built and wired, one tick away in View."""
+    from onset_review import window
+
+    try:
+        window.apply_layout(built.docks, "Reporting")
+        assert built.docks["detail"].isHidden()
+        assert built.docks["detail"].widget() is built.panels["detail"]
+        # Still wired: selecting an event still draws it, unseen.
+        built.panels["events"].view.selectRow(2)
+        assert built.panels["detail"]._snapshot is not None
+    finally:
+        window.apply_layout(built.docks, window.DEFAULT_LAYOUT)
+
+
+def test_an_unknown_layout_changes_nothing(built):
+    from onset_review import window
+
+    before = {key: dock.isHidden() for key, dock in built.docks.items()}
+    assert window.apply_layout(built.docks, "Radiology") is False
+    assert {k: d.isHidden() for k, d in built.docks.items()} == before
+
+
+def test_the_view_menu_leads_with_the_layouts(built):
+    from onset_review import window
+
+    view = [action.menu() for action in built.host.menuBar().actions()
+            if "View" in action.text()][0]
+    texts = [action.text().replace("&", "") for action in view.actions()
+             if action.text()]
+    for index, name in enumerate(window.LAYOUTS):
+        assert texts[index] == name
+    assert texts[len(window.LAYOUTS)] == "Everything at once"
+
+
+# -- the event detail view -------------------------------------------------
+
+
+def test_selecting_an_event_draws_it_close_up(built):
+    """One place decides which event is under discussion: the list."""
+    events, close_up = built.panels["events"], built.panels["detail"]
+    events.view.selectRow(0)
+    key = events.selected_key()
+    assert key
+    assert close_up._snapshot is not None
+    assert close_up._snapshot.channel == str(
+        events.model.row_value(0, "channel"))
+    assert "µV" in close_up.headline.text() or "ms" in close_up.headline.text()
+
+
+def test_the_detail_view_says_the_signal_is_not_unprocessed(built):
+    """The one view whose job is to let someone check the analysis must not
+    claim to show them something it is not showing them."""
+    events, close_up = built.panels["events"], built.panels["detail"]
+    events.view.selectRow(1)
+    text = close_up.caption.text().lower()
+    assert "not unprocessed" in text
+    assert "island" in text and "column" in text
+
+
+def test_a_key_with_no_event_leaves_the_panel_standing(built):
+    close_up = built.panels["detail"]
+    assert close_up.show_key("ZZ9-ZZ10|999.000|rms") is False
+    assert close_up._snapshot is None
+    assert "not in this analysis" in close_up.caption.text()
 
 
 # -- the reader's own verdicts ---------------------------------------------

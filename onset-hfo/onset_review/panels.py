@@ -498,6 +498,10 @@ class EventsPanel(QWidget):
     """
 
     eventPicked = Signal(float, str)
+    #: The selected event's verdict key. Carried as the key rather than as a
+    #: time and a channel so that the detail view and the reader's verdict are
+    #: talking about the same event by construction.
+    eventKeyPicked = Signal(str)
     #: (event key, verdict) after the reader judges one. An empty verdict
     #: means they took it back. The window connects this to the autosave.
     judged = Signal(str, str)
@@ -759,8 +763,11 @@ class EventsPanel(QWidget):
         row = rows[0].row()
         t = self.model.row_value(row, "t_local")
         channel = self.model.row_value(row, "channel")
+        key = self.model.row_value(row, "key")
         if t is not None:
             self.eventPicked.emit(float(t), str(channel or ""))
+        if key:
+            self.eventKeyPicked.emit(str(key))
 
     def step(self, delta: int) -> None:
         """Move the selection by `delta` rows, which is what the toolbar does."""

@@ -40,6 +40,7 @@ from onset_review.assistant import AssistantPanel
 from onset_review.brainview import BrainPanel
 from onset_review.controls import AMPLITUDE_STEP, TraceControls
 from onset_review.dataquality import QualityPanel
+from onset_review.eventview import EventDetailPanel
 from onset_review.panels import (
     AgreementPanel,
     EventsPanel,
@@ -80,6 +81,38 @@ DEFAULT_N_CHANNELS = 12
 #: Volts per display unit. 50 µV is the scale the HFO literature plots filtered
 #: ripples at; the reviewer rescales with the usual MNE keys from there.
 DEFAULT_SCALING = 50e-6
+
+#: The three stages of a read, and which panels each one needs. Eleven docks
+#: visible at once is a developer's dashboard: the tabs elide to "Prepro...",
+#: nothing has room, and a reviewer has to curate the window before they can
+#: use it. These are not modes -- every panel stays one click away in View,
+#: and a reviewer who drags something back is not fought -- they are the
+#: starting arrangements for the three things someone actually does here.
+#:
+#: Screening: is there anything in this window, and where? Reading: is this
+#: particular event real, and what do I think of it? Reporting: what was done
+#: to the signal, what was fit to analyse, and against what.
+#: Each entry is (what the stage is for, the panels it shows, the one to put
+#: in front). The third field is explicit rather than "the first tabbed one",
+#: because which panels share a tab stack is a layout detail of `decorate` and
+#: a layout that opened on whichever tab happened to be in front is not a
+#: layout.
+LAYOUTS = {
+    "Screening": ("Look for the activity",
+                  ("trends", "controls", "findings", "events", "brain"),
+                  "brain"),
+    "Reading": ("Judge it event by event",
+                ("controls", "findings", "events", "detail", "assistant"),
+                "detail"),
+    "Reporting": ("Check what was done and against what",
+                  ("findings", "quality", "preprocess", "provenance",
+                   "agreement", "patient"),
+                  "quality"),
+}
+
+#: The layout a window opens in. Screening, because the first question about a
+#: window is always whether there is anything in it.
+DEFAULT_LAYOUT = "Screening"
 
 #: Window-wide shortcuts for the reader's verdicts, as `Ctrl`+digit. The
 #: events panel also binds the bare letters A/D/U while it has focus; these
@@ -358,6 +391,7 @@ def decorate(figure, session: ReviewSession, show_expert: bool = False,
         "patient": PatientPanel(session),
         "brain": BrainPanel(session, resection=session.resection,
                             electrodes=session.electrodes),
+        "detail": EventDetailPanel(session),
         "assistant": AssistantPanel(session),
         "preprocess": PreprocessPanel(session),
         "quality": QualityPanel(session),
@@ -396,6 +430,13 @@ def decorate(figure, session: ReviewSession, show_expert: bool = False,
     dock("findings", "Findings — channels ranked by rate",
          Qt.RightDockWidgetArea, panels["findings"])
     dock("events", "Events", Qt.RightDockWidgetArea, panels["events"])
+    # The detail view goes in the working tab stack, not with the reference
+    # panels: it is read event by event alongside the list, which is the only
+    # thing in this window that is used as often as the trace.
+    close_up = dock("detail", "This event", Qt.RightDockWidgetArea,
+                    panels["detail"],
+                    "The selected event wideband, filtered and in "
+                    "time-frequency — is it an oscillation or filter ringing?")
     # Agreement and provenance are reference rather than working views, so they
     # share a tab stack and start behind the panels a reviewer uses minute to
     # minute.
@@ -430,13 +471,16 @@ def decorate(figure, session: ReviewSession, show_expert: bool = False,
                panels["quality"],
                "Data quality — which contacts and which seconds were "
                "analysed, which were only flagged, and why")
+    host.tabifyDockWidget(close_up, who)
     host.tabifyDockWidget(who, brain)
     host.tabifyDockWidget(brain, accord)
     host.tabifyDockWidget(accord, prov)
     host.tabifyDockWidget(prov, prep)
     host.tabifyDockWidget(prep, fit)
     host.tabifyDockWidget(fit, helper)
-    brain.raise_()
+    # The detail view opens in front: the first thing a reviewer does with a
+    # detection is look at it.
+    close_up.raise_()
     # A trend squeezed to a strip is unreadable, and Qt will squeeze it unless
     # the widget itself says otherwise; `resizeDocks` alone loses to the
     # central widget's own size policy.
@@ -448,23 +492,33 @@ def decorate(figure, session: ReviewSession, show_expert: bool = False,
     host.resizeDocks([docks["trends"]],
                      [_share(height, TREND_FRACTION, TREND_BOUNDS)],
                      Qt.Vertical)
-    column = [docks["findings"], docks["events"], brain, helper, prep, fit, who]
+    column = [docks["findings"], docks["events"], brain, helper, prep, fit, who,
+              close_up]
     host.resizeDocks(column,
                      [_share(width, COLUMN_FRACTION, COLUMN_BOUNDS)]
                      * len(column), Qt.Horizontal)
     # Vertical shares for the right-hand column. Without these the 3D view's
     # own minimum height wins the whole column and the two tables above it are
     # left showing one row each.
-    host.resizeDocks([docks["findings"], docks["events"], brain],
+    host.resizeDocks([docks["findings"], docks["events"], close_up],
                      list(COLUMN_SPLIT), Qt.Vertical)
 
     parts = ReviewWindowParts(figure, host, panels, docks, session)
     parts.display = display
     _wire(figure, host, panels, session, display, parts)
     _status(host, session)
+    defaults: dict = {}
     _menus(figure, host, panels, docks, session, display, parts,
-           on_import=on_import)
+           defaults, on_import=on_import)
     _set_reader_status(host, session)
+    # Opened in a layout rather than with everything showing: eleven docked
+    # panels at once is an arrangement a reviewer has to undo before they can
+    # work, and the first question about a window is always whether there is
+    # anything in it.
+    apply_layout(docks, DEFAULT_LAYOUT)
+    # Captured here, after the opening layout: "the default layout" has to mean
+    # what the window actually opened as, panels hidden and all.
+    defaults["state"] = host.saveState()
     if on_quality is not None:
         panels["quality"].applied.connect(on_quality)
     else:
@@ -511,6 +565,9 @@ def _wire(figure, host, panels: dict, session: ReviewSession,
         panels["controls"].sync()
 
     panels["events"].eventPicked.connect(lambda t, channel: select(channel, t))
+    # The detail view follows the event list and nothing else: one place in
+    # the window decides which event is under discussion.
+    panels["events"].eventKeyPicked.connect(panels["detail"].show_key)
     panels["trends"].cellPicked.connect(lambda t, channel: select(channel, t))
     panels["findings"].channelPicked.connect(lambda channel: select(channel))
     panels["agreement"].channelPicked.connect(lambda channel: select(channel))
@@ -598,7 +655,8 @@ def _status(host: QMainWindow, session: ReviewSession) -> None:
 
 def _menus(figure, host: QMainWindow, panels: dict, docks: dict,
            session: ReviewSession, display: _Display,
-           parts: ReviewWindowParts, on_import=None) -> None:
+           parts: ReviewWindowParts, defaults: dict,
+           on_import=None) -> None:
     """Menus and a toolbar, in the vocabulary of the task rather than the code."""
     menubar = host.menuBar()
 
@@ -619,6 +677,24 @@ def _menus(figure, host: QMainWindow, panels: dict, docks: dict,
     file_menu.addAction("&Close window", host.close)
 
     view = menubar.addMenu("&View")
+    # The layouts come first because they are the entries a reviewer wants
+    # most of the time; the eleven individual toggles below them are for the
+    # one panel the layout did not include.
+    for index, (name, (what, _, _focus)) in enumerate(LAYOUTS.items(), start=1):
+        entry = view.addAction(f"&{name}")
+        entry.setShortcut(f"Alt+{index}")
+        entry.setToolTip(what)
+        entry.triggered.connect(
+            lambda _=False, name=name: (
+                apply_layout(docks, name),
+                host.statusBar().showMessage(f"{name}: {LAYOUTS[name][0]}.",
+                                             6000)))
+    everything = view.addAction("E&verything at once")
+    everything.setToolTip("Every panel visible. There are eleven of them, and "
+                          "the tabs will not all fit.")
+    everything.triggered.connect(
+        lambda _=False: [dock.setVisible(True) for dock in docks.values()])
+    view.addSeparator()
     for dock_widget in docks.values():
         view.addAction(dock_widget.toggleViewAction())
     view.addSeparator()
@@ -644,7 +720,7 @@ def _menus(figure, host: QMainWindow, panels: dict, docks: dict,
         lambda on: (setattr(display, "expert", bool(on)), parts.refresh_marks()))
 
     view.addSeparator()
-    _window_actions(view, host)
+    _window_actions(view, host, docks, defaults)
 
     navigate = menubar.addMenu("&Navigate")
     navigate.addAction("&Next event", lambda: panels["events"].step(+1))
@@ -666,6 +742,28 @@ def _menus(figure, host: QMainWindow, panels: dict, docks: dict,
     help_menu.addAction("What am I looking at?", lambda: _about(host, session))
     help_menu.addAction("Keyboard shortcuts (MNE trace)",
                         lambda: _shortcuts(figure, host))
+
+
+def apply_layout(docks: dict, name: str) -> bool:
+    """Show the panels `name` calls for and hide the rest. False if unknown.
+
+    Hidden, not destroyed: every panel is still built, still wired and still
+    one click away in View, so switching layouts costs nothing and loses
+    nothing. A reviewer who wants the 3D view while reading gets it by
+    ticking it, and this does not fight them for it afterwards.
+    """
+    wanted = LAYOUTS.get(name)
+    if wanted is None:
+        return False
+    _, keep, focus = wanted
+    for key, dock in docks.items():
+        dock.setVisible(key in set(keep))
+    # `isHidden`, not `isVisible`: a dock inside a window that has not been
+    # shown yet is not "visible", and this runs during `decorate`, before the
+    # window is shown. The question being asked is whether this layout hid it.
+    if focus in docks and not docks[focus].isHidden():
+        docks[focus].raise_()
+    return True
 
 
 def _name_mnes_widgets(host: QMainWindow) -> None:
@@ -708,6 +806,14 @@ def _ask_reader(host: QMainWindow, session: ReviewSession) -> str:
         except OSError:
             pass
         _set_reader_status(host, session)
+    # Opened in a layout rather than with everything showing: eleven docked
+    # panels at once is an arrangement a reviewer has to undo before they can
+    # work, and the first question about a window is always whether there is
+    # anything in it.
+    apply_layout(docks, DEFAULT_LAYOUT)
+    # Captured here, after the opening layout: "the default layout" has to mean
+    # what the window actually opened as, panels hidden and all.
+    defaults["state"] = host.saveState()
     return name
 
 
@@ -805,7 +911,8 @@ def _window_note(host: QMainWindow, session: ReviewSession) -> None:
         host.statusBar().showMessage(f"Could not save your read: {error}", 10000)
 
 
-def _window_actions(view, host: QMainWindow) -> None:
+def _window_actions(view, host: QMainWindow, docks: dict,
+                    defaults: dict) -> None:
     """Fit, maximise and full screen, in the View menu.
 
     The window manager's own buttons are the usual way to do this, and they
@@ -824,15 +931,18 @@ def _window_actions(view, host: QMainWindow) -> None:
     The fourth entry, restoring the default dock layout, is here for the same
     reason: it is the way back from an arrangement that no longer fits.
     """
-    # Captured before the reviewer can drag anything, which is the point: the
-    # docks are rearrangeable and a dragged-out panel is easy to lose. Qt has
-    # no undo for a dock drag, so the default has to be kept somewhere.
+    # The default arrangement, kept because the docks are rearrangeable and a
+    # dragged-out panel is easy to lose: Qt has no undo for a dock drag. Filled
+    # in by `decorate` once the opening layout has been applied -- captured
+    # here it would be the arrangement with every panel showing, which is the
+    # one state the window never opens in.
     _name_mnes_widgets(host)
-    default_layout = host.saveState()
+
     restore = view.addAction("&Restore the default layout")
     restore.setToolTip("Put the panels back where they started")
     restore.triggered.connect(
-        lambda _=False: host.restoreState(default_layout))
+        lambda _=False: host.restoreState(defaults.get("state")
+                                          or host.saveState()))
 
     shrink = view.addAction("&Fit the window to this screen")
     shrink.setShortcut("Ctrl+0")

@@ -51,6 +51,18 @@ rather than removed — an assistant
 that cites this window or refuses — and, pinned to the status bar
 where it cannot be scrolled past, whether any of it supports a ranking at all.
 
+It opens in one of three layouts — screening, reading, reporting — rather than
+showing all eleven panels at once, because a window you have to tidy before you
+can use it is a window that does not get used.
+
+Select any event and it opens **close up**: the wideband signal, the same
+signal through the detector's band, and the time-frequency plot under both. A
+real oscillation is an island — energy confined in frequency, lasting several
+cycles. Filter ringing on an interictal spike is a column running the whole
+height of the plot at one instant, and it is the largest single source of false
+HFO detections there is. The filtered trace alone cannot tell them apart; these
+three together can, at a glance.
+
 And the one column in it that is not an algorithm's output: **your own
 verdict**. `A`, `D` or `U` on the selected event — real, not real, cannot tell
 — recorded under your name with the time you gave it, saved the moment you
@@ -386,6 +398,8 @@ onset_review/         the desktop reviewer (Qt), installable on Ubuntu
   session.py          a loaded window: the recording, the detections, the findings
   trends.py           the trend matrix, the event list, detector-vs-expert agreement
   anatomy.py          where each contact is drawn, and how much of that is known
+  detail.py           one event wideband, filtered and in time-frequency
+  eventview.py        that triptych, drawn
   adjudication.py     the reader's own verdicts: attributed, saved, never dropped
   report.py           the record a reviewer exports when they are done
   panels.py           the dock widgets; they render and compute nothing
