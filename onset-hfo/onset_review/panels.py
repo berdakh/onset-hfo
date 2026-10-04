@@ -19,7 +19,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 from qtpy.QtCore import QAbstractTableModel, QModelIndex, Qt, Signal
-from qtpy.QtGui import QColor, QFont
+from qtpy.QtGui import QColor, QFont, QKeySequence, QShortcut
 from qtpy.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -27,13 +27,14 @@ from qtpy.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QPushButton,
     QTableView,
     QTextBrowser,
     QVBoxLayout,
     QWidget,
 )
 
-from onset_review import theme, trends
+from onset_review import adjudication, theme, trends
 from onset_review.session import ReviewSession
 from onset_review.theme import card
 
@@ -43,6 +44,9 @@ __all__ = ["FindingsPanel", "EventsPanel", "TrendsPanel", "AgreementPanel",
 #: Columns renamed for reading. A clinician should never have to learn that
 #: `mean_prominence_db` is how far the oscillation rises above the background.
 HEADERS = {
+    "verdict": "My read",
+    "my_read": "My read",
+    "judged": "Judged",
     "rank": "#",
     "channel": "Channel",
     "n_events": "Events",
@@ -76,6 +80,70 @@ HEADERS = {
     "precision": "Precision",
 }
 
+#: Long form for the columns whose heading cannot carry their meaning. Shown
+#: as a tooltip on the header; see `DataFrameModel.headerData`.
+HEADER_TIPS = {
+    "verdict": "Your verdict on this event. A/D/U while this panel has focus.",
+    "my_read": "Your verdict on this contact",
+    "judged": "How many of this contact's ranked events you have given a "
+              "verdict on — the same events the Events column counts",
+    "rate_per_min": "The detector's rate, over the seconds actually analysed "
+                    "on this contact",
+    "reviewed": "Whether the archive's own annotators looked at this contact "
+                "at all. They did not review every one, and a detection on a "
+                "contact they skipped is unjudged rather than wrong.",
+}
+
+#: The reader's verdicts as they appear in a table cell. Short on purpose:
+#: "A real event" repeated down four hundred rows is a wall of text, and the
+#: column is narrow because the measurements beside it are what the reader is
+#: judging against.
+SHORT_VERDICTS = {"agree": "real", "disagree": "not real", "unsure": "unsure"}
+
+def _indicate(view, model, name: str) -> None:
+    """Point the sort arrow at the column the rows are already ordered by."""
+    column = model.column_index(name)
+    if column >= 0:
+        view.horizontalHeader().setSortIndicator(column, Qt.AscendingOrder)
+
+
+def _compact(button):
+    """A button sized for a row that sits under a table rather than beside it.
+
+    The verdict rows are two more rows in the right-hand column, and that
+    column's height is what decides how small the whole window may be. At the
+    platform's default button metrics the two of them cost 70 px of minimum
+    window height, which is most of a laptop screen's margin.
+    """
+    button.setAutoDefault(False)
+    button.setStyleSheet("padding:1px 8px;font-size:11px;")
+    button.setMaximumHeight(22)
+    return button
+
+
+def _attributed(panel) -> bool:
+    """True once the read has a reader's name on it, asking for one if not.
+
+    A verdict is refused rather than recorded anonymously. That looks strict
+    for a research prototype and it is the right strictness: the whole value
+    of a recorded judgement is that someone can be asked about it afterwards,
+    and a file full of opinions with no name against them cannot be used for
+    anything -- not a report, not a second read, not a disagreement.
+
+    Asked once per window, prefilled from the login name, and never asked
+    again once answered.
+    """
+    read = panel._session.read
+    if read.reader:
+        return True
+    ask = getattr(panel, "reader_prompt", None)
+    name = (ask() if callable(ask) else "").strip()
+    if not name:
+        return False
+    read.reader = name
+    return True
+
+
 #: Columns shown as a percentage rather than a fraction.
 _PERCENT = {"sensitivity", "precision"}
 #: Columns shown without decimals.
@@ -96,6 +164,9 @@ class DataFrameModel(QAbstractTableModel):
                  highlight=None, parent=None):
         super().__init__(parent)
         self._highlight = highlight
+        #: (column name, ascending). By name rather than by index so that it
+        #: survives a rebuild that adds or removes a column.
+        self._order = None
         self.set_frame(frame, columns)
 
     def set_frame(self, frame: pd.DataFrame, columns: list[str] | None = None) -> None:
@@ -103,7 +174,33 @@ class DataFrameModel(QAbstractTableModel):
         if columns is not None:
             keep = [c for c in columns if c in frame.columns]
             frame = frame[keep] if keep else frame
-        self._frame = frame.reset_index(drop=True)
+        self._frame = self._ordered(frame).reset_index(drop=True)
+        self.endResetModel()
+
+    def _ordered(self, frame: pd.DataFrame) -> pd.DataFrame:
+        if self._order is None or frame.empty:
+            return frame
+        name, ascending = self._order
+        if name not in frame.columns:
+            return frame
+        # `stable` so that re-sorting by a coarse column -- the reader's
+        # verdict, say -- leaves each group in the order it already had,
+        # which for the events list is time.
+        return frame.sort_values(name, ascending=ascending, kind="stable")
+
+    def sort(self, column: int, order=Qt.AscendingOrder) -> None:
+        """Sort by a column, which is what the clickable headers promised.
+
+        `QTableView.setSortingEnabled` draws the arrow and calls this; the
+        base class's implementation does nothing, so until this existed every
+        header in the window was a control that moved and changed nothing.
+        """
+        if not 0 <= column < self._frame.shape[1]:
+            return
+        self._order = (str(self._frame.columns[column]),
+                       order == Qt.AscendingOrder)
+        self.beginResetModel()
+        self._frame = self._ordered(self._frame).reset_index(drop=True)
         self.endResetModel()
 
     @property
@@ -119,18 +216,30 @@ class DataFrameModel(QAbstractTableModel):
     def column_name(self, column: int) -> str:
         return str(self._frame.columns[column])
 
+    def column_index(self, name: str) -> int:
+        """Where `name` is drawn, or -1. Not the same as its place in a panel's
+        `COLUMNS`: a column the frame does not carry is dropped, and every
+        column after it shifts."""
+        columns = list(self._frame.columns)
+        return columns.index(name) if name in columns else -1
+
     def row_value(self, row: int, name: str):
         if name not in self._frame.columns or not 0 <= row < len(self._frame):
             return None
         return self._frame.iloc[row][name]
 
     def headerData(self, section: int, orientation, role=Qt.DisplayRole):
-        if role != Qt.DisplayRole:
-            return None
-        if orientation == Qt.Horizontal:
-            name = str(self._frame.columns[section])
+        if orientation != Qt.Horizontal:
+            return str(section + 1) if role == Qt.DisplayRole else None
+        name = str(self._frame.columns[section])
+        if role == Qt.DisplayRole:
             return HEADERS.get(name, name.replace("_", " "))
-        return str(section + 1)
+        # A short header is readable and a long one is explanatory; a tooltip
+        # is how a column gets to be both. Only the columns whose meaning is
+        # not in their name have one.
+        if role == Qt.ToolTipRole:
+            return HEADER_TIPS.get(name)
+        return None
 
     def data(self, index: QModelIndex, role=Qt.DisplayRole):
         if not index.isValid():
@@ -172,13 +281,18 @@ def _format(value, name: str) -> str:
 #: showing a single row. `resizeDocks` does not win that argument; a minimum
 #: does.
 #:
-#: Three rows rather than the six this started at, because the same minimums Qt
+#: Two rows rather than the six this started at, because the same minimums Qt
 #: uses to divide the column it also sums to decide how small the window may
-#: get: three tables in one column at six rows each cost 180 px of minimum
+#: get: three tables in one column at six rows each cost 270 px of minimum
 #: window height, which is the difference between fitting a 768 px laptop
 #: screen and not. The *preferred* heights in `window.decorate` are unchanged,
 #: so a large screen looks exactly as it did.
-MIN_TABLE_HEIGHT = 90
+#:
+#: This floor used to carry a second job -- stopping the 3D view's own large
+#: minimum from eating the whole column -- which is why it started at six
+#: rows. That view is in a scroll area now and no longer has a large minimum,
+#: so the floor only has to be enough to see that a table is a table.
+MIN_TABLE_HEIGHT = 60
 
 
 def _table_view() -> QTableView:
@@ -215,11 +329,30 @@ class FindingsPanel(QWidget):
     """
 
     channelPicked = Signal(str)
+    #: (channel, verdict) after the reader judges a contact; "" means taken
+    #: back. Connected to the autosave by the window.
+    channelJudged = Signal(str, str)
 
-    COLUMNS = ["rank", "channel", "n_events", "rate_per_min", "rate_ci_low",
-               "rate_ci_high", "mean_frequency_hz", "mean_duration_ms",
-               "mean_prominence_db", "n_with_spike", "reviewed", "expert_n",
-               "expert_rate_per_min"]
+    COLUMNS = ["rank", "channel", "my_read", "judged", "n_events",
+               "rate_per_min", "rate_ci_low", "rate_ci_high",
+               "mean_frequency_hz", "mean_duration_ms", "mean_prominence_db",
+               "n_with_spike", "reviewed", "expert_n", "expert_rate_per_min"]
+
+    #: Verdict -> (button text, tooltip). No single-letter keys here: the
+    #: letters belong to the event list, where they are pressed hundreds of
+    #: times, and a contact is judged once.
+    CHANNEL_KEYS = (
+        ("accept", "Count it", "This contact's events are worth counting"),
+        ("ignore", "Ignore it", "Exclude this contact from the reading — a "
+                                "popping electrode, or signal you do not "
+                                "trust. The rate stays on screen; your verdict "
+                                "goes in the report beside it."),
+        ("unsure", "Cannot tell", "Recorded as undecided rather than left "
+                                  "blank, which is a different thing"),
+    )
+
+    #: As on `EventsPanel`.
+    reader_prompt = None
 
     def __init__(self, session: ReviewSession, parent=None):
         super().__init__(parent)
@@ -229,16 +362,39 @@ class FindingsPanel(QWidget):
         has_expert = session.has_expert
 
         def highlight(row):
+            # The reader's own verdict outranks every automatic tint: once
+            # someone has said "ignore this contact", that is the most
+            # important thing about the row.
+            if row.get("my_read") == adjudication.CHANNEL_LABELS["ignore"]:
+                return theme.current().bad_surface
             if row.get("channel") in tied:
                 return theme.current().highlight
             if has_expert and row.get("channel") not in reviewed:
                 return theme.current().surface_alt
             return None
 
-        self.model = DataFrameModel(session.findings, self.COLUMNS, highlight)
+        self.model = DataFrameModel(self._with_read(), self.COLUMNS, highlight)
         self.view = _table_view()
         self.view.setModel(self.model)
+        _indicate(self.view, self.model, "rank")
         self.view.selectionModel().selectionChanged.connect(self._emit)
+
+        self.buttons = {}
+        bar = QHBoxLayout()
+        bar.setSpacing(4)
+        bar.addWidget(QLabel("This contact:"))
+        for verdict, text, tip in self.CHANNEL_KEYS:
+            button = _compact(QPushButton(text))
+            button.setToolTip(tip)
+            button.clicked.connect(
+                lambda _=False, verdict=verdict: self.judge_channel(verdict))
+            bar.addWidget(button)
+            self.buttons[verdict] = button
+        self.undo = _compact(QPushButton("Clear"))
+        self.undo.setToolTip("Take this verdict back")
+        self.undo.clicked.connect(lambda _=False: self.judge_channel(""))
+        bar.addWidget(self.undo)
+        bar.addStretch(1)
 
         caption = QLabel(
             "Tinted rows are statistically tied with the busiest channel"
@@ -253,7 +409,68 @@ class FindingsPanel(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(2)
         layout.addWidget(self.view)
+        layout.addLayout(bar)
         layout.addWidget(caption)
+
+    # -- the reader's verdicts ---------------------------------------------
+    def _with_read(self) -> pd.DataFrame:
+        """The findings table with the reader's two columns added.
+
+        `judged` is a fraction rather than a confirmed rate on purpose. A rate
+        computed from a partly-judged channel is a confirmed count divided by
+        the whole window, which understates every channel the reader has not
+        finished; "12 of 51" says what is actually known.
+
+        Counted over the same events as the `Events` column beside it --
+        accepted, from the detector the ranking comes from -- and not over
+        everything on the contact. The two columns sit next to each other and
+        a reader will read them as a pair, so "0 of 102" beside "51" would be
+        a question rather than an answer.
+        """
+        read = self._session.read
+        primary = self._session.request.primary
+        progress = read.progress([e for e in self._session.events
+                                  if e.accepted and e.detector == primary])
+        frame = self._session.findings.copy()
+        if frame.empty:
+            frame["my_read"] = []
+            frame["judged"] = []
+            return frame
+        frame["my_read"] = [
+            adjudication.CHANNEL_LABELS.get(read.channel_verdict(str(ch)), "")
+            for ch in frame["channel"]]
+        frame["judged"] = [
+            (lambda p: f"{p['judged']} of {p['total']}" if p else "—")(
+                progress.get(str(ch)))
+            for ch in frame["channel"]]
+        return frame
+
+    def selected_channel(self) -> str:
+        rows = self.view.selectionModel().selectedRows()
+        if not rows:
+            return ""
+        return str(self.model.row_value(rows[0].row(), "channel") or "")
+
+    def judge_channel(self, verdict: str) -> str:
+        """Record `verdict` on the selected contact; "" takes it back."""
+        channel = self.selected_channel()
+        if not channel:
+            return ""
+        read = self._session.read
+        if verdict and not _attributed(self):
+            return ""
+        if verdict:
+            read.judge_channel(channel, verdict, reader=read.reader)
+        else:
+            read.clear_channel(channel)
+        self.channelJudged.emit(channel, verdict)
+        self.refresh(keep=channel)
+        return channel
+
+    def refresh(self, keep: str = "") -> None:
+        self.model.set_frame(self._with_read(), self.COLUMNS)
+        if keep:
+            self.select_channel(keep)
 
     def _emit(self) -> None:
         rows = self.view.selectionModel().selectedRows()
@@ -281,15 +498,42 @@ class EventsPanel(QWidget):
     """
 
     eventPicked = Signal(float, str)
+    #: (event key, verdict) after the reader judges one. An empty verdict
+    #: means they took it back. The window connects this to the autosave.
+    judged = Signal(str, str)
 
-    COLUMNS = ["t_local", "channel", "kind", "duration_ms", "amplitude_uv",
-               "frequency_hz", "prominence_db", "n_peaks", "with_spike",
-               "reject_reason"]
+    #: "My read" first. In a list of four hundred rows the column a reader is
+    #: filling in is the one they scan down, and a column they have to scroll
+    #: sideways to see is a column they will not keep up to date.
+    #: `key` is last and hidden: it is how a selected row becomes the event it
+    #: stands for, and it has to live in the model rather than in a frame
+    #: beside it, or sorting the table would silently misalign the two.
+    COLUMNS = ["verdict", "t_local", "channel", "kind", "duration_ms",
+               "amplitude_uv", "frequency_hz", "prominence_db", "n_peaks",
+               "with_spike", "reject_reason", "key"]
+
+    #: Verdict -> (button text, keyboard key, tooltip). Single letters, and
+    #: scoped to this panel rather than the window, because `a` is MNE's own
+    #: annotation-mode key on the trace and stealing it would break the
+    #: browser underneath us.
+    KEYS = (
+        ("agree", "&Real", "A", "This is a real event (A)"),
+        ("disagree", "&Not real", "D", "Artifact, ringing, or not an "
+                                       "oscillation (D)"),
+        ("unsure", "&Unsure", "U", "Genuinely ambiguous — recorded as such, "
+                                   "and counted as neither (U)"),
+    )
+
+    #: Set by `window.decorate` to a callable that asks who is reviewing and
+    #: returns the name, or "" if they declined. Left as None in tests and in
+    #: any caller that has already named the reader.
+    reader_prompt = None
 
     def __init__(self, session: ReviewSession, parent=None):
         super().__init__(parent)
         self._session = session
         self._all = trends.event_table(session, include_rejected=True)
+        self._shown = self._all
 
         self.kind = QComboBox()
         self.kind.addItems(["All kinds", "Ripples only", "Fast ripples only",
@@ -312,27 +556,168 @@ class EventsPanel(QWidget):
         self.count.setStyleSheet(f"color:{theme.current().text_muted};font-size:9pt;")
         bar.addWidget(self.count)
 
-        self.model = DataFrameModel(
-            self._all, self.COLUMNS,
-            lambda row: theme.current().bad_surface if not row.get("accepted", True)
-            else None)
+        self.model = DataFrameModel(self._all, self.COLUMNS, self._tint)
         self.view = _table_view()
         self.view.setModel(self.model)
         self.view.selectionModel().selectionChanged.connect(self._emit)
+
+        # The reader's own row of controls, under the table and against the
+        # list it acts on. Buttons as well as keys: the keys are how the work
+        # is actually done, and the buttons are how someone finds out the keys
+        # exist.
+        self.buttons = {}
+        self.shortcuts = []
+        verdicts = QHBoxLayout()
+        verdicts.setSpacing(4)
+        verdicts.addWidget(QLabel("This event:"))
+        for verdict, text, key, tip in self.KEYS:
+            button = _compact(QPushButton(text))
+            button.setToolTip(tip)
+            button.clicked.connect(
+                lambda _=False, verdict=verdict: self.judge(verdict))
+            verdicts.addWidget(button)
+            self.buttons[verdict] = button
+            self._bind(key, lambda verdict=verdict: self.judge(verdict))
+        self.undo = _compact(QPushButton("Clear"))
+        self.undo.setToolTip("Take this verdict back (Backspace)")
+        self.undo.clicked.connect(lambda _=False: self.judge(""))
+        verdicts.addWidget(self.undo)
+        self._bind("Backspace", lambda: self.judge(""))
+        self.note = _compact(QPushButton("Note…"))
+        self.note.setToolTip("Say why, in a sentence (N)")
+        self.note.clicked.connect(self._write_note)
+        verdicts.addWidget(self.note)
+        self._bind("N", self._write_note)
+        verdicts.addStretch(1)
+        self.progress = QLabel()
+        self.progress.setStyleSheet(
+            f"color:{theme.current().text_muted};font-size:9pt;")
+        verdicts.addWidget(self.progress)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 0)
         layout.setSpacing(3)
         layout.addLayout(bar)
         layout.addWidget(self.view)
+        layout.addLayout(verdicts)
 
         for widget in (self.kind, self.channel):
             widget.currentIndexChanged.connect(self.refilter)
         for widget in (self.on_spike, self.rejected):
             widget.stateChanged.connect(self.refilter)
         self.refilter()
+        # After `refilter`, so the frame carries every column and the index is
+        # the one actually drawn. The list arrives in time order, so that is
+        # where the arrow goes: an indicator on a column the data is not
+        # ordered by is a statement the table is not making.
+        _indicate(self.view, self.model, "t_local")
 
-    def refilter(self) -> None:
+    # -- the reader's verdicts ---------------------------------------------
+    def _bind(self, key: str, slot) -> None:
+        """A single-letter shortcut that only fires while this panel has focus.
+
+        `QShortcut` rather than `QPushButton.setShortcut`, because a button's
+        shortcut is window-wide and cannot be scoped: binding `A` that way
+        takes MNE's annotation-mode key away from the trace browser this
+        window is built on. Scoped here, the letters belong to the event list
+        while the reader is working it and to MNE everywhere else.
+        """
+        shortcut = QShortcut(QKeySequence(key), self)
+        shortcut.setContext(Qt.WidgetWithChildrenShortcut)
+        shortcut.activated.connect(slot)
+        self.shortcuts.append(shortcut)
+
+    def _tint(self, row):
+        """Row colour: the reader's verdict first, the filter's second.
+
+        Deliberately that order. Once someone has said an event is not real,
+        that is the more important fact about the row than whether the
+        artifact filter happened to agree.
+        """
+        tokens = theme.current()
+        verdict = str(row.get("verdict") or "")
+        if verdict == SHORT_VERDICTS["disagree"]:
+            return tokens.bad_surface
+        if verdict:
+            return tokens.highlight
+        return tokens.bad_surface if not row.get("accepted", True) else None
+
+    def _verdicts_for(self, frame: pd.DataFrame) -> pd.DataFrame:
+        """Add the reader's column. Short words, because the column is narrow
+        and "A real event" at 400 rows is a wall of text."""
+        read = self._session.read
+        frame = frame.copy()
+        frame["verdict"] = [SHORT_VERDICTS.get(read.verdict_of(str(key)), "")
+                            for key in frame.get("key", [])]
+        return frame
+
+    def selected_key(self) -> str:
+        rows = self.view.selectionModel().selectedRows()
+        if not rows:
+            return ""
+        return str(self.model.row_value(rows[0].row(), "key") or "")
+
+    def judge(self, verdict: str, advance: bool = True) -> str:
+        """Record `verdict` on the selected event; "" takes it back.
+
+        Advancing to the next row afterwards is what makes this usable at the
+        scale it has to work at: four hundred events is four hundred key
+        presses, and reaching for the arrow key between each pair doubles that
+        for no reason.
+        """
+        key = self.selected_key()
+        if not key:
+            return ""
+        read = self._session.read
+        if verdict and not _attributed(self):
+            return ""
+        if verdict:
+            read.judge_event(key, verdict, reader=read.reader)
+        else:
+            read.clear_event(key)
+        self.judged.emit(key, verdict)
+        row = self.view.selectionModel().selectedRows()[0].row()
+        self.refilter(keep_row=row)
+        if advance:
+            self.step(+1)
+        return key
+
+    def _write_note(self) -> None:
+        """A sentence saying why. Optional, and the reason a disagreement is
+        worth anything to the next person who reads it."""
+        from qtpy.QtWidgets import QInputDialog
+
+        key = self.selected_key()
+        if not key or not _attributed(self):
+            return
+        read = self._session.read
+        existing = read.events.get(key)
+        text, ok = QInputDialog.getText(
+            self, "Note on this event", "Why?",
+            text=existing.note if existing else "")
+        if not ok:
+            return
+        verdict = read.verdict_of(key) or "unsure"
+        read.judge_event(key, verdict, reader=read.reader, note=text.strip())
+        self.judged.emit(key, verdict)
+        self.refilter(keep_row=self.view.selectionModel().selectedRows()[0].row()
+                      if self.view.selectionModel().selectedRows() else -1)
+
+    def step_unjudged(self, delta: int = 1) -> bool:
+        """Jump to the next event with no verdict on it. False when none left."""
+        read = self._session.read
+        rows = self.view.selectionModel().selectedRows()
+        current = rows[0].row() if rows else -1
+        order = (range(current + 1, self.model.rowCount()) if delta >= 0
+                 else range(current - 1, -1, -1))
+        for row in order:
+            if not read.verdict_of(str(self.model.row_value(row, "key") or "")):
+                self.view.selectRow(row)
+                self.view.scrollTo(self.model.index(row, 0))
+                return True
+        return False
+
+    def refilter(self, keep_row: int = -1) -> None:
         frame = self._all
         if not self.rejected.isChecked():
             frame = frame[frame["accepted"]]
@@ -344,8 +729,28 @@ class EventsPanel(QWidget):
             frame = frame[frame["channel"] == self.channel.currentText()]
         if self.on_spike.isChecked():
             frame = frame[frame["with_spike"]]
-        self.model.set_frame(frame, self.COLUMNS)
+        # `_shown` is the filtered frame in its natural order, which the
+        # progress figures count over; the model may hold it in a different
+        # order once the reader has clicked a header, which is why a row is
+        # turned back into an event through the model and not through this.
+        self._shown = self._verdicts_for(frame).reset_index(drop=True)
+        self.model.set_frame(self._shown, self.COLUMNS)
+        hidden = self.model.column_index("key")
+        if hidden >= 0:
+            self.view.setColumnHidden(hidden, True)
         self.count.setText(f"{len(frame)} of {len(self._all)} events")
+        self._show_progress()
+        # Refiltering rebuilds the model, which drops the selection. After a
+        # verdict that would send the reader back to the top of the list.
+        if 0 <= keep_row < self.model.rowCount():
+            self.view.selectRow(keep_row)
+
+    def _show_progress(self) -> None:
+        read = self._session.read
+        total = int(self._all["accepted"].sum()) if len(self._all) else 0
+        done = sum(1 for key in self._all.loc[self._all["accepted"], "key"]
+                   if read.verdict_of(str(key))) if total else 0
+        self.progress.setText(f"{done} of {total} judged" if total else "")
 
     def _emit(self) -> None:
         rows = self.view.selectionModel().selectedRows()

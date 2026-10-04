@@ -27,7 +27,7 @@ import numpy as np
 import pandas as pd
 
 from onset_hfo.quality import REASONS, quality_summary
-from onset_review import trends
+from onset_review import adjudication, trends
 from onset_review.session import DETECTOR_LABELS, ReviewSession
 
 __all__ = ["review_markdown", "write_review", "DISCLAIMER"]
@@ -107,8 +107,9 @@ def _header(session: ReviewSession, reviewer: str | None) -> list[str]:
         ("Sampling rate", f"{session.sfreq:g} Hz"),
         ("Reviewed on", now),
     ]
-    if reviewer:
-        rows.append(("Reviewer", reviewer))
+    named = reviewer or ", ".join(session.read.readers) or session.read.reader
+    if named:
+        rows.append(("Reviewer", named))
     return ["| field | value |", "|---|---|",
             *[f"| {name} | {value} |" for name, value in rows], ""]
 
@@ -170,6 +171,8 @@ def review_markdown(session: ReviewSession, reviewer: str | None = None,
                            "prominence_db", "n_peaks", "with_spike"],
                    limit=max_events)]
 
+    out += _read_section(session)
+
     out += _quality_section(session)
 
     out += ["## How the signal was prepared", ""]
@@ -229,6 +232,137 @@ def _as_html(text: str, session: ReviewSession) -> str:
         "h1{font-size:1.6rem}h2{font-size:1.2rem;margin-top:2rem;"
         "border-bottom:1px solid #e0e0e0;padding-bottom:.2rem}"
         "</style></head><body>\n" + body + "\n</body></html>\n")
+
+
+def _read_section(session: ReviewSession) -> list[str]:
+    """What the *reader* decided, kept visibly apart from what the detector did.
+
+    Its own section, and placed before the quality stage rather than tucked
+    after it, because this is the only part of the document a person is
+    accountable for. Everything above it is an algorithm's output, which is
+    reproducible and therefore not anybody's opinion; this is the opposite.
+
+    Three things are stated whether or not they are flattering: how much of
+    the window was actually judged, which events the reader disagreed with,
+    and how many verdicts no longer match an event. A report that quietly
+    omitted any of them would read as a complete review when it was a partial
+    one.
+    """
+    read = session.read
+    if read is None or read.empty:
+        return ["## The reader's own read", "",
+                "_Nobody has recorded a verdict on this window. Every number "
+                "above is the detector's, unreviewed._", ""]
+
+    counts = read.counts()
+    accepted = [e for e in session.events if e.accepted]
+    # Per contact, counted over the events the ranking is built from, so the
+    # `judged` column is comparable with `n_events` in the table above.
+    primary = session.request.primary
+    progress = read.progress([e for e in accepted if e.detector == primary])
+    judged, total = counts["judged"], len(accepted)
+    out = ["## The reader's own read", ""]
+    out += ["| field | value |", "|---|---|",
+            f"| Read by | {', '.join(read.readers) or read.reader or '—'} |",
+            f"| Events judged | {judged} of {total} accepted events |",
+            f"| Real | {counts['agree']} |",
+            f"| Not real | {counts['disagree']} |",
+            f"| Cannot tell | {counts['unsure']} |", ""]
+
+    if judged < total:
+        out += [f"**This is a partial read.** {total - judged} of {total} "
+                f"accepted events carry no verdict. The counts above are not "
+                f"a confirmed rate and must not be read as one.", ""]
+
+    if counts["orphans"]:
+        out += [f"{counts['orphans']} earlier verdict(s) no longer match any "
+                f"event in this analysis — the detector settings changed after "
+                f"they were given. They are kept in the stored read, not "
+                f"deleted, and reappear if the earlier settings are used "
+                f"again.", ""]
+
+    confirmed = _confirmed_rates(session)
+    rows = []
+    for channel, entry in progress.items():
+        if not (entry["judged"] or entry["verdict"]):
+            continue
+        rate = confirmed.get(channel, "")
+        rows.append(
+            f"| {channel} | "
+            f"{adjudication.CHANNEL_LABELS.get(entry['verdict'], '—')} | "
+            f"{entry['judged']} of {entry['total']} | {entry['agree']} | "
+            f"{entry['disagree']} | {entry['unsure']} | {rate or '—'} |")
+    if rows:
+        out += ["### Per contact", "",
+                "| channel | my read | judged | real | not real | cannot tell "
+                "| confirmed /min |", "|---|---|---|---|---|---|---|", *rows, "",
+                "_`judged` counts the events the ranking above is built "
+                "from, so it is comparable with `n_events` there; a verdict "
+                "on a discharge is recorded but not counted here. "
+                "`confirmed /min` is the reader's own rate: it counts "
+                "only those same events — accepted "
+                f"`{DETECTOR_LABELS.get(session.request.primary, session.request.primary)}` "
+                "events — over the same analysed seconds, and it is left blank "
+                "unless every one of them carries a verdict. A rate from a "
+                "half-judged contact would be a confirmed count divided by the "
+                "whole window, which understates it._", ""]
+
+    disagreed = [(key, judged_) for key, judged_ in sorted(read.events.items())
+                 if judged_.verdict == "disagree"]
+    if disagreed:
+        out += ["### Events the reader rejected", "",
+                "| channel | file time s | detector | why | at | by |",
+                "|---|---|---|---|---|---|"]
+        for key, judged_ in disagreed[:50]:
+            channel, _, rest = key.partition("|")
+            when, _, detector = rest.partition("|")
+            out.append(f"| {channel} | {when} | {detector} | "
+                       f"{judged_.note or '—'} | {judged_.at} | "
+                       f"{judged_.reader or '—'} |")
+        if len(disagreed) > 50:
+            out.append(f"| … | | | {len(disagreed) - 50} more | | |")
+        out.append("")
+
+    notes = [(key, j) for key, j in sorted(read.channels.items()) if j.note]
+    if notes:
+        out += ["### Notes on contacts", ""]
+        out += [f"- **{channel}** — {j.note} ({j.reader or '—'}, {j.at})"
+                for channel, j in notes] + [""]
+
+    if read.note.strip():
+        out += ["### The reader's conclusion", "", read.note.strip(), ""]
+    return out
+
+
+def _confirmed_rates(session: ReviewSession) -> dict:
+    """Channel -> the reader's own rate, as text, where they finished the channel.
+
+    Built to be comparable with `rate_per_min` in the findings table and with
+    nothing else: the same events (accepted, from the detector the ranking
+    comes from) over the same denominator (that channel's analysed seconds,
+    not the window length). Any other pairing would produce a number that
+    looks like the one above it in the document and is not.
+    """
+    read = session.read
+    primary = session.request.primary
+    basis: dict = {}
+    for event in session.events:
+        if not event.accepted or event.detector != primary:
+            continue
+        basis.setdefault(event.channel, []).append(event)
+
+    out = {}
+    for channel, events in basis.items():
+        verdicts = [read.verdict_of(adjudication.event_key(
+            e.channel, e.start, e.detector)) for e in events]
+        if not all(verdicts):
+            continue
+        seconds = float(session.clean_seconds.get(
+            channel, session.request.duration) or 0.0)
+        if seconds <= 0:
+            continue
+        out[channel] = f"{verdicts.count('agree') / (seconds / 60.0):.2f}"
+    return out
 
 
 def _quality_section(session: ReviewSession) -> list[str]:

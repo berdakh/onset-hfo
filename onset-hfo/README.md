@@ -51,6 +51,15 @@ rather than removed — an assistant
 that cites this window or refuses — and, pinned to the status bar
 where it cannot be scrolled past, whether any of it supports a ranking at all.
 
+And the one column in it that is not an algorithm's output: **your own
+verdict**. `A`, `D` or `U` on the selected event — real, not real, cannot tell
+— recorded under your name with the time you gave it, saved the moment you
+give it, and carried onto the next analysis if you change a filter. A verdict
+the new analysis cannot match is kept and named in the report rather than
+deleted. The exported review says how much of the window you actually judged,
+which events you rejected and why, and quotes a confirmed rate only for the
+contacts you finished.
+
 It opens recordings of your own too, through MNE's readers — EDF, BrainVision,
 Persyst, Nihon Kohden, Nicolet, Blackrock, MEF3 and the rest — with no
 conversion step and no proprietary format. It asks you to confirm which
@@ -377,6 +386,7 @@ onset_review/         the desktop reviewer (Qt), installable on Ubuntu
   session.py          a loaded window: the recording, the detections, the findings
   trends.py           the trend matrix, the event list, detector-vs-expert agreement
   anatomy.py          where each contact is drawn, and how much of that is known
+  adjudication.py     the reader's own verdicts: attributed, saved, never dropped
   report.py           the record a reviewer exports when they are done
   panels.py           the dock widgets; they render and compute nothing
   controls.py         visible amplitude, window, channel and scroll controls

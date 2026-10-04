@@ -66,6 +66,11 @@ def build_parser() -> argparse.ArgumentParser:
                              "intracranial.")
     parser.add_argument("--line-freq", type=float, default=50.0,
                         help="mains frequency for --open (default: %(default)s)")
+    parser.add_argument("--reader", default=None, metavar="NAME",
+                        help="who is reviewing. Your verdicts are recorded "
+                             "against this name and it goes in the exported "
+                             "report; without it the window asks before the "
+                             "first verdict.")
     parser.add_argument("--detector", action="append", dest="detectors",
                         help="repeatable; default rms")
     parser.add_argument("--threshold-sd", type=float, default=None,
@@ -310,10 +315,11 @@ class _Review:
         self.parts = None
 
     def open(self, session) -> None:
-        from onset_review import window
+        from onset_review import adjudication, window
 
         previous = self.parts
         state = previous.host.saveState() if previous is not None else None
+        self._attach_read(session)
 
         figure = window.open_trace(session, show_expert=self.overlay,
                                    show=self.args.screenshot is None)
@@ -345,6 +351,32 @@ class _Review:
                 previous.figure.close()
             except Exception:
                 pass
+        # Said out loud, because the alternative is a reviewer noticing later
+        # that some of their verdicts are no longer on the screen and having
+        # to guess whether the software lost them. It did not: they are in the
+        # file, under the settings they were given under.
+        if getattr(self, "_orphans", 0):
+            self.parts.host.statusBar().showMessage(
+                f"{self._orphans} of your verdicts no longer match an event "
+                f"in this analysis. They are kept, and come back if you undo "
+                f"the change.", 15000)
+
+    def _attach_read(self, session) -> None:
+        """Bring the reader's previous verdicts onto this analysis.
+
+        Every path into a window comes through `open`, including the re-runs
+        after a preprocessing or quality change, which is exactly when this
+        matters: those rebuild every event object, and without this the
+        reviewer's work would appear to vanish because the objects it was
+        attached to no longer exist.
+        """
+        from onset_review import adjudication
+
+        stored = adjudication.load(session.request)
+        if self.args.reader and not stored.reader:
+            stored.reader = self.args.reader.strip()
+        session.read = adjudication.reconcile(stored, session.events)
+        self._orphans = len(session.read.orphaned)
 
     def import_file(self) -> None:
         """Open a recording from this machine, replacing this window.

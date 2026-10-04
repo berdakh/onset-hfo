@@ -27,6 +27,7 @@ import pandas as pd
 
 from onset_hfo.detectors.base import Event
 from onset_hfo.metrics import match_events
+from onset_review import adjudication
 from onset_review.session import ReviewSession
 
 __all__ = ["rate_matrix", "rate_curve", "event_table", "agreement",
@@ -151,10 +152,15 @@ def event_table(session: ReviewSession, include_rejected: bool = False) -> pd.Da
             "with_spike": bool(event.co_occurs_with_spike),
             "accepted": bool(event.accepted),
             "reject_reason": event.reject_reason or "",
+            # What a reader's verdict is filed under. Built here rather than
+            # in the panel so that the exported report and the interface
+            # cannot disagree about which event was judged.
+            "key": adjudication.event_key(event.channel, event.start,
+                                          event.detector),
         })
     columns = ["t_local", "t_file", "channel", "kind", "detector", "duration_ms",
                "amplitude_uv", "frequency_hz", "prominence_db", "n_peaks",
-               "with_spike", "accepted", "reject_reason"]
+               "with_spike", "accepted", "reject_reason", "key"]
     return pd.DataFrame(rows, columns=columns)
 
 

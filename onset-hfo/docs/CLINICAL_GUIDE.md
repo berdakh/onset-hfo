@@ -136,6 +136,8 @@ Sorted by events per minute, busiest first. The columns that matter:
 |---|---|
 | **Rate /min** | events per minute on that channel |
 | **95% low / high** | the range the true rate plausibly lies in, given how few events a minute holds |
+| **My read** | your own verdict on the contact — see [**Recording your read**](#recording-your-read) |
+| **Judged** | how many of its ranked events you have given a verdict on |
 | **Expert looked** | whether the archive's annotators reviewed this channel at all |
 | **Expert events / min** | what they marked on it |
 
@@ -161,10 +163,71 @@ interictal discharge.
 reason — useful when you can see something on the trace and want to know why it
 is not marked.
 
+The **My read** column and the row of buttons under the table are yours; see
+below.
+
 `Prom dB` is the one column that is not self-explanatory: how far the
 oscillation rises above the recording's own background at that frequency. It is
 what separates a real oscillation from the ringing a filter produces when it
 hits a sharp transient, which is the classic way HFO detectors fool themselves.
+
+### Recording your read
+
+Everything above this line is an algorithm's opinion. This part is yours, and
+it is kept separate from the detector's output everywhere — on screen, in the
+stored file and in the exported report — because the two are different kinds of
+claim. The detector's output is reproducible; yours is not, which is exactly
+why it carries your name and the time you gave it.
+
+**Say who you are first.** The window asks once, before it records the first
+verdict, and will not record an anonymous one. A judgement nobody can be asked
+about afterwards cannot be used for anything — not a report, not a second
+opinion, not a disagreement. `onset-review --reader "Dr Smith"` skips the
+question. The status bar shows whose read it is and how much has been judged.
+
+**Judging an event.** Select it in the **Events** list and press one key:
+
+| key | verdict | meaning |
+|---|---|---|
+| `A` | real | a genuine event |
+| `D` | not real | artifact, filter ringing, or not an oscillation |
+| `U` | cannot tell | genuinely ambiguous — recorded as such, and counted as neither |
+| `Backspace` | — | take the verdict back |
+| `N` | — | add a sentence saying why |
+
+The selection moves on by itself after each one, so a long list is one key per
+event. The letters work while the events list has focus; **Read → …**
+(`Ctrl+1`, `Ctrl+2`, `Ctrl+3`) does the same from anywhere, and **Read → Next
+unjudged event** (`Ctrl+J`) skips what you have already done.
+
+**Judging a contact.** In **Findings**, *Count it*, *Ignore it* or *Cannot
+tell*. "Ignore it" does not delete anything or change a rate — the number stays
+on screen and your verdict goes in the report beside it. Nothing in this
+software removes a measurement because a person disagreed with it; it records
+that they did.
+
+**Read → Note on this window…** is where your conclusion goes. It is exported
+with the review.
+
+#### What is saved, and what survives
+
+Every verdict is written to disk the moment you give it. There is no save
+button and nothing to lose.
+
+Your verdicts are filed against the *recording and the window* — not against
+the detector settings. So changing a filter, a threshold or the quality stage
+and re-running keeps them: the software re-attaches each one to the matching
+event, allowing for the few milliseconds an onset moves when a threshold
+changes. A verdict with no matching event left is **not deleted**. It is kept
+in the file, counted in the report, and comes back if you undo the change. The
+status bar tells you when that has happened and how many.
+
+The report says three things whether or not they flatter the read: how much of
+the window was actually judged, which events you rejected and why, and how many
+verdicts no longer match an event. A partial read is labelled as one, and a
+**confirmed rate** is quoted for a contact only when every one of its ranked
+events carries a verdict — anywhere else it would be a confirmed count divided
+by the whole window, which would understate a contact you had not finished.
 
 ### Patient — who this recording belongs to
 
@@ -458,9 +521,15 @@ its citation. If a number on screen ever has to be defended, it starts here.
     trace before you read its rank — the software is telling you it cannot
     tell a noisy amplifier from a great deal of real activity. On sub-13 the
     two flagged contacts are the ones the annotators marked most heavily.
-11. Now the same patient's **second minute** (60–120 s). Does the answer hold?
+11. Now **work the list**. Select the busiest channel, filter Events to it, and
+    press `A`/`D`/`U` down the list. Twenty events will tell you more about
+    whether to believe the rate than any column will, and your verdicts go in
+    the report under your name — including the ones where you disagreed. Mark
+    the contact itself *Ignore it* if the answer is that its signal is not
+    worth counting.
+12. Now the same patient's **second minute** (60–120 s). Does the answer hold?
 
-Step 11 is the one most worth doing, and the one most likely to surprise you.
+Step 12 is the one most worth doing, and the one most likely to surprise you.
 Across these twenty patients, the annotators' own busiest fast-ripple channel
 is the same channel in only **7 of 20 patients** when you compare one minute of
 a recording against another minute of the *same* recording. That is the

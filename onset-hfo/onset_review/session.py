@@ -40,6 +40,7 @@ from onset_hfo.quality import (
     segment_quality,
 )
 from onset_hfo.validate import validate_events
+from onset_review.adjudication import Adjudication
 
 __all__ = ["ReviewRequest", "ReviewSession", "load_session",
            "session_from_recording", "annotations_for",
@@ -253,6 +254,10 @@ class ReviewSession:
     #: a differently-configured one; the signal is already in memory as `raw`,
     #: so holding it costs nothing.
     recording: object | None = None
+    #: What the *reader* decided, as opposed to what the detector decided.
+    #: Empty until someone gives a verdict; loaded from disk and reconciled
+    #: against these events by the launcher. See `onset_review.adjudication`.
+    read: Adjudication = field(default_factory=Adjudication)
     steps: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
     citation: str = ""

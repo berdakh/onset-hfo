@@ -35,7 +35,7 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
-from onset_review import report, theme
+from onset_review import adjudication, report, theme
 from onset_review.assistant import AssistantPanel
 from onset_review.brainview import BrainPanel
 from onset_review.controls import AMPLITUDE_STEP, TraceControls
@@ -80,6 +80,12 @@ DEFAULT_N_CHANNELS = 12
 #: Volts per display unit. 50 µV is the scale the HFO literature plots filtered
 #: ripples at; the reviewer rescales with the usual MNE keys from there.
 DEFAULT_SCALING = 50e-6
+
+#: Window-wide shortcuts for the reader's verdicts, as `Ctrl`+digit. The
+#: events panel also binds the bare letters A/D/U while it has focus; these
+#: are the discoverable half of the same pair, and digits rather than letters
+#: because `Ctrl+A` is select-all everywhere in the world.
+EVENT_SHORTCUTS = {"agree": "1", "disagree": "2", "unsure": "3"}
 
 #: The opening layout, as a fraction of the screen's work area with pixel
 #: bounds: the right-hand column of panels, then the trend strip above the
@@ -314,7 +320,14 @@ def goto(figure, t: float, channel: str | None = None,
             top = min(max(0, row - on_screen // 2),
                       max(0, len(names) - on_screen))
             try:
-                figure.mne.plt.setYRange(top, top + on_screen, padding=0.0)
+                # `+ 1` because that is MNE's own convention, and getting it
+                # wrong is not a cosmetic error: the browser recomputes
+                # `n_channels` as `round(y1 - y0 - 1)` whenever the range
+                # changes, so a range of exactly `on_screen` tells it to show
+                # one channel fewer. Every click on an event cost a channel,
+                # and after a dozen the trace was empty and MNE raised inside
+                # its own redraw. Showing N channels spans N + 1 units.
+                figure.mne.plt.setYRange(top, top + on_screen + 1, padding=0.0)
             except Exception:
                 pass
 
@@ -448,9 +461,10 @@ def decorate(figure, session: ReviewSession, show_expert: bool = False,
     parts = ReviewWindowParts(figure, host, panels, docks, session)
     parts.display = display
     _wire(figure, host, panels, session, display, parts)
+    _status(host, session)
     _menus(figure, host, panels, docks, session, display, parts,
            on_import=on_import)
-    _status(host, session)
+    _set_reader_status(host, session)
     if on_quality is not None:
         panels["quality"].applied.connect(on_quality)
     else:
@@ -512,6 +526,29 @@ def _wire(figure, host, panels: dict, session: ReviewSession,
     # with it, so the two never disagree about what is selected.
     panels["agreement"].channelPicked.connect(panels["findings"].select_channel)
 
+    # The reader's verdicts. There is no save button: a reviewer who has
+    # worked through three hundred events and lost them to a crash will not
+    # use this software again, and the write is a few kilobytes of JSON.
+    def keep_read(*_) -> None:
+        try:
+            adjudication.save(session.request, session.read)
+        except OSError as error:
+            # Said once, on the status bar, rather than in a modal that
+            # interrupts a reader mid-list. Losing the verdicts silently is
+            # the thing not to do; stopping the review is also not the thing
+            # to do.
+            host.statusBar().showMessage(
+                f"Could not save your read: {error}", 10000)
+
+    panels["events"].judged.connect(keep_read)
+    panels["findings"].channelJudged.connect(keep_read)
+    # Judging an event changes how much of its channel has been judged, which
+    # the findings table shows. Without this the progress column goes stale
+    # the moment the reader starts working.
+    panels["events"].judged.connect(
+        lambda *_: panels["findings"].refresh(
+            keep=panels["findings"].selected_channel()))
+
 
 def _goto_channel(figure, session: ReviewSession, channel: str) -> None:
     """Jump to a channel's first event, or just scroll to the channel.
@@ -548,6 +585,15 @@ def _status(host: QMainWindow, session: ReviewSession) -> None:
     # so no reference is kept here. Naming it is how a caller or a test finds
     # it again without an attribute smuggled onto someone else's widget.
     host.statusBar().addWidget(label, 1)
+
+    # Whose read this is, on the right, permanently. The caveat says what the
+    # software thinks; this says who has signed up to it so far, and it is not
+    # something to have to open a menu to check.
+    reader = QLabel()
+    reader.setObjectName("onset_reader")
+    reader.setStyleSheet(
+        f"padding:2px 8px;font-size:9pt;color:{theme.current().text_muted};")
+    host.statusBar().addPermanentWidget(reader)
 
 
 def _menus(figure, host: QMainWindow, panels: dict, docks: dict,
@@ -614,6 +660,8 @@ def _menus(figure, host: QMainWindow, panels: dict, docks: dict,
                        lambda: controls._scale(1 / AMPLITUDE_STEP))
     navigate.addAction("Back to the start of the window", controls.go_home)
 
+    _read_menu(menubar, host, panels, session)
+
     help_menu = menubar.addMenu("&Help")
     help_menu.addAction("What am I looking at?", lambda: _about(host, session))
     help_menu.addAction("Keyboard shortcuts (MNE trace)",
@@ -634,6 +682,127 @@ def _name_mnes_widgets(host: QMainWindow) -> None:
     for widget in host.findChildren(QDockWidget) + host.findChildren(QToolBar):
         if not widget.objectName():
             widget.setObjectName(f"mne_{type(widget).__name__}")
+
+
+def _ask_reader(host: QMainWindow, session: ReviewSession) -> str:
+    """Who is reviewing. Asked once, before the first verdict is recorded.
+
+    Prefilled from the login name because typing it is friction and the
+    machine usually knows -- but confirmed by a person, because `root` in a
+    container is not a clinician and a report that quietly attributes a
+    judgement to a login name is worse than one with a blank where the name
+    should be.
+    """
+    from qtpy.QtWidgets import QInputDialog
+
+    name, ok = QInputDialog.getText(
+        host, "Who is reviewing?",
+        "Your verdicts are recorded against this name, with the time you gave "
+        "them.\nIt goes in the exported report.",
+        text=session.read.reader or adjudication.reader_name())
+    name = name.strip() if ok else ""
+    if name:
+        session.read.reader = name
+        try:
+            adjudication.save(session.request, session.read)
+        except OSError:
+            pass
+        _set_reader_status(host, session)
+    return name
+
+
+def _set_reader_status(host: QMainWindow, session: ReviewSession) -> None:
+    label = host.statusBar().findChild(QLabel, "onset_reader")
+    if label is None:
+        return
+    read = session.read
+    counts = read.counts()
+    if not read.reader and not counts["judged"]:
+        label.setText("")
+        return
+    label.setText(f"Read by {read.reader or 'nobody named'} — "
+                  f"{counts['judged']} judged")
+
+
+def _read_menu(menubar, host: QMainWindow, panels: dict,
+               session: ReviewSession) -> None:
+    """The reader's own menu: say who you are, and say what you think.
+
+    A menu of its own rather than entries scattered through the others,
+    because recording a judgement is a different activity from navigating or
+    changing the display, and because it is the one activity in this window
+    whose output has the reader's name on it.
+
+    The shortcuts here are `Ctrl`-modified and work anywhere in the window;
+    the bare letters on the events panel do the same thing while that panel
+    has focus. Two sets on purpose: the bare letters are how the work is
+    actually done, and a modified key is what someone finds by looking.
+    """
+    events, findings = panels["events"], panels["findings"]
+    menu = menubar.addMenu("&Read")
+
+    who = menu.addAction("&Who is reviewing…")
+    who.setShortcut("Ctrl+Shift+R")
+    who.setToolTip("The name your verdicts are recorded against")
+    who.triggered.connect(lambda _=False: _ask_reader(host, session))
+    menu.addSeparator()
+
+    for verdict, text, key, tip in events.KEYS:
+        action = menu.addAction(text.replace("&", "") + " — this event")
+        action.setShortcut(f"Ctrl+{EVENT_SHORTCUTS[verdict]}")
+        action.setToolTip(tip)
+        action.triggered.connect(
+            lambda _=False, verdict=verdict: events.judge(verdict))
+    undo = menu.addAction("Clear this event's verdict")
+    undo.setShortcut("Ctrl+Backspace")
+    undo.triggered.connect(lambda _=False: events.judge(""))
+    note = menu.addAction("&Note on this event…")
+    note.triggered.connect(lambda _=False: events._write_note())
+    menu.addSeparator()
+
+    nxt = menu.addAction("Next &unjudged event")
+    nxt.setShortcut("Ctrl+J")
+    nxt.setToolTip("Skip to the next event you have not given a verdict on")
+    nxt.triggered.connect(
+        lambda _=False: events.step_unjudged(+1) or host.statusBar().showMessage(
+            "Nothing left unjudged in this list.", 4000))
+    menu.addSeparator()
+
+    for verdict, text, tip in findings.CHANNEL_KEYS:
+        action = menu.addAction(f"{text} — this contact")
+        action.setToolTip(tip)
+        action.triggered.connect(
+            lambda _=False, verdict=verdict: findings.judge_channel(verdict))
+    menu.addSeparator()
+
+    about = menu.addAction("Note on this &window…")
+    about.setToolTip("What you concluded, in your own words. It goes in the "
+                     "report.")
+    about.triggered.connect(lambda _=False: _window_note(host, session))
+
+    prompt = lambda: _ask_reader(host, session)      # noqa: E731
+    events.reader_prompt = prompt
+    findings.reader_prompt = prompt
+    for panel in (events, findings):
+        signal = (panel.judged if panel is events else panel.channelJudged)
+        signal.connect(lambda *_: _set_reader_status(host, session))
+
+
+def _window_note(host: QMainWindow, session: ReviewSession) -> None:
+    """The sentence a reader writes at the end: what they concluded."""
+    from qtpy.QtWidgets import QInputDialog
+
+    text, ok = QInputDialog.getMultiLineText(
+        host, "Note on this window",
+        "Your conclusion, in your own words. It is exported with the review.",
+        session.read.note)
+    if not ok:
+        return
+    session.read.note = text.strip()
+    try:
+        adjudication.save(session.request, session.read)
+    except OSError as error:
+        host.statusBar().showMessage(f"Could not save your read: {error}", 10000)
 
 
 def _window_actions(view, host: QMainWindow) -> None:

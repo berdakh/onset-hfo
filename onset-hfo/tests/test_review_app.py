@@ -162,6 +162,209 @@ def test_restoring_the_default_layout_undoes_a_dock_drag(built):
         brain.setFloating(was_floating)
 
 
+# -- the reader's own verdicts ---------------------------------------------
+
+
+@pytest.fixture
+def judging(built, review):
+    """A window with a named reader and a clean slate of verdicts.
+
+    Function-scoped against a module-scoped window, so each test starts from
+    no verdicts without paying to rebuild the whole thing.
+    """
+    from onset_review.adjudication import Adjudication
+
+    previous = review.read
+    review.read = Adjudication(reader="Dr Smith")
+    built.panels["events"].refilter()
+    built.panels["findings"].refresh()
+    yield built
+    review.read = previous
+    built.panels["events"].refilter()
+    built.panels["findings"].refresh()
+
+
+def test_a_verdict_lands_on_the_selected_event(judging, review):
+    events = judging.panels["events"]
+    events.view.selectRow(0)
+    key = events.selected_key()
+    assert key
+    assert events.judge("agree") == key
+    assert review.read.verdict_of(key) == "agree"
+    assert review.read.events[key].reader == "Dr Smith"
+
+
+def test_judging_advances_to_the_next_event(judging):
+    """Four hundred events is four hundred key presses; reaching for the arrow
+    key between each pair would double that for no reason."""
+    events = judging.panels["events"]
+    events.view.selectRow(3)
+    events.judge("disagree")
+    assert events.view.selectionModel().selectedRows()[0].row() == 4
+
+
+def test_the_verdict_shows_in_the_table_and_can_be_taken_back(judging, review):
+    events = judging.panels["events"]
+    events.view.selectRow(0)
+    key = events.judge("agree")
+    assert events.model.row_value(0, "verdict") == "real"
+
+    events.view.selectRow(0)
+    events.judge("")
+    assert review.read.verdict_of(key) == ""
+    assert events.model.row_value(0, "verdict") == ""
+
+
+def test_an_unattributed_verdict_is_refused(built, review):
+    """The whole value of a recorded judgement is that someone can be asked
+    about it. A file of anonymous opinions cannot be used for anything."""
+    from onset_review.adjudication import Adjudication
+
+    previous = review.read
+    review.read = Adjudication()          # nobody named
+    events = built.panels["events"]
+    events.reader_prompt = lambda: ""     # and they decline to say
+    try:
+        events.view.selectRow(0)
+        key = events.selected_key()
+        assert events.judge("agree") == ""
+        assert review.read.verdict_of(key) == ""
+
+        events.reader_prompt = lambda: "Dr Jones"
+        assert events.judge("agree") == key
+        assert review.read.events[key].reader == "Dr Jones"
+    finally:
+        review.read = previous
+        events.reader_prompt = None
+        events.refilter()
+
+
+def test_the_next_unjudged_event_skips_the_judged_ones(judging):
+    events = judging.panels["events"]
+    events.view.selectRow(0)
+    events.judge("agree")        # judges row 0, lands on row 1
+    events.judge("agree")        # judges row 1, lands on row 2
+    events.view.selectRow(0)
+    assert events.step_unjudged(+1) is True
+    assert events.view.selectionModel().selectedRows()[0].row() == 2
+
+
+def test_a_channel_verdict_shows_in_the_findings_table(judging, review):
+    findings = judging.panels["findings"]
+    findings.view.selectRow(0)
+    channel = findings.selected_channel()
+    assert findings.judge_channel("ignore") == channel
+    assert review.read.channel_verdict(channel) == "ignore"
+    assert findings.model.row_value(0, "my_read") == "Ignore this contact"
+
+
+def test_judging_an_event_updates_the_channel_progress_column(judging, review):
+    """Without the refresh wiring the progress column goes stale the moment
+    the reader starts working, which is the moment it starts mattering."""
+    findings, events = judging.panels["findings"], judging.panels["events"]
+    events.view.selectRow(0)
+    channel = str(events._shown.iloc[0]["channel"])
+    findings.select_channel(channel)
+    before = findings.model.row_value(
+        findings.model.frame.index[
+            findings.model.frame["channel"] == channel][0], "judged")
+    events.judge("agree")
+    after = findings.model.row_value(
+        findings.model.frame.index[
+            findings.model.frame["channel"] == channel][0], "judged")
+    assert before != after
+    assert after.startswith("1 of")
+
+
+def test_every_verdict_is_written_to_disk_without_being_asked(judging, review):
+    """There is no save button, on purpose: a reader who loses three hundred
+    verdicts to a crash will not use this software again."""
+    from onset_review import adjudication
+
+    events = judging.panels["events"]
+    events.view.selectRow(0)
+    key = events.judge("agree")
+    stored = adjudication.load(review.request)
+    assert stored.verdict_of(key) == "agree"
+    assert stored.reader == "Dr Smith"
+
+
+def test_clicking_a_header_actually_sorts(built):
+    """The arrow was decoration: `setSortingEnabled` draws it and calls
+    `QAbstractItemModel.sort`, whose base implementation does nothing. Every
+    header in this window was a control that moved and changed nothing."""
+    events = built.panels["events"]
+    column = events.model.column_index("amplitude_uv")
+    try:
+        events.view.sortByColumn(column, Qt.DescendingOrder)
+        values = [float(events.model.row_value(row, "amplitude_uv"))
+                  for row in range(min(8, events.model.rowCount()))]
+        assert values == sorted(values, reverse=True)
+        assert events.model.rowCount() == len(events._shown)
+    finally:
+        events.view.sortByColumn(events.model.column_index("t_local"),
+                                 Qt.AscendingOrder)
+
+
+def test_a_verdict_follows_the_row_it_was_given_on_after_a_sort(judging, review):
+    """The hazard sorting introduces: if a selected row were turned back into
+    an event through a frame held beside the model, sorting one and not the
+    other would file the verdict against a different event."""
+    events = judging.panels["events"]
+    try:
+        events.view.sortByColumn(events.model.column_index("amplitude_uv"),
+                                 Qt.DescendingOrder)
+        events.view.selectRow(0)
+        key = events.selected_key()
+        biggest = float(events.model.row_value(0, "amplitude_uv"))
+        assert events.judge("agree") == key
+        assert review.read.verdict_of(key) == "agree"
+        # And the key really is the biggest event, not the first in time.
+        matching = events._shown[events._shown["key"] == key]
+        assert float(matching.iloc[0]["amplitude_uv"]) == pytest.approx(biggest)
+    finally:
+        events.view.sortByColumn(events.model.column_index("t_local"),
+                                 Qt.AscendingOrder)
+
+
+def test_the_sort_arrow_points_at_the_order_the_rows_are_in(built):
+    events, findings = built.panels["events"], built.panels["findings"]
+    header = events.view.horizontalHeader()
+    assert events.model.column_name(header.sortIndicatorSection()) == "t_local"
+    header = findings.view.horizontalHeader()
+    assert findings.model.column_name(header.sortIndicatorSection()) == "rank"
+
+
+def test_the_read_menu_offers_the_verdicts_and_names_the_reader(built):
+    menu = [action.menu() for action in built.host.menuBar().actions()
+            if "Read" in action.text()][0]
+    entries = {action.text().replace("&", "") for action in menu.actions()
+               if action.text()}
+    assert "Who is reviewing…" in entries
+    assert "Next unjudged event" in entries
+    assert any(text.startswith("Real") for text in entries)
+    assert any(text.startswith("Ignore it") for text in entries)
+
+
+def test_the_status_bar_says_whose_read_this_is(judging, review):
+    events = judging.panels["events"]
+    events.view.selectRow(0)
+    events.judge("agree")
+    label = judging.host.statusBar().findChild(qt.QLabel, "onset_reader")
+    assert label is not None
+    assert "Dr Smith" in label.text()
+    assert "1 judged" in label.text()
+
+
+def test_the_single_letter_keys_are_scoped_to_the_events_panel(built):
+    """A window-wide `A` would take MNE's annotation key away from the trace."""
+    events = built.panels["events"]
+    contexts = {shortcut.context() for shortcut in events.shortcuts}
+    assert contexts == {Qt.WidgetWithChildrenShortcut}
+    assert {shortcut.key().toString() for shortcut in events.shortcuts} >= {
+        "A", "D", "U"}
+
+
 def test_the_caveat_is_on_the_status_bar(built, review):
     """It is not allowed to be somewhere a reviewer might not look."""
     label = built.host.statusBar().findChild(qt.QLabel, "onset_caveat")
@@ -357,6 +560,23 @@ def test_the_controls_read_their_values_from_the_browser(built):
     assert controls.seconds.value() == pytest.approx(float(state.duration))
     assert controls.channels.value() == int(state.n_channels)
     assert controls.position.value() == pytest.approx(float(state.t_start))
+
+
+def test_clicking_through_events_does_not_shrink_the_trace(built):
+    """Found by the adjudication tests, which click far more than any test did.
+
+    MNE recomputes `n_channels` as `round(y1 - y0 - 1)` every time the Y range
+    changes, so scrolling to a channel with a range of exactly `n_channels`
+    told it to show one fewer. Each click on an event cost a channel; after a
+    dozen the trace was empty and MNE raised inside its own redraw. A reviewer
+    walking an event list is exactly the person who would have hit it.
+    """
+    events = built.panels["events"]
+    before = int(built.figure.mne.n_channels)
+    assert before > 0
+    for row in range(min(12, events.model.rowCount())):
+        events.view.selectRow(row)
+    assert int(built.figure.mne.n_channels) == before
 
 
 def test_the_gain_readout_is_mnes_own_scalebar(built):
@@ -1149,8 +1369,11 @@ def test_every_test_that_builds_a_widget_asks_for_the_application():
     #: crash with no name on it.
     WIDGETY = ("Panel", "Dialog", "Controls", "decorate", "open_trace",
                "muted", "section_label", "QLabel", "QWidget")
-    #: Fixtures that create or depend on the `QApplication`.
-    PROVIDES_APP = {"qapp", "built"}
+    #: Fixtures that create or depend on the `QApplication`. Transitive
+    #: dependencies are listed by hand: this check parses the file rather than
+    #: resolving pytest's fixture graph, so a fixture that takes `built` has
+    #: to be named here too.
+    PROVIDES_APP = {"qapp", "built", "judging"}
 
     tree = ast.parse(pathlib.Path(__file__).read_text())
     offenders = []
