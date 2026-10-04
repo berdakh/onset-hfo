@@ -49,7 +49,10 @@ def _bins(session: ReviewSession, bin_s: float) -> np.ndarray:
     the tail is how an event goes missing from an overview that claims to be
     complete.
     """
-    duration = max(float(session.request.duration), float(bin_s))
+    # The span, not the trace window: when a long span is analysed the trend
+    # is the one view that shows all of it, which is what makes it the place
+    # to find the busy minute before loading it.
+    duration = max(float(session.span_duration), float(bin_s))
     n = max(1, int(np.ceil(duration / float(bin_s))))
     edges = np.arange(n + 1, dtype=float) * float(bin_s)
     edges[-1] = max(edges[-1], duration)
@@ -57,8 +60,13 @@ def _bins(session: ReviewSession, bin_s: float) -> np.ndarray:
 
 
 def _local(event: Event, session: ReviewSession) -> float:
-    """An event's start in window-local seconds (the trace's own time base)."""
-    return float(event.start) - float(session.t_offset)
+    """An event's start in seconds from the beginning of the analysed span."""
+    # Relative to the **span**, not to the loaded trace. They are the same
+    # number until a span is longer than the window on screen, and then they
+    # stop being: the trend's own axis runs across the whole span, so a time
+    # counted from the trace would put an event in the wrong column the
+    # moment the reviewer scrolled the trace to a different minute.
+    return float(event.start) - float(session.span[0])
 
 
 def rate_matrix(session: ReviewSession, bin_s: float = DEFAULT_BIN_S,

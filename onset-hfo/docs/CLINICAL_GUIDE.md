@@ -603,6 +603,67 @@ its citation. If a number on screen ever has to be defended, it starts here.
 
 ---
 
+## Analysing more than a minute
+
+A minute is enough to demonstrate a method and not enough to measure a patient.
+Clinical HFO rates are quoted from ten-minute or hour-long interictal windows,
+and an hour of 2 kHz signal on 64 channels is 3.7 GB before a single filter
+runs — which is why, until now, this software analysed what it could hold.
+
+```bash
+onset-review --open /data/study.edf --window 0 60 --span 600
+```
+
+**Analyse ten minutes, look at one of them.** The ranking, the confidence
+intervals, the trend, the event list and the quality verdicts all cover the
+whole span; the trace holds the minute you asked for. The status bar says so in
+as many words, because every rate on the screen is then over ten minutes while
+the signal under it is over one, and that is not a thing to leave anyone to
+work out.
+
+**Click any event and the minute it is in loads.** Nothing is re-analysed —
+the ranking, the events and your own verdicts belong to the span and would be
+wrong to recompute. The trend is the place to look first: it is the one view
+that shows all ten minutes at once, so a bright patch at 7:20 is how you find
+the minute worth loading.
+
+Times in the tables count from the start of the **span**, not from the start of
+the loaded trace, and `File time s` is the recording's own seconds as always.
+Your verdicts are filed against the span, so working a ten-minute read does not
+leave ten separate files behind.
+
+### What it costs, exactly
+
+The analysis runs in chunks with the signal let go between them, and reads the
+recording twice — once to measure every detector's threshold over the *whole*
+span, once to detect with those fixed numbers. That second pass is the price of
+an answer that does not depend on where the chunk boundaries fell, and it is
+the defect this project refuses to reintroduce: a busy five minutes that
+measured its own threshold would hide its own events.
+
+Measured on 200 s of synthetic signal, chunks of 30 s, 60 s and 100 s give
+**byte-identical** HFO events — same channels, same onsets to the last decimal.
+Against the same signal analysed in one piece they are the same events, one for
+one, with onsets agreeing to floating point where the baseline sketch holds
+every sample and to within 6.5 ms where it subsamples.
+
+Two things are not chunk-independent, and the software says both rather than
+leaving you to find them:
+
+* **Discharge counts move a little.** The spike detector takes its threshold
+  from the data it is given and has no baseline to inject. Over that same
+  200 s, 30/60/100 s chunks give 597/600/601 discharges — a spread of 0.7%.
+* **Quality verdicts are per chunk.** There is no honest way to merge ten
+  chunks' medians into one whole-span median without rewriting the stage, so
+  this does not pretend to: each chunk is judged, a contact set aside in any
+  chunk is set aside for the span, and the Quality panel's `chunks_bad` column
+  says how many chunks condemned it. Conservative on purpose — a contact flat
+  for one minute in ten is not one whose ten-minute rate means anything — and
+  visible, so you can disagree.
+
+Below 180 s nothing is chunked: the span fits in memory, the direct path is
+simpler, and none of the caveats above apply.
+
 ## 3. Working through a patient
 
 1. Open **sub-01**, the first minute, the ripple band. Leave the threshold at

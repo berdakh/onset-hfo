@@ -66,6 +66,13 @@ def build_parser() -> argparse.ArgumentParser:
                              "intracranial.")
     parser.add_argument("--line-freq", type=float, default=50.0,
                         help="mains frequency for --open (default: %(default)s)")
+    parser.add_argument("--span", type=float, default=None, metavar="SECONDS",
+                        help="analyse this many seconds from the window's "
+                             "start, while the trace shows only --window. "
+                             "Above 180 s the analysis is streamed in chunks, "
+                             "so ten minutes of contacts can be ranked on a "
+                             "laptop. Clicking an event outside the loaded "
+                             "window loads the minute it is in.")
     parser.add_argument("--reader", default=None, metavar="NAME",
                         help="who is reviewing. Your verdicts are recorded "
                              "against this name and it goes in the exported "
@@ -105,9 +112,16 @@ def _request_from(args) -> object:
     """Build a request from the flags alone, for `--subject` and `--open`."""
     from onset_review.session import ReviewRequest
 
+    t_start, t_stop = float(args.window[0]), float(args.window[1])
+    # `--span` is a length on the command line because that is how someone
+    # says "ten minutes"; it is stored as absolute bounds because the trace
+    # window moves inside the span and a span measured from the trace would
+    # slide with it.
+    span = float(args.span) if getattr(args, "span", None) else None
     common = dict(
-        run=args.run, task=args.task,
-        t_start=float(args.window[0]), t_stop=float(args.window[1]),
+        run=args.run, task=args.task, t_start=t_start, t_stop=t_stop,
+        span_start=t_start if span else None,
+        span_stop=(t_start + span) if span else None,
         detectors=tuple(args.detectors or ("rms",)), band=args.band,
         threshold_sd=args.threshold_sd, with_spikes=not args.no_spikes)
 
@@ -329,7 +343,8 @@ class _Review:
                                      on_quality=self.requality,
                                      on_electrodes=self.use_coordinates,
                                      on_window=self.go_to_window,
-                                     on_step_window=self.step_window)
+                                     on_step_window=self.step_window,
+                                     on_trace_at=self.trace_at)
         maximised = False
         if state is not None:
             # Restored after the docks exist and before the window is shown, so
@@ -386,6 +401,37 @@ class _Review:
             stored.reader = (carried or (self.args.reader or "")).strip()
         session.read = adjudication.reconcile(stored, session.events)
         self._orphans = len(session.read.orphaned)
+
+    def trace_at(self, t_file: float) -> None:
+        """Put the signal around `t_file` under the analysis already on screen.
+
+        Only the trace moves. The ranking, the events, the quality verdicts
+        and the reviewer's own read all belong to the analysed span and would
+        be wrong to recompute — and recomputing them is what clicking an event
+        would otherwise cost on a ten-minute span.
+        """
+        from onset_review.session import reload_trace
+
+        session = self.parts.session
+        loaded = session.request.t_stop - session.request.t_start
+        span_start, span_stop = session.span
+        start = min(max(span_start, float(t_file) - loaded / 2.0),
+                    max(span_start, span_stop - loaded))
+        if abs(start - session.request.t_start) < 1e-6:
+            return
+        host = self.parts.host
+        host.statusBar().showMessage(
+            f"Loading {start:g}–{start + loaded:g} s…", 4000)
+        try:
+            moved = reload_trace(session, start, start + loaded,
+                                 self.args.cache_dir)
+        except Exception as error:          # noqa: BLE001
+            host.statusBar().showMessage(
+                f"Could not load {start:g}–{start + loaded:g} s: {error}",
+                12000)
+            return
+        self.request = moved.request
+        self.open(moved)
 
     def go_to_window(self, t_start: float, t_stop: float) -> None:
         """Analyse a different stretch of the same recording.

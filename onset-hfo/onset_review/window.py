@@ -367,8 +367,8 @@ def goto(figure, t: float, channel: str | None = None,
 
 def decorate(figure, session: ReviewSession, show_expert: bool = False,
              on_preprocess=None, on_import=None, on_quality=None,
-             on_electrodes=None, on_window=None,
-             on_step_window=None) -> ReviewWindowParts:
+             on_electrodes=None, on_window=None, on_step_window=None,
+             on_trace_at=None) -> ReviewWindowParts:
     """Add the menus, the toolbar, the panels and the caveat to MNE's window.
 
     `on_preprocess` is called with a new `PreprocessConfig` when the reviewer
@@ -506,7 +506,8 @@ def decorate(figure, session: ReviewSession, show_expert: bool = False,
 
     parts = ReviewWindowParts(figure, host, panels, docks, session)
     parts.display = display
-    _wire(figure, host, panels, session, display, parts)
+    _wire(figure, host, panels, session, display, parts,
+          on_trace_at=on_trace_at)
     _status(host, session)
     defaults: dict = {}
     _menus(figure, host, panels, docks, session, display, parts,
@@ -546,7 +547,8 @@ def decorate(figure, session: ReviewSession, show_expert: bool = False,
 
 
 def _wire(figure, host, panels: dict, session: ReviewSession,
-          display: _Display, parts: ReviewWindowParts) -> None:
+          display: _Display, parts: ReviewWindowParts,
+          on_trace_at=None) -> None:
     """Make every panel's selection move the one trace, and the marks with it.
 
     The second half is what makes the default mark scope workable: choosing a
@@ -559,8 +561,22 @@ def _wire(figure, host, panels: dict, session: ReviewSession,
             parts.refresh_marks()
         if t is None:
             _goto_channel(figure, session, channel)
-        else:
-            goto(figure, t, channel, session)
+            panels["controls"].sync()
+            return
+        # When the analysed span is longer than the trace, most of the events
+        # in the list are not in the signal on screen. Scrolling to the edge
+        # of the loaded minute and stopping there would look like the trace
+        # had gone to the event; this loads the minute the event is actually
+        # in instead. Nothing is re-analysed -- see `session.reload_trace`.
+        if not _on_screen(session, t):
+            if on_trace_at is None:
+                return
+            on_trace_at(_file_time(session, t))
+            return
+        # `goto` works in the trace's own seconds, which are the span's only
+        # while the trace starts where the span does.
+        goto(figure, _file_time(session, t) - float(session.t_offset),
+             channel, session)
         # The control bar reads its values out of the browser rather than
         # keeping its own, so anything that moves the view has to tell it to
         # look again -- otherwise its "At" box says where the reviewer was
@@ -576,9 +592,11 @@ def _wire(figure, host, panels: dict, session: ReviewSession,
     panels["agreement"].channelPicked.connect(lambda channel: select(channel))
     panels["brain"].channelPicked.connect(lambda channel: select(channel))
     # A citation names a time in the archive's seconds, which is what a report
-    # quotes; the trace runs from zero, so the offset comes off here.
+    # quotes; the panels count from the start of the analysed span, so that
+    # comes off here.
     panels["assistant"].evidencePicked.connect(
-        lambda channel, t_file: select(channel, float(t_file) - session.t_offset))
+        lambda channel, t_file: select(channel,
+                                       float(t_file) - session.span[0]))
     # ...and the 3D view turns to face whatever was chosen elsewhere, so the
     # three views never disagree about which contact is under discussion.
     panels["findings"].channelPicked.connect(panels["brain"].highlight)
@@ -608,6 +626,18 @@ def _wire(figure, host, panels: dict, session: ReviewSession,
     panels["events"].judged.connect(
         lambda *_: panels["findings"].refresh(
             keep=panels["findings"].selected_channel()))
+
+
+def _file_time(session: ReviewSession, t_span: float) -> float:
+    """Span seconds, as the panels quote them, back to recording seconds."""
+    return float(t_span) + float(session.span[0])
+
+
+def _on_screen(session: ReviewSession, t_span: float) -> bool:
+    """Whether a time the panels quote is inside the signal the trace holds."""
+    when = _file_time(session, t_span)
+    return (float(session.request.t_start) - 1e-6 <= when
+            < float(session.request.t_stop) + 1e-6)
 
 
 def _goto_channel(figure, session: ReviewSession, channel: str) -> None:
@@ -645,6 +675,16 @@ def _status(host: QMainWindow, session: ReviewSession) -> None:
     # so no reference is kept here. Naming it is how a caller or a test finds
     # it again without an attribute smuggled onto someone else's widget.
     host.statusBar().addWidget(label, 1)
+
+    if session.scope():
+        # Between the caveat and the reader, because it is the same kind of
+        # statement as the caveat: a thing about the numbers that a reviewer
+        # must not have to go looking for.
+        scope = QLabel(session.scope())
+        scope.setObjectName("onset_scope")
+        scope.setStyleSheet(
+            f"padding:2px 8px;font-size:9pt;color:{theme.current().warn};")
+        host.statusBar().addWidget(scope)
 
     # Whose read this is, on the right, permanently. The caveat says what the
     # software thinks; this says who has signed up to it so far, and it is not

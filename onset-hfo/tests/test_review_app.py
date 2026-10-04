@@ -162,6 +162,60 @@ def test_restoring_the_default_layout_undoes_a_dock_drag(built):
         brain.setFloating(was_floating)
 
 
+# -- a span longer than the trace -------------------------------------------
+
+
+def test_the_three_time_bases_are_kept_straight(review):
+    """`_file_time` and `_on_screen` are the whole of the arithmetic that keeps
+    a table counting from the span and a trace counting from itself."""
+    import dataclasses
+
+    from onset_review import window
+
+    spanned = dataclasses.replace(
+        review,
+        request=dataclasses.replace(review.request, t_start=300.0,
+                                    t_stop=360.0, span_start=0.0,
+                                    span_stop=600.0),
+        span_start=0.0, span_stop=600.0)
+    assert spanned.streamed
+
+    # A table time of 310 s is 310 s into the recording, and the trace holds
+    # 300-360, so it is on screen.
+    assert window._file_time(spanned, 310.0) == pytest.approx(310.0)
+    assert window._on_screen(spanned, 310.0) is True
+    # 30 s into the span is not: that minute is not loaded.
+    assert window._on_screen(spanned, 30.0) is False
+    assert window._on_screen(spanned, 599.0) is False
+
+    # And on an ordinary window, where span and trace are the same, every
+    # event in the table is on screen — the behaviour before spans existed.
+    assert not review.streamed
+    assert window._on_screen(review, 0.0) is True
+    assert window._on_screen(review, review.request.duration - 0.1) is True
+
+
+def test_an_ordinary_window_says_nothing_about_a_span(built, review):
+    """The sentence is only worth having when the two differ."""
+    assert review.scope() == ""
+    assert built.host.statusBar().findChild(qt.QLabel, "onset_scope") is None
+
+
+def test_decorate_takes_the_trace_loader(qapp):
+    """The callback exists and is optional, so a caller that cannot reload the
+    trace gets a window that simply does not scroll off its own signal.
+
+    Takes `qapp` only to satisfy the guard below, which matches on the word
+    `decorate` and is crude on purpose — a false positive costs one unused
+    fixture and a false negative costs a crash with no name on it.
+    """
+    import inspect
+
+    from onset_review import window
+
+    assert "on_trace_at" in inspect.signature(window.decorate).parameters
+
+
 # -- moving through the recording -------------------------------------------
 
 

@@ -426,7 +426,7 @@ read, and a stable contract is worth more than a tidier schema.
 
 ---
 
-## 7. Scaling: whole recordings instead of one-minute slices — *done*
+## 7. Scaling: whole recordings instead of one-minute slices — *done, and now reaching the products*
 
 **Status.** `onset_hfo/streaming.py` and `onset-hfo stream` analyse a recording
 longer than memory. `datasets.iter_slices` serves it in overlapping chunks
@@ -841,6 +841,28 @@ difference between a replication and another exploratory run.
 `docs/DATA.md`.
 
 ---
+
+### The half that was missing until now
+
+`streaming.py` was written, tested to exactness and called by nothing: the
+library could analyse an hour and the products could not. `longrun.py` is the
+chunk source and the quality aggregation that close that gap, and
+`onset-review --span` is it reaching a reviewer. Three findings came out of
+wiring it up, all of them things the original tests could not have caught
+because they fed the streamer slices of an array that had been prepared once:
+
+* **The overlap has to cover the preprocessing, not the detector.** Prepared
+  per chunk, as any real source forces, the longest filter in the system is
+  the 1 Hz high-pass (≈3.3 s of impulse response at 2 kHz), not the 80 Hz
+  band-pass (≈1.65 s). `longrun.DEFAULT_OVERLAP_S` is 8 s for that reason and
+  the chunk-size invariance test is what proves it is enough.
+* **The guarantee holds through per-chunk preprocessing.** 30 s, 60 s and
+  100 s chunks give byte-identical HFO events over 200 s.
+* **Two things remain chunk-dependent and are now quantified rather than
+  assumed**: discharge counts (0.7% over the same three chunk sizes, because
+  the spike detector has no baseline to inject) and the quality verdict,
+  which is per chunk and reports `chunks_bad` instead of pretending to a
+  whole-span statistic.
 
 ## Deliberately not built
 

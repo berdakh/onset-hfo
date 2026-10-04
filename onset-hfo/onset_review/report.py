@@ -94,11 +94,17 @@ def _header(session: ReviewSession, reviewer: str | None) -> list[str]:
     source = (f"local file `{request.path.name}` (not a public archive "
               f"recording; nothing here has checked its provenance)"
               if request.imported else f"`{request.dataset}`")
+    span_start, span_stop = session.span
     rows = [
         ("Dataset", source),
         ("Subject", f"`{request.subject}`, run `{request.run}`"),
         ("Window", f"{request.t_start:g}–{request.t_stop:g} s of the original "
                    f"recording ({request.duration:g} s)"),
+        *([("Analysed", f"{span_start:g}–{span_stop:g} s "
+                        f"({session.span_duration / 60:.1f} min), streamed in "
+                        f"chunks — every rate below is over this, not over the "
+                        f"window above, which is what the trace held")]
+          if session.streamed else []),
         ("Band", request.band_label()),
         ("Detector(s)", f"{detectors} — ranking from "
                         f"{DETECTOR_LABELS.get(request.primary, request.primary)}"),

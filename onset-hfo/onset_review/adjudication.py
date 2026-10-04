@@ -188,7 +188,13 @@ def window_id(request) -> str:
     else:
         stem = (f"{_slug(request.dataset)}-{_slug(request.subject)}"
                 f"-run{_slug(request.run)}")
-    return f"{stem}-{float(request.t_start):g}-{float(request.t_stop):g}s"
+    # The *span*, not the trace window. A verdict is about an event in the
+    # analysed stretch; scrolling the trace to a different minute of that
+    # stretch must not file it somewhere else, or a reviewer working a ten
+    # minute span would leave ten separate reads behind.
+    span = request.span() if hasattr(request, "span") else (request.t_start,
+                                                            request.t_stop)
+    return f"{stem}-{float(span[0]):g}-{float(span[1]):g}s"
 
 
 def store_dir() -> Path:

@@ -72,6 +72,14 @@ deleted. The exported review says how much of the window you actually judged,
 which events you rejected and why, and quotes a confirmed rate only for the
 contacts you finished.
 
+**Analyse ten minutes, look at one of them.** `--span 600` ranks the contacts
+over ten minutes while the trace holds the minute you asked for; click any
+event and the minute it is in loads, with nothing re-analysed. The analysis
+runs in chunks with the signal let go between them, and measures every
+detector threshold over the whole span rather than per chunk — so the answer
+does not depend on where the boundaries fell. Measured: 30 s, 60 s and 100 s
+chunks give byte-identical HFO events.
+
 **Review → Next window** re-analyses the next stretch of the same recording
 without a trip back through the open dialog, carrying your name, your
 coordinates and your layout. That is the one step this software most wants you
@@ -366,6 +374,7 @@ onset_hfo/            the pipeline
   report.py           the structured, cited report (no recommendation field)
   viz.py              the four figures
   pipeline.py         end to end
+  longrun.py          a whole span analysed chunk by chunk, quality and all
   streaming.py        recordings longer than memory, in chunks that cannot
                       change the answer
   populations.py      ripples split by discharge co-occurrence, reported
