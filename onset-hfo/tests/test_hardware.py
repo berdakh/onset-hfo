@@ -73,20 +73,45 @@ ALL_MACHINES = [
 @pytest.mark.parametrize("box", ALL_MACHINES)
 def test_quantization_is_never_chosen_without_cuda(box):
     """The invariant worth more than any single choice: `bitsandbytes` has no
-    CPU or Metal path, so 4-bit there fails at load, after the download."""
+    CPU or Metal path, so 4-bit there fails at load, after the download.
+
+    fp32 on CPU and fp16 on Metal are *dtypes*, not bitsandbytes modes -- both
+    are the plain unquantised path.
+    """
     picked = choose(box)
-    if box.accelerator != "cuda":
+    if box.accelerator == "cpu":
+        assert picked.quantization == "fp32", \
+            f"{picked.quantization} chosen on cpu"
+    elif box.accelerator == "mps":
         assert picked.quantization == "fp16", \
-            f"{picked.quantization} chosen on {box.accelerator}"
+            f"{picked.quantization} chosen on mps"
     assert picked.quantization in QUANTIZATIONS
+    if box.accelerator != "cuda":
+        assert picked.quantization not in ("8bit", "4bit")
 
 
 @pytest.mark.parametrize("box", ALL_MACHINES)
-def test_whatever_is_chosen_actually_fits(box):
+def test_a_choice_either_fits_or_says_it_does_not(box):
+    """The invariant is honesty, not universal fit. A 4 GB CPU machine cannot
+    hold even 0.6B once fp32 and the OS reserve are accounted for, and saying
+    so is the right answer -- what must never happen is a choice that overruns
+    the budget without a word."""
+    picked = choose(box)
+    if picked.fits:
+        assert picked.needs_gb <= picked.budget_gb
+        assert picked.download_gb <= box.free_disk_gb
+    else:
+        assert any("does not fit" in warning for warning in picked.warnings), \
+            describe(picked, box)
+
+
+@pytest.mark.parametrize("box", [cuda(8.0), cuda(24.0), cuda(80.0),
+                                 cpu(16.0), cpu(32.0), mps(16.0), mps(64.0)])
+def test_an_ordinary_machine_gets_something_that_fits(box):
+    """The machines a person is actually likely to have."""
     picked = choose(box)
     assert picked.fits, describe(picked, box)
     assert picked.needs_gb <= picked.budget_gb
-    assert picked.download_gb <= box.free_disk_gb
 
 
 @pytest.mark.parametrize("box", ALL_MACHINES)
@@ -151,12 +176,14 @@ def test_cpu_is_warned_about_speed():
     assert any("CPU" in w or "minutes" in w for w in choose(cpu(16.0)).warnings)
 
 
-def test_apple_silicon_gets_a_share_of_ram_not_all_of_it():
-    """Unified memory is shared with the OS and everything else; spending all
-    of it is how a Mac starts swapping."""
-    box = mps(16.0)
-    assert box.budget_gb == pytest.approx(9.6)
-    assert choose(box).quantization == "fp16"
+def test_shared_memory_reserves_room_for_the_operating_system():
+    """Unified memory and plain RAM are both shared with the OS and whatever
+    else is open; spending the last gigabyte is how a load becomes ten minutes
+    of swapping."""
+    assert mps(16.0).budget_gb == pytest.approx(12.0)      # 16 - 4
+    assert cpu(8.0).budget_gb == pytest.approx(4.0)
+    assert cpu(2.0).budget_gb == pytest.approx(0.0)        # never negative
+    assert choose(mps(16.0)).quantization == "fp16"
 
 
 def test_two_cards_are_not_added_together():
@@ -204,14 +231,14 @@ def test_without_torch_the_advice_says_it_could_not_check():
 def test_a_requested_model_is_not_silently_downgraded():
     """Substituting a smaller model would have the caller draw conclusions
     about weights they never ran."""
-    picked = choose(cuda(6.0), prefer="Qwen/Qwen2.5-32B-Instruct")
-    assert picked.model_id == "Qwen/Qwen2.5-32B-Instruct"
+    picked = choose(cuda(6.0), prefer="Qwen/Qwen3-30B-A3B")
+    assert picked.model_id == "Qwen/Qwen3-30B-A3B"
     assert not picked.fits
     assert any("does not fit" in warning for warning in picked.warnings)
 
 
 def test_a_requested_model_can_be_named_by_its_short_name():
-    assert choose(cuda(24.0), prefer="Qwen2.5-3B-Instruct").model.params_b == 3.0
+    assert choose(cuda(24.0), prefer="Qwen3-4B").model.params_b == 4.0
 
 
 def test_a_model_outside_the_catalogue_is_allowed_but_flagged():
@@ -264,7 +291,7 @@ def test_a_download_that_cannot_fit_is_refused_before_it_starts():
 
 
 def test_a_model_that_does_not_fit_in_memory_is_refused_too():
-    spec = next(s for s in CATALOGUE if s.params_b == 32.8)
+    spec = max(CATALOGUE, key=lambda s: s.params_b)
     choice = Choice(model=spec, quantization="fp16", device="cuda",
                     needs_gb=76.0, budget_gb=8.0, download_gb=spec.download_gb)
     with pytest.raises(NotEnoughRoom):
@@ -333,10 +360,13 @@ def test_backend_kwargs_are_what_the_loader_accepts():
     assert kwargs["quantization"] in TransformersBackend.QUANTIZATIONS
     assert kwargs["dtype"] == "float16"
     assert set(kwargs) <= {"model_id", "quantization", "revision", "dtype", "device"}
-    # Off CUDA the dtype is left to the loader, and the device is explicit.
+    # A CPU loads fp32: fp16 matmuls there are slower and often unstable.
     on_cpu = choose(cpu(16.0)).backend_kwargs()
-    assert on_cpu["dtype"] == "auto"
+    assert on_cpu["dtype"] == "float32"
     assert on_cpu["device"] == "cpu"
+    assert on_cpu["quantization"] == "fp16"   # the loader's plain path
+    # Metal takes fp16.
+    assert choose(mps(32.0)).backend_kwargs()["dtype"] == "float16"
 
 
 def test_ram_is_measurable_without_psutil():
@@ -371,3 +401,49 @@ def test_unmeasurable_memory_is_a_note_not_a_verdict_that_nothing_fits():
     picked = choose(blind)
     assert not picked.fits          # honest: it cannot promise anything
     assert any("does not fit" in w for w in picked.warnings)
+
+
+def test_a_cpu_is_sized_for_fp32_not_fp16():
+    """The bug `berdakh/ROBT613` caught in this module.
+
+    `transformers` loads fp32 on CPU -- fp16 matmuls on a consumer CPU are
+    slower than fp32 and often numerically unstable, so its loader picks
+    float32 there, as that workshop's `_resolve_dtype` does. Sizing a CPU
+    machine as though it would load fp16 understates the requirement by
+    exactly 2x, which is the out-of-memory crash this module exists to
+    prevent. Measured before the fix: an 8 GB machine was promised 1.5B at
+    "4.0 GB" when the real figure was 7.5 GB.
+    """
+    spec = ModelSpec("x/y", params_b=1.5, download_gb=3.0)
+    assert footprint_gb(spec, "fp32") == pytest.approx(
+        2.0 * footprint_gb(spec, "fp16") - 0.6, rel=1e-6)
+
+    picked = choose(cpu(8.0))
+    assert picked.quantization == "fp32"
+    # Whatever is chosen is costed at 4 bytes per parameter, not 2.
+    assert picked.needs_gb == pytest.approx(
+        footprint_gb(picked.model, "fp32"), rel=1e-6)
+    assert picked.needs_gb > picked.model.params_b * 2.0
+
+
+def test_bfloat16_only_goes_to_a_card_that_can_run_it():
+    """Most Qwen configs declare bfloat16, which needs Ampere (capability 8).
+    On a T4 `dtype="auto"` would honour a declaration the card cannot execute,
+    so the dtype is resolved here rather than left to the loader."""
+    ampere = machine(accelerator="cuda", ram_gb=64.0, cuda_capability=8,
+                     gpus=(Gpu("A100", 80.0),))
+    turing = machine(accelerator="cuda", ram_gb=12.0, cuda_capability=7,
+                     gpus=(Gpu("Tesla T4", 15.8),))
+    assert choose(ampere).backend_kwargs()["dtype"] == "bfloat16"
+    assert choose(turing).backend_kwargs()["dtype"] == "float16"
+
+
+def test_the_catalogue_keeps_the_one_size_this_project_has_watched_work():
+    """Qwen3 is the current line, but the single qualitative data point this
+    repository owns is about Qwen2.5-7B-Instruct. Dropping it would discard the
+    only evidence behind the reference size."""
+    ids = [spec.model_id for spec in CATALOGUE]
+    assert "Qwen/Qwen2.5-7B-Instruct" in ids
+    assert any("Qwen3" in model_id for model_id in ids)
+    anchor = next(s for s in CATALOGUE if s.model_id == "Qwen/Qwen2.5-7B-Instruct")
+    assert anchor.params_b >= WORKABLE_PARAMS_B

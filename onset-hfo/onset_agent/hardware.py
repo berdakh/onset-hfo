@@ -59,12 +59,24 @@ __all__ = [
 #: What the loader accepts. 8-bit and 4-bit go through ``bitsandbytes``, which
 #: needs a CUDA device -- on CPU or Apple silicon they are not slower, they do
 #: not work, so `choose` never selects them off CUDA.
-QUANTIZATIONS = ("fp16", "8bit", "4bit")
+#:
+#: ``fp32`` is here because it is what a CPU actually loads. fp16 matmuls on a
+#: consumer CPU are slower than fp32 and often numerically unstable, so
+#: ``transformers`` is run at fp32 there -- which costs *twice* the memory of
+#: the fp16 figure. Sizing a CPU machine as though it would load fp16 is the
+#: one mistake in this module that produces the exact out-of-memory crash it
+#: exists to prevent, so CPU gets its own entry rather than borrowing fp16's.
+QUANTIZATIONS = ("fp32", "fp16", "8bit", "4bit")
 
 #: Bytes per parameter once loaded. 4-bit is not 0.5: the quantised layers
 #: carry fp16 scales and zero-points, and the embedding and output layers are
 #: usually left unquantised, which is where the extra tenth comes from.
-_BYTES = {"fp16": 2.0, "8bit": 1.0, "4bit": 0.6}
+_BYTES = {"fp32": 4.0, "fp16": 2.0, "8bit": 1.0, "4bit": 0.6}
+
+#: Reserved for the operating system and whatever else the person is running.
+#: Spending a laptop's last gigabyte is how a model load turns into ten
+#: minutes of swapping.
+_OS_RESERVE_GB = 4.0
 
 #: Multiplier for everything that is not weights: KV cache, activations,
 #: CUDA context, the allocator's fragmentation. A short evidence-assistant
@@ -119,24 +131,38 @@ class ModelSpec:
         return self.model_id.split("/")[-1]
 
 
-#: Qwen2.5 Instruct, smallest first. Sizes are the published parameter counts;
-#: ``download_gb`` is the safetensors total rounded up.
+#: Qwen3 Instruct, smallest first, with the Qwen2.5 7B kept because it is the
+#: only size whose tool calling this project has actually watched work.
 #:
-#: Revisions are left at ``main`` here rather than invented: this container
-#: cannot reach huggingface.co (the gateway refuses CONNECT), so a pinned
-#: commit could not be verified, and a made-up SHA is worse than an honest
-#: moving reference. `onset-agent hardware --pin` fills them in from the Hub
-#: on a machine that can see it.
+#: Sizes and the sizing rule of thumb follow `berdakh/ROBT613`'s
+#: ``qwen_workshop.config``, which is the workshop this catalogue should agree
+#: with: two bytes per parameter at bf16/fp16, about 0.6 at int4 once the
+#: unquantised embeddings and the fp16 scales are counted, plus headroom for
+#: the KV cache and the framework.
+#:
+#: Revisions are left at ``main`` rather than invented: this container cannot
+#: reach huggingface.co (the gateway refuses CONNECT), so a pinned commit could
+#: not be verified, and a made-up SHA is worse than an honest moving
+#: reference. :func:`pinned` fills them in from the Hub on a machine that can
+#: see it.
 CATALOGUE: tuple[ModelSpec, ...] = (
-    ModelSpec("Qwen/Qwen2.5-0.5B-Instruct", 0.5, 1.0,
-              note="last resort; expect it to fail at tool calling"),
-    ModelSpec("Qwen/Qwen2.5-1.5B-Instruct", 1.5, 3.1,
-              note="runs on a free Colab instance; noticeably worse at tool use"),
-    ModelSpec("Qwen/Qwen2.5-3B-Instruct", 3.0, 6.2),
+    ModelSpec("Qwen/Qwen3-0.6B", 0.6, 1.4,
+              note="runs on a CPU-only laptop; weak at facts, and expect it to "
+                   "fail this project's tool contract"),
+    ModelSpec("Qwen/Qwen3-1.7B", 1.7, 3.4,
+              note="better instruction following than 0.6B, still laptop-sized"),
+    ModelSpec("Qwen/Qwen3-4B", 4.0, 8.0,
+              note="the sweet spot for a free Colab T4 or an 8 GB card at int4"),
     ModelSpec("Qwen/Qwen2.5-7B-Instruct", 7.6, 15.3,
-              note="calls tools reliably; the reference size for this project"),
-    ModelSpec("Qwen/Qwen2.5-14B-Instruct", 14.8, 29.6),
-    ModelSpec("Qwen/Qwen2.5-32B-Instruct", 32.8, 65.6),
+              note="the reference size for this project: the one whose tool "
+                   "calling has been observed to work here"),
+    ModelSpec("Qwen/Qwen3-8B", 8.2, 16.4,
+              note="good tool calling and RAG quality; needs int4 to fit 8 GB"),
+    ModelSpec("Qwen/Qwen3-14B", 14.8, 29.6,
+              note="lab-machine territory: a 24 GB card at int8"),
+    ModelSpec("Qwen/Qwen3-30B-A3B", 30.5, 61.0,
+              note="mixture-of-experts: the memory of a 30B at the speed of a "
+                   "3B, so it is worth reaching for when the memory is there"),
 )
 
 #: The smallest model this project is willing to describe as a reasonable
@@ -177,6 +203,10 @@ class Machine:
     gpus: tuple[Gpu, ...] = ()
     #: ``"cuda"``, ``"mps"`` or ``"cpu"``.
     accelerator: str = "cpu"
+    #: CUDA compute capability major version. bfloat16 needs Ampere (8.0); an
+    #: older card such as a T4 must be given float16 explicitly, because most
+    #: Qwen configs declare bfloat16 and ``dtype="auto"`` would honour it.
+    cuda_capability: int = 0
     torch_available: bool = False
     transformers_available: bool = False
     hub_available: bool = False
@@ -202,7 +232,9 @@ class Machine:
         """
         if self.accelerator == "cuda" and self.vram_gb > 0:
             return self.vram_gb
-        return self.ram_gb * 0.6
+        # Shared with the OS and everything else the person has open, so the
+        # reserve comes off the top before any fraction is taken.
+        return max(self.ram_gb - _OS_RESERVE_GB, 0.0)
 
     @property
     def can_quantize(self) -> bool:
@@ -237,14 +269,32 @@ class Choice:
     def fits(self) -> bool:
         return self.needs_gb <= self.budget_gb * _HEADROOM
 
+    #: CUDA compute capability of the card this was chosen for, carried so
+    #: that `backend_kwargs` can tell an Ampere card from a T4.
+    cuda_capability: int = 0
+
     def backend_kwargs(self) -> dict:
-        """Exactly what :class:`onset_agent.backends.TransformersBackend` wants."""
+        """Exactly what :class:`onset_agent.backends.TransformersBackend` wants.
+
+        The dtype is resolved here rather than left to ``"auto"``, because
+        "auto" honours whatever the model config declares -- and most Qwen
+        configs declare bfloat16, which a T4 cannot run and a CPU runs slowly
+        and unstably. Same rule as `berdakh/ROBT613`'s
+        ``qwen_workshop.loading._resolve_dtype``.
+        """
+        if self.device == "cuda":
+            dtype = "bfloat16" if self.cuda_capability >= 8 else "float16"
+        elif self.device == "mps":
+            dtype = "float16"
+        else:
+            dtype = "float32"
+        # fp32 is a dtype, not a bitsandbytes mode: the loader takes it as the
+        # plain (unquantised) path, which is what "fp16" means to it too.
+        quantization = "fp16" if self.quantization == "fp32" else self.quantization
         return {"model_id": self.model.model_id,
-                "quantization": self.quantization,
+                "quantization": quantization,
                 "revision": self.model.revision,
-                # A T4 has no bfloat16 and most Qwen configs declare it, so
-                # "auto" would honour a dtype the card cannot run.
-                "dtype": "float16" if self.device == "cuda" else "auto",
+                "dtype": dtype,
                 "device": None if self.device == "cuda" else self.device}
 
 
@@ -275,7 +325,7 @@ def probe(machine: Machine | None = None) -> Machine:
         pass
 
     gpus: tuple[Gpu, ...] = ()
-    accelerator, notes = "cpu", []
+    accelerator, notes, capability = "cpu", [], 0
     torch_available = transformers_available = hub_available = False
     try:
         import torch
@@ -286,6 +336,7 @@ def probe(machine: Machine | None = None) -> Machine:
                 Gpu(torch.cuda.get_device_name(i),
                     torch.cuda.get_device_properties(i).total_memory / 2 ** 30)
                 for i in range(torch.cuda.device_count()))
+            capability = torch.cuda.get_device_capability(0)[0]
         elif getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
             accelerator = "mps"
             notes.append("Apple GPU shares system memory, so the budget is a "
@@ -314,6 +365,7 @@ def probe(machine: Machine | None = None) -> Machine:
 
     return Machine(cores=cores, ram_gb=ram_gb, free_disk_gb=free_disk_gb,
                    gpus=gpus, accelerator=accelerator,
+                   cuda_capability=capability,
                    torch_available=torch_available,
                    transformers_available=transformers_available,
                    hub_available=hub_available, notes=tuple(notes))
@@ -339,20 +391,10 @@ def total_ram_gb() -> float:
     except Exception:
         pass
 
-    try:                                    # Linux
-        with open("/proc/meminfo", encoding="utf-8") as handle:
-            for line in handle:
-                if line.startswith("MemTotal:"):
-                    return float(line.split()[1]) / 2 ** 20      # kB -> GB
-    except Exception:
-        pass
-
-    try:                                    # macOS / BSD
-        import subprocess
-        out = subprocess.run(["sysctl", "-n", "hw.memsize"], capture_output=True,
-                             text=True, timeout=5, check=True).stdout.strip()
-        return float(out) / 2 ** 30
-    except Exception:
+    try:                                    # any POSIX: Linux, macOS, BSD
+        return (os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+                / 2 ** 30)
+    except (ValueError, OSError, AttributeError):
         pass
 
     try:                                    # Windows
@@ -396,7 +438,11 @@ def _quantizations_for(machine: Machine) -> tuple[str, ...]:
     """
     if machine.can_quantize:
         return ("fp16", "8bit", "4bit")
-    return ("fp16",)
+    if machine.accelerator == "mps":
+        # Metal runs fp16 happily; bitsandbytes has no Metal path.
+        return ("fp16",)
+    # CPU: fp32 is what transformers loads, so fp32 is what must be budgeted.
+    return ("fp32",)
 
 
 def choose(machine: Machine | None = None, *,
@@ -504,9 +550,13 @@ def _assemble(machine: Machine, spec: ModelSpec, quantization: str,
                    f"of a {budget:.1f} GB budget")
     if quantization != "fp16":
         reasons.append(f"{quantization} chosen because fp16 would not fit")
-    if "8bit" not in options and machine.accelerator != "cuda":
-        reasons.append("no CUDA device, so bitsandbytes cannot quantise here "
-                       "and fp16 is the only option")
+    if machine.accelerator == "cpu":
+        reasons.append("no CUDA device, so bitsandbytes cannot quantise here; "
+                       "a CPU loads fp32, which is twice the memory of the "
+                       "fp16 figure usually quoted")
+    elif machine.accelerator == "mps":
+        reasons.append("Metal runs fp16, but bitsandbytes has no Metal path, "
+                       "so quantization is not available here")
 
     # Say when the disk, not the memory, is what held the choice down --
     # otherwise an 80 GB card running a 1.5B model looks like a bug.
@@ -555,7 +605,8 @@ def _assemble(machine: Machine, spec: ModelSpec, quantization: str,
     return Choice(model=spec, quantization=quantization, device=device,
                   needs_gb=round(needs, 2), budget_gb=round(budget, 2),
                   download_gb=spec.download_gb, reasons=tuple(reasons),
-                  warnings=tuple(warnings))
+                  warnings=tuple(warnings),
+                  cuda_capability=machine.cuda_capability)
 
 
 def describe(choice: Choice, machine: Machine | None = None) -> str:

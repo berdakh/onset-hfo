@@ -151,10 +151,10 @@ python -m onset_agent.cli --hardware          # needs no --results
 [onset-agent] cuda, 8 core(s), 32.0 GB RAM, 500.0 GB free
 [onset-agent] GPU: NVIDIA GeForce RTX 4090, 24.0 GB
 
-model        Qwen/Qwen2.5-7B-Instruct
+model        Qwen/Qwen3-8B
 load as      fp16 on cuda
-needs        18.1 GB of a 24.0 GB budget
-download     15.3 GB
+needs        19.5 GB of a 24.0 GB budget
+download     16.4 GB
 fits         yes
 ```
 
@@ -162,6 +162,12 @@ The sizing lives in [`onset_agent/hardware.py`](../onset_agent/hardware.py) as
 a pure function of a described machine, so the policy is tested against a 4 GB
 laptop GPU, an Apple unified-memory box and a Raspberry Pi without owning any
 of them.
+
+The catalogue, the sizing rule of thumb and the per-device dtype rule follow
+[`berdakh/ROBT613`](https://github.com/berdakh/ROBT613)'s `qwen_workshop`
+(`config.py`, `env.py`, `loading.py`), so the two agree rather than drifting.
+That is also where a bug in the first version of this module came from — see
+below.
 
 **What the policy is, and why it is not "biggest that fits".**
 
@@ -173,6 +179,17 @@ of them.
    7B-at-8-bit and 14B-at-4-bit fit — and 7B is the only size whose tool
    calling this project has actually watched work.
 3. Only then go smaller, and say so bluntly.
+
+**A CPU is sized for fp32, not fp16.** `transformers` loads float32 on CPU:
+fp16 matmuls on a consumer CPU are slower than fp32 and often numerically
+unstable. That doubles the requirement against the fp16 figure usually quoted,
+and the first version of this module got it wrong — it promised an 8 GB laptop
+Qwen2.5-1.5B at "4.0 GB" when the real cost was 7.5 GB, which is exactly the
+out-of-memory crash the module exists to prevent. An 8 GB CPU machine now gets
+Qwen3-0.6B, which is also what the workshop treats as the laptop default.
+Similarly `bfloat16` is only offered to a card with compute capability ≥ 8
+(Ampere); a T4 is given `float16` explicitly, because most Qwen configs declare
+bfloat16 and `dtype="auto"` would honour a declaration the card cannot execute.
 
 **Three things it will not do.** It never selects 8-bit or 4-bit without CUDA,
 because `bitsandbytes` has no CPU or Metal path and discovering that *after* a
