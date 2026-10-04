@@ -180,6 +180,15 @@ class _MockHandler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", 0))
         self.rfile.read(length)
         message = type(self).replies[min(type(self).index, len(type(self).replies) - 1)]
+        status = 200
+        if isinstance(message, dict) and "__status__" in message:
+            message = dict(message)
+            status = int(message.pop("__status__"))
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(message).encode())
+            return
         type(self).index += 1
         body = json.dumps({"choices": [{"message": message}]}).encode()
         self.send_response(200)
@@ -305,3 +314,32 @@ def test_tool_output_that_looks_like_an_instruction_is_just_data(store, mock_ser
 
 def test_schemas_are_json_serialisable():
     json.dumps(tool_schemas())
+
+
+def test_a_rejected_request_is_not_reported_as_an_unreachable_server(store, mock_server):
+    """Found with a real llama.cpp server: a 400 for an over-long prompt was
+    reported as "could not reach the model server, start one". The server had
+    been reached; the reason it sent back is what the person needs."""
+    body = {"__status__": 400, "error": {
+        "message": "This model's maximum context length is 1024 tokens. However, "
+                   "you requested 3521 tokens.",
+        "type": "invalid_request_error", "code": "context_length_exceeded"}}
+    backend = OpenAICompatBackend(model="m", base_url=mock_server([body]))
+    with pytest.raises(RuntimeError) as raised:
+        backend.chat([{"role": "user", "content": "hi"}], [])
+    text = str(raised.value)
+    assert "rejected the request" in text
+    assert "HTTP 400" in text and "context_length_exceeded" in text
+    assert "maximum context length is 1024" in text
+    assert "ollama serve`" not in text.replace("before `ollama serve`", "")
+    # And the one rejection a served model is likely to give has its remedy.
+    assert "OLLAMA_CONTEXT_LENGTH" in text and "-c 8192" in text
+
+
+def test_a_rejection_without_a_json_body_still_shows_the_status(store, mock_server):
+    backend = OpenAICompatBackend(model="m", base_url=mock_server([
+        {"__status__": 503, "detail": "model is loading"}]))
+    with pytest.raises(RuntimeError) as raised:
+        backend.chat([{"role": "user", "content": "hi"}], [])
+    assert "HTTP 503" in str(raised.value)
+    assert "model is loading" in str(raised.value)

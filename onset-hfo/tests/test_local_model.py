@@ -92,7 +92,7 @@ def test_the_chosen_kwargs_are_accepted_by_the_real_loader(tiny_model):
     """`hardware.choose` hands `backend_kwargs()` straight to
     `TransformersBackend`. Nothing checked that the two agreed, and a wrong
     keyword there fails only after the weights have downloaded."""
-    choice = choose(_cpu_box(), prefer=tiny_model)
+    choice = choose(_cpu_box(), prefer=tiny_model, route="transformers")
     backend = TransformersBackend(**choice.backend_kwargs())
     assert backend.model_id == tiny_model
     assert backend.is_language_model
@@ -107,7 +107,7 @@ def test_a_cpu_really_does_load_float32(tiny_model):
     """
     import torch
 
-    choice = choose(_cpu_box(), prefer=tiny_model)
+    choice = choose(_cpu_box(), prefer=tiny_model, route="transformers")
     assert choice.quantization == "fp32"
     assert choice.backend_kwargs()["dtype"] == "float32"
     backend = TransformersBackend(**choice.backend_kwargs())

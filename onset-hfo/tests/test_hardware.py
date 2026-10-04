@@ -78,16 +78,21 @@ def test_quantization_is_never_chosen_without_cuda(box):
     fp32 on CPU and fp16 on Metal are *dtypes*, not bitsandbytes modes -- both
     are the plain unquantised path.
     """
-    picked = choose(box)
-    if box.accelerator == "cpu":
-        assert picked.quantization == "fp32", \
-            f"{picked.quantization} chosen on cpu"
-    elif box.accelerator == "mps":
-        assert picked.quantization == "fp16", \
-            f"{picked.quantization} chosen on mps"
-    assert picked.quantization in QUANTIZATIONS
-    if box.accelerator != "cuda":
-        assert picked.quantization not in ("8bit", "4bit")
+    for route in (None, "transformers", "ollama"):
+        picked = choose(box, route=route)
+        assert picked.quantization in QUANTIZATIONS
+        if box.accelerator != "cuda":
+            # q4 is a GGUF served by llama.cpp and runs anywhere; 8-bit and
+            # 4-bit are bitsandbytes and do not.
+            assert picked.quantization not in ("8bit", "4bit"), \
+                f"{picked.quantization} chosen on {box.accelerator} via {route}"
+        if picked.route == "transformers":
+            if box.accelerator == "cpu":
+                assert picked.quantization == "fp32"
+            elif box.accelerator == "mps":
+                assert picked.quantization == "fp16"
+        else:
+            assert picked.quantization == "q4"
 
 
 @pytest.mark.parametrize("box", ALL_MACHINES)
@@ -164,16 +169,19 @@ def test_a_small_machine_still_gets_an_answer_with_a_blunt_warning():
     """Refusing to run on a modest laptop would be worse than running badly on
     it -- but the warning has to say the failure mode is tool calling, not
     quality, or the user reads refusals as a broken program."""
-    picked = choose(cpu(8.0))
-    assert picked.fits
-    assert picked.model.params_b < WORKABLE_PARAMS_B
-    joined = " ".join(picked.warnings)
-    assert "tool calling" in joined
-    assert "reference size" in joined
+    for route in ("ollama", "transformers"):
+        picked = choose(cpu(8.0), route=route)
+        assert picked.fits
+        assert picked.model.params_b < WORKABLE_PARAMS_B
+        joined = " ".join(picked.warnings)
+        assert "tool calling" in joined
+        assert "reference size" in joined
 
 
 def test_cpu_is_warned_about_speed():
-    assert any("CPU" in w or "minutes" in w for w in choose(cpu(16.0)).warnings)
+    in_process = choose(cpu(16.0), route="transformers").warnings
+    assert any("minutes" in w for w in in_process)
+    assert any("--route ollama" in w for w in in_process)   # and told the way out
 
 
 def test_shared_memory_reserves_room_for_the_operating_system():
@@ -183,7 +191,7 @@ def test_shared_memory_reserves_room_for_the_operating_system():
     assert mps(16.0).budget_gb == pytest.approx(12.0)      # 16 - 4
     assert cpu(8.0).budget_gb == pytest.approx(4.0)
     assert cpu(2.0).budget_gb == pytest.approx(0.0)        # never negative
-    assert choose(mps(16.0)).quantization == "fp16"
+    assert choose(mps(16.0), route="transformers").quantization == "fp16"
 
 
 def test_two_cards_are_not_added_together():
@@ -221,7 +229,9 @@ def test_without_torch_the_advice_says_it_could_not_check():
     them should make somebody buy a smaller model."""
     blind = Machine(accelerator="cpu", ram_gb=32.0, free_disk_gb=100.0,
                     cores=8, torch_available=False)
-    picked = choose(blind)
+    # In-process is the route that needs torch; the served route is covered
+    # by test_the_gguf_route_needs_no_torch and must *not* warn about it.
+    picked = choose(blind, route="transformers")
     assert any("torch is not installed" in warning for warning in picked.warnings)
 
 
@@ -399,12 +409,12 @@ def test_backend_kwargs_are_what_the_loader_accepts():
     assert kwargs["dtype"] == "float16"
     assert set(kwargs) <= {"model_id", "quantization", "revision", "dtype", "device"}
     # A CPU loads fp32: fp16 matmuls there are slower and often unstable.
-    on_cpu = choose(cpu(16.0)).backend_kwargs()
+    on_cpu = choose(cpu(16.0), route="transformers").backend_kwargs()
     assert on_cpu["dtype"] == "float32"
     assert on_cpu["device"] == "cpu"
     assert on_cpu["quantization"] == "fp16"   # the loader's plain path
     # Metal takes fp16.
-    assert choose(mps(32.0)).backend_kwargs()["dtype"] == "float16"
+    assert choose(mps(32.0), route="transformers").backend_kwargs()["dtype"] == "float16"
 
 
 def test_ram_is_measurable_without_psutil():
@@ -456,7 +466,7 @@ def test_a_cpu_is_sized_for_fp32_not_fp16():
     assert footprint_gb(spec, "fp32") == pytest.approx(
         2.0 * footprint_gb(spec, "fp16") - 0.6, rel=1e-6)
 
-    picked = choose(cpu(8.0))
+    picked = choose(cpu(8.0), route="transformers")
     assert picked.quantization == "fp32"
     # Whatever is chosen is costed at 4 bytes per parameter, not 2.
     assert picked.needs_gb == pytest.approx(
@@ -485,3 +495,181 @@ def test_the_catalogue_keeps_the_one_size_this_project_has_watched_work():
     assert any("Qwen3" in model_id for model_id in ids)
     anchor = next(s for s in CATALOGUE if s.model_id == "Qwen/Qwen2.5-7B-Instruct")
     assert anchor.params_b >= WORKABLE_PARAMS_B
+
+
+# -- the Ollama / GGUF route -------------------------------------------------
+
+
+def test_off_a_cuda_card_the_default_route_is_a_served_gguf():
+    """transformers on a CPU loads fp32 -- twice the memory and a fraction of
+    the speed of the same model as a Q4 GGUF -- so it is the wrong tool there,
+    and the chooser should say so by default rather than on request."""
+    assert choose(cpu(16.0)).route == "ollama"
+    assert choose(mps(16.0)).route == "ollama"
+    assert choose(cuda(24.0)).route == "transformers"
+
+
+def test_the_gguf_route_runs_a_bigger_model_on_the_same_laptop():
+    """The whole point, as a number: the same 16 GB CPU box."""
+    served = choose(cpu(16.0))
+    in_process = choose(cpu(16.0), route="transformers")
+    assert served.model.params_b > in_process.model.params_b
+    assert served.model.params_b >= WORKABLE_PARAMS_B      # the reference size
+    assert in_process.model.params_b < WORKABLE_PARAMS_B
+    assert served.fits and in_process.fits
+
+
+def test_the_laptop_default_is_the_projects_long_standing_ollama_default():
+    """`backends.DEFAULT_OLLAMA_MODEL` has been qwen2.5:7b-instruct since the
+    agent was written. The chooser should land on it, not invent a rival."""
+    from onset_agent.backends import DEFAULT_OLLAMA_MODEL
+
+    picked = choose(cpu(16.0))
+    assert picked.ollama_tag == DEFAULT_OLLAMA_MODEL
+    assert picked.backend_kwargs() == {"model": DEFAULT_OLLAMA_MODEL}
+
+
+def test_the_gguf_route_needs_no_torch():
+    """Ollama owns the runtime, so a machine without the llm extra still gets
+    a real recommendation -- and no warning about an extra it does not need."""
+    blind = Machine(accelerator="cpu", ram_gb=16.0, free_disk_gb=100.0,
+                    cores=8, torch_available=False, transformers_available=False)
+    picked = choose(blind)
+    assert picked.route == "ollama" and picked.fits
+    assert not any("torch is not installed" in w for w in picked.warnings)
+
+
+def test_every_catalogue_entry_has_an_ollama_tag():
+    """A guessed tag that 404s is a worse experience than a short table."""
+    for spec in CATALOGUE:
+        assert spec.ollama_tag, spec.model_id
+        assert ":" in spec.ollama_tag
+
+
+def test_a_cpu_is_capped_at_the_reference_size_for_speed_not_memory():
+    """A 64 GB desktop could hold a 14B at Q4. The agent makes several model
+    calls per question and a 14B on CPU answers at a couple of tokens a
+    second, so the cap is patience, and it lifts when a model is named."""
+    from onset_agent.hardware import CPU_CEILING_PARAMS_B
+
+    big_cpu = choose(cpu(64.0))
+    assert big_cpu.model.params_b <= CPU_CEILING_PARAMS_B
+    assert any("capped at the reference size" in r for r in big_cpu.reasons)
+    named = choose(cpu(64.0), prefer="Qwen3-14B")
+    assert named.model.params_b == 14.8 and named.fits
+    # Apple silicon is exempt from the speed cap -- Metal is fast enough for
+    # the budget to rule -- but the reference-size anchor still applies on
+    # every route, so the default is the same 7B and the cap is never cited.
+    on_mac = choose(mps(64.0))
+    assert on_mac.model.params_b >= WORKABLE_PARAMS_B
+    assert not any("capped" in r for r in on_mac.reasons)
+    assert choose(mps(64.0), prefer="Qwen3-30B-A3B").fits
+
+
+def test_the_gguf_download_is_the_quantised_blob_not_the_fp16_weights():
+    """Ollama's registry stores the Q4 blob; the Hub stores fp16. Quoting the
+    fp16 size for an `ollama pull` would over-promise the wait by 3x."""
+    served = choose(cpu(16.0))
+    assert served.download_gb == served.model.q4_gb
+    assert served.download_gb < served.model.download_gb
+
+
+def test_a_local_folder_cannot_be_served_by_tag_so_it_goes_in_process():
+    """Ollama serves tags, not directories."""
+    picked = choose(cpu(16.0), prefer="/some/local/checkpoint")
+    assert picked.route == "transformers"
+    assert "size is unknown" in picked.model.note
+
+
+def test_a_model_may_be_named_by_its_ollama_tag():
+    picked = choose(cpu(32.0), prefer="qwen3:8b")
+    assert picked.model_id == "Qwen/Qwen3-8B"
+    assert picked.route == "ollama"
+
+
+def test_an_unknown_route_is_refused():
+    with pytest.raises(ValueError):
+        choose(cpu(16.0), route="vllm")
+
+
+def test_describe_on_the_gguf_route_gives_the_two_commands():
+    text = describe(choose(cpu(16.0)), cpu(16.0))
+    assert "ollama pull qwen2.5:7b-instruct" in text
+    assert "--backend ollama --model qwen2.5:7b-instruct" in text
+
+
+# -- auto_backend on the Ollama route, with the daemon simulated -------------
+
+
+def test_auto_without_an_ollama_server_names_the_three_commands(monkeypatch):
+    """auto cannot install a daemon, so it must say exactly what to run, and
+    offer the in-process route as the slower alternative."""
+    from onset_agent import hardware
+    from onset_agent.hardware import OllamaNotRunning, auto_backend
+
+    monkeypatch.setattr(hardware, "ollama_status", lambda *a, **k: (False, []))
+    with pytest.raises(OllamaNotRunning) as raised:
+        auto_backend(machine=cpu(16.0))
+    text = str(raised.value)
+    assert "ollama serve" in text
+    assert "ollama pull qwen2.5:7b-instruct" in text
+    assert "--route transformers" in text
+
+
+def test_auto_with_ollama_up_but_no_model_pulls_it_or_says_so(monkeypatch):
+    from onset_agent import hardware
+    from onset_agent.hardware import OllamaModelMissing, auto_backend
+
+    monkeypatch.setattr(hardware, "ollama_status", lambda *a, **k: (True, ["llama3:8b"]))
+    pulled = []
+    monkeypatch.setattr(hardware, "ollama_pull", lambda tag, *a, **k: pulled.append(tag))
+
+    with pytest.raises(OllamaModelMissing) as raised:
+        auto_backend(machine=cpu(16.0), download=False)
+    assert "ollama pull qwen2.5:7b-instruct" in str(raised.value)
+    assert pulled == []
+
+    backend, choice = auto_backend(machine=cpu(16.0), download=True)
+    assert pulled == ["qwen2.5:7b-instruct"]
+    assert backend.model == "qwen2.5:7b-instruct"
+
+
+def test_auto_with_the_model_already_pulled_builds_the_backend(monkeypatch):
+    from onset_agent import hardware
+    from onset_agent.backends import OllamaBackend
+    from onset_agent.hardware import auto_backend
+
+    monkeypatch.setattr(hardware, "ollama_status",
+                        lambda *a, **k: (True, ["qwen2.5:7b-instruct", "qwen3:8b"]))
+    monkeypatch.setattr(hardware, "ollama_pull",
+                        lambda *a, **k: pytest.fail("nothing should be pulled"))
+    backend, choice = auto_backend(machine=cpu(16.0))
+    assert isinstance(backend, OllamaBackend)
+    assert backend.model == "qwen2.5:7b-instruct"
+    assert backend.base_url.endswith("/v1")
+    assert choice.route == "ollama"
+
+
+def test_the_live_probe_reports_down_cleanly_when_nothing_listens():
+    """Against a real closed port: no exception, no hang."""
+    from onset_agent.hardware import ollama_status
+
+    up, names = ollama_status("http://127.0.0.1:1", timeout=0.5)
+    assert up is False and names == []
+
+
+def test_the_cli_turns_a_missing_daemon_into_a_message_not_a_traceback(
+        monkeypatch, capsys, result, tmp_path):
+    """The error text names the three commands; a traceback on top would bury
+    them. Exit code 2, the argparse convention for 'cannot proceed'."""
+    from onset_agent import cli, hardware
+
+    saved = result.save(tmp_path / "analysis")
+    monkeypatch.setattr(hardware, "ollama_status", lambda *a, **k: (False, []))
+    code = cli.main(["--results", str(saved), "--backend", "auto",
+                     "--question", "Which channel leads?"])
+    out = capsys.readouterr().out
+    assert code == 2
+    assert "cannot start a local model" in out
+    assert "ollama serve" in out and "ollama pull" in out
+    assert "Traceback" not in out

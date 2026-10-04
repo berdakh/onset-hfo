@@ -139,19 +139,55 @@ python -m onset_agent.cli --results artifacts/results/sub-pt01_ictal_run-01 \
 
 ### Letting it choose the model
 
-`--backend auto` looks at the machine, picks the largest Qwen2.5-Instruct that
-will actually run on it, downloads the weights if they are not cached, and
-loads them. To see the decision without committing to a download:
+On a Linux desktop the installer does all of this once:
+`./packaging/install-ubuntu.sh --with-assistant` installs Ollama, sets its
+context window, runs the same chooser, pulls the model and records the choice so
+the reviewer's assistant panel opens on it. See [`INSTALL.md`](INSTALL.md).
+
+`--backend auto` looks at the machine, picks the largest Qwen that will
+actually run on it, fetches the weights if they are not already there, and
+loads them. To see the decision without committing to anything:
 
 ```bash
 python -m onset_agent.cli --hardware          # needs no --results
 ```
+
+On a laptop or desktop without an NVIDIA card — most machines — the answer is
+not transformers at all:
+
+```
+[onset-agent] cpu, 8 core(s), 16.0 GB RAM, 200.0 GB free
+
+model        Qwen/Qwen2.5-7B-Instruct
+run via      Ollama / llama.cpp, tag qwen2.5:7b-instruct
+load as      Q4 GGUF on cpu
+needs        5.8 GB of a 12.0 GB budget
+pull         4.6 GB  (ollama pull qwen2.5:7b-instruct)
+fits         yes
+then         onset-agent --backend ollama --model qwen2.5:7b-instruct
+```
+
+**Why a served GGUF off a CUDA card.** On a CPU, `transformers` loads float32:
+twice the memory of the fp16 figure usually quoted and a fraction of the speed.
+The same 16 GB machine that can hold only a 1.7B in-process runs a **7B** as a
+`Q4_K_M` GGUF under Ollama or a llama.cpp server — several times faster, and
+with no torch installed at all. So off CUDA the default route is `ollama`, and
+`--backend auto` does the rest: it checks for a running server, pulls the tag
+itself if it is missing, and hands the agent an `OllamaBackend`. What it cannot
+do is install Ollama — that is a daemon, not a package — so a machine without
+one is given the exact three commands (`ollama serve`, the pull, the run) and
+offered `--route transformers` as the slower in-process alternative. On a CUDA
+card the in-process route is kept, because that is where bitsandbytes and
+bf16 pay off and where the benchmark runs. `--route` overrides either way.
+
+On an NVIDIA card:
 
 ```
 [onset-agent] cuda, 8 core(s), 32.0 GB RAM, 500.0 GB free
 [onset-agent] GPU: NVIDIA GeForce RTX 4090, 24.0 GB
 
 model        Qwen/Qwen3-8B
+run via      transformers, in-process
 load as      fp16 on cuda
 needs        19.5 GB of a 24.0 GB budget
 download     16.4 GB
@@ -179,6 +215,14 @@ below.
    7B-at-8-bit and 14B-at-4-bit fit — and 7B is the only size whose tool
    calling this project has actually watched work.
 3. Only then go smaller, and say so bluntly.
+
+On the Ollama route every option is Q4, so step 1 is moot and step 2 decides —
+which is why a 64 GB Mac and a 16 GB laptop both land on the same 7B unless a
+model is named. On a *CPU* there is one more rule: the reference size is also
+the ceiling, for patience rather than memory. The agent makes several model
+calls per question and a 14B at Q4 answers at a couple of tokens a second on a
+CPU; name it with `--model` and the cap lifts. Apple silicon is exempt — Metal
+is fast enough for the budget to rule.
 
 **A CPU is sized for fp32, not fp16.** `transformers` loads float32 on CPU:
 fp16 matmuls on a consumer CPU are slower than fp32 and often numerically
@@ -221,6 +265,32 @@ Q: Which channel had the highest ripple rate?
           citations and numbers did not pass.
   reason: verification failed
 ```
+
+**The served route has been run too, against a real llama.cpp server.** The
+same toy Qwen2 was converted to GGUF with llama.cpp's own converter and served
+by `llama_cpp.server` (llama-cpp-python 0.3.36, built from source on CPU) —
+the OpenAI-compatible wire protocol Ollama speaks. The shipped
+`OpenAICompatBackend` via `make_backend("llamacpp", ...)` did a tool-attached
+round trip, the real agent loop ran against a saved analysis, and the guards
+refused the random model: `verification failed`. Its raw output had been
+`functions.top_channels:` — a malformed attempt at a tool call, which the
+parser correctly declined to treat as one. (Converting a synthetic toy needs
+its pre-tokenizer hash mapped to `qwen2`; that was done in a scratch script and
+touches nothing here. A real Qwen GGUF converts as-is.)
+
+**Give a served model enough context.** That run found a defect by hitting it.
+The agent's opening turn is the system prompt plus eight tool schemas — about
+5,500 characters, which the toy's 342-token vocabulary made 3,521 tokens; a
+real Qwen tokenizer will spend fewer, but the tool results that follow add more
+each step. With a 1024-token context the server answered
+`400 context_length_exceeded`, and the backend reported *"could not reach the
+model server, start one"* — it had been reached, and the reason was in the body
+it threw away. The backend now quotes the server's message and, for a context
+overflow, names the fix. **Ollama's default `num_ctx` is 2048**, so this is a
+hazard on a real machine, not just a toy: set `OLLAMA_CONTEXT_LENGTH=8192`
+before `ollama serve`, or `PARAMETER num_ctx 8192` in a Modelfile; `-c 8192`
+for `llama-server`; `--max-model-len` for vLLM. `--hardware` says so on the
+Ollama route.
 
 **What has not been run: a real download.** No Qwen weights have been fetched
 in this project's development container — `huggingface.co` is blocked there, and

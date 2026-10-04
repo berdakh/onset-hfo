@@ -52,6 +52,10 @@ def main(argv: list[str] | None = None) -> int:
                    help="'auto' looks at this machine, picks a Qwen that fits "
                         "and downloads it if needed")
     p.add_argument("--model", default=None, help="model name/id for the chosen backend")
+    p.add_argument("--route", default=None, choices=["ollama", "transformers"],
+                   help="with --backend auto or --hardware: force how the model "
+                        "is run. Default: Ollama (Q4 GGUF) off a CUDA card, "
+                        "in-process transformers on one")
     p.add_argument("--hardware", action="store_true",
                    help="report what this machine is and which model would be "
                         "chosen, then exit without downloading anything")
@@ -77,7 +81,7 @@ def main(argv: list[str] | None = None) -> int:
         for gpu in machine.gpus:
             print(f"[onset-agent] GPU: {gpu.name}, {gpu.vram_gb:.1f} GB")
         print()
-        print(describe(choose(machine, prefer=args.model), machine))
+        print(describe(choose(machine, prefer=args.model, route=args.route), machine))
         return 0
 
     if not args.results:
@@ -86,12 +90,26 @@ def main(argv: list[str] | None = None) -> int:
 
     store = ResultStore(args.results)
     if args.backend == "auto":
-        from onset_agent.hardware import auto_backend
+        from onset_agent.hardware import (
+            MissingDependency,
+            NotEnoughRoom,
+            OllamaModelMissing,
+            OllamaNotRunning,
+            auto_backend,
+        )
 
-        backend, choice = auto_backend(prefer=args.model,
-                                       download=not args.no_download)
-        print(f"[onset-agent] chose {choice.model_id} at {choice.quantization} "
-              f"on {choice.device}")
+        try:
+            backend, choice = auto_backend(prefer=args.model, route=args.route,
+                                           download=not args.no_download)
+        except (OllamaNotRunning, OllamaModelMissing, MissingDependency,
+                NotEnoughRoom, ConnectionError) as stop:
+            # Each of these is written to be read by a person. A traceback
+            # on top of it would bury the three commands they need.
+            print(f"[onset-agent] cannot start a local model: {stop}")
+            return 2
+        how = (f"via Ollama as {choice.ollama_tag}" if choice.route == "ollama"
+               else f"in-process at {choice.quantization} on {choice.device}")
+        print(f"[onset-agent] chose {choice.model_id} {how}")
         for warning in choice.warnings:
             print(f"[onset-agent] ! {warning}")
     else:

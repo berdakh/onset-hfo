@@ -40,18 +40,25 @@ from dataclasses import dataclass, field, replace
 
 __all__ = [
     "CATALOGUE",
+    "CPU_CEILING_PARAMS_B",
     "Choice",
     "Gpu",
     "Machine",
     "MissingDependency",
     "ModelSpec",
     "NotEnoughRoom",
+    "OLLAMA_URL",
+    "OllamaModelMissing",
+    "OllamaNotRunning",
     "QUANTIZATIONS",
+    "ROUTES",
     "bytes_per_parameter",
     "choose",
     "describe",
     "ensure_model",
     "footprint_gb",
+    "ollama_pull",
+    "ollama_status",
     "probe",
     "total_ram_gb",
 ]
@@ -66,12 +73,31 @@ __all__ = [
 #: the fp16 figure. Sizing a CPU machine as though it would load fp16 is the
 #: one mistake in this module that produces the exact out-of-memory crash it
 #: exists to prevent, so CPU gets its own entry rather than borrowing fp16's.
-QUANTIZATIONS = ("fp32", "fp16", "8bit", "4bit")
+#: ``q4`` is a GGUF ``Q4_K_M`` served by llama.cpp or Ollama. Unlike 8-bit and
+#: 4-bit it runs on CPU, Metal and CUDA alike, which is why it is the route
+#: `choose` takes off a CUDA card: on a CPU, transformers loads fp32 at twice
+#: the memory and a fraction of the speed of the same model as a Q4 GGUF.
+QUANTIZATIONS = ("fp32", "fp16", "8bit", "4bit", "q4")
 
 #: Bytes per parameter once loaded. 4-bit is not 0.5: the quantised layers
 #: carry fp16 scales and zero-points, and the embedding and output layers are
 #: usually left unquantised, which is where the extra tenth comes from.
-_BYTES = {"fp32": 4.0, "fp16": 2.0, "8bit": 1.0, "4bit": 0.6}
+_BYTES = {"fp32": 4.0, "fp16": 2.0, "8bit": 1.0, "4bit": 0.6, "q4": 0.6}
+
+#: How a model is run. In-process with transformers, or served by Ollama (or
+#: a llama.cpp server speaking the same OpenAI-compatible API) as a GGUF.
+ROUTES = ("transformers", "ollama")
+
+#: Where Ollama listens by default. The backend speaks to ``/v1``; the probe
+#: reads ``/api/tags`` to see what is pulled.
+OLLAMA_URL = "http://127.0.0.1:11434"
+
+#: On a CPU the agent makes several model calls per question, and a 14B at Q4
+#: answers at a couple of tokens a second. Memory would allow it on a 32 GB
+#: desktop; patience would not. So on CPU the reference size is also the
+#: ceiling unless a model is asked for by name. Apple silicon is exempt --
+#: Metal is fast enough that the budget is the real limit there.
+CPU_CEILING_PARAMS_B = 8.5
 
 #: Reserved for the operating system and whatever else the person is running.
 #: Spending a laptop's last gigabyte is how a model load turns into ten
@@ -125,10 +151,25 @@ class ModelSpec:
     #: exactly the kind this project exists not to have.
     revision: str = "main"
     note: str = ""
+    #: The tag ``ollama pull`` takes. Written out rather than derived from the
+    #: Hub id, because the two naming schemes disagree in small ways (``-A3B``
+    #: vs ``-a3b``, ``-Instruct`` vs ``-instruct``) and a guessed tag that 404s
+    #: is a worse experience than a short explicit table.
+    ollama_tag: str = ""
 
     @property
     def family(self) -> str:
         return self.model_id.split("/")[-1]
+
+    @property
+    def q4_gb(self) -> float:
+        """Approximate size of the Q4_K_M GGUF, which is what Ollama fetches.
+
+        The Hub stores fp16 and bitsandbytes quantises on load, so the
+        transformers download is the fp16 figure; the Ollama registry stores
+        the quantised blob, so that download is roughly 0.6 bytes a parameter.
+        """
+        return round(self.params_b * 0.6, 1)
 
 
 #: Qwen3 Instruct, smallest first, with the Qwen2.5 7B kept because it is the
@@ -146,21 +187,22 @@ class ModelSpec:
 #: reference. :func:`pinned` fills them in from the Hub on a machine that can
 #: see it.
 CATALOGUE: tuple[ModelSpec, ...] = (
-    ModelSpec("Qwen/Qwen3-0.6B", 0.6, 1.4,
+    ModelSpec("Qwen/Qwen3-0.6B", 0.6, 1.4, ollama_tag="qwen3:0.6b",
               note="runs on a CPU-only laptop; weak at facts, and expect it to "
                    "fail this project's tool contract"),
-    ModelSpec("Qwen/Qwen3-1.7B", 1.7, 3.4,
+    ModelSpec("Qwen/Qwen3-1.7B", 1.7, 3.4, ollama_tag="qwen3:1.7b",
               note="better instruction following than 0.6B, still laptop-sized"),
-    ModelSpec("Qwen/Qwen3-4B", 4.0, 8.0,
+    ModelSpec("Qwen/Qwen3-4B", 4.0, 8.0, ollama_tag="qwen3:4b",
               note="the sweet spot for a free Colab T4 or an 8 GB card at int4"),
     ModelSpec("Qwen/Qwen2.5-7B-Instruct", 7.6, 15.3,
+              ollama_tag="qwen2.5:7b-instruct",
               note="the reference size for this project: the one whose tool "
                    "calling has been observed to work here"),
-    ModelSpec("Qwen/Qwen3-8B", 8.2, 16.4,
+    ModelSpec("Qwen/Qwen3-8B", 8.2, 16.4, ollama_tag="qwen3:8b",
               note="good tool calling and RAG quality; needs int4 to fit 8 GB"),
-    ModelSpec("Qwen/Qwen3-14B", 14.8, 29.6,
+    ModelSpec("Qwen/Qwen3-14B", 14.8, 29.6, ollama_tag="qwen3:14b",
               note="lab-machine territory: a 24 GB card at int8"),
-    ModelSpec("Qwen/Qwen3-30B-A3B", 30.5, 61.0,
+    ModelSpec("Qwen/Qwen3-30B-A3B", 30.5, 61.0, ollama_tag="qwen3:30b-a3b",
               note="mixture-of-experts: the memory of a 30B at the speed of a "
                    "3B, so it is worth reaching for when the memory is there"),
 )
@@ -260,10 +302,26 @@ class Choice:
     download_gb: float
     reasons: tuple[str, ...] = ()
     warnings: tuple[str, ...] = field(default_factory=tuple)
+    #: ``"transformers"`` (in-process) or ``"ollama"`` (served as a GGUF).
+    route: str = "transformers"
 
     @property
     def model_id(self) -> str:
         return self.model.model_id
+
+    @property
+    def ollama_tag(self) -> str:
+        return self.model.ollama_tag
+
+    @property
+    def pull_command(self) -> str:
+        return f"ollama pull {self.ollama_tag}"
+
+    @property
+    def run_command(self) -> str:
+        if self.route == "ollama":
+            return f"onset-agent --backend ollama --model {self.ollama_tag}"
+        return f"onset-agent --backend transformers --model {self.model_id}"
 
     @property
     def fits(self) -> bool:
@@ -282,6 +340,10 @@ class Choice:
         and unstably. Same rule as `berdakh/ROBT613`'s
         ``qwen_workshop.loading._resolve_dtype``.
         """
+        if self.route == "ollama":
+            # Ollama owns dtype, device and quantization; the backend only
+            # needs to know which tag to ask for.
+            return {"model": self.ollama_tag}
         if self.device == "cuda":
             dtype = "bfloat16" if self.cuda_capability >= 8 else "float16"
         elif self.device == "mps":
@@ -430,12 +492,15 @@ def _cache_root() -> str:
     return os.path.expanduser("~")
 
 
-def _quantizations_for(machine: Machine) -> tuple[str, ...]:
+def _quantizations_for(machine: Machine, route: str = "transformers") -> tuple[str, ...]:
     """Largest-memory option first, so fp16 wins when there is room for it.
 
     fp16 before 4-bit on purpose: quantization costs accuracy, so it is a
-    concession to a small card rather than a default.
+    concession to a small card rather than a default. The Ollama route has one
+    option, because a Q4 GGUF is the whole point of taking it.
     """
+    if route == "ollama":
+        return ("q4",)
     if machine.can_quantize:
         return ("fp16", "8bit", "4bit")
     if machine.accelerator == "mps":
@@ -445,12 +510,22 @@ def _quantizations_for(machine: Machine) -> tuple[str, ...]:
     return ("fp32",)
 
 
+
 def choose(machine: Machine | None = None, *,
            catalogue: tuple[ModelSpec, ...] = CATALOGUE,
-           prefer: str | None = None) -> Choice:
+           prefer: str | None = None, route: str | None = None) -> Choice:
     """The best model from the catalogue this machine can actually run.
 
-    "Best" is not "biggest", and the difference is the whole policy:
+    **Which route.** Off a CUDA card the answer is Ollama (or a llama.cpp
+    server) with a Q4 GGUF, not transformers. On a CPU transformers loads fp32
+    -- twice the memory of fp16 and a fraction of the speed -- so the same
+    16 GB laptop that can only hold a 1.7B in-process runs a 7B as a GGUF, and
+    needs no torch to do it. On CUDA the in-process route is kept, because
+    that is where bitsandbytes and bf16 pay off and where the benchmark runs.
+    ``route`` overrides this; a ``prefer`` that is a local path or not in the
+    catalogue forces ``transformers``, since Ollama serves tags, not folders.
+
+    **Which model.** "Best" is not "biggest", and the difference is the policy:
 
     1. **Prefer unquantised room over raw size.** Among models that fit at
        fp16, take the largest. Quantization trades accuracy for room, so it is
@@ -461,38 +536,51 @@ def choose(machine: Machine | None = None, *,
        aggressive quantization. On a 16 GB card the alternatives are 7B at
        8-bit and 14B at 4-bit; 7B is the size whose tool-calling this project
        has actually watched work, and 14B-at-4-bit is an unmeasured trade on
-       both axes at once. Reaching for it would be buying a bigger parameter
-       count with accuracy this project cannot account for.
+       both axes at once.
     3. **Only then go smaller**, taking the largest model that fits at all.
 
-    ``prefer`` pins a ``model_id`` and asks only *how* to load it; if it does
-    not fit at any quantization the returned :class:`Choice` says so --
-    ``fits`` is False and the warnings explain -- rather than quietly
-    substituting something smaller. A caller that asked for 14B and silently
-    got 1.5B would draw conclusions about the wrong model.
+    On the Ollama route every option is Q4, so step 1 is moot and step 2
+    decides; on a CPU :data:`CPU_CEILING_PARAMS_B` also caps the size, for
+    speed rather than memory, unless a model is named.
+
+    ``prefer`` pins a ``model_id`` and asks only *how* to run it; if it does
+    not fit the returned :class:`Choice` says so -- ``fits`` is False and the
+    warnings explain -- rather than quietly substituting something smaller.
 
     Never returns 8-bit or 4-bit off CUDA, because ``bitsandbytes`` cannot run
     there: that is not a slow configuration, it is a failed import at load
     time, and discovering it after a 15 GB download is a bad afternoon.
     """
     machine = probe(machine)
-    options = _quantizations_for(machine)
 
     candidates = list(catalogue)
+    unknown = False
     if prefer:
         wanted = [spec for spec in catalogue if spec.model_id == prefer
-                  or spec.family.lower() == prefer.lower()]
+                  or spec.family.lower() == prefer.lower()
+                  or (spec.ollama_tag and spec.ollama_tag == prefer.lower())]
         if not wanted:
+            unknown = True
             wanted = [ModelSpec(prefer, params_b=0.0, download_gb=0.0,
                                 note="not in the catalogue, so its size is unknown")]
         candidates = wanted
 
+    if route is None:
+        route = "transformers" if (machine.accelerator == "cuda" or unknown) else "ollama"
+    if route not in ROUTES:
+        raise ValueError(f"route must be one of {ROUTES}, not {route!r}")
+    options = _quantizations_for(machine, route)
+
+    if route == "ollama" and machine.accelerator == "cpu" and not prefer:
+        candidates = [spec for spec in candidates
+                      if spec.params_b <= CPU_CEILING_PARAMS_B]
+
     biggest_first = sorted(candidates, key=lambda s: -s.params_b)
 
     def usable(spec: ModelSpec, quantization: str) -> Choice | None:
-        choice = _build(machine, spec, quantization, options)
-        return choice if choice is not None and choice.fits and \
-            spec.download_gb <= machine.free_disk_gb else None
+        choice = _build(machine, spec, quantization, options, route)
+        return choice if choice.fits and choice.download_gb <= machine.free_disk_gb \
+            else None
 
     # 1. the largest model that needs no quantization at all
     if "fp16" in options:
@@ -521,23 +609,26 @@ def choose(machine: Machine | None = None, *,
                 return found
 
     # Nothing fits. Report the smallest candidate so the message names a real
-    # shortfall rather than the 32B nobody asked for.
+    # shortfall rather than the 30B nobody asked for.
     smallest = biggest_first[-1]
-    return _build(machine, smallest, options[-1], options)
+    return _build(machine, smallest, options[-1], options, route)
+
 
 
 def _build(machine: Machine, spec: ModelSpec, quantization: str,
-           options: tuple[str, ...]) -> Choice:
+           options: tuple[str, ...], route: str = "transformers") -> Choice:
     """One fully-explained candidate at one quantization."""
     return _assemble(machine, spec, quantization,
                      footprint_gb(spec, quantization), machine.budget_gb,
-                     machine.free_disk_gb, machine.accelerator, options)
+                     machine.free_disk_gb, machine.accelerator, options, route)
 
 
 def _assemble(machine: Machine, spec: ModelSpec, quantization: str,
               needs: float, budget: float, disk: float, device: str,
-              options: tuple[str, ...] = QUANTIZATIONS) -> Choice:
+              options: tuple[str, ...] = QUANTIZATIONS,
+              route: str = "transformers") -> Choice:
     reasons, warnings = [], []
+    download = spec.q4_gb if route == "ollama" else spec.download_gb
 
     if device == "cuda":
         reasons.append(f"CUDA device with {machine.vram_gb:.1f} GB on the largest card")
@@ -548,6 +639,11 @@ def _assemble(machine: Machine, spec: ModelSpec, quantization: str,
                        f"{machine.cores} core(s)")
     reasons.append(f"{spec.family} at {quantization} needs about {needs:.1f} GB "
                    f"of a {budget:.1f} GB budget")
+    if route == "ollama":
+        reasons.append(
+            "served by Ollama (or a llama.cpp server) as a Q4 GGUF: the right "
+            "tool off a CUDA card, where transformers would load fp32 at twice "
+            "the memory and a fraction of the speed, and it needs no torch")
     if quantization in ("8bit", "4bit"):
         reasons.append(f"{quantization} chosen because fp16 would not fit")
     elif quantization == "fp32":
@@ -556,23 +652,39 @@ def _assemble(machine: Machine, spec: ModelSpec, quantization: str,
         # here would be backwards.
         reasons.append("fp32 because that is what a CPU loads, not as a "
                        "fallback: it costs twice fp16, and is budgeted so")
-    if machine.accelerator == "cpu":
+    if route == "ollama" and machine.accelerator == "cpu":
+        # Say when the cap, not the memory, decided: a 64 GB desktop shown an
+        # 8B with no explanation looks like a sizing bug.
+        would_fit_above = [other for other in CATALOGUE
+                           if other.params_b > CPU_CEILING_PARAMS_B
+                           and footprint_gb(other, "q4") <= budget * _HEADROOM]
+        if would_fit_above and spec.params_b <= CPU_CEILING_PARAMS_B:
+            reasons.append(
+                f"capped at the reference size on a CPU: memory would allow "
+                f"{min(would_fit_above, key=lambda s: s.params_b).family}, but the "
+                "agent makes several calls per question and a larger model at Q4 "
+                "answers at a couple of tokens a second (name one with --model "
+                "to override)")
+    if route == "transformers" and machine.accelerator == "cpu":
         reasons.append("no CUDA device, so bitsandbytes cannot quantise here; "
                        "a CPU loads fp32, which is twice the memory of the "
                        "fp16 figure usually quoted")
-    elif machine.accelerator == "mps":
+    elif route == "transformers" and machine.accelerator == "mps":
         reasons.append("Metal runs fp16, but bitsandbytes has no Metal path, "
                        "so quantization is not available here")
 
     # Say when the disk, not the memory, is what held the choice down --
     # otherwise an 80 GB card running a 1.5B model looks like a bug.
+    def dl(other: ModelSpec) -> float:
+        return other.q4_gb if route == "ollama" else other.download_gb
+
     bigger = [other for other in CATALOGUE
               if other.params_b > spec.params_b
               and footprint_gb(other, quantization) <= budget * _HEADROOM]
-    if bigger and any(other.download_gb > disk for other in bigger):
+    if bigger and any(dl(other) > disk for other in bigger):
         blocked = min(bigger, key=lambda s: s.params_b)
         reasons.append(
-            f"memory would allow {blocked.family}, but its {blocked.download_gb:.1f} GB "
+            f"memory would allow {blocked.family}, but its {dl(blocked):.1f} GB "
             f"download does not fit the {disk:.1f} GB free on the cache disk")
 
     if spec.note:
@@ -583,9 +695,9 @@ def _assemble(machine: Machine, spec: ModelSpec, quantization: str,
             f"{spec.family} does not fit: it needs about {needs:.1f} GB and the "
             f"budget is {budget:.1f} GB. Nothing here will run it; use a smaller "
             "model, or a hosted server with --backend openai_compat.")
-    if spec.download_gb > disk:
+    if download > disk:
         warnings.append(
-            f"the download is about {spec.download_gb:.1f} GB and only "
+            f"the download is about {download:.1f} GB and only "
             f"{disk:.1f} GB is free on the model cache disk")
     if spec.params_b and spec.params_b < WORKABLE_PARAMS_B:
         warnings.append(
@@ -593,11 +705,27 @@ def _assemble(machine: Machine, spec: ModelSpec, quantization: str,
             "treats as the reference size. Small models fail at tool calling "
             "rather than answering badly -- expect refusals and malformed "
             "calls, which the guards will catch and report as failures.")
-    if device == "cpu":
+    if device == "cpu" and route == "transformers":
         warnings.append(
             "on CPU expect tens of seconds to minutes per answer; the agent "
-            "makes several model calls per question.")
-    if not machine.torch_available:
+            "makes several model calls per question. A Q4 GGUF via Ollama is "
+            "several times faster: --route ollama.")
+    elif device == "cpu":
+        warnings.append(
+            "on CPU expect several seconds per model call; the agent makes a "
+            "few per question.")
+    if route == "ollama":
+        warnings.append(
+            f"needs Ollama installed and running (`ollama serve`), then "
+            f"`{('ollama pull ' + spec.ollama_tag) if spec.ollama_tag else 'a pulled tag'}`. "
+            "--backend auto checks for it and pulls the tag itself; "
+            "https://ollama.com/download")
+        warnings.append(
+            "give it a context window of at least 4096: the agent's first turn "
+            "is a few thousand tokens (system prompt plus tool schemas) and "
+            "Ollama's default is 2048. OLLAMA_CONTEXT_LENGTH=8192 before "
+            "`ollama serve`, or `-c 8192` for a llama.cpp server.")
+    if not machine.torch_available and route == "transformers":
         warnings.append(
             "torch is not installed, so this is sizing advice rather than a "
             "plan that has been checked against a real device: "
@@ -610,19 +738,29 @@ def _assemble(machine: Machine, spec: ModelSpec, quantization: str,
 
     return Choice(model=spec, quantization=quantization, device=device,
                   needs_gb=round(needs, 2), budget_gb=round(budget, 2),
-                  download_gb=spec.download_gb, reasons=tuple(reasons),
+                  download_gb=download, reasons=tuple(reasons),
                   warnings=tuple(warnings),
-                  cuda_capability=machine.cuda_capability)
+                  cuda_capability=machine.cuda_capability, route=route)
 
 
 def describe(choice: Choice, machine: Machine | None = None) -> str:
     """A paragraph a person can read before committing to a download."""
-    lines = [f"model        {choice.model_id}",
-             f"revision     {choice.model.revision}",
-             f"load as      {choice.quantization} on {choice.device}",
-             f"needs        {choice.needs_gb:.1f} GB of a {choice.budget_gb:.1f} GB budget",
-             f"download     {choice.download_gb:.1f} GB",
-             f"fits         {'yes' if choice.fits else 'NO'}"]
+    if choice.route == "ollama":
+        lines = [f"model        {choice.model_id}",
+                 f"run via      Ollama / llama.cpp, tag {choice.ollama_tag or '?'}",
+                 f"load as      Q4 GGUF on {choice.device}",
+                 f"needs        {choice.needs_gb:.1f} GB of a {choice.budget_gb:.1f} GB budget",
+                 f"pull         {choice.download_gb:.1f} GB  ({choice.pull_command})",
+                 f"fits         {'yes' if choice.fits else 'NO'}",
+                 f"then         {choice.run_command}"]
+    else:
+        lines = [f"model        {choice.model_id}",
+                 f"revision     {choice.model.revision}",
+                 "run via      transformers, in-process",
+                 f"load as      {choice.quantization} on {choice.device}",
+                 f"needs        {choice.needs_gb:.1f} GB of a {choice.budget_gb:.1f} GB budget",
+                 f"download     {choice.download_gb:.1f} GB",
+                 f"fits         {'yes' if choice.fits else 'NO'}"]
     lines.append("")
     lines += [f"  - {reason}" for reason in choice.reasons]
     if choice.warnings:
@@ -697,25 +835,108 @@ class _Silent:                                            # pragma: no cover
         return False
 
 
+class OllamaNotRunning(RuntimeError):
+    """The Ollama route was chosen and nothing answers on its port."""
+
+
+class OllamaModelMissing(RuntimeError):
+    """Ollama is up but has not pulled the tag the choice needs."""
+
+
+def ollama_status(base_url: str = OLLAMA_URL, timeout: float = 2.0) -> tuple[bool, list[str]]:
+    """Is an Ollama server up, and which tags has it pulled?
+
+    Reads ``/api/tags``, which lists local models. Two seconds is plenty for a
+    daemon on localhost and short enough that a machine without one does not
+    make the person wait to be told so.
+    """
+    import json
+    import urllib.error
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen(f"{base_url.rstrip('/')}/api/tags",
+                                    timeout=timeout) as response:
+            payload = json.loads(response.read().decode("utf-8", "replace"))
+    except (urllib.error.URLError, OSError, ValueError):
+        return False, []
+    names = [str(item.get("name", "")) for item in payload.get("models", [])]
+    return True, names
+
+
+def ollama_pull(tag: str, base_url: str = OLLAMA_URL, timeout: float = 3600.0) -> None:
+    """Ask a running Ollama to pull ``tag``. Blocks until it has."""
+    import json
+    import urllib.request
+
+    body = json.dumps({"name": tag, "stream": False}).encode("utf-8")
+    request = urllib.request.Request(f"{base_url.rstrip('/')}/api/pull", data=body,
+                                     headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        response.read()
+
+
+def _has_tag(wanted: str, names: list[str]) -> bool:
+    """``qwen3:8b`` matches ``qwen3:8b`` and ``qwen3:8b-instruct-q4_K_M``-style
+    names only on the exact tag; a bare family name matches ``:latest``."""
+    wanted = wanted.lower()
+    for name in names:
+        name = name.lower()
+        if name == wanted or (":" not in wanted and name == f"{wanted}:latest"):
+            return True
+    return False
+
+
 def auto_backend(machine: Machine | None = None, *, prefer: str | None = None,
-                 download: bool = True):
+                 download: bool = True, route: str | None = None,
+                 base_url: str = OLLAMA_URL):
     """Probe, choose, fetch and build a ready backend. The one-call path.
+
+    On the Ollama route this checks for a running server, pulls the tag if it
+    is missing (and ``download`` allows), and hands back an
+    :class:`onset_agent.backends.OllamaBackend`. It cannot install Ollama --
+    that is a daemon, not a package -- so a machine without one gets the exact
+    three commands rather than a guess. On the transformers route it is the
+    download-then-load path as before.
 
     Kept here rather than in :mod:`onset_agent.backends` so that importing the
     backends does not drag in a hardware probe, and so that `choose` stays a
     pure function somebody can call just to ask what *would* happen.
     """
     machine = probe(machine)
+    choice = choose(machine, prefer=prefer, route=route)
+
+    if choice.route == "ollama":
+        from onset_agent.backends import OllamaBackend
+
+        tag = choice.ollama_tag
+        up, names = ollama_status(base_url)
+        if not up:
+            raise OllamaNotRunning(
+                f"the best fit for this machine is {choice.model_id} as a Q4 "
+                f"GGUF, but no Ollama server answers at {base_url}. Install it "
+                f"from https://ollama.com/download, then: `ollama serve`, "
+                f"`{choice.pull_command}`, and run again. To run in-process "
+                f"with transformers instead (slower, more memory): "
+                f"--route transformers.")
+        if not _has_tag(tag, names):
+            if not download:
+                raise OllamaModelMissing(
+                    f"Ollama is running but has not pulled {tag}: "
+                    f"`{choice.pull_command}` (about {choice.download_gb:.1f} GB).")
+            ollama_pull(tag, base_url)
+        return OllamaBackend(model=tag, base_url=f"{base_url.rstrip('/')}/v1"), choice
+
     if not machine.transformers_available:
         # Checked here rather than left to the import below, so the caller gets
         # the remedy instead of "No module named 'transformers'".
         raise MissingDependency("transformers")
     from onset_agent.backends import TransformersBackend
 
-    choice = choose(machine, prefer=prefer)
     if download:
         ensure_model(choice, machine=machine)
     return TransformersBackend(**choice.backend_kwargs()), choice
+
 
 
 def pinned(catalogue: tuple[ModelSpec, ...] = CATALOGUE) -> tuple[ModelSpec, ...]:
