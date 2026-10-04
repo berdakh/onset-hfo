@@ -104,7 +104,7 @@ class Judgement:
         return out
 
     @classmethod
-    def from_json(cls, data: dict) -> "Judgement":
+    def from_json(cls, data: dict) -> Judgement:
         return cls(verdict=str(data.get("verdict", "unsure")),
                    reader=str(data.get("reader", "")),
                    at=str(data.get("at", "")),
@@ -239,19 +239,19 @@ class Adjudication:
 
     # -- recording a verdict ----------------------------------------------
     def judge_event(self, key: str, verdict: str, reader: str = "",
-                    note: str = "") -> "Judgement":
+                    note: str = "") -> Judgement:
         if verdict not in EVENT_VERDICTS:
             raise ValueError(f"not an event verdict: {verdict!r}")
         return self._record(self.events, key, verdict, reader, note)
 
     def judge_channel(self, channel: str, verdict: str, reader: str = "",
-                      note: str = "") -> "Judgement":
+                      note: str = "") -> Judgement:
         if verdict not in CHANNEL_VERDICTS:
             raise ValueError(f"not a channel verdict: {verdict!r}")
         return self._record(self.channels, channel, verdict, reader, note)
 
     def _record(self, into: dict, key: str, verdict: str, reader: str,
-                note: str) -> "Judgement":
+                note: str) -> Judgement:
         who = (reader or self.reader or "").strip()
         # A verdict keeps whatever note it already had unless a new one is
         # given: changing your mind about an event should not silently erase
@@ -361,7 +361,7 @@ class Adjudication:
         }
 
     @classmethod
-    def from_json(cls, data: dict) -> "Adjudication":
+    def from_json(cls, data: dict) -> Adjudication:
         return cls(
             window=str(data.get("window", "")),
             reader=str(data.get("reader", "")),

@@ -195,7 +195,7 @@ def test_segments_cover_the_span_exactly_once(long_recording):
     assert got.segments is not None and not got.segments.empty
     per_channel = got.segments.groupby("channel").size()
     assert set(per_channel) == {int(LONG_S)}
-    for channel, group in got.segments.groupby("channel"):
+    for _channel, group in got.segments.groupby("channel"):
         starts = sorted(float(value) for value in group["t_start"])
         assert len(set(starts)) == len(starts)
         assert starts[0] == pytest.approx(0.0)

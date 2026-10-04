@@ -58,8 +58,7 @@ from qtpy.QtWidgets import (
 )
 
 from onset_hfo.quality import REASONS, SET_ASIDE, quality_summary
-from onset_review.theme import (SPACING, card, current, muted, scrolled,
-                                 section_label)
+from onset_review.theme import SPACING, card, current, muted, scrolled, section_label
 
 __all__ = ["QualityPanel", "COLUMNS", "REASONS", "SET_ASIDE"]
 

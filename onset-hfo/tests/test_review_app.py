@@ -566,6 +566,41 @@ def test_an_unattributed_verdict_is_refused(built, review):
         events.refilter()
 
 
+def test_asking_who_is_reviewing_actually_runs(built, review, monkeypatch):
+    """Exercised end to end rather than stubbed out.
+
+    Every other test here injects `reader_prompt` directly, so `_ask_reader`
+    itself was never executed — and it had a block of someone else's code
+    pasted into it, referring to names that do not exist in its scope. It
+    would have raised `NameError` the first time any reviewer was asked their
+    name, which is the first verdict for anyone not passing `--reader`. The
+    linter found it; this is what should have.
+    """
+    from onset_review import adjudication, window
+
+    previous = review.read
+    try:
+        review.read = adjudication.Adjudication()
+        monkeypatch.setattr(
+            "qtpy.QtWidgets.QInputDialog.getText",
+            staticmethod(lambda *args, **kwargs: ("Dr Jones", True)))
+        assert window._ask_reader(built.host, review) == "Dr Jones"
+        assert review.read.reader == "Dr Jones"
+        # And the status bar picks it up, which is the other half of its job.
+        label = built.host.statusBar().findChild(qt.QLabel, "onset_reader")
+        assert "Dr Jones" in label.text()
+
+        # Declining leaves the read unattributed rather than half-named.
+        review.read = adjudication.Adjudication()
+        monkeypatch.setattr(
+            "qtpy.QtWidgets.QInputDialog.getText",
+            staticmethod(lambda *args, **kwargs: ("", False)))
+        assert window._ask_reader(built.host, review) == ""
+        assert review.read.reader == ""
+    finally:
+        review.read = previous
+
+
 def test_the_next_unjudged_event_skips_the_judged_ones(judging):
     events = judging.panels["events"]
     events.view.selectRow(0)

@@ -37,8 +37,7 @@ from qtpy.QtWidgets import (
 )
 
 from onset_review import theme
-from onset_review.anatomy import (ARCHIVE_ORIGIN, UNKNOWN,
-                                  electrode_layout, layout_caption)
+from onset_review.anatomy import ARCHIVE_ORIGIN, UNKNOWN, electrode_layout, layout_caption
 from onset_review.theme import card
 
 __all__ = ["BrainPanel", "VIEWS", "ZONE_EDGES"]

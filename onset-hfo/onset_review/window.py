@@ -860,14 +860,6 @@ def _ask_reader(host: QMainWindow, session: ReviewSession) -> str:
         except OSError:
             pass
         _set_reader_status(host, session)
-    # Opened in a layout rather than with everything showing: eleven docked
-    # panels at once is an arrangement a reviewer has to undo before they can
-    # work, and the first question about a window is always whether there is
-    # anything in it.
-    apply_layout(docks, DEFAULT_LAYOUT)
-    # Captured here, after the opening layout: "the default layout" has to mean
-    # what the window actually opened as, panels hidden and all.
-    defaults["state"] = host.saveState()
     return name
 
 
@@ -907,7 +899,9 @@ def _read_menu(menubar, host: QMainWindow, panels: dict,
     who.triggered.connect(lambda _=False: _ask_reader(host, session))
     menu.addSeparator()
 
-    for verdict, text, key, tip in events.KEYS:
+    # `_key` is the bare letter the events panel binds while it has focus;
+    # these entries use the Ctrl-digit pair instead, so it is not read here.
+    for verdict, text, _key, tip in events.KEYS:
         action = menu.addAction(text.replace("&", "") + " — this event")
         action.setShortcut(f"Ctrl+{EVENT_SHORTCUTS[verdict]}")
         action.setToolTip(tip)

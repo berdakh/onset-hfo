@@ -255,7 +255,7 @@ def test_disagreeing_with_everything_zeroes_the_confirmed_rate(review):
 
 def test_a_half_judged_contact_gets_no_confirmed_rate(review):
     """It would be a confirmed count divided by the whole window."""
-    from onset_review.adjudication import Adjudication, event_key
+    from onset_review.adjudication import event_key
 
     previous = review.read
     try:

@@ -229,7 +229,7 @@ def test_a_measured_position_settles_which_side_a_contact_is_on(tmp_path):
                   "Q1,30,-20,-15\nQ2,35,-20,-15\n")
     read = coordinates.read_coordinates(path, session)
     layout = electrode_layout(session, electrodes=read.frame)
-    sides = dict(zip(layout["channel"], layout["hemisphere"]))
+    sides = dict(zip(layout["channel"], layout["hemisphere"], strict=True))
     assert sides["P1-P2"] == "L"
     assert sides["Q1-Q2"] == "R"
     # And without coordinates it stays honest about not knowing.

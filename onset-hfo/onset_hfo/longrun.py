@@ -53,7 +53,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-import numpy as np
 import pandas as pd
 
 from onset_hfo.config import BANDS, PipelineConfig
@@ -61,8 +60,7 @@ from onset_hfo.detectors import DETECTORS
 from onset_hfo.detectors.base import Event
 from onset_hfo.preprocess import prepare
 from onset_hfo.quality import channel_quality, segment_quality
-from onset_hfo.streaming import OverlapTooShort, plan_chunks, stream_detect
-
+from onset_hfo.streaming import plan_chunks, stream_detect
 from onset_hfo.validate import flag_spike_cooccurrence, validate_events
 
 __all__ = ["SpanAnalysis", "analyse_span", "DEFAULT_CHUNK_S",
@@ -253,10 +251,10 @@ def analyse_span(source: Source, t_start: float, t_stop: float,
         f"depend on where the boundaries fell")
     if with_spikes:
         steps.append(
-            f"discharge thresholds, unlike the HFO detectors', were measured "
-            f"per chunk — the spike detector takes its scale from the data it "
-            f"is given and has no baseline to inject, so that count moves a "
-            f"little with the chunk length")
+            "discharge thresholds, unlike the HFO detectors', were measured "
+            "per chunk — the spike detector takes its scale from the data it "
+            "is given and has no baseline to inject, so that count moves a "
+            "little with the chunk length")
 
     say(1.0, "Ready")
     return SpanAnalysis(

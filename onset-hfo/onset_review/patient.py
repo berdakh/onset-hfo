@@ -22,8 +22,7 @@ from qtpy.QtWidgets import (
 )
 
 from onset_review.record import CHART_FIELDS, ILAE_CLASSES, patient_record
-from onset_review.theme import (SPACING, card, current, muted, scrolled,
-                                 section_label)
+from onset_review.theme import SPACING, card, current, muted, scrolled, section_label
 
 __all__ = ["PatientPanel", "patient_record", "CHART_FIELDS", "ILAE_CLASSES"]
 

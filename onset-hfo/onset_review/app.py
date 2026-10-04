@@ -329,7 +329,7 @@ class _Review:
         self.parts = None
 
     def open(self, session) -> None:
-        from onset_review import adjudication, window
+        from onset_review import window
 
         previous = self.parts
         state = previous.host.saveState() if previous is not None else None
