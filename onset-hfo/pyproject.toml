@@ -5,7 +5,8 @@ description = "Onset-HFO: a first prototype for detecting high-frequency oscilla
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
-authors = [{ name = "Brain-Machine Interfaces Lab, Nazarbayev University" }]
+license-files = ["LICENSE"]
+authors = [{ name = "Berdakh Abibullaev", email = "berdakho@gmail.com" }]
 keywords = ["ieeg", "hfo", "epilepsy", "ripples", "seizure", "mne", "agent", "llm"]
 dependencies = [
     "mne>=1.6",
@@ -69,8 +70,15 @@ onset-orchestrate = "onset_agent.orchestrate:main"
 onset-review = "onset_review.app:main"
 
 [project.urls]
-"Onset project" = "https://berdakh.github.io/onset/"
-"Dataset" = "https://openneuro.org/datasets/ds003029"
+"Homepage" = "https://berdakh.github.io/onset/"
+"Source" = "https://github.com/berdakh/onset-hfo"
+"Documentation" = "https://github.com/berdakh/onset-hfo/tree/master/onset-hfo/docs"
+"Issues" = "https://github.com/berdakh/onset-hfo/issues"
+# The cohort every measured number comes from. ds003029 is the ictal archive
+# the pipeline also reads; it carries no HFO markings, so nothing is scored
+# against it.
+"Dataset (interictal, expert HFO markings)" = "https://openneuro.org/datasets/ds003498"
+"Dataset (ictal)" = "https://openneuro.org/datasets/ds003029"
 
 [build-system]
 requires = ["hatchling"]

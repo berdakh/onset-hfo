@@ -1,0 +1,38 @@
+# How to cite this software. GitHub reads this file and offers a "Cite this
+# repository" button from it; `cffconvert` turns it into BibTeX.
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "Onset-HFO: detecting high-frequency oscillations in intracranial EEG, with an evidence-only agent"
+abstract: >-
+  A research prototype for detecting high-frequency oscillations and interictal
+  epileptiform discharges in intracranial EEG. It ships four HFO detectors, a
+  spike detector, artifact validation, data-quality checks that remove only
+  what no physiology produces, Poisson confidence intervals and a candidate
+  channel set rather than a single argmax; an installable desktop reviewer
+  built on MNE's own Qt browser; and an agent that answers only from the saved
+  result tables and cites them. Evaluated against the expert HFO markings and
+  the surgical outcomes of OpenNeuro ds003498. Not a medical device, and not
+  validated for clinical use.
+type: software
+authors:
+  - family-names: Abibullaev
+    given-names: Berdakh
+    email: berdakho@gmail.com
+    # orcid: "https://orcid.org/0000-0000-0000-0000"   # <- add yours here
+repository-code: "https://github.com/berdakh/onset-hfo"
+url: "https://berdakh.github.io/onset/"
+license: MIT
+version: "0.1.0"
+keywords:
+  - intracranial EEG
+  - high-frequency oscillations
+  - epilepsy
+  - seizure onset zone
+  - MNE-Python
+references:
+  - type: data
+    title: "Interictal intracranial EEG with expert-validated HFO markings"
+    authors:
+      - name: "Fedele, T. et al."
+    url: "https://openneuro.org/datasets/ds003498"
+    notes: "The cohort every number in docs/EVALUATION.md was measured on."
