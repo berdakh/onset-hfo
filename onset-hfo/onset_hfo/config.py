@@ -303,6 +303,210 @@ class ValidationConfig:
     min_cycles: float = 2.0
 
 
+#: Burstiness (envelope p99/p10) of a channel carrying no events at all.
+#:
+#: Band-pass Gaussian noise and its envelope is Rayleigh-distributed, whose
+#: quantiles are ``sigma * sqrt(-2 ln(1 - p))`` -- so the ratio of the 99th
+#: percentile to the 10th is a pure number, the same for a 2 uV contact and a
+#: 200 uV one. That is what makes it usable as a floor without calibration:
+#: a channel at this value has no event structure in it, whatever its gain.
+RAYLEIGH_BURSTINESS: float = 6.611
+
+
+@dataclass
+class QualityConfig:
+    """Which contacts and which stretches of time are fit to be analysed.
+
+    Two kinds of verdict, and the difference is the most important thing in
+    this class. A contact is **set aside** only for a fault where no
+    physiology could produce the signal: flat, clipped at the amplifier's
+    rail, swamped by mains, or with too little surviving time to rate. It is
+    **flagged** when a measurement is unusual in a way that could equally be a
+    fault or the finding -- and then it is analysed normally, and a human
+    decides. Nothing in this software can tell a noisy amplifier from a
+    contact full of real ripples by looking at band power, and the cost of
+    guessing wrong is deleting the result.
+
+    This stage exists because an HFO rate ranking is unusually easy to poison.
+    A contact with a noisy amplifier produces ripple-band energy continuously;
+    the detector finds it, the validator cannot tell it from signal because it
+    *is* oscillatory, and that contact tops the ranking. A dead contact
+    produces nothing and sits at the bottom looking reassuring. Neither is a
+    statement about the brain, and neither announces itself in a table of
+    rates.
+
+    **Nothing here interpolates.** A standard M/EEG cleaner (``autoreject``,
+    for one) repairs a bad channel from its neighbours. That is right when the
+    quantity of interest is an evoked response averaged over sensors, and
+    wrong here: the entire output of this software is a *per-channel* rate
+    ranking, and an interpolated channel's rate is borrowed from the contacts
+    beside it. It would read as a finding about that contact. So a bad channel
+    is dropped and named, never repaired. (It is also moot on these datasets:
+    interpolation needs contact coordinates and neither archive ships any.)
+
+    Every threshold below is a floor for the gross cases, not a tuning knob
+    that has been optimised -- no sweep has been run for any of them. They are
+    deliberately loose, because the failure that matters here is rejecting
+    real epileptic time, not keeping a little noise.
+    """
+
+    #: Reject a channel whose robust amplitude is below this, in microvolts:
+    #: a disconnected or shorted contact. Real intracranial background sits
+    #: well above it.
+    flat_uv: float = 0.5
+    #: Reject a channel that spends more than this fraction of the window
+    #: pinned at its own extreme value -- an amplifier at its rail. The signal
+    #: there is not small or noisy, it is absent, and a clipped edge rings
+    #: through an 80-250 Hz filter like a textbook ripple.
+    max_clipped_fraction: float = 0.01
+    #: Reject a channel whose mains-frequency power (fundamental and
+    #: harmonics) exceeds this fraction of its total power. Matters more here
+    #: than in conventional EEG: the 4th and 5th harmonics of 50 Hz sit at
+    #: 200 and 250 Hz, inside the ripple band being counted.
+    max_line_fraction: float = 0.30
+    #: **Flag** -- not reject -- a channel whose in-band-to-broadband power
+    #: ratio is this many robust SDs above the montage's own median.
+    #:
+    #: A noisy amplifier produces continuous band-limited energy and tops an
+    #: HFO ranking, which is the worst failure this software can have. This
+    #: statistic finds it. It also finds the opposite: a contact full of real
+    #: ripples has elevated band power *because the ripples are in the band*.
+    #:
+    #: It cannot tell them apart, and that was measured rather than assumed.
+    #: On sub-13 of ds003498 this check flagged `TR1-TR2` and `TR2-TR3` at 10x
+    #: and 6x the montage median -- and the archive's own annotators marked
+    #: **91, 102 and 164** ripples on those three contacts. They are among the
+    #: most epileptically active in the recording. Setting them aside would
+    #: have blanked the finding, which is the same failure the segment test
+    #: made and for the same reason.
+    #:
+    #: The quietest-second floor was tried as a discriminator, since real
+    #: ripples are intermittent and an amplifier is not: a planted noisy
+    #: contact scores 26x the montage's 10th percentile and `TR1-TR2` scores
+    #: 5x. Better than the median, and still not a gap to put a threshold in.
+    #:
+    #: So this check measures and flags; it never removes. What it *can* do is
+    #: say which way it leans -- see :attr:`bursty_ratio`.
+    max_hf_ratio_sd: float = 6.0
+    #: How many times the noise null a contact's envelope burstiness must
+    #: reach before a band-power flag is described as activity rather than
+    #: noise. Both are flags; neither removes anything. This only changes the
+    #: sentence a reviewer reads, and the measured ratio is shown beside it.
+    #:
+    #: Burstiness is the 99th percentile of the ripple-band envelope over its
+    #: 10th -- a within-channel dynamic range, so unlike the band-power ratio
+    #: it carries no amplitude scale and needs no comparison to the montage.
+    #: A contact full of ripples is tall spikes over a quiet floor; a noisy or
+    #: poorly-coupled one is a raised carpet.
+    #:
+    #: **Its threshold is derived, not fitted.** For a channel whose
+    #: band-passed signal is Gaussian noise the envelope is Rayleigh, so the
+    #: ratio is a constant independent of amplitude:
+    #: ``sqrt(-2 ln 0.01) / sqrt(-2 ln 0.90)`` = **6.611**
+    #: (:data:`RAYLEIGH_BURSTINESS`; simulation through this project's own
+    #: filter gives 6.65 +/- 0.08). A contact at that value is
+    #: indistinguishable from filtered noise.
+    #:
+    #: The cohort agrees with the algebra. Across the ds003498 sweep, the 11
+    #: distinct contacts that this stage flagged and the archive's annotators
+    #: marked **not at all** score 6.6-6.9 -- the null, to within a rounding
+    #: error. The 11 it flagged that they marked heavily score 8.2-60.6,
+    #: median 29.4. No overlap.
+    #:
+    #: 1.2 sits in that gap, and deliberately near the bottom of it: calling a
+    #: real contact noisy makes a reviewer under-weight a finding, which is
+    #: the error this whole stage keeps making and keeps having to be stopped
+    #: from. Erring toward "activity" is the safe side.
+    #:
+    #: Two limits, both of which are why this still only changes wording.
+    #: The separation rests on 11 contacts against 11, from ten subjects of
+    #: which only three carry both kinds, and is not validated out of sample.
+    #: And burstiness separates *events* from *carpet*, not real from
+    #: artifactual: an electrode popping once a second is bursty, and scores
+    #: like a hippocampus full of ripples.
+    bursty_ratio: float = 1.2
+    #: Flag a channel whose overall amplitude is this many robust SDs from the
+    #: montage's median, in either direction. Flagged for the same reason: a
+    #: large-amplitude contact may be a gain fault or may be where the
+    #: pathology is, and this cannot tell.
+    max_amplitude_sd: float = 6.0
+    #: The amplitude test needs this as well: the channel must differ from the
+    #: montage median by at least this factor, not only by robust SDs.
+    #:
+    #: Because an outlier test needs a population and a montage is often a
+    #: small one. On a fifteen-channel synthetic montage the robust SD across
+    #: channels is small enough that an ordinary contact at 24 uV among
+    #: neighbours at 36 clears 6 SD and would be thrown out -- a third of that
+    #: montage was, before this was added. On a real 43-channel implantation
+    #: nothing was.
+    #:
+    #: It guards the amplitude test **only**, and deliberately not the
+    #: band-ratio one. The in-band share of power is not comparable between
+    #: recordings the way amplitude is: a real intracranial contact puts about
+    #: 0.05% of its power in the ripple band and this project's synthetic
+    #: recording puts 13%, so a factor that is conservative on one is blind on
+    #: the other -- it silenced the noisy-amplifier check entirely on the
+    #: synthetic montage. That check keeps the robust-SD criterion alone,
+    #: which is the one the quantity supports, at a strict 6 SD.
+    amplitude_outlier_ratio: float = 3.0
+
+    #: Length of the fixed segments the window is cut into, in seconds. The
+    #: unit of time that can be rejected, and the resolution of the clean-time
+    #: denominator each channel's rate is divided by.
+    segment_s: float = 1.0
+    #: Reject one channel's second when the *unfiltered* signal jumps by more
+    #: than this many robust SDs of that channel's own sample-to-sample
+    #: difference.
+    #:
+    #: **Discontinuity, not amplitude.** The first version of this stage
+    #: rejected a segment whose peak-to-peak was 8 robust SDs above the
+    #: channel's own median, which sounds conservative and is not: on sub-01
+    #: of ds003498 it threw away six seconds of `AR2-AR3` -- the second
+    #: busiest HFO channel in that window -- at 4-6x its median. Those
+    #: deflections are 700-1000 uV on a bipolar depth contact, which is a
+    #: textbook interictal discharge, not a fault. Amplitude alone cannot
+    #: tell the pathology from the artifact, and the failure is silent and
+    #: in the one direction that matters: it removes the epileptic seconds
+    #: from the epileptic channel and lowers its rate.
+    #:
+    #: A jump can tell them apart, but not at the threshold the spike detector
+    #: uses: :attr:`SpikeConfig.max_raw_jump_sd` is 10, and that is calibrated
+    #: on a ~50 ms event window. The maximum of a heavy-tailed quantity grows
+    #: with the number of samples it is taken over, and a 1 s segment at
+    #: 2000 Hz has forty times as many, so 10 here rejected a tenth of the
+    #: epileptic channels' seconds.
+    #:
+    #: So this one was measured directly. Over 20,520 channel-seconds from six
+    #: windows of three ds003498 subjects, real intracranial seconds score a
+    #: median of 3.7 SD, a 99th percentile of 10-16, and a maximum anywhere of
+    #: **38**. Planted faults on the same data score **713** (saturation) and
+    #: **1013** (an amplifier step). The gap is a factor of twenty, and 100
+    #: sits in it: 2.6x above anything real that was measured, 7x below the
+    #: mildest fault. A disconnection is caught by the flat test instead,
+    #: which is what it is for.
+    #:
+    #: Its weakness, stated because it is not obvious: the statistic is
+    #: relative to each channel's own sample-to-sample spread, so a recording
+    #: with a lot of genuine high-frequency content has a larger denominator
+    #: and a given fault scores lower against it. This project's own synthetic
+    #: recording is such a case -- its planted transients reach 69 SD where
+    #: real recordings reach 38 -- and a fault has to be about three times
+    #: larger there before it trips. The absolute ceiling below is the
+    #: backstop for that, and a fault milder than both is one a reviewer has
+    #: to see on the trace. This stage is a floor for gross faults, not a
+    #: guarantee of clean data.
+    segment_jump_sd: float = 100.0
+    #: And an absolute ceiling, in microvolts, for a segment no relative test
+    #: would catch -- a window that is nothing but a pop. Set well above
+    #: physiology: an intracranial discharge reaches a millivolt, so a lower
+    #: ceiling would reproduce the mistake above with a constant.
+    segment_ceiling_uv: float = 5000.0
+    #: Drop a channel outright when this fraction of its segments is rejected.
+    #: Below it the channel is kept and its rate divided by the time that
+    #: survived; above it there is not enough left to call a rate.
+    max_bad_segment_fraction: float = 0.5
+
+
 @dataclass
 class PreprocessConfig:
     """Filtering and montage options applied before detection."""
@@ -321,8 +525,37 @@ class PreprocessConfig:
     bipolar: bool = True
     #: High-pass the continuous signal before anything else (removes drift).
     highpass: float = 1.0
+    #: Low-pass, in Hz. ``None`` -- the default -- means none, which is what an
+    #: HFO analysis wants: the band of interest runs to 500 Hz and anything
+    #: that attenuates it is removing the signal. Exposed because a reviewer
+    #: comparing against a conventional reading may want one, and refused by
+    #: :func:`onset_hfo.preprocess.prepare` when it would cut into the band
+    #: being analysed rather than applied quietly.
+    lowpass: float | None = None
+    #: Width of each notch, in Hz. Narrow on purpose: mains harmonics at
+    #: 180/240 Hz sit inside the ripple band and a wide notch carves a hole in
+    #: the signal being measured.
+    notch_width: float = 2.0
+    #: Notch the harmonics of the mains frequency as well as the fundamental.
+    #: Off leaves 100/150/180/240 Hz interference inside the HFO bands.
+    notch_harmonics: bool = True
+    #: Re-reference to the average of all channels instead of to a neighbour.
+    #: Only consulted when ``bipolar`` is off: the two are alternatives, and a
+    #: common average re-introduces exactly the shared noise that the bipolar
+    #: montage exists to suppress. Offered because it is standard practice
+    #: elsewhere in EEG, with that caveat recorded in the steps.
+    average_reference: bool = False
+    #: Resample to this rate, in Hz. ``None`` keeps the recording's own.
+    #: Downsampling is refused when it would put the analysed band above the
+    #: new Nyquist -- the analysis would still run and the numbers would be
+    #: meaningless.
+    resample: float | None = None
     #: Drop channels flagged ``bad`` in the dataset's channels.tsv.
     drop_bads: bool = True
+    #: Channels the reviewer marked bad themselves, on top of the dataset's.
+    #: Carried here rather than on the recording so that the choice travels
+    #: with the analysis configuration and lands in the report.
+    exclude: tuple[str, ...] = ()
 
 
 @dataclass
@@ -340,6 +573,13 @@ class PipelineConfig:
     short_time_energy: DetectorConfig = field(default_factory=DetectorConfig)
     spikes: SpikeConfig = field(default_factory=SpikeConfig)
     validation: ValidationConfig = field(default_factory=ValidationConfig)
+    quality: QualityConfig = field(default_factory=QualityConfig)
+    #: Run the data-quality stage at all. On by default: a rate ranking with
+    #: a noisy amplifier at the top of it is the failure this project is most
+    #: likely to produce, and the stage costs a fraction of a second. Off
+    #: reproduces every number this project measured before the stage existed,
+    #: which is why it is a switch rather than a removal.
+    check_quality: bool = True
     #: Seconds; the unit in which per-channel event rates are reported.
     rate_window_s: float = 60.0
     #: How many top channels the report lists.
@@ -356,6 +596,8 @@ class PipelineConfig:
             "short_time_energy": asdict(self.short_time_energy),
             "spikes": asdict(self.spikes),
             "validation": asdict(self.validation),
+            "quality": asdict(self.quality),
+            "check_quality": self.check_quality,
             "rate_window_s": self.rate_window_s,
             "top_k": self.top_k,
             "disagreement_ranks": self.disagreement_ranks,

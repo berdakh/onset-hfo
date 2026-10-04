@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import re
+from dataclasses import replace
 
 import numpy as np
 import pytest
 
-from onset_hfo.config import DetectorConfig, ValidationConfig
+from onset_hfo.config import DetectorConfig, PreprocessConfig, ValidationConfig
 from onset_hfo.detectors import detect_line_length, detect_rms, detect_spikes
 from onset_hfo.detectors.base import (
     Event,
@@ -265,3 +266,97 @@ def test_labels_fall_back_gracefully_when_the_archive_is_unreachable():
 
     labels = soz_labels("sub-pt01")
     assert labels.source in ("none", "clinical_summary")
+
+
+# -- preprocessing options the GUI exposes ---------------------------------
+#
+# These used to be unreachable without editing a config in Python, which in
+# practice meant nobody changed them and nobody checked whether the defaults
+# suited their recording. Exposing them in the interface makes two things
+# load-bearing: that the defaults still produce exactly what they produced
+# before, and that a setting which would destroy the band is refused rather
+# than applied quietly.
+
+def test_the_defaults_are_unchanged_by_the_new_options(recording):
+    """The measured defaults are the shipped ones; adding controls moved none."""
+    cfg = PreprocessConfig()
+    assert (cfg.highpass, cfg.lowpass) == (1.0, None)
+    assert (cfg.notch, cfg.notch_width, cfg.notch_harmonics) == (True, 2.0, True)
+    assert (cfg.bipolar, cfg.average_reference) == (True, False)
+    assert (cfg.resample, cfg.drop_bads, cfg.exclude) == (None, True, ())
+
+    prepared = prepare(recording, cfg, verbose=False)
+    plain = prepare(recording, None, verbose=False)
+    assert np.array_equal(prepared.data, plain.data)
+    assert prepared.steps == plain.steps
+    assert prepared.montage == "bipolar"
+
+
+@pytest.mark.parametrize("changes,expected", [
+    ({"lowpass": 400.0}, "low-pass 400 Hz"),
+    ({"notch_width": 4.0}, "4 Hz wide"),
+    ({"notch_harmonics": False}, "fundamental only"),
+    ({"resample": 1000.0}, "resampled 2000 Hz -> 1000 Hz"),
+    ({"bipolar": False, "average_reference": True}, "common average reference"),
+])
+def test_each_option_reaches_the_signal_and_is_logged(recording, changes, expected):
+    """A step a report does not mention is a step nobody can check."""
+    prepared = prepare(recording, replace(PreprocessConfig(), **changes),
+                       verbose=False)
+    assert any(expected in step for step in prepared.steps), prepared.steps
+
+
+def test_resampling_changes_the_rate(recording):
+    prepared = prepare(recording, replace(PreprocessConfig(), resample=1000.0),
+                       verbose=False)
+    assert prepared.sfreq == 1000.0
+
+
+def test_the_average_reference_says_what_it_costs(recording):
+    """It re-introduces the shared noise the bipolar montage exists to remove,
+    and the step has to say so, because the number it changes looks the same."""
+    prepared = prepare(recording,
+                       replace(PreprocessConfig(), bipolar=False,
+                               average_reference=True), verbose=False)
+    assert prepared.montage == "average"
+    note = next(s for s in prepared.steps if "common average" in s)
+    assert "bipolar montage exists to avoid" in note
+
+
+def test_reviewer_marked_channels_are_logged_apart_from_the_datasets(recording):
+    """One is the archive's claim, the other is this reviewer's judgement.
+
+    Merging them in the report would attribute a reviewer's call to the
+    dataset, which is the sort of thing that survives into a paper.
+    """
+    victim = recording.raw.ch_names[0]
+    prepared = prepare(recording, replace(PreprocessConfig(), exclude=(victim,)),
+                       verbose=False)
+    note = next(s for s in prepared.steps if "reviewer marked bad" in s)
+    assert victim in note
+    assert all(victim not in name.split("-") for name in prepared.ch_names)
+
+
+@pytest.mark.parametrize("changes,message", [
+    ({"lowpass": 0.5}, "passes nothing"),
+    ({"resample": 500.0, "lowpass": 400.0}, "Nyquist"),
+    ({"notch_width": 0.0}, "notch width must be positive"),
+    ({"resample": 0.0}, "resample rate must be positive"),
+    ({"resample": -250.0}, "resample rate must be positive"),
+])
+def test_settings_that_would_produce_numbers_not_measurements_are_refused(
+        recording, changes, message):
+    """Every one of these runs fine and returns a plausible-looking answer.
+
+    That is exactly why they are refused here rather than left to whoever reads
+    the result.
+    """
+    with pytest.raises(ValueError, match=message):
+        prepare(recording, replace(PreprocessConfig(), **changes), verbose=False)
+
+
+def test_excluding_every_channel_is_refused(recording):
+    with pytest.raises(ValueError, match="nothing to analyse"):
+        prepare(recording, replace(PreprocessConfig(),
+                                   exclude=tuple(recording.raw.ch_names)),
+                verbose=False)

@@ -32,6 +32,34 @@ A channel's rate leads to the events behind it, an event leads to the signal it
 was measured on, and the assistant's every citation opens to both. Ask it which
 channels to resect and watch it refuse.
 
+**Or install the desktop reviewer** — the signal itself, with the marks on it:
+
+```bash
+./packaging/install-ubuntu.sh --with-sample && onset-review
+```
+
+![The Onset Review window](docs/images/onset-review.png)
+
+One window: the activity trend across channels, the trace with the detector's
+marks in blue and the archive annotators' own in green, visible amplitude and
+scroll controls over it, the ranked channels with the ones that cannot be told
+apart from the leader tinted, the contacts in 3D with the surgeon's resection
+ringed, the patient's record with the gaps named rather than filled, the MNE
+preprocessing chain on controls a reviewer can actually reach, the contacts
+and seconds that were fit to analyse — with the ones it cannot judge flagged
+rather than removed — an assistant
+that cites this window or refuses — and, pinned to the status bar
+where it cannot be scrolled past, whether any of it supports a ranking at all.
+
+It opens recordings of your own too, through MNE's readers — EDF, BrainVision,
+Persyst, Nihon Kohden, Nicolet, Blackrock, MEF3 and the rest — with no
+conversion step and no proprietary format. It asks you to confirm which
+channels are intracranial first, because a clinical export declares every
+channel as scalp EEG and this software analyses whatever is typed eeg, ecog or
+seeg.
+
+[`INSTALL.md`](docs/INSTALL.md) · [`CLINICAL_GUIDE.md`](docs/CLINICAL_GUIDE.md)
+
 New to the project? [**Where do seizures start?**](https://berdakh.github.io/onset-hfo/TUTORIAL.html)
 ([source](../site/TUTORIAL.html)) is a standalone
 walkthrough — the research question, the signal, the traps, every measured
@@ -97,7 +125,14 @@ python -m onset_hfo.cli outcome
 #     (or just open https://onsetnu.streamlit.app/)
 pip install -e ".[app]" && streamlit run app/Home.py
 
-pytest -q        # 468 tests, all offline
+# 11. sit with the signal itself: the desktop reviewer, installed on Ubuntu
+./packaging/install-ubuntu.sh --with-sample
+onset-review                                  # or the applications menu
+onset-review --subject sub-01 --window 0 60 --expert    # straight in
+onset-review --subject sub-01 --window 0 60 --export review.md   # no display
+onset-review --open /data/study-001.edf       # or a recording of your own
+
+pytest -q        # 620 tests, all offline
 ```
 
 ## What it actually does
@@ -283,6 +318,8 @@ chance — see [`docs/EVALUATION.md`](docs/EVALUATION.md).
 onset_hfo/            the pipeline
   config.py           every threshold and band, in one place, documented
   datasets.py         byte-range loader for the public archive + provenance
+  io.py               a recording off this machine, through MNE's own readers
+  quality.py          bad contacts and bad seconds; removes only what cannot be real
   synthetic.py        labelled simulator, including the traps
   preprocess.py       channel selection, filtering, bipolar montage
   detectors/          base.py (primitives) · engine.py (the shared loop)
@@ -336,12 +373,33 @@ app/                  the reading interface (Streamlit), ten pages
   pages/              Recording · Report · Assistant · Detectors · Outcome
                       Patients · Data · Architecture · Research
 
+onset_review/         the desktop reviewer (Qt), installable on Ubuntu
+  session.py          a loaded window: the recording, the detections, the findings
+  trends.py           the trend matrix, the event list, detector-vs-expert agreement
+  anatomy.py          where each contact is drawn, and how much of that is known
+  report.py           the record a reviewer exports when they are done
+  panels.py           the dock widgets; they render and compute nothing
+  controls.py         visible amplitude, window, channel and scroll controls
+  brainview.py        contacts in 3D: ranked, colour-coded, resection ringed
+  preprocessing.py    the MNE filter/reference/resample chain, mouse-driven
+  dataquality.py      which contacts and seconds were analysed, and which only flagged
+  record.py           what the archive records about a patient, and what it does not
+  patient.py          that record, drawn
+  theme.py            one palette, one type scale; no panel writes a colour
+  assistant.py        the agent in a dock: cites this window, or refuses
+  window.py           docks them onto MNE's own Qt trace browser
+  launcher.py         the open dialog, and loading off the GUI thread
+  importer.py         confirming what a file actually holds before it is analysed
+  app.py              onset-review ...
+
+packaging/            install-ubuntu.sh, the .desktop entry and the icon
+
 data/outcome/         the outcome study's per-subject tables, for the Patients page
 
 data/example_analysis/  a real 60 s analysis, so the app works on a fresh clone
 
 notebooks/            seven Colab notebooks (all but 06 built by scripts/build_notebooks.py)
-tests/                453 offline tests (synthetic data + a mock model server)
+tests/                620 offline tests (synthetic data + a mock model server)
 docs/                 everything above
 ```
 

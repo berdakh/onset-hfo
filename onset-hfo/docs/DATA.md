@@ -357,7 +357,31 @@ simulator defaults to 2000 Hz for exactly that reason.
 
 ## Using your own data
 
-Three ways, in increasing order of effort.
+**The desktop reviewer does this with a file dialog.** *Review → Open a file…*
+reads EDF, BDF, GDF, BrainVision, Persyst, Nihon Kohden, Nicolet, Curry,
+Blackrock, Neuralynx, MEF3, EEGLAB, EGI, Neuroscan, Eximia and FIF through
+`onset_hfo.io`, which dispatches on the extension to one of MNE's readers and
+returns the same `Recording` the archive loader returns. It confirms the
+channel types with you first; see [`CLINICAL_GUIDE.md` §5](CLINICAL_GUIDE.md).
+In code that is one call:
+
+```python
+from onset_hfo.io import channel_overview, open_recording
+
+channel_overview("/path/to/recording.edf")       # what the file claims, per channel
+rec = open_recording("/path/to/recording.edf", t_start=0, t_stop=60,
+                     subject="anon-01", line_freq=50.0,
+                     channel_types={"A1": "seeg", "EKG": "ecg"})
+```
+
+`channel_types` is not optional in practice. A clinical export declares every
+channel `eeg`, the pipeline analyses anything typed eeg, ecog or seeg, and
+nothing downstream can tell a depth electrode from an EKG lead. `open_recording`
+crops before it loads, so a 60 s window of a 40 GB overnight file costs what
+60 s costs, and the recording carries its offset so every reported time is a
+time in the original recording.
+
+The rest of this section is what to do when that is not enough.
 
 **1. A different recording from the same archive.**
 

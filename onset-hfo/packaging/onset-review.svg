@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <title>Onset Review</title>
+  <!-- A trace with a burst on it: the one thing the software is about. -->
+  <rect width="128" height="128" rx="24" fill="#12263f"/>
+  <path d="M10 70 q6 -8 12 0 t12 0 t12 0" fill="none" stroke="#7fb0e0"
+        stroke-width="3" stroke-linecap="round"/>
+  <path d="M46 70 l2 -22 l3 42 l3 -46 l3 44 l3 -36 l3 30 l3 -22 l3 14 l2 -8"
+        fill="none" stroke="#f05a5a" stroke-width="3.5" stroke-linecap="round"
+        stroke-linejoin="round"/>
+  <path d="M73 70 q6 -8 12 0 t12 0 t12 0 t9 0" fill="none" stroke="#7fb0e0"
+        stroke-width="3" stroke-linecap="round"/>
+  <rect x="44" y="26" width="30" height="88" rx="4" fill="#f05a5a"
+        opacity="0.14"/>
+  <text x="64" y="106" font-family="DejaVu Sans, sans-serif" font-size="15"
+        fill="#9fc4e8" text-anchor="middle">80–500 Hz</text>
+</svg>

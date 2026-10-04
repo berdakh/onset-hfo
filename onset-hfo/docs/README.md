@@ -13,6 +13,16 @@ transfer gap, what a handful of labels buys, calibration, the agent, and the
 attempts to break it. Every section ends with what the result actually
 justifies claiming. It is self-contained — one file, no build step.
 
+## "I want to sit with the signal for an afternoon"
+
+[**INSTALL.md**](INSTALL.md) — **Onset Review**, the desktop application:
+`./packaging/install-ubuntu.sh --with-sample && onset-review`. MNE's iEEG trace
+browser with the detector's marks on it, the archive annotators' marks beside
+them, a Persyst-style activity trend above, and the ranked channels and
+confidence intervals around it. Then
+[**CLINICAL_GUIDE.md**](CLINICAL_GUIDE.md) — what the panels mean, what the
+screen supports concluding, and the four things never to conclude from it.
+
 ## "I just want to click around in it"
 
 **[https://onsetnu.streamlit.app/](https://onsetnu.streamlit.app/)** — deployed, no install, no account.
@@ -111,6 +121,7 @@ Read in this order:
 | Which contacts were resected, and how is that mapped to channels? | [`onset_hfo/clinical.py`](../onset_hfo/clinical.py) |
 | How is the outcome study computed, and what are its statistics? | [`onset_hfo/outcome.py`](../onset_hfo/outcome.py) |
 | What does the interface decide, and what does it only display? | [`app/panels.py`](../app/panels.py) |
+| What does the desktop window show, and where does each number come from? | [`onset_review/session.py`](../onset_review/session.py) and [`onset_review/trends.py`](../onset_review/trends.py) |
 | Does a result survive a change of analysis window? | [`onset_hfo/stability.py`](../onset_hfo/stability.py) |
 
 ## A note on how this repository is written
