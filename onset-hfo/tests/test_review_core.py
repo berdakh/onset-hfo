@@ -653,3 +653,47 @@ def test_a_bare_filename_means_the_same_as_open(tmp_path, capsys):
     recording.write_bytes(b"")
     assert main([str(recording), "--no-confirm"]) == EXIT_FAILED
     assert "--all-channels-as" in capsys.readouterr().err
+
+
+def test_every_cli_command_this_project_tells_people_to_run_exists():
+    """The installer, the docs and the GUI all name `onset_hfo.cli` commands.
+
+    `fetch` was named in five places and implemented in none, so
+    `install-ubuntu.sh --with-sample` had never once worked: it printed
+    argparse's "invalid choice" and then blamed the network, and the reviewer
+    opened with an empty cache and advice to re-run the flag that had just
+    failed. Nobody noticed because nothing executed those strings — a
+    documented command is only as real as something that runs it.
+
+    So this reads the strings back out of the files that print them and checks
+    each against the parser. It is the same shape as the no-Qt guard above and
+    exists for the same reason: the check has to come from the files rather
+    than from a list someone remembers to update.
+    """
+    import pathlib as _pathlib
+    import re
+
+    from onset_hfo.cli import build_parser
+
+    root = _pathlib.Path(__file__).resolve().parent.parent
+    sources = [root / "packaging" / "install-ubuntu.sh",
+               root / "docs" / "INSTALL.md",
+               root / "onset_review" / "launcher.py",
+               root / "onset_review" / "app.py",
+               root / "onset_hfo" / "cli.py"]
+
+    known = set(build_parser()._subparsers._group_actions[0].choices)
+    assert "fetch" in known, "the command the installer runs has to exist"
+
+    named: dict[str, list[str]] = {}
+    for path in sources:
+        if not path.exists():
+            continue
+        for command in re.findall(r"onset_hfo\.cli\s+([a-z_]+)", path.read_text()):
+            named.setdefault(command, []).append(path.name)
+
+    assert named, "found no commands to check; have these files changed shape?"
+    unknown = {c: sorted(set(w)) for c, w in named.items() if c not in known}
+    assert not unknown, (
+        "these are told to users but are not commands: "
+        + "; ".join(f"{c} (in {', '.join(w)})" for c, w in unknown.items()))

@@ -133,10 +133,12 @@ command -v update-desktop-database >/dev/null \
 # -- 5. a recording to open --------------------------------------------------
 if [[ "${WITH_SAMPLE}" == "1" ]]; then
   say "Fetching one minute of sub-01 from OpenNeuro ds003498"
-  (cd "${HERE}" && "${VENV_PY}" -m onset_hfo.cli fetch \
-      --subject sub-01 --t-start 0 --t-stop 60) \
-    || warn "the fetch failed; the software is installed, there is just nothing
-cached to open yet. Try again on a machine with network access."
+  if ! (cd "${HERE}" && "${VENV_PY}" -m onset_hfo.cli fetch \
+          --subject sub-01 --t-start 0 --t-stop 60); then
+    SAMPLE_FAILED=1
+    warn "the fetch failed -- its own error is above this line. The software is
+installed and works; there is just nothing cached to open yet."
+  fi
 fi
 
 CACHED="$(cd "${HERE}" && "${VENV_PY}" -c \
@@ -145,17 +147,37 @@ CACHED="$(cd "${HERE}" && "${VENV_PY}" -c \
 
 say "Done."
 echo
-echo "  Launch:      onset-review          (or 'Onset Review' in the menu)"
-echo "  Cached:      ${CACHED} window(s) ready to open offline"
-echo "  List them:   onset-review --list"
-echo "  Straight in: onset-review --subject sub-01 --window 0 60 --expert"
-echo
+
+# The PATH note comes first. Printing "Launch: onset-review" and only then
+# that the directory is not on PATH means the first thing the reader tries is
+# the thing that cannot work -- which is exactly what happens when the install
+# line ends in `&& onset-review`.
+LAUNCH="onset-review"
 if ! printf '%s' ":${PATH}:" | grep -q ":${BIN_DIR}:"; then
-  warn "${BIN_DIR} is not on your PATH. Add this to ~/.bashrc:"
+  LAUNCH="${BIN_DIR}/onset-review"
+  warn "${BIN_DIR} is not on your PATH, so plain 'onset-review' will not be
+found in this shell. Either use the full path below, or add this to ~/.bashrc
+and open a new terminal:"
   echo "    export PATH=\"${BIN_DIR}:\${PATH}\""
+  echo
 fi
+
+echo "  Launch:      ${LAUNCH}          (or 'Onset Review' in the menu)"
+echo "  Cached:      ${CACHED} window(s) ready to open offline"
+echo "  List them:   ${LAUNCH} --list"
+echo "  Straight in: ${LAUNCH} --subject sub-01 --window 0 60 --expert"
+echo
 if [[ "${CACHED}" == "0" ]]; then
-  warn "Nothing is cached yet. Re-run with --with-sample, or:"
+  # Never advise re-running the flag that has just failed.
+  if [[ "${SAMPLE_FAILED:-0}" == "1" ]]; then
+    warn "Nothing is cached, because the fetch above did not succeed. Once the
+network is available, run:"
+  else
+    warn "Nothing is cached yet. Re-run with --with-sample, or:"
+  fi
   echo "    cd ${HERE} && ${VENV_PY} -m onset_hfo.cli fetch --subject sub-01 --t-start 0 --t-stop 60"
+  echo
+  echo "  You can also open a recording of your own without any of this:"
+  echo "    ${LAUNCH} --open /path/to/recording.edf"
 fi
 echo "Research prototype — not a medical device. See docs/LIMITATIONS.md."

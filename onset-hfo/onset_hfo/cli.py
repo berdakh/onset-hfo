@@ -6,6 +6,7 @@
                                --start 50 --stop 110 --figures
     python -m onset_hfo.cli evaluate --seeds 1 7 42      # measure the detectors
     python -m onset_hfo.cli runs --subject sub-pt01      # what else is in the archive
+    python -m onset_hfo.cli fetch --subject sub-01       # cache a window for the reviewer
 
 Every command prints where it wrote its results, because the agent
 (``python -m onset_agent.cli --results <dir>``) reads exactly that directory.
@@ -20,6 +21,7 @@ from pathlib import Path
 
 from onset_hfo.benchmark import DEFAULT_THRESHOLDS
 from onset_hfo.config import (
+    DATASETS,
     DEFAULT_RUN,
     DEFAULT_SUBJECT,
     DEFAULT_TASK,
@@ -389,6 +391,44 @@ def _cmd_review(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_fetch(args: argparse.Namespace) -> int:
+    """Put one window in the cache, so the reviewer can open it offline.
+
+    This is the only command here whose point is the *side effect*: it analyses
+    nothing and prints nothing but a path. The desktop reviewer refuses to
+    reach for the network on its own -- a clinician should never discover
+    mid-click that the thing they chose needs 700 MB over a hospital
+    connection -- so something has to fill the cache first, and this is it.
+
+    Its dataset default differs from every other command's, deliberately.
+    `DATASET` is `ds003029`, the ictal archive, whose subjects are named
+    `sub-pt01`; the reviewer is built around `ds003498`, whose subjects are
+    `sub-01` and which is the one carrying expert HFO markings. A `fetch`
+    that inherited the global default would send `--subject sub-01` to the
+    wrong archive and fail with a 404 about a path nobody asked for.
+    """
+    from onset_hfo.datasets import fetch_slice
+
+    ensure_dirs()
+    try:
+        recording = fetch_slice(
+            dataset=args.dataset, subject=args.subject, task=args.task,
+            run=args.run, t_start=args.t_start, t_stop=args.t_stop,
+            force=args.force, verbose=True)
+    except Exception as problem:
+        print(f"[onset-hfo] could not fetch {args.subject} "
+              f"{args.t_start:g}-{args.t_stop:g} s from {args.dataset}: "
+              f"{type(problem).__name__}: {problem}", file=sys.stderr)
+        return 1
+
+    print(f"[onset-hfo] cached {recording.subject} "
+          f"{args.t_start:g}-{args.t_stop:g} s: {len(recording.ch_names)} "
+          f"channels at {recording.sfreq:g} Hz, {recording.duration:g} s")
+    print(f"[onset-hfo] open it with:  onset-review --subject {recording.subject} "
+          f"--window {args.t_start:g} {args.t_stop:g}")
+    return 0
+
+
 def _cmd_runs(args: argparse.Namespace) -> int:
     from onset_hfo.datasets import list_runs
 
@@ -545,6 +585,23 @@ def build_parser() -> argparse.ArgumentParser:
     stab.add_argument("--no-figure", action="store_true")
     stab.add_argument("--out", default=None, help=f"output directory (default: {RESULTS_DIR})")
     stab.set_defaults(func=_cmd_stability)
+
+    fetch = sub.add_parser(
+        "fetch", help="download one window into the cache, for the reviewer to "
+                      "open offline")
+    # ds003498 rather than the global default: see _cmd_fetch.
+    fetch.add_argument("--dataset", default="ds003498", choices=sorted(DATASETS),
+                       help="(default: %(default)s, the archive with expert "
+                            "HFO markings)")
+    fetch.add_argument("--subject", default="sub-01")
+    fetch.add_argument("--task", default=None)
+    fetch.add_argument("--run", default=None)
+    fetch.add_argument("--t-start", type=float, default=0.0,
+                       help="seconds into the recording (default: %(default)s)")
+    fetch.add_argument("--t-stop", type=float, default=60.0)
+    fetch.add_argument("--force", action="store_true",
+                       help="download again even if this window is cached")
+    fetch.set_defaults(func=_cmd_fetch)
 
     runs = sub.add_parser("runs", help="list the runs available for a subject in the archive")
     runs.add_argument("--subject", default=DEFAULT_SUBJECT)
