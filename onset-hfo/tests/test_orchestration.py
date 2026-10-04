@@ -883,6 +883,48 @@ def test_a_silent_stricter_pass_annihilates_the_ranking():
         "a window with score left has no excuse for a missing leader"
 
 
+def test_the_ablations_copy_of_the_rule_still_matches_the_planners():
+    """The ablation transcribes `rank_channels` rather than calling it, because
+    the planner reads an evidence store and the ablation reads count series.
+    Two copies of a rule is how one of them gets fixed and the other does not,
+    so they are pinned against each other -- on the ordinary case, and on the
+    silent re-test that is the whole reason the rule was changed.
+    """
+    import sys
+
+    from onset_hfo.config import PROJECT_ROOT
+
+    scripts = str(PROJECT_ROOT / "scripts")
+    if scripts not in sys.path:
+        sys.path.insert(0, scripts)
+    from run_robustness_ablation import _robustness
+
+    survey = pd.Series({"Z1-Z2": 12.0, "M1-M2": 6.0, "A1-A2": 3.0})
+
+    def planner_factors(stricter: dict, n_accepted: int) -> dict:
+        store = EvidenceStore(subject="sub-01")
+        store.append(ToolRun(run_id="s", tool="detect_hfo", input={}, output={
+            "threshold_sd": 3.0, "n_accepted": int(survey.sum()),
+            "channels": {c: {"rate_per_min": v} for c, v in survey.items()}}))
+        store.append(ToolRun(run_id="x", tool="detect_hfo", input={}, output={
+            "threshold_sd": 5.0, "n_accepted": n_accepted,
+            "channels": {c: {"rate_per_min": v} for c, v in stricter.items()}}))
+        return {r.channel: r.robustness for r in rank_channels(store)}
+
+    # A real re-test: both demote the same channels by the same factors.
+    partial = {"Z1-Z2": 9.0, "M1-M2": 0.0, "A1-A2": 0.0}
+    factors, silent = _robustness(survey, pd.Series(partial))
+    assert silent is False
+    assert factors == pytest.approx(planner_factors(partial, 9))
+
+    # A silent re-test: both refuse to fire, so no score is annihilated.
+    quiet = dict.fromkeys(survey.index, 0.0)
+    factors, silent = _robustness(survey, pd.Series(quiet))
+    assert silent is True
+    assert factors == pytest.approx(planner_factors(quiet, 0))
+    assert set(factors.values()) == {1.0}
+
+
 def test_the_tie_aware_metric_is_undefined_for_a_multiplied_score():
     """Structural, and independent of every AUC in §6c.
 
