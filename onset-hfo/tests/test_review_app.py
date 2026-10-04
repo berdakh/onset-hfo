@@ -1189,6 +1189,46 @@ def test_the_assistant_still_opens_on_no_model_when_nothing_is_configured(
     assert "nothing" in panel._defaults.source
 
 
+def test_the_panel_discovers_a_served_model_and_answers_through_it(
+        qapp, review, monkeypatch, tmp_path):
+    """The whole assistant path, through the real panel: a served model on
+    localhost is discovered by the probe with nothing configured, the panel
+    opens on it, a question goes through the worker thread and the real agent
+    loop, the guards pass an honest answer, and the citation is a link.
+
+    The model is a protocol-faithful fake (tests/_fake_ollama.py) that does
+    what the system prompt asks -- survey, evidence, cite -- so this exercises
+    the success path rather than the refusal path random weights produce.
+    """
+    from _fake_ollama import FakeOllama
+
+    from onset_agent.tools import dispatch
+    from onset_review.assistant import AssistantPanel
+
+    monkeypatch.setenv("ONSET_REVIEW_CONFIG_DIR", str(tmp_path))   # no installer file
+    monkeypatch.delenv("ONSET_ASSISTANT_BACKEND", raising=False)
+    monkeypatch.delenv("ONSET_ASSISTANT_NO_PROBE", raising=False)   # let it look
+    with FakeOllama() as fake:
+        monkeypatch.setenv("OLLAMA_HOST", fake.base)
+        panel = AssistantPanel(review)
+        try:
+            assert panel.backend.currentData() == "ollama"
+            assert panel.model.text() == fake.tag
+            assert "localhost" in panel._defaults.source
+
+            panel.ask("Which channel had the highest ripple rate?")
+
+            leader = dispatch(panel._store, "top_channels", {"k": 1})["channels"][0]
+            text = panel.transcript.toPlainText()
+            assert leader["channel"] in text, text
+            assert str(leader["rate_per_min"]) in text, text
+            assert "stand behind" not in text          # not a refusal
+            assert 'href="' in panel.transcript.toHtml()  # the citation is clickable
+            assert [c[2] for c in fake.calls] == [0, 1, 2]
+        finally:
+            panel.deleteLater()
+
+
 def test_the_default_backend_runs_no_model():
     from onset_review.assistant import BACKENDS
 

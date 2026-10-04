@@ -31,7 +31,13 @@ __all__ = ["AssistantDefaults", "CONFIG_NAME", "config_path", "load_defaults",
            "write_defaults"]
 
 CONFIG_NAME = "assistant.json"
+#: Kept for callers that imported it; the live value follows ``OLLAMA_HOST``.
 DEFAULT_BASE_URL = "http://127.0.0.1:11434/v1"
+
+
+def default_base_url() -> str:
+    from onset_agent.hardware import ollama_url
+    return ollama_url().rstrip("/") + "/v1"
 KINDS = ("scripted", "ollama", "openai_compat")
 
 #: Short on purpose: a refused connection on localhost returns immediately, so
@@ -124,7 +130,7 @@ def _from_live_ollama(probe) -> AssistantDefaults | None:
     for tag in reversed(known):
         if tag in lowered or f"{tag}:latest" in lowered:
             return AssistantDefaults(kind="ollama", model=tag,
-                                     base_url=DEFAULT_BASE_URL,
+                                     base_url=default_base_url(),
                                      source=f"Ollama on localhost has {tag}")
     return None
 

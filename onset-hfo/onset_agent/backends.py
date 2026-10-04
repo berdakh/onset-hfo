@@ -228,10 +228,20 @@ def _describe_rejection(base_url: str, exc) -> str:
     return text
 
 class OllamaBackend(OpenAICompatBackend):
-    """A local Ollama server. ``ollama pull qwen2.5:7b-instruct`` and go."""
+    """A local Ollama server. ``ollama pull qwen2.5:7b-instruct`` and go.
+
+    The default URL follows ``OLLAMA_HOST`` the way Ollama itself does, read
+    when the backend is built rather than when this module was imported.
+    Found by the desktop panel's own test: it *discovered* a server on a moved
+    port through the same variable, opened on its model, and then tried to
+    talk to 127.0.0.1:11434 -- finding the model and failing to reach it.
+    """
 
     def __init__(self, model: str = DEFAULT_OLLAMA_MODEL,
-                 base_url: str = "http://127.0.0.1:11434/v1", **kwargs):
+                 base_url: str | None = None, **kwargs):
+        if base_url is None:
+            from onset_agent.hardware import ollama_url
+            base_url = ollama_url().rstrip("/") + "/v1"
         super().__init__(model=model, base_url=base_url, **kwargs)
 
 

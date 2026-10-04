@@ -183,6 +183,10 @@ it. Ollama runs the quantised model on CPU or GPU alike. The in-process route is
 still there for anyone who wants it: `pip install 'onset-hfo[llm]'` and
 `--backend transformers`.
 
+If your Ollama listens somewhere other than `127.0.0.1:11434`, set
+`OLLAMA_HOST` the way Ollama itself reads it (`host:port`, or a URL); the
+installer, `onset-agent --backend auto` and the reviewer's panel all follow it.
+
 Any OpenAI-compatible server (vLLM, llama.cpp's `llama-server`, LM Studio)
 works too: pick **OpenAI-compatible server** in the panel and give it the URL —
 and give *that* server a context of at least 4096 as well (`-c 8192` for

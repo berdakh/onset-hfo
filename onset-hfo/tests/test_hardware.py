@@ -673,3 +673,21 @@ def test_the_cli_turns_a_missing_daemon_into_a_message_not_a_traceback(
     assert "cannot start a local model" in out
     assert "ollama serve" in out and "ollama pull" in out
     assert "Traceback" not in out
+
+
+@pytest.mark.parametrize("value, expected", [
+    ("", "http://127.0.0.1:11434"),
+    ("127.0.0.1:11434", "http://127.0.0.1:11434"),
+    ("0.0.0.0:11434", "http://127.0.0.1:11434"),
+    ("http://box:11434", "http://box:11434"),
+    ("http://box:11434/", "http://box:11434"),
+    (":8080", "http://127.0.0.1:8080"),
+    ("box", "http://box:11434"),
+])
+def test_ollama_host_is_honoured_in_every_spelling_ollama_accepts(value, expected):
+    """Ollama's own variable, read at call time: a person who moved their
+    server with it expects this project to follow, and a test can point the
+    probe at a fake on a free port."""
+    from onset_agent.hardware import ollama_url
+
+    assert ollama_url({"OLLAMA_HOST": value}) == expected

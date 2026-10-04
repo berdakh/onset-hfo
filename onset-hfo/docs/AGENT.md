@@ -292,6 +292,24 @@ before `ollama serve`, or `PARAMETER num_ctx 8192` in a Modelfile; `-c 8192`
 for `llama-server`; `--max-model-len` for vLLM. `--hardware` says so on the
 Ollama route.
 
+**The assistant answering correctly through a served model has been run too,
+and is a permanent test.** Random weights can only show the refusal path, so
+[`tests/_fake_ollama.py`](../tests/_fake_ollama.py) is a protocol-faithful
+stand-in for Ollama — not a language model but an oracle that does what the
+system prompt asks: `top_channels`, then `get_evidence` for the leader, then an
+answer citing it. Everything between the reviewer and it is the shipped code.
+[`tests/test_served_assistant.py`](../tests/test_served_assistant.py) drives
+`--backend auto` through it (discovery, no needless pull, a correct answer with
+a real evidence id, the CLI printing `[answer]`), and a lying variant that
+states a rate it never retrieved is **refused over the same wire** — without
+that, the honest run would prove only that the oracle is polite. The Qt suite
+does the same through the real desktop panel: it discovers the server by probe
+with nothing configured, opens on its model, asks through the worker thread,
+and shows a clickable citation. That test found a bug on its first run: the
+panel discovered a server on a moved port and then dialled the hard-coded
+default. `OllamaBackend` now follows **`OLLAMA_HOST`** — Ollama's own
+variable, in every spelling Ollama accepts — read when the backend is built.
+
 **What has not been run: a real download.** No Qwen weights have been fetched
 in this project's development container — `huggingface.co` is blocked there, and
 the 403 is what verifies the "the Hub may be blocked" error path rather than

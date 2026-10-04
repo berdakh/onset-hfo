@@ -48,6 +48,7 @@ __all__ = [
     "ModelSpec",
     "NotEnoughRoom",
     "OLLAMA_URL",
+    "ollama_url",
     "OllamaModelMissing",
     "OllamaNotRunning",
     "QUANTIZATIONS",
@@ -89,8 +90,32 @@ _BYTES = {"fp32": 4.0, "fp16": 2.0, "8bit": 1.0, "4bit": 0.6, "q4": 0.6}
 ROUTES = ("transformers", "ollama")
 
 #: Where Ollama listens by default. The backend speaks to ``/v1``; the probe
-#: reads ``/api/tags`` to see what is pulled.
+#: reads ``/api/tags`` to see what is pulled. :func:`ollama_url` is what the
+#: code actually consults, because Ollama's own ``OLLAMA_HOST`` may move it.
 OLLAMA_URL = "http://127.0.0.1:11434"
+
+
+def ollama_url(env: dict | None = None) -> str:
+    """The Ollama endpoint, honouring ``OLLAMA_HOST`` the way Ollama does.
+
+    Ollama reads ``OLLAMA_HOST`` in several spellings -- ``127.0.0.1:11434``,
+    ``0.0.0.0:11434``, ``http://box:11434``, a bare ``:8080`` -- and a person
+    who moved their server with it would reasonably expect this project to
+    follow. Read at call time rather than import time, so a test can point it
+    at a server on a free port and so a shell that sets it late still wins.
+    """
+    raw = (os.environ if env is None else env).get("OLLAMA_HOST", "").strip()
+    if not raw:
+        return OLLAMA_URL
+    if "://" not in raw:
+        raw = "http://" + raw
+    scheme, _, rest = raw.partition("://")
+    host, _, port = rest.rstrip("/").partition(":")
+    if not host or host == "0.0.0.0":
+        host = "127.0.0.1"
+    if not port:
+        port = "11434"
+    return f"{scheme}://{host}:{port}"
 
 #: On a CPU the agent makes several model calls per question, and a 14B at Q4
 #: answers at a couple of tokens a second. Memory would allow it on a 32 GB
@@ -843,7 +868,7 @@ class OllamaModelMissing(RuntimeError):
     """Ollama is up but has not pulled the tag the choice needs."""
 
 
-def ollama_status(base_url: str = OLLAMA_URL, timeout: float = 2.0) -> tuple[bool, list[str]]:
+def ollama_status(base_url: str | None = None, timeout: float = 2.0) -> tuple[bool, list[str]]:
     """Is an Ollama server up, and which tags has it pulled?
 
     Reads ``/api/tags``, which lists local models. Two seconds is plenty for a
@@ -854,6 +879,7 @@ def ollama_status(base_url: str = OLLAMA_URL, timeout: float = 2.0) -> tuple[boo
     import urllib.error
     import urllib.request
 
+    base_url = base_url or ollama_url()
     try:
         with urllib.request.urlopen(f"{base_url.rstrip('/')}/api/tags",
                                     timeout=timeout) as response:
@@ -864,11 +890,12 @@ def ollama_status(base_url: str = OLLAMA_URL, timeout: float = 2.0) -> tuple[boo
     return True, names
 
 
-def ollama_pull(tag: str, base_url: str = OLLAMA_URL, timeout: float = 3600.0) -> None:
+def ollama_pull(tag: str, base_url: str | None = None, timeout: float = 3600.0) -> None:
     """Ask a running Ollama to pull ``tag``. Blocks until it has."""
     import json
     import urllib.request
 
+    base_url = base_url or ollama_url()
     body = json.dumps({"name": tag, "stream": False}).encode("utf-8")
     request = urllib.request.Request(f"{base_url.rstrip('/')}/api/pull", data=body,
                                      headers={"Content-Type": "application/json"})
@@ -889,7 +916,7 @@ def _has_tag(wanted: str, names: list[str]) -> bool:
 
 def auto_backend(machine: Machine | None = None, *, prefer: str | None = None,
                  download: bool = True, route: str | None = None,
-                 base_url: str = OLLAMA_URL):
+                 base_url: str | None = None):
     """Probe, choose, fetch and build a ready backend. The one-call path.
 
     On the Ollama route this checks for a running server, pulls the tag if it
@@ -905,6 +932,7 @@ def auto_backend(machine: Machine | None = None, *, prefer: str | None = None,
     """
     machine = probe(machine)
     choice = choose(machine, prefer=prefer, route=route)
+    base_url = base_url or ollama_url()
 
     if choice.route == "ollama":
         from onset_agent.backends import OllamaBackend

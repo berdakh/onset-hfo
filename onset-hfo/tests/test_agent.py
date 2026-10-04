@@ -343,3 +343,17 @@ def test_a_rejection_without_a_json_body_still_shows_the_status(store, mock_serv
         backend.chat([{"role": "user", "content": "hi"}], [])
     assert "HTTP 503" in str(raised.value)
     assert "model is loading" in str(raised.value)
+
+
+def test_the_ollama_backend_follows_ollama_host(monkeypatch):
+    """Found by the panel's end-to-end test: the probe followed OLLAMA_HOST to
+    a server on another port, the panel opened on its model, and the backend
+    then dialled the hard-coded default and could not reach it."""
+    from onset_agent.backends import OllamaBackend
+
+    monkeypatch.delenv("OLLAMA_HOST", raising=False)
+    assert OllamaBackend().base_url == "http://127.0.0.1:11434/v1"
+    monkeypatch.setenv("OLLAMA_HOST", "0.0.0.0:43210")
+    assert OllamaBackend().base_url == "http://127.0.0.1:43210/v1"
+    # An explicit URL still wins.
+    assert OllamaBackend(base_url="http://box:1/v1").base_url == "http://box:1/v1"
