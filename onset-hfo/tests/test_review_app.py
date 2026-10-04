@@ -74,6 +74,94 @@ def test_every_panel_is_docked(built):
     assert all(dock.widget() is not None for dock in built.docks.values())
 
 
+#: The smallest screen this has to work on: the 1366x768 panel still shipped
+#: on budget laptops, minus a 40 px top bar or taskbar. A window whose minimum
+#: is larger than this does not merely overflow -- X11 window managers read the
+#: size hints and withhold the maximise button from a window that cannot be
+#: maximised into the work area, which is how the symptom was first reported.
+SMALL_SCREEN = (1366, 728)
+
+
+def test_the_window_can_shrink_to_a_small_laptop_screen(built):
+    """Nothing in the window is allowed to put a floor under the whole thing.
+
+    Qt builds a main window's minimum size by summing each dock column's
+    minimums, so one panel that insists on 360 px of height makes the window
+    insist on it too. This is the test that keeps that from creeping back: the
+    preferred sizes are free to be generous, the minimums are not.
+    """
+    minimum = built.host.minimumSizeHint()
+    assert minimum.width() <= SMALL_SCREEN[0], (
+        f"window cannot be made narrower than {minimum.width()} px")
+    assert minimum.height() <= SMALL_SCREEN[1], (
+        f"window cannot be made shorter than {minimum.height()} px")
+
+
+def test_fitting_to_the_screen_reports_whether_it_had_to_clamp(qapp):
+    """`fit_to_screen` is the launcher's cue to open maximised instead.
+
+    Against a bare `QMainWindow` rather than the review window, because this
+    is the geometry rule on its own and it has to be testable on whatever
+    screen the suite is running against -- including the 800x800 one Qt's
+    offscreen platform reports, which is smaller than the review window's
+    minimum and so could never exercise the "already fits" branch.
+    """
+    from onset_review import window
+
+    host = qt.QMainWindow()
+    try:
+        area = window.work_area(host)
+        assert area is not None, "no screen to fit to"
+
+        host.resize(area.width() + 400, area.height() + 400)
+        assert window.fit_to_screen(host) is True
+        assert host.size().width() <= area.width()
+        assert host.size().height() <= area.height()
+        # Centred on what is left, not abandoned at a corner off the screen.
+        assert area.contains(host.geometry())
+
+        # A window that already fits is left exactly as it was.
+        host.resize(area.width() // 2, area.height() // 2)
+        kept = host.size()
+        assert window.fit_to_screen(host) is False
+        assert host.size() == kept
+    finally:
+        host.close()
+
+
+def test_the_view_menu_can_maximise_and_go_full_screen(built):
+    """The menu entries exist, and they are the ones a shortcut can reach.
+
+    Asserted rather than assumed because the window manager's own buttons are
+    not dependable here -- that is the whole reason these were added.
+    """
+    view = [action.menu() for action in built.host.menuBar().actions()
+            if "View" in action.text()][0]
+    entries = {action.text().replace("&", ""): action
+               for action in view.actions() if action.text()}
+    assert "Fit the window to this screen" in entries
+    assert entries["Maximise window"].isCheckable()
+    assert entries["Full screen"].shortcut().toString() == "F11"
+    assert "Restore the default layout" in entries
+
+
+def test_restoring_the_default_layout_undoes_a_dock_drag(built):
+    """A dragged-out panel has to be recoverable; Qt has no undo for one."""
+    view = [action.menu() for action in built.host.menuBar().actions()
+            if "View" in action.text()][0]
+    restore = [action for action in view.actions()
+               if action.text().replace("&", "") == "Restore the default layout"][0]
+    brain = built.docks["brain"]
+    was_floating = brain.isFloating()
+    try:
+        brain.setFloating(True)
+        assert brain.isFloating()
+        restore.trigger()
+        assert not brain.isFloating()
+    finally:
+        brain.setFloating(was_floating)
+
+
 def test_the_caveat_is_on_the_status_bar(built, review):
     """It is not allowed to be somewhere a reviewer might not look."""
     label = built.host.statusBar().findChild(qt.QLabel, "onset_caveat")

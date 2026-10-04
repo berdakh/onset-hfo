@@ -52,6 +52,7 @@ from onset_review.preprocessing import PreprocessPanel
 from onset_review.session import BAND_COLOURS, ReviewSession, annotations_for
 
 __all__ = ["decorate", "open_trace", "has_dock_host", "marks_for",
+           "fit_to_screen", "work_area",
            "ReviewWindowParts", "MARK_SCOPES"]
 
 #: How much of the detection gets drawn on the trace. This is the single most
@@ -79,6 +80,76 @@ DEFAULT_N_CHANNELS = 12
 #: Volts per display unit. 50 µV is the scale the HFO literature plots filtered
 #: ripples at; the reviewer rescales with the usual MNE keys from there.
 DEFAULT_SCALING = 50e-6
+
+#: The opening layout, as a fraction of the screen's work area with pixel
+#: bounds: the right-hand column of panels, then the trend strip above the
+#: trace. Fractions rather than fixed pixels because the fixed pixels were
+#: chosen against a 1680-wide window, and on a 1366x768 laptop they gave a
+#: 640 px column of panels beside a 700 px trace -- the wrong way round, since
+#: the trace is the thing being judged and the panels only describe it.
+COLUMN_FRACTION, COLUMN_BOUNDS = 0.34, (380, 640)
+TREND_FRACTION, TREND_BOUNDS = 0.22, (150, 260)
+
+#: Vertical shares of the right-hand column: the findings table, the events
+#: table, and the tab stack under them. Qt scales them to whatever height the
+#: column has, so they are a ratio as much as a size.
+COLUMN_SPLIT = (300, 240, 420)
+
+
+def work_area(widget=None):
+    """The usable rectangle of the screen `widget` is on, or None if headless.
+
+    `availableGeometry` rather than `geometry`: the taskbar, dock or top panel
+    is exactly the strip a maximised window may not have, and a window sized
+    to the full screen height opens with its status bar -- the one carrying the
+    not-a-medical-device caveat -- hidden underneath it.
+    """
+    from qtpy.QtGui import QGuiApplication
+
+    screen = None
+    if widget is not None:
+        try:
+            screen = widget.screen()
+        except AttributeError:      # Qt < 5.14 has no QWidget.screen()
+            screen = None
+    screen = screen or QGuiApplication.primaryScreen()
+    return None if screen is None else screen.availableGeometry()
+
+
+def fit_to_screen(host) -> bool:
+    """Bring `host` inside the screen's work area, and say if it did not fit.
+
+    A True return is the caller's cue to open the window maximised instead of
+    at this size.
+
+    MNE's browser picks its own opening size, around 1680x1160. That is most
+    of a 1920x1200 desktop and larger than a laptop screen in both directions,
+    so the window opened with its right-hand edge and its status bar off the
+    screen. It also opened *without a maximise button*, which is the same bug
+    seen from the window manager's side: a window whose minimum size does not
+    fit the work area cannot be maximised into it, so the button is withheld.
+    Hence both halves of the fix -- the panels' minimums came down (see
+    `theme.scrolled` and `panels.MIN_TABLE_HEIGHT`) so that the window *can*
+    fit, and this clamps the opening size so that it *does*.
+    """
+    area = work_area(host)
+    if area is None:
+        return False
+    want = host.size().expandedTo(host.minimumSizeHint())
+    over = want.width() > area.width() or want.height() > area.height()
+    host.resize(min(want.width(), area.width()),
+                min(want.height(), area.height()))
+    # Centred on what is left rather than left where it was: a window that was
+    # just made smaller is otherwise still anchored to a corner off the screen.
+    size = host.size()
+    host.move(area.x() + max(0, area.width() - size.width()) // 2,
+              area.y() + max(0, area.height() - size.height()) // 2)
+    return over
+
+
+def _share(extent: int, fraction: float, bounds: tuple) -> int:
+    low, high = bounds
+    return max(low, min(high, int(extent * fraction)))
 
 
 class ReviewWindowParts:
@@ -356,16 +427,23 @@ def decorate(figure, session: ReviewSession, show_expert: bool = False,
     # A trend squeezed to a strip is unreadable, and Qt will squeeze it unless
     # the widget itself says otherwise; `resizeDocks` alone loses to the
     # central widget's own size policy.
-    panels["trends"].setMinimumHeight(170)
+    panels["trends"].setMinimumHeight(100)
     panels["controls"].setFixedHeight(panels["controls"].sizeHint().height())
-    host.resizeDocks([docks["trends"]], [260], Qt.Vertical)
-    host.resizeDocks([docks["findings"], docks["events"], brain, helper, prep,
-                      fit, who], [640] * 7, Qt.Horizontal)
+    area = work_area(host)
+    width = area.width() if area is not None else 1680
+    height = area.height() if area is not None else 1050
+    host.resizeDocks([docks["trends"]],
+                     [_share(height, TREND_FRACTION, TREND_BOUNDS)],
+                     Qt.Vertical)
+    column = [docks["findings"], docks["events"], brain, helper, prep, fit, who]
+    host.resizeDocks(column,
+                     [_share(width, COLUMN_FRACTION, COLUMN_BOUNDS)]
+                     * len(column), Qt.Horizontal)
     # Vertical shares for the right-hand column. Without these the 3D view's
     # own minimum height wins the whole column and the two tables above it are
     # left showing one row each.
     host.resizeDocks([docks["findings"], docks["events"], brain],
-                     [300, 240, 420], Qt.Vertical)
+                     list(COLUMN_SPLIT), Qt.Vertical)
 
     parts = ReviewWindowParts(figure, host, panels, docks, session)
     parts.display = display
@@ -519,6 +597,9 @@ def _menus(figure, host: QMainWindow, panels: dict, docks: dict,
     expert.toggled.connect(
         lambda on: (setattr(display, "expert", bool(on)), parts.refresh_marks()))
 
+    view.addSeparator()
+    _window_actions(view, host)
+
     navigate = menubar.addMenu("&Navigate")
     navigate.addAction("&Next event", lambda: panels["events"].step(+1))
     navigate.addAction("&Previous event", lambda: panels["events"].step(-1))
@@ -537,6 +618,91 @@ def _menus(figure, host: QMainWindow, panels: dict, docks: dict,
     help_menu.addAction("What am I looking at?", lambda: _about(host, session))
     help_menu.addAction("Keyboard shortcuts (MNE trace)",
                         lambda: _shortcuts(figure, host))
+
+
+def _name_mnes_widgets(host: QMainWindow) -> None:
+    """Give MNE's own dock and toolbar an `objectName`, so state can be saved.
+
+    `QMainWindow.saveState` keys everything by object name and warns on stderr
+    about each widget that has none -- and MNE's annotation dock and tool bar
+    have none. Naming them here both silences that and makes the saved state
+    complete, so restoring a layout puts MNE's widgets back too rather than
+    leaving them wherever they happened to be.
+    """
+    from qtpy.QtWidgets import QToolBar
+
+    for widget in host.findChildren(QDockWidget) + host.findChildren(QToolBar):
+        if not widget.objectName():
+            widget.setObjectName(f"mne_{type(widget).__name__}")
+
+
+def _window_actions(view, host: QMainWindow) -> None:
+    """Fit, maximise and full screen, in the View menu.
+
+    The window manager's own buttons are the usual way to do this, and they
+    are kept -- but they are not reliable here. A window larger than the work
+    area gets its maximise button withheld by some window managers, and under
+    a tiling or a minimal one there is no title bar to put a button on. A menu
+    entry with a shortcut works in every case, and "fit to this screen" is
+    something no title bar offers at all: it is the one to reach for after
+    moving the window to a second monitor, or after a dock layout has pushed
+    the window wider than the screen.
+
+    `triggered` rather than `toggled` for the two checkable entries, so that
+    re-syncing the ticks when the menu opens does not itself maximise the
+    window.
+
+    The fourth entry, restoring the default dock layout, is here for the same
+    reason: it is the way back from an arrangement that no longer fits.
+    """
+    # Captured before the reviewer can drag anything, which is the point: the
+    # docks are rearrangeable and a dragged-out panel is easy to lose. Qt has
+    # no undo for a dock drag, so the default has to be kept somewhere.
+    _name_mnes_widgets(host)
+    default_layout = host.saveState()
+    restore = view.addAction("&Restore the default layout")
+    restore.setToolTip("Put the panels back where they started")
+    restore.triggered.connect(
+        lambda _=False: host.restoreState(default_layout))
+
+    shrink = view.addAction("&Fit the window to this screen")
+    shrink.setShortcut("Ctrl+0")
+    shrink.setToolTip("Resize the window to fit the screen it is on, and "
+                      "centre it")
+    # `showNormal` first: it restores the geometry the window had before it
+    # was maximised, which would otherwise undo the resize.
+    shrink.triggered.connect(lambda _=False: (host.showNormal(),
+                                              fit_to_screen(host)))
+
+    big = view.addAction("Ma&ximise window")
+    big.setShortcut("Ctrl+Shift+M")
+    big.setCheckable(True)
+    big.triggered.connect(
+        lambda on: host.showMaximized() if on else host.showNormal())
+
+    whole = view.addAction("F&ull screen")
+    whole.setShortcut("F11")
+    whole.setCheckable(True)
+
+    def set_full(on: bool) -> None:
+        if on:
+            # Remembered, because leaving full screen with `showNormal` would
+            # otherwise un-maximise a window that was maximised on the way in.
+            host.setProperty("onset_was_maximised", host.isMaximized())
+            host.showFullScreen()
+        elif host.property("onset_was_maximised"):
+            host.showMaximized()
+        else:
+            host.showNormal()
+
+    whole.triggered.connect(lambda on: set_full(bool(on)))
+
+    def sync() -> None:
+        big.setChecked(host.isMaximized())
+        whole.setChecked(host.isFullScreen())
+
+    view.aboutToShow.connect(sync)
+    sync()
 
 
 def _apply_marks(figure, session: ReviewSession, scope: str,

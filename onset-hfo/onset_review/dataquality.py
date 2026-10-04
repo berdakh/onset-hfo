@@ -51,7 +51,6 @@ from qtpy.QtWidgets import (
     QHeaderView,
     QLabel,
     QPushButton,
-    QScrollArea,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -59,7 +58,8 @@ from qtpy.QtWidgets import (
 )
 
 from onset_hfo.quality import REASONS, SET_ASIDE, quality_summary
-from onset_review.theme import SPACING, card, current, muted, section_label
+from onset_review.theme import (SPACING, card, current, muted, scrolled,
+                                 section_label)
 
 __all__ = ["QualityPanel", "COLUMNS", "REASONS", "SET_ASIDE"]
 
@@ -190,12 +190,9 @@ class QualityPanel(QWidget):
         buttons.addWidget(self.apply)
         column.addLayout(buttons)
 
-        scroll = QScrollArea()
-        scroll.setWidget(body)
-        scroll.setWidgetResizable(True)
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
-        outer.addWidget(scroll)
+        outer.addWidget(scrolled(body))
 
         self._kept = set(self._started_on[1])
         self._fill()

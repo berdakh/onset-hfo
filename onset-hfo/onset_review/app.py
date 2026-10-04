@@ -321,12 +321,25 @@ class _Review:
                                      on_preprocess=self.reanalyse,
                                      on_import=self.import_file,
                                      on_quality=self.requality)
+        maximised = False
         if state is not None:
             # Restored after the docks exist and before the window is shown, so
             # the reviewer never sees the default arrangement flash past.
             self.parts.host.restoreState(state)
             self.parts.host.resize(previous.host.size())
-        self.parts.host.show()
+            maximised = previous.host.isMaximized()
+        # MNE chooses the browser's opening size and chooses it large -- wider
+        # and taller than a laptop screen. Clamped to the screen's work area
+        # here, and opened maximised when even the clamped size was a
+        # reduction, which is what someone on a small screen wants anyway.
+        # Not on the screenshot path: that one sets its own size, and a
+        # maximised window would ignore it.
+        oversized = (self.args.screenshot is None
+                     and window.fit_to_screen(self.parts.host))
+        if oversized or maximised:
+            self.parts.host.showMaximized()
+        else:
+            self.parts.host.show()
         if previous is not None:
             try:
                 previous.figure.close()

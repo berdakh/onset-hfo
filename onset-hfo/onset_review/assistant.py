@@ -230,13 +230,25 @@ class AssistantPanel(QWidget):
             prompts.addWidget(button)
         prompts.addStretch(1)
 
-        box = QVBoxLayout(self)
-        box.setContentsMargins(4, 4, 4, 4)
+        # The model row, the transcript and the suggestions go in a scroll
+        # area; the question box stays outside it, so it is never the thing
+        # that scrolls out of view. Four stacked rows gave this panel a 160 px
+        # minimum height, and because it shares a tab stack with the other
+        # reference panels it set the floor for the whole right-hand column --
+        # and so for how short the window could be made. See `theme.scrolled`.
+        conversation = QWidget()
+        box = QVBoxLayout(conversation)
+        box.setContentsMargins(0, 0, 0, 0)
         box.setSpacing(4)
         box.addLayout(top)
         box.addWidget(self.transcript)
         box.addLayout(prompts)
-        box.addLayout(row)
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(4, 4, 4, 4)
+        outer.setSpacing(4)
+        outer.addWidget(theme.scrolled(conversation))
+        outer.addLayout(row)
 
         self.backend.currentIndexChanged.connect(self._backend_changed)
         self._backend_changed()

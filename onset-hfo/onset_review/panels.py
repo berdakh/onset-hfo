@@ -166,12 +166,19 @@ def _format(value, name: str) -> str:
     return str(value)
 
 
-#: Floor for a docked table, in pixels: a header plus about six rows. Qt
+#: Floor for a docked table, in pixels: a header plus about three rows. Qt
 #: divides a dock column by the widgets' minimum sizes, so a panel below with a
 #: large minimum (the 3D view) otherwise takes the column and leaves the tables
 #: showing a single row. `resizeDocks` does not win that argument; a minimum
 #: does.
-MIN_TABLE_HEIGHT = 150
+#:
+#: Three rows rather than the six this started at, because the same minimums Qt
+#: uses to divide the column it also sums to decide how small the window may
+#: get: three tables in one column at six rows each cost 180 px of minimum
+#: window height, which is the difference between fitting a 768 px laptop
+#: screen and not. The *preferred* heights in `window.decorate` are unchanged,
+#: so a large screen looks exactly as it did.
+MIN_TABLE_HEIGHT = 90
 
 
 def _table_view() -> QTableView:

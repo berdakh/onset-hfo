@@ -41,7 +41,6 @@ from qtpy.QtWidgets import (
     QListWidgetItem,
     QPushButton,
     QRadioButton,
-    QScrollArea,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
@@ -49,7 +48,7 @@ from qtpy.QtWidgets import (
 
 from onset_hfo.config import PreprocessConfig
 from onset_hfo.preprocess import describe
-from onset_review.theme import card
+from onset_review.theme import card, scrolled
 
 #: Re-exported: the sentence and the warnings a reviewer reads under these
 #: controls are computed in `onset_hfo.preprocess`, beside the refusals they
@@ -196,13 +195,9 @@ class PreprocessPanel(QWidget):
         column.addLayout(buttons)
         column.addStretch(1)
 
-        scroll = QScrollArea()
-        scroll.setWidget(body)
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QScrollArea.NoFrame)
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
-        outer.addWidget(scroll)
+        outer.addWidget(scrolled(body))
 
         for widget in (self.highpass, self.lowpass, self.notch_width):
             widget.valueChanged.connect(self.refresh)

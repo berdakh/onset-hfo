@@ -64,6 +64,15 @@ Every panel can be dragged, floated, closed and reopened from **View**. The
 four at the bottom right share a tab stack; drag one out by its title bar to
 give it a window of its own.
 
+The window opens at the size of your screen and no larger — maximised if it
+would otherwise have overflowed. The rest of **View** is about the window
+itself: **Restore the default layout** puts dragged panels back, **Fit the
+window to this screen** (`Ctrl+0`) is for after a second monitor or an
+over-wide layout, and **Maximise window** and **Full screen** (`F11`) work
+whatever your window manager does with title bars. On a short screen a panel
+scrolls rather than the window overflowing; the 3D view in particular is worth
+more height than a laptop's tab stack has, which is why it is floatable.
+
 ### Trend — read this first
 
 One row per channel, one column per five seconds, brightness for how many
