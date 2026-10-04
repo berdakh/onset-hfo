@@ -96,6 +96,7 @@ from onset_hfo.detectors import HFO_DETECTORS
 from onset_hfo.preprocess import prepare
 
 __all__ = [
+    "NotACount",
     "OutcomeResult",
     "candidate_channels",
     "outcome_subject",
@@ -104,6 +105,16 @@ __all__ = [
     "min_detectable_auc",
     "rank_comparison",
 ]
+
+class NotACount(ValueError):
+    """A Poisson-interval metric was handed something that is not an event count.
+
+    Its own error, rather than a bare ``ValueError``, because the thing a
+    caller usually wants to do about it is not "fix the number" but "do not
+    report this metric for this rule" -- and that distinction is worth being
+    able to catch.
+    """
+
 
 DETECTORS = HFO_DETECTORS
 
@@ -338,12 +349,34 @@ def candidate_channels(counts: pd.Series, duration_min: float,
 
     Returned in descending rate order, ties broken by channel name so the
     same data always yields the same set.
+
+    **Counts, not scores.** A Poisson interval is a statement about a number of
+    events, so this refuses anything else rather than truncating it. The caller
+    this protects against is the planner's own ranking: ``rate x robustness``
+    is not a count and has no such interval, so the project's tie-aware metric
+    is *undefined* for the multiplied rule -- which is a finding about the rule
+    rather than a gap to paper over with ``int()``. Until now that was a
+    convention held up by one comment in one script; a float arriving here was
+    silently floored, and 8.37 "ripples" became an interval around 8.
+
+    Raises ``NotACount`` when a value is not a whole number. Integral floats
+    are fine: pandas holds counts as ``float64`` all over this codebase.
     """
     from onset_hfo.metrics import poisson_ci
 
     counts = counts[counts.notna()]
     if not len(counts) or not counts.sum() or duration_min <= 0:
         return []
+    fractional = {str(ch): float(n) for ch, n in counts.items()
+                  if not float(n).is_integer()}
+    if fractional:
+        shown = ", ".join(f"{ch}={n:g}" for ch, n in list(fractional.items())[:3])
+        raise NotACount(
+            f"candidate_channels needs integer event counts, got {len(fractional)} "
+            f"fractional value(s): {shown}. A Poisson interval is a statement "
+            "about a number of events; a score such as rate x robustness is not "
+            "a count and has no interval, so the tied set is undefined for it. "
+            "Pass the survey counts, or do not report a tie-aware metric.")
     ordered = counts.sort_index(kind="mergesort").sort_values(
         ascending=False, kind="mergesort")
     intervals = {ch: poisson_ci(int(n), duration_min, alpha=alpha)
