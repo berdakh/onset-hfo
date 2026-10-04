@@ -1,0 +1,55 @@
+# Publish a release to PyPI, with no token stored anywhere.
+#
+# It runs only on a tag, so nothing is published by merging. Push `v0.1.0` and
+# this builds the sdist and wheel, checks them, and uploads.
+#
+# **Before the first run, set up Trusted Publishing** at
+# https://pypi.org/manage/account/publishing/ -- owner `berdakh`, repository
+# `onset-hfo`, workflow `release.yml`, environment `pypi`. PyPI then accepts an
+# OIDC token minted by this workflow for this repository alone, which is why
+# there is no API token in the repository or in its secrets: there is nothing
+# to leak and nothing to rotate.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:        # a dry run: builds and checks, never uploads
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: onset-hfo
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build the sdist and wheel
+        run: |
+          python -m pip install --upgrade build twine
+          python -m build
+      - name: Check the metadata PyPI will render
+        run: python -m twine check dist/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: onset-hfo/dist/
+
+  publish:
+    # Only a tag publishes. `workflow_dispatch` stops at `build`, which makes
+    # it a safe dry run of the packaging itself.
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write       # the OIDC token Trusted Publishing exchanges
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
