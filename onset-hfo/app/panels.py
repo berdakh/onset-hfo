@@ -717,20 +717,22 @@ def robustness_ablation() -> pd.DataFrame:
 
     ``rule`` is ``plain`` (score = rate, what the fixed rungs produce) or
     ``multiplied`` (score = rate x robustness, what the re-planning rungs
-    produce). ``score_mass == 0`` marks a window where the rule annihilated the
-    ranking: the band went silent at the stricter threshold, so every channel
-    scored zero and no leader exists.
+    produce). ``retest_silent == 1`` marks a window where the stricter pass
+    found nothing on any channel; the rule no longer fires on those.
+    ``score_mass == 0`` marks a window with no events at the survey threshold
+    either, where zero is the measurement rather than a destroyed ranking.
     """
     path = COHORT / "robustness_ablation.csv"
     return pd.read_csv(path) if path.exists() else pd.DataFrame()
 
 
 def robustness_collapse() -> dict:
-    """How often the re-testing rule leaves no leader at all, by band.
+    """How often the ranking has no leader at all, by band.
 
-    This is the finding that does not depend on any AUC, and the one a reader
-    should see before the AUC table: a rule that can destroy the ranking is
-    worse than one that merely reorders it badly.
+    Since the rule stopped firing on a silent re-test these are windows that
+    were empty to begin with, not rankings the rule destroyed -- so this is now
+    a statement about how sparse the fast-ripple band is, which is still worth
+    seeing before the AUC table.
     """
     rows = robustness_ablation()
     if rows.empty or "score_mass" not in rows.columns:

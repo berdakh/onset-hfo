@@ -711,20 +711,43 @@ def test_the_subpopulation_screen_keeps_every_patient_in_the_ripple_band():
     assert (rows["band"] == "ripple").all()
 
 
-def test_the_retesting_rule_collapse_is_a_fast_ripple_failure():
-    """The Research page says 84 of 600 windows, and that it is band-specific."""
+def test_an_empty_ranking_is_now_only_an_empty_window():
+    """What is left after the rule stopped firing on a silent re-test.
+
+    It used to be 84 of 600, which conflated two things: 36 windows where a
+    working ranking was zeroed, and 48 that had no events at the survey
+    threshold either. Only the second kind remains, and it is purely a
+    fast-ripple sparsity statement now.
+    """
     collapse = panels.robustness_collapse()
     assert collapse["windows"] == 600
-    assert collapse["collapsed"] == 84
-    assert collapse["by_band"]["fast_ripple"] == 82
+    assert collapse["collapsed"] == 48
+    assert collapse["by_band"] == {"fast_ripple": 48}, \
+        "an empty ripple window would be new and worth looking at"
+
+
+def test_a_silent_re_test_no_longer_destroys_a_ranking():
+    """The regression that matters, read off the published extract: every
+    window whose stricter pass found nothing keeps the survey's ranking."""
+    rows = panels.robustness_ablation()
+    silent = rows[(rows["rule"] == "multiplied") & (rows["retest_silent"] == 1)]
+    assert len(silent) == 84, "the fix should fire on exactly the old 84"
+    rescued = silent[silent["n_events_survey"] > 0]
+    assert len(rescued) == 36
+    assert (rescued["mean_robustness"] == 1.0).all()
+    assert (rescued["score_mass"] > 0).all()
 
 
 def test_the_research_page_quotes_the_collapse_it_computes():
     source = (Path(__file__).resolve().parents[1] / "app" / "pages"
                / "9_Research.py").read_text()
-    collapse = panels.robustness_collapse()
-    assert f"{collapse['collapsed']} of" in source, \
-        "the Research page no longer quotes the collapse count it can compute"
+    # The page no longer leads with a collapse count, because the collapse it
+    # described is fixed. What it must still do is name the fast-ripple harm
+    # with the numbers the extract carries.
+    assert "0.753" in source
+    # Phrases are matched short because the page wraps its prose.
+    assert "refuses to fire on a re-test" in source
+    assert "alphabetical tie-break" in source
 
 
 def test_no_page_still_claims_only_two_detectors():

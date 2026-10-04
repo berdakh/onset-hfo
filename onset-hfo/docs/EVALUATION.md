@@ -761,10 +761,10 @@ recurrences.
 
 | metric | plain | ×1.25 | ×1.5 | ×2.0 | best gain |
 |---|---|---|---|---|---|
-| `top_channel_resected` | 0.747 | 0.813 | 0.786 | **0.824** | **+0.077** |
-| `tied_set_argmax_resected` | 0.736 | **0.830** | 0.813 | 0.802 | **+0.093** |
-| `top3_resected` | 0.698 | 0.687 | 0.725 | 0.725 | +0.027 |
-| `share_in_rz` | 0.527 | 0.527 | 0.560 | 0.637 | +0.110 |
+| `top_channel_resected` | 0.747 | **0.813** | 0.786 | 0.813 | **+0.066** |
+| `tied_set_argmax_resected` | 0.736 | **0.830** | 0.813 | 0.797 | **+0.093** |
+| `top3_resected` | 0.698 | 0.687 | **0.725** | 0.714 | +0.027 |
+| `share_in_rz` | 0.527 | 0.527 | 0.560 | 0.615 | +0.088 |
 
 All three re-test points beat plain on both argmax metrics, so this is not one
 lucky choice of re-test threshold. The largest and most consistent gain is on
@@ -773,27 +773,47 @@ lucky choice of re-test threshold. The largest and most consistent gain is on
 evidence in this repository that the mechanism distinguishing S2/S3 from S0/S1
 carries information rather than noise.**
 
-### Fast ripple band: it hurts, and it can annihilate the ranking
+### Fast ripple band: it hurts, on every patient
 
 | metric | plain | ×1.25 | ×1.5 | ×2.0 |
 |---|---|---|---|---|
-| `top_channel_resected` | 0.753 | 0.669 | 0.669 | 0.528 |
-| — patients scored | 13/7 | 11/7 | 11/7 | **9/6** |
-| `tied_set_argmax_resected` | 0.687 | 0.643 | 0.626 | 0.615 |
+| `top_channel_resected` | **0.753** | 0.643 | 0.643 | 0.593 |
+| — patients scored | 13/7 | 13/7 | 13/7 | 13/7 |
+| `tied_set_argmax_resected` | **0.687** | 0.610 | 0.621 | 0.621 |
 | — patients scored | 13/7 | 13/7 | 13/7 | 13/7 |
 
-**Read the patient counts.** In a band this sparse the stricter pass finds zero
-events on *every* channel, so robustness is 0 everywhere, the score is
-uniformly zero, and there is no leader at all. It happens in **84 of 600
-multiplied windows** — 82 of them fast ripple, 2 ripple — and every one of those
-windows, and only those, yields a NaN. At 2.0× it wipes out all five windows of
-five patients (sub-02, sub-05, sub-06, sub-07, sub-10), a quarter of the cohort.
+**Every patient is now scored in every arm**, which is the difference between
+this table and the one published before the rule was fixed. Previously the
+stricter pass could find zero events on *every* channel, setting robustness to
+0 everywhere and collapsing the score to uniform zero — no leader at all, a NaN
+for the window, and at 2.0× all five windows of five patients gone, a quarter
+of the cohort. `rank_channels` now refuses to fire on a re-test that measured
+nothing (see `unmeasured_at`), so no patient drops out for that reason.
 
-That could have been dismissed as survivorship, except `tied_set_argmax_resected`
-drops the *same* windows for both rules — its tied set comes from the shared
-survey counts, so the comparison is apples-to-apples — and on that metric the
-multiplier still degrades monotonically, 0.687 → 0.643 → 0.626 → 0.615. **The
-fast-ripple harm is real, not an artifact of who dropped out.**
+**What the fix changed, decomposed.** A silent re-test occurred in 84 of 600
+multiplied windows (82 fast ripple, 2 ripple). Those 84 split two ways, and the
+earlier write-up conflated them:
+
+* **36 were real annihilation** — the survey found events, the stricter pass
+  found none anywhere, and a working ranking was zeroed. These are rescued: the
+  score is now the survey rate, robustness 1.0.
+* **48 had no events at the survey threshold either.** A fast-ripple window with
+  nothing in it scores zero because there is nothing there, not because the rule
+  misfired. Those still read zero, correctly, and the fix deliberately does not
+  rescue them: there is no rate to defend.
+
+No window collapsed with a *non-silent* re-test, so the rule still bites exactly
+where it should.
+
+**The fast-ripple harm survives the fix, and is now cleaner.** It could
+previously have been argued as survivorship. It cannot now, because nothing
+drops out: on the complete 13/7 cohort plain scores 0.753 (p = 0.038) and every
+multiplied arm is worse — 0.643, 0.643, 0.593 (p = 0.275, 0.275, 0.523).
+`tied_set_argmax_resected`, which already kept all 13/7 for both rules, agrees:
+0.687 plain against 0.610–0.621 multiplied. Two arms *rose* against the old
+table (2.0× went 0.528 → 0.593) and that is not an improvement in the rule — it
+is five patients rejoining the comparison. **The multiplier hurts in the fast
+ripple band, measured on every patient.**
 
 ### What the rule is actually doing
 

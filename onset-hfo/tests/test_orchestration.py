@@ -861,20 +861,26 @@ def test_the_multiplier_hurts_in_the_fast_ripple_band():
         f"the fast-ripple degradation is gone: plain {plain:.3f} vs {list(arm.auc)}"
 
 
-def test_a_silent_stricter_pass_annihilates_the_ranking():
-    """The defect §6c asks to fix, pinned so a fix has a failing test to flip.
+def test_what_is_left_with_no_leader_is_an_empty_window_not_a_broken_rule():
+    """This test used to pin the defect, and said so: "if the collapse is gone
+    the rule was fixed; update §6c and this test". The rule was fixed, so here
+    is the other side of it.
 
-    When a sparse band finds nothing at the stricter threshold, robustness is 0
-    on every channel and the score is uniformly zero -- leaving no leader at
-    all. A robustness of 0 from "no events here" means *unmeasured*, not
-    *refuted*, and the rule does not currently make that distinction.
+    A robustness of 0 from "no events at this threshold" means *unmeasured*,
+    not *refuted*, and `rank_channels` now skips such a re-test. What still
+    scores zero is a window that was empty at the survey threshold too, where
+    zero is the measurement.
     """
     rows, _ = _ablation()
     mult = rows[rows.rule == "multiplied"]
     collapsed = mult[mult.score_mass == 0]
 
-    assert len(collapsed) > 0, \
-        "if the collapse is gone the rule was fixed; update §6c and this test"
+    assert len(collapsed) > 0, "the fast-ripple band is sparse; some windows are empty"
+    # Every remaining zero is an empty window, not a zeroed ranking.
+    assert (collapsed.n_events_survey == 0).all()
+    # And no window with events was zeroed by a silent re-test.
+    had_events = mult[mult.n_events_survey > 0]
+    assert (had_events.score_mass > 0).all()
     # Overwhelmingly a sparse-band failure.
     assert (collapsed.band == "fast_ripple").mean() > 0.9
     # And the collapse is exactly what produces a missing answer.
