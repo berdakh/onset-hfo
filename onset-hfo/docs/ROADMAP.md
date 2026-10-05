@@ -956,9 +956,17 @@ which this software does not know.
   *keep*, as a cheap guard against events too short to have a spectrum. What is
   still missing is that the ablation is **synthetic only** — the criterion has
   never been ablated against the expert markings on real data.
-* **Does the bipolar montage help or hurt for ripple *rate* specifically?**
-  Easy experiment, currently unmeasured: run the whole pipeline in referential
-  and bipolar montages and compare rankings.
+* ~~**Does the bipolar montage help or hurt for ripple *rate* specifically?**~~
+  **Measured** (`EVALUATION.md` §3c): it helps, on both yardsticks and in
+  both bands. The pipeline was run under the shipped bipolar montage, the
+  archive's own reference and a common average on the same windows. Against
+  the expert ranking the bipolar arm has the highest Spearman in 15 of 20
+  patients (ripple) and 18 of 20 (fast ripple); against outcome it is first on
+  seven of eight AUC cells and the archive's reference is last on all eight.
+  No difference is significant at 13 against 7 — the direction is the result.
+  `scripts/run_montage_comparison.py` is the experiment, and the referential
+  arms are scored on the contacts behind the reviewed pairs, since the experts
+  marked pairs and the archive stores contacts.
 * ~~**How stable is the ranking across windows?**~~ **Promoted to item 10**,
   because the outcome study answered part of it by accident: the conclusion
   moved between a 60 s and a 300 s window. It was described here as "the

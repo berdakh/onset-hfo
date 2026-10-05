@@ -75,7 +75,7 @@ st.markdown("""
    than the merged rate. Progress needs a labelled archive, not more analysis.
 """)
 
-st.subheader("Three questions that came off this list by being answered")
+st.subheader("Four questions that came off this list by being answered")
 st.success("""
 **More than two detectors.** Two detectors matching about half their events was
 a finding; the question was whether that disagreement is structural. Four
@@ -98,6 +98,16 @@ list with no variance falls through to the alphabetical tie-break, the result
 was not a flat list but a confident ranking in the wrong order. That is fixed —
 the rule refuses to fire on a re-test that measured nothing — and no patient is
 dropped from any arm any more.
+
+**Does the bipolar montage help or hurt for rate?** It helps. The same pipeline
+was run under the shipped bipolar montage, the archive's own reference and a
+common average, on the same windows. Against the expert ranking the bipolar
+arm has the highest Spearman in 15 of 20 patients (ripple) and 18 of 20 (fast
+ripple); against outcome it is first on seven of eight AUC cells, and the
+archive's own reference is last on all eight. The referential arms find more
+events and agree less — noise shared through the reference, counted as events.
+No single difference is significant at 13 against 7; the direction is the
+result, and the default stays.
 """)
 
 st.subheader("Principles inherited from the Onset project")
