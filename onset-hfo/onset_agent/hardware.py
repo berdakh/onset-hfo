@@ -209,8 +209,9 @@ class ModelSpec:
 #: Revisions are left at ``main`` rather than invented: this container cannot
 #: reach huggingface.co (the gateway refuses CONNECT), so a pinned commit could
 #: not be verified, and a made-up SHA is worse than an honest moving
-#: reference. :func:`pinned` fills them in from the Hub on a machine that can
-#: see it.
+#: reference. ``python scripts/pin_catalogue.py`` writes them in, one
+#: ``revision=`` line per entry, on a machine that can see the Hub; its
+#: ``--check`` flag reports when they have drifted since.
 CATALOGUE: tuple[ModelSpec, ...] = (
     ModelSpec("Qwen/Qwen3-0.6B", 0.6, 1.4, ollama_tag="qwen3:0.6b",
               note="runs on a CPU-only laptop; weak at facts, and expect it to "
@@ -970,10 +971,11 @@ def auto_backend(machine: Machine | None = None, *, prefer: str | None = None,
 def pinned(catalogue: tuple[ModelSpec, ...] = CATALOGUE) -> tuple[ModelSpec, ...]:
     """Resolve every ``main`` in the catalogue to the Hub's current commit.
 
-    Run on a machine that can reach huggingface.co; paste the result back into
-    `CATALOGUE`. Pinning matters for the same reason the rest of this project
-    records its versions: a benchmark that cannot say which weights it ran is
-    not a benchmark.
+    Run on a machine that can reach huggingface.co. ``scripts/pin_catalogue.py``
+    calls this and writes the result back into `CATALOGUE`'s source. Pinning
+    matters for the same reason the rest of this project records its
+    versions: a benchmark that cannot say which weights it ran is not a
+    benchmark.
     """
     from huggingface_hub import HfApi
 
