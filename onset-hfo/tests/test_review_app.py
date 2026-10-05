@@ -2039,3 +2039,49 @@ def test_the_quality_dock_is_in_the_window(built):
     # sentence lives in the tooltip.
     assert built.docks["quality"].windowTitle() == "Quality"
     assert "which contacts" in built.docks["quality"].toolTip()
+
+
+def test_dense_annotation_labels_are_thinned_not_overprinted(built):
+    """Seen on ds003498 sub-01: an expert's ripples a few hundred milliseconds
+    apart turn the labels along the bottom of the trace into
+    "experippleexperipple". The bands must all stay; the text thins to what
+    can be read, and comes back as you zoom in."""
+    from qtpy.QtWidgets import QApplication
+
+    from onset_review.window import LABEL_GAP_PX, thin_annotation_labels
+
+    figure = built.figure
+    app = QApplication.instance()
+    before = len(figure.mne.regions)
+    for i in range(40):                                 # 40 marks in 2 seconds
+        figure._add_region(0.5 + i * 0.05, 0.03, "expert ripple")
+    app.processEvents()
+    planted = [r for r in figure.mne.regions if r.description == "expert ripple"][-40:]
+    assert len(figure.mne.regions) == before + 40
+
+    def planted_shown() -> int:
+        return sum(r.label_item.isVisible() for r in planted)
+
+    figure.mne.plt.setXRange(0.0, 10.0, padding=0.0)
+    app.processEvents()
+    assert thin_annotation_labels(figure) > 0
+    shown_wide = planted_shown()
+    assert 0 < shown_wide < 40, shown_wide
+    assert all(r.isVisible() for r in planted), "a band was hidden; only text may be"
+
+    # No two shown labels overprint, measured in the pixels that collide.
+    per_px = figure.mne.viewbox.viewPixelSize()[0]
+    spans = []
+    for r in sorted(planted, key=lambda r: r.getRegion()[0]):
+        if r.label_item.isVisible():
+            a, b = r.getRegion()
+            half = r.label_item.boundingRect().width() * per_px / 2
+            spans.append(((a + b) / 2 - half, (a + b) / 2 + half))
+    for (_, right), (left, _) in zip(spans, spans[1:], strict=False):
+        assert left - right >= (LABEL_GAP_PX - 1) * per_px
+
+    # Zooming in makes room: the hook re-thins and more labels come back.
+    figure.mne.plt.setXRange(0.4, 1.2, padding=0.0)
+    app.processEvents()
+    shown_narrow = planted_shown()
+    assert shown_narrow > shown_wide, (shown_narrow, shown_wide)
