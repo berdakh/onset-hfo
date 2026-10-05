@@ -91,10 +91,13 @@ one event per minute. See the Outcome page.
 **Is the re-planning ranking rule the right rule?** Conditionally. It helps in
 the ripple band at every re-test point — the first evidence here that the
 mechanism separating the re-planning rungs from the fixed ones carries
-information — and in the fast-ripple band it *annihilates* the ranking in 84 of
-600 windows, because a silent re-test makes every channel score zero. The fix is
-specified and not yet implemented, since it moves every orchestration number in
-the project.
+information — and in the fast-ripple band it hurts, 0.753 plain against
+0.593-0.643 multiplied, now measured on every patient. It used to do worse than
+that: a silent re-test zeroed every channel's score, and because a score-ordered
+list with no variance falls through to the alphabetical tie-break, the result
+was not a flat list but a confident ranking in the wrong order. That is fixed —
+the rule refuses to fire on a re-test that measured nothing — and no patient is
+dropped from any arm any more.
 """)
 
 st.subheader("Principles inherited from the Onset project")

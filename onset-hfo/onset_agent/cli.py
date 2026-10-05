@@ -43,10 +43,25 @@ def _print(answer, show_trace: bool = False) -> None:
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="onset-agent", description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--results", required=True, help="a results directory from onset_hfo.cli run")
+    p.add_argument("--results", default=None,
+                   help="a results directory from onset_hfo.cli run "
+                        "(not needed with --hardware)")
     p.add_argument("--backend", default="scripted",
-                   choices=["scripted", "ollama", "openai_compat", "transformers"])
+                   choices=["scripted", "ollama", "openai_compat", "transformers",
+                            "auto"],
+                   help="'auto' looks at this machine, picks a Qwen that fits "
+                        "and downloads it if needed")
     p.add_argument("--model", default=None, help="model name/id for the chosen backend")
+    p.add_argument("--route", default=None, choices=["ollama", "transformers"],
+                   help="with --backend auto or --hardware: force how the model "
+                        "is run. Default: Ollama (Q4 GGUF) off a CUDA card, "
+                        "in-process transformers on one")
+    p.add_argument("--hardware", action="store_true",
+                   help="report what this machine is and which model would be "
+                        "chosen, then exit without downloading anything")
+    p.add_argument("--no-download", action="store_true",
+                   help="with --backend auto, fail rather than fetch weights "
+                        "that are not already cached")
     p.add_argument("--base-url", default=None, help="server URL for ollama/openai_compat")
     p.add_argument("--question", "-q", default=None)
     p.add_argument("--demo", action="store_true", help="run the example question set")
@@ -55,8 +70,50 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--max-steps", type=int, default=6)
     args = p.parse_args(argv)
 
+    # Asking what this machine can run is a question about the machine, so it
+    # does not need an analysis to answer.
+    if args.hardware:
+        from onset_agent.hardware import choose, describe, probe
+
+        machine = probe()
+        print(f"[onset-agent] {machine.accelerator}, {machine.cores} core(s), "
+              f"{machine.ram_gb:.1f} GB RAM, {machine.free_disk_gb:.1f} GB free")
+        for gpu in machine.gpus:
+            print(f"[onset-agent] GPU: {gpu.name}, {gpu.vram_gb:.1f} GB")
+        print()
+        print(describe(choose(machine, prefer=args.model, route=args.route), machine))
+        return 0
+
+    if not args.results:
+        p.error("--results is required (or use --hardware to ask only about "
+                "this machine)")
+
     store = ResultStore(args.results)
-    backend = make_backend(args.backend, model=args.model, base_url=args.base_url)
+    if args.backend == "auto":
+        from onset_agent.hardware import (
+            MissingDependency,
+            NotEnoughRoom,
+            OllamaModelMissing,
+            OllamaNotRunning,
+            auto_backend,
+        )
+
+        try:
+            backend, choice = auto_backend(prefer=args.model, route=args.route,
+                                           download=not args.no_download)
+        except (OllamaNotRunning, OllamaModelMissing, MissingDependency,
+                NotEnoughRoom, ConnectionError) as stop:
+            # Each of these is written to be read by a person. A traceback
+            # on top of it would bury the three commands they need.
+            print(f"[onset-agent] cannot start a local model: {stop}")
+            return 2
+        how = (f"via Ollama as {choice.ollama_tag}" if choice.route == "ollama"
+               else f"in-process at {choice.quantization} on {choice.device}")
+        print(f"[onset-agent] chose {choice.model_id} {how}")
+        for warning in choice.warnings:
+            print(f"[onset-agent] ! {warning}")
+    else:
+        backend = make_backend(args.backend, model=args.model, base_url=args.base_url)
     agent = OnsetAgent(store, backend, max_steps=args.max_steps)
 
     print(f"[onset-agent] analysis: {store.subject} ({store.metadata().get('source')}), "

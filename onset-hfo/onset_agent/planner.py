@@ -54,7 +54,7 @@ from onset_agent.prompts import planner_prompt, report_prompt
 
 __all__ = ["Rung", "PlannerResult", "StopRule", "FixedBudget", "ModelJudged",
            "TiedSetWidth", "ConformalWidth", "rank_channels", "run_rung",
-           "ScriptedPlanner", "FIXED_PLAN"]
+           "detected_nothing", "ScriptedPlanner", "FIXED_PLAN"]
 
 
 class Rung(str, Enum):
@@ -268,14 +268,56 @@ class RankedChannel:
     score: float
     run_ids: list[str] = field(default_factory=list)
     retested_at: list[float] = field(default_factory=list)
+    #: Stricter thresholds that found nothing *anywhere* and so were not
+    #: allowed to lower this channel's robustness. Carried separately from
+    #: ``retested_at`` because they are not re-tests: see `rank_channels`.
+    unmeasured_at: list[float] = field(default_factory=list)
 
     def as_dict(self) -> dict:
-        return {"channel": self.channel,
-                "survey_rate_per_min": round(self.survey_rate_per_min, 3),
-                "survey_threshold_sd": self.survey_threshold_sd,
-                "robustness": round(self.robustness, 3),
-                "score": round(self.score, 3),
-                "retested_at": self.retested_at, "run_ids": self.run_ids}
+        out = {"channel": self.channel,
+               "survey_rate_per_min": round(self.survey_rate_per_min, 3),
+               "survey_threshold_sd": self.survey_threshold_sd,
+               "robustness": round(self.robustness, 3),
+               "score": round(self.score, 3),
+               "retested_at": self.retested_at, "run_ids": self.run_ids}
+        if self.unmeasured_at:
+            out["unmeasured_at"] = self.unmeasured_at
+            out["unmeasured_note"] = (
+                "found no events on any channel, so it could not distinguish "
+                "this channel from any other and did not lower its robustness")
+        return out
+
+
+def detected_nothing(output: dict) -> bool:
+    """Did this ``detect_hfo`` run find no events at all, on any channel?
+
+    Asked of the run rather than of a channel on purpose. A channel that went
+    quiet while its neighbours kept firing has been *refuted*; a threshold at
+    which the whole band went quiet has measured nothing, and the difference
+    decides whether it may lower anybody's robustness.
+
+    ``n_accepted`` is the run-level count over every channel analysed, which is
+    what the question needs: ``channels`` holds only the top *k*, so polling it
+    cannot tell silence from truncation. It is still the fallback for a run
+    recorded before that field existed -- and a sound one, because the rows are
+    ordered by rate, so a leading rate of zero means every rate is zero. An
+    output carrying neither is *not* reported silent: absence of evidence here
+    would wrongly suppress a real re-test.
+    """
+    accepted = output.get("n_accepted")
+    if accepted is not None:
+        try:
+            return int(accepted) <= 0
+        except (TypeError, ValueError):
+            pass
+    rows = (output.get("channels") or {}).values()
+    rates = []
+    for row in rows:
+        try:
+            rates.append(float(row.get("rate_per_min")))
+        except (TypeError, ValueError, AttributeError):
+            return False
+    return bool(rates) and max(rates) <= 0.0
 
 
 def rank_channels(store: EvidenceStore) -> list[RankedChannel]:
@@ -294,36 +336,56 @@ def rank_channels(store: EvidenceStore) -> list[RankedChannel]:
     means *unchallenged*, not *verified* -- and that distinction is the whole
     difference between the fixed rungs and the re-planning ones.
 
+    **A re-test that found nothing anywhere is not a re-test.** If a stricter
+    threshold detected no events on any channel it analysed, then the band went
+    silent rather than the channels being refuted: a robustness of
+    ``0 / survey_rate`` there means *unmeasured*, and it is the mirror image of
+    the *unchallenged, not verified* case above. Firing on it sets every
+    channel's robustness to 0, so every score becomes 0 and the ranking
+    degenerates to alphabetical order -- a confident-looking ordering carrying
+    no information. Measured over the 20-subject cohort this hit 84 of 600
+    multiplied windows and annihilated five patients' rankings outright at a
+    2.0x re-test, taking fast-ripple AUC from 0.753 to 0.528. Such a threshold
+    is skipped and recorded in ``unmeasured_at``, never silently dropped.
+
+    A *partially* silent re-test is left alone: when some channels keep events
+    and others go quiet, the zeros discriminate, which is the rule working.
+
     Only channels some tool actually measured are ranked. A ranking over
     channels nobody looked at would be a guess.
     """
-    measured: dict[str, dict[float, tuple[float, str]]] = {}
+    measured: dict[str, dict[float, tuple[float, str, bool]]] = {}
     for run in store.runs("detect_hfo", ok_only=True):
         output = run.output or {}
         threshold = float(output.get("threshold_sd", 0.0))
+        silent = detected_nothing(output)
         for channel, row in (output.get("channels") or {}).items():
             try:
                 rate = float(row.get("rate_per_min"))
             except (TypeError, ValueError, AttributeError):
                 continue
-            measured.setdefault(channel, {})[threshold] = (rate, run.run_id)
+            measured.setdefault(channel, {})[threshold] = (rate, run.run_id, silent)
 
     ranked: list[RankedChannel] = []
     for channel, by_threshold in measured.items():
         base_threshold = min(by_threshold)
-        base_rate, base_run = by_threshold[base_threshold]
-        robustness, retested, runs = 1.0, [], [base_run]
-        for threshold, (rate, run_id) in sorted(by_threshold.items()):
+        base_rate, base_run, _ = by_threshold[base_threshold]
+        robustness, retested, runs, unmeasured = 1.0, [], [base_run], []
+        for threshold, (rate, run_id, silent) in sorted(by_threshold.items()):
             if threshold <= base_threshold:
                 continue
-            retested.append(threshold)
             runs.append(run_id)
+            if silent:
+                # Unmeasured, not refuted. See the docstring.
+                unmeasured.append(threshold)
+                continue
+            retested.append(threshold)
             ratio = 1.0 if base_rate <= 0 else min(1.0, rate / base_rate)
             robustness = min(robustness, ratio)
         ranked.append(RankedChannel(channel=channel, survey_rate_per_min=base_rate,
                                     survey_threshold_sd=base_threshold, robustness=robustness,
                                     score=base_rate * robustness, run_ids=runs,
-                                    retested_at=retested))
+                                    retested_at=retested, unmeasured_at=unmeasured))
     ranked.sort(key=lambda r: (-r.score, r.channel))
     return ranked
 

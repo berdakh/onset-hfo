@@ -1162,6 +1162,73 @@ def test_the_assistant_offers_a_question_it_will_refuse():
     assert all(label and len(label) < 24 for _, label in SUGGESTIONS)
 
 
+def test_the_assistant_opens_on_the_configured_model(qapp, review, monkeypatch):
+    """What the installer's --with-assistant buys: the panel opens on the
+    model it set up, instead of on "No model" with the option left to find."""
+    from onset_review.assistant import AssistantPanel
+
+    monkeypatch.setenv("ONSET_ASSISTANT_BACKEND", "ollama")
+    monkeypatch.setenv("ONSET_ASSISTANT_MODEL", "qwen3:8b")
+    panel = AssistantPanel(review)
+    assert panel.backend.currentData() == "ollama"
+    assert panel.model.text() == "qwen3:8b"
+    assert panel.model.isVisibleTo(panel)
+    assert panel._defaults.source == "environment"
+
+
+def test_the_assistant_still_opens_on_no_model_when_nothing_is_configured(
+        qapp, review, monkeypatch, tmp_path):
+    """The conftest already forbids the localhost probe; with no file and no
+    environment the old default stands."""
+    from onset_review.assistant import AssistantPanel
+
+    monkeypatch.delenv("ONSET_ASSISTANT_BACKEND", raising=False)
+    monkeypatch.setenv("ONSET_REVIEW_CONFIG_DIR", str(tmp_path))
+    panel = AssistantPanel(review)
+    assert panel.backend.currentData() == "scripted"
+    assert "nothing" in panel._defaults.source
+
+
+def test_the_panel_discovers_a_served_model_and_answers_through_it(
+        qapp, review, monkeypatch, tmp_path):
+    """The whole assistant path, through the real panel: a served model on
+    localhost is discovered by the probe with nothing configured, the panel
+    opens on it, a question goes through the worker thread and the real agent
+    loop, the guards pass an honest answer, and the citation is a link.
+
+    The model is a protocol-faithful fake (tests/_fake_ollama.py) that does
+    what the system prompt asks -- survey, evidence, cite -- so this exercises
+    the success path rather than the refusal path random weights produce.
+    """
+    from _fake_ollama import FakeOllama
+
+    from onset_agent.tools import dispatch
+    from onset_review.assistant import AssistantPanel
+
+    monkeypatch.setenv("ONSET_REVIEW_CONFIG_DIR", str(tmp_path))   # no installer file
+    monkeypatch.delenv("ONSET_ASSISTANT_BACKEND", raising=False)
+    monkeypatch.delenv("ONSET_ASSISTANT_NO_PROBE", raising=False)   # let it look
+    with FakeOllama() as fake:
+        monkeypatch.setenv("OLLAMA_HOST", fake.base)
+        panel = AssistantPanel(review)
+        try:
+            assert panel.backend.currentData() == "ollama"
+            assert panel.model.text() == fake.tag
+            assert "localhost" in panel._defaults.source
+
+            panel.ask("Which channel had the highest ripple rate?")
+
+            leader = dispatch(panel._store, "top_channels", {"k": 1})["channels"][0]
+            text = panel.transcript.toPlainText()
+            assert leader["channel"] in text, text
+            assert str(leader["rate_per_min"]) in text, text
+            assert "stand behind" not in text          # not a refusal
+            assert 'href="' in panel.transcript.toHtml()  # the citation is clickable
+            assert [c[2] for c in fake.calls] == [0, 1, 2]
+        finally:
+            panel.deleteLater()
+
+
 def test_the_default_backend_runs_no_model():
     from onset_review.assistant import BACKENDS
 
@@ -1972,3 +2039,49 @@ def test_the_quality_dock_is_in_the_window(built):
     # sentence lives in the tooltip.
     assert built.docks["quality"].windowTitle() == "Quality"
     assert "which contacts" in built.docks["quality"].toolTip()
+
+
+def test_dense_annotation_labels_are_thinned_not_overprinted(built):
+    """Seen on ds003498 sub-01: an expert's ripples a few hundred milliseconds
+    apart turn the labels along the bottom of the trace into
+    "experippleexperipple". The bands must all stay; the text thins to what
+    can be read, and comes back as you zoom in."""
+    from qtpy.QtWidgets import QApplication
+
+    from onset_review.window import LABEL_GAP_PX, thin_annotation_labels
+
+    figure = built.figure
+    app = QApplication.instance()
+    before = len(figure.mne.regions)
+    for i in range(40):                                 # 40 marks in 2 seconds
+        figure._add_region(0.5 + i * 0.05, 0.03, "expert ripple")
+    app.processEvents()
+    planted = [r for r in figure.mne.regions if r.description == "expert ripple"][-40:]
+    assert len(figure.mne.regions) == before + 40
+
+    def planted_shown() -> int:
+        return sum(r.label_item.isVisible() for r in planted)
+
+    figure.mne.plt.setXRange(0.0, 10.0, padding=0.0)
+    app.processEvents()
+    assert thin_annotation_labels(figure) > 0
+    shown_wide = planted_shown()
+    assert 0 < shown_wide < 40, shown_wide
+    assert all(r.isVisible() for r in planted), "a band was hidden; only text may be"
+
+    # No two shown labels overprint, measured in the pixels that collide.
+    per_px = figure.mne.viewbox.viewPixelSize()[0]
+    spans = []
+    for r in sorted(planted, key=lambda r: r.getRegion()[0]):
+        if r.label_item.isVisible():
+            a, b = r.getRegion()
+            half = r.label_item.boundingRect().width() * per_px / 2
+            spans.append(((a + b) / 2 - half, (a + b) / 2 + half))
+    for (_, right), (left, _) in zip(spans, spans[1:], strict=False):
+        assert left - right >= (LABEL_GAP_PX - 1) * per_px
+
+    # Zooming in makes room: the hook re-thins and more labels come back.
+    figure.mne.plt.setXRange(0.4, 1.2, padding=0.0)
+    app.processEvents()
+    shown_narrow = planted_shown()
+    assert shown_narrow > shown_wide, (shown_narrow, shown_wide)

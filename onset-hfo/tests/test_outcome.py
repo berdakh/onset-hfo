@@ -158,6 +158,43 @@ def test_candidates_reduce_to_the_argmax_when_the_set_is_one():
     assert out["leader_alone"] == 1.0
 
 
+def test_a_score_that_is_not_a_count_is_refused_rather_than_truncated():
+    """The tie-aware metric is undefined for the planner's multiplied score, and
+    `run_robustness_ablation.py` leaves it NaN for that reason. That discipline
+    used to live in a comment in that one script: a float arriving here was
+    floored, so `rate x robustness` of 8.37 became a Poisson interval around 8
+    events -- a confident interval for a quantity that counts nothing.
+    """
+    from onset_hfo.outcome import NotACount, candidate_channels
+
+    multiplied = pd.Series({"A": 8.37, "B": 6.12, "C": 1.5})
+    with pytest.raises(NotACount) as raised:
+        candidate_channels(multiplied, duration_min=5.0)
+    # The message has to say which values and why, or the next caller guesses.
+    assert "A=8.37" in str(raised.value)
+    assert "not a count" in str(raised.value)
+    # Catchable as a ValueError, so an existing handler is not bypassed.
+    assert isinstance(raised.value, ValueError)
+
+
+def test_integral_floats_are_counts_and_still_work():
+    """Counts live in float64 columns all over this codebase -- the reviewer
+    passes `findings["n_events"]`. A dtype check instead of a value check would
+    have broken every real caller."""
+    from onset_hfo.outcome import candidate_channels
+
+    assert candidate_channels(pd.Series({"A": 300.0, "B": 20.0}), 5.0) == ["A"]
+    assert candidate_channels(pd.Series({"A": 300, "B": 20}), 5.0) == ["A"]
+
+
+def test_a_fractional_count_does_not_sneak_past_on_a_quiet_channel():
+    """The check covers every value, not just the leader's."""
+    from onset_hfo.outcome import NotACount, candidate_channels
+
+    with pytest.raises(NotACount):
+        candidate_channels(pd.Series({"A": 300.0, "B": 20.0, "C": 0.4}), 5.0)
+
+
 def test_a_tied_set_reports_a_fraction_not_a_winner():
     from onset_hfo.outcome import _candidate_metrics
 

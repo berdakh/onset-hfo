@@ -166,6 +166,10 @@ class OpenAICompatBackend(Backend):
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
                 payload = json.load(response)
+        except urllib.error.HTTPError as exc:
+            # The server was reached and said no. Telling the person to start
+            # one would be wrong, and the reason is in the body it sent back.
+            raise RuntimeError(_describe_rejection(self.base_url, exc)) from exc
         except urllib.error.URLError as exc:  # pragma: no cover - environment dependent
             raise RuntimeError(
                 f"Could not reach the model server at {self.base_url} ({exc}). "
@@ -189,11 +193,55 @@ class OpenAICompatBackend(Backend):
         return AssistantMessage(content=content, tool_calls=calls, raw=json.dumps(message))
 
 
+
+def _describe_rejection(base_url: str, exc) -> str:
+    """Turn an HTTP error from an OpenAI-compatible server into a sentence.
+
+    Found by serving a GGUF with llama.cpp: the agent's opening turn -- the
+    system prompt plus eight tool schemas -- overran a 1024-token context, the
+    server answered ``400 context_length_exceeded`` with a clear message, and
+    the backend reported "could not reach the model server, start one". It had
+    been reached. The body is read and quoted, and the one rejection a served
+    model is likely to produce is given its remedy.
+    """
+    try:
+        raw = exc.read().decode("utf-8", "replace")
+    except Exception:
+        raw = ""
+    message, code = raw.strip()[:400], ""
+    try:
+        error = json.loads(raw).get("error", {})
+        if isinstance(error, dict):
+            message = str(error.get("message") or message)
+            code = str(error.get("code") or error.get("type") or "")
+    except (ValueError, AttributeError):
+        pass
+    text = (f"The model server at {base_url} rejected the request "
+            f"(HTTP {exc.code}{', ' + code if code else ''}): {message}")
+    if "context" in (code + message).lower():
+        text += (" The agent's first turn is a few thousand tokens -- the system "
+                 "prompt plus the tool schemas -- so the served model needs a "
+                 "context window of at least 4096. Ollama: set "
+                 "OLLAMA_CONTEXT_LENGTH=8192 before `ollama serve` (its default is "
+                 "2048), or `PARAMETER num_ctx 8192` in a Modelfile. llama.cpp: "
+                 "`-c 8192`. vLLM: --max-model-len.")
+    return text
+
 class OllamaBackend(OpenAICompatBackend):
-    """A local Ollama server. ``ollama pull qwen2.5:7b-instruct`` and go."""
+    """A local Ollama server. ``ollama pull qwen2.5:7b-instruct`` and go.
+
+    The default URL follows ``OLLAMA_HOST`` the way Ollama itself does, read
+    when the backend is built rather than when this module was imported.
+    Found by the desktop panel's own test: it *discovered* a server on a moved
+    port through the same variable, opened on its model, and then tried to
+    talk to 127.0.0.1:11434 -- finding the model and failing to reach it.
+    """
 
     def __init__(self, model: str = DEFAULT_OLLAMA_MODEL,
-                 base_url: str = "http://127.0.0.1:11434/v1", **kwargs):
+                 base_url: str | None = None, **kwargs):
+        if base_url is None:
+            from onset_agent.hardware import ollama_url
+            base_url = ollama_url().rstrip("/") + "/v1"
         super().__init__(model=model, base_url=base_url, **kwargs)
 
 

@@ -262,7 +262,80 @@ def open_trace(session: ReviewSession, duration: float = DEFAULT_DURATION,
                       ecog=DEFAULT_SCALING),
         title=session.request.label(), block=False, show=show, verbose="ERROR")
     _colour_annotations(figure)
+    _keep_labels_readable(figure)
     return figure
+
+
+#: Minimum horizontal gap, in pixels, between two annotation labels. Below it
+#: the later label is hidden; the coloured band it belongs to never is.
+LABEL_GAP_PX = 8
+
+
+def thin_annotation_labels(figure) -> int:
+    """Hide annotation labels that would overprint a neighbour; keep the bands.
+
+    `mne-qt-browser` centres a pixel-sized text label over every annotation
+    and repositions it only vertically, so wherever markings are dense -- an
+    expert's ripples a few hundred milliseconds apart -- the labels collide
+    into an unreadable smear along the bottom of the trace. The band is what
+    carries the meaning (its colour is keyed off the description); the text is
+    a courtesy that stops being one when it cannot be read.
+
+    Greedy, left to right: a label is shown if its pixel extent clears the last
+    shown label by :data:`LABEL_GAP_PX`, hidden otherwise. Measured in pixels
+    rather than seconds because that is what collides, so zooming in brings
+    labels back and zooming out thins them further; `open_trace` re-runs this on
+    every range change and resize. Returns how many labels are shown.
+    """
+    state = getattr(figure, "mne", None)
+    regions = list(getattr(state, "regions", None) or []) if state else []
+    viewbox = getattr(state, "viewbox", None) if state else None
+    if not regions or viewbox is None:
+        return 0
+    try:
+        (x_lo, x_hi), _ = viewbox.viewRange()
+        seconds_per_px = float(viewbox.viewPixelSize()[0])
+    except Exception:
+        return 0
+    if not seconds_per_px or seconds_per_px != seconds_per_px:   # zero or NaN
+        return 0
+    gap = LABEL_GAP_PX * seconds_per_px
+
+    shown, last_right = 0, float("-inf")
+    for region in sorted(regions, key=lambda r: r.getRegion()[0]):
+        label = getattr(region, "label_item", None)
+        if label is None:
+            continue
+        start, stop = region.getRegion()
+        if stop < x_lo or start > x_hi or not region.isVisible():
+            continue                      # off screen, or MNE hid the region
+        half = label.boundingRect().width() * seconds_per_px / 2.0
+        centre = (start + stop) / 2.0
+        if centre - half < last_right + gap:
+            label.setVisible(False)
+        else:
+            label.setVisible(True)
+            last_right = centre + half
+            shown += 1
+    return shown
+
+
+def _keep_labels_readable(figure) -> None:
+    """Thin now, and again whenever the view moves or the window resizes."""
+    thin_annotation_labels(figure)
+    state = getattr(figure, "mne", None)
+    plt = getattr(state, "plt", None) if state else None
+    viewbox = getattr(state, "viewbox", None) if state else None
+    rerun = lambda *_args: thin_annotation_labels(figure)   # noqa: E731
+    for signal in (getattr(plt, "sigXRangeChanged", None),
+                   getattr(viewbox, "sigResized", None)):
+        if signal is not None:
+            try:
+                signal.connect(rerun)
+            except Exception:
+                pass
+    # Held on the figure so the slot outlives this frame.
+    figure._onset_label_thinner = rerun
 
 
 def marks_for(session: ReviewSession, scope: str = "selected",
@@ -1053,7 +1126,8 @@ def _apply_marks(figure, session: ReviewSession, scope: str,
         except Exception:
             return
     _colour_annotations(figure)
-
+    # Fresh regions come with fresh labels, and the next zoom may be a while.
+    thin_annotation_labels(figure)
 
 def _window_menu(menu, host: QMainWindow, session: ReviewSession,
                  on_window=None, on_step_window=None) -> None:

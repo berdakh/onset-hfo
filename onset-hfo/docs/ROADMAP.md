@@ -911,20 +911,34 @@ which this software does not know.
     tie-breaking metric it exists for (0.736 → 0.830, permutation p 0.086 →
     0.014). That is the first evidence here that the mechanism separating
     S2/S3 from S0/S1 carries information rather than noise.
-  * **In the fast ripple band it hurts, and can annihilate the ranking.** When
-    a sparse band goes silent at the stricter threshold, robustness is 0 on
-    every channel and the score is uniformly zero — 84 of 600 multiplied
-    windows, wiping out five patients entirely at 2.0×. The harm survives the
-    one metric that keeps every patient, so it is not survivorship.
-  * **The fix is to make the rule refuse to fire on a silent re-test.** A
-    robustness of 0 from "no events at this threshold" means *unmeasured*, not
-    *refuted* — the mirror image of the "unchallenged, not verified" case the
-    planner already handles correctly. Not yet implemented; it changes
-    `rank_channels`, which every orchestration number depends on, so it wants
-    its own change.
-  * And `candidates_resected` **cannot be computed on a multiplied score at
-    all**: Poisson intervals need integer counts. The project's own tie-aware
-    metric is undefined for the planner's own score.
+  * **In the fast ripple band it hurts, on every patient.** Plain 0.753
+    (p = 0.038) against 0.643, 0.643 and 0.593 multiplied, all now scored on
+    the complete 13/7 cohort. It could once have been argued as survivorship;
+    it cannot now, because nothing drops out.
+  * ~~**The fix is to make the rule refuse to fire on a silent re-test.**~~
+    **Done.** A robustness of 0 from "no events at this threshold" means
+    *unmeasured*, not *refuted* — the mirror image of the "unchallenged, not
+    verified" case the planner already handled correctly. `rank_channels` now
+    skips such a threshold and records it in `unmeasured_at`.
+
+    The defect was worse than this entry described. A score-ordered ranking
+    with no variance left in it falls through to the alphabetical tie-break, so
+    the symptom was not a flat list somebody would notice but a confident
+    ranking in the wrong order — with contact names that do not sort by rate,
+    exactly reversed, the quietest contact in the recording presented first.
+
+    And the "84 of 600 windows" in the previous version of this entry
+    conflated two things. 84 windows did have a silent re-test, but only **36**
+    were real annihilation; the other **48** had no events at the survey
+    threshold either, where zero is the right answer and the fix deliberately
+    leaves it alone. Re-measured across all 20 patients: the ripple conclusion
+    is unchanged to three decimals at 1.25× and 1.5×, and no patient is lost
+    from any arm any more.
+  * ~~And `candidates_resected` **cannot be computed on a multiplied score at
+    all**~~ — still true, and now **enforced where it is defined** rather than
+    by a comment in one script: `candidate_channels` raises `NotACount` on a
+    fractional count. It had been computing `poisson_ci(int(n), ...)`, so a
+    score of 8.37 silently became a confident interval around 8 events.
 
   ~~Should the ranking refuse to order channels whose intervals overlap?~~
   **Answered, and the answer was yes**: `metrics.candidate_channels` and

@@ -82,10 +82,17 @@ Two columns exist because the multiplied score is **not an event count**:
 | `n_events_survey` | the real integer count from the survey pass, identical across rules for a window |
 | `score_mass`, `score_mass_{resected,partial,spared}` | the summed *score*, which for `multiplied` is not a count |
 
-`score_mass == 0` marks a window where the rule **annihilated the ranking** —
-the sparse band went silent at the stricter threshold, so robustness is 0 on
-every channel. It happens in 84 of the 600 multiplied windows, 82 of them fast
-ripple, and those are exactly the rows whose metrics are NaN.
+`retest_silent == 1` marks a window where the stricter pass found no events on
+any channel: 84 of the 600 multiplied windows, 82 of them fast ripple. The rule
+no longer fires on those (`planner.rank_channels`, `unmeasured_at`), because a
+robustness of 0 from "nothing was detected here" means *unmeasured*, not
+*refuted*. `n_events_stricter` is the count it is derived from.
+
+`score_mass == 0` now marks only the 48 windows where the **survey** found
+nothing either — a fast-ripple minute with nothing in it, where zero is the
+right answer rather than a destroyed ranking. Those are the rows whose metrics
+are NaN. Before the fix there were 84, conflating the 48 genuinely-empty
+windows with 36 in which a working ranking was zeroed.
 
 `candidates_resected` and its companions are populated for `plain` only:
 `candidate_channels` needs integer counts for its Poisson intervals.

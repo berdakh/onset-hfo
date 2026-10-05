@@ -5,6 +5,7 @@
 
     score = survey_rate x robustness,
     robustness = min over stricter thresholds of min(1, rate_stricter / rate_survey)
+                 -- skipping any stricter threshold that found nothing anywhere
 
 and `ROADMAP.md` has carried it as an open question since the ladder was built:
 *"That is a design choice, not a law, and it is the mechanism by which the
@@ -88,11 +89,25 @@ def _robustness(survey, stricter):
     (`planner.py`: ``ratio = 1.0 if base_rate <= 0 else ...``). It means
     *unchallenged*, not *verified*, and it is kept here so the ablation
     measures the rule as shipped rather than a tidier version of it.
+
+    A re-test that found nothing on **any** channel is likewise the planner's
+    own choice, and the reason this ablation exists: it measured nothing, so it
+    may not demote anybody (`planner.rank_channels`, ``unmeasured_at``).
+    Transcribed rather than imported because the planner reads an evidence
+    store and this reads count series; `test_orchestration.py` pins the two
+    against each other so they cannot drift apart again.
+
+    Returns the factors and whether the re-test was silent, because a caller
+    that cannot tell "nothing moved" from "nothing was measured" is the bug
+    this function used to have.
     """
+    silent = float(sum(stricter[c] for c in survey.index)) <= 0.0
+    if silent:
+        return dict.fromkeys(survey.index, 1.0), True
     out = {}
     for channel, base in survey.items():
         out[channel] = 1.0 if base <= 0 else min(1.0, stricter[channel] / base)
-    return out
+    return out, False
 
 
 def _argmax(score, channels):
@@ -201,7 +216,8 @@ def screen(bands, subjects, n_windows, stricter_multiples, run="01"):
 
                 for multiple in stricter_multiples:
                     strict = counts_at(prep, band, survey_sd * multiple, reviewed)
-                    factor = pd.Series(_robustness(survey, strict))
+                    factors, silent = _robustness(survey, strict)
+                    factor = pd.Series(factors)
                     score = survey * factor
                     row = _metric_row(MULTIPLIED, score, multiple, where,
                                       tied, zones, duration_min)
@@ -210,6 +226,11 @@ def screen(bands, subjects, n_windows, stricter_multiples, run="01"):
                         "mean_robustness": float(factor.reindex(reviewed).mean()),
                         "reordered": float(_argmax(score, reviewed)
                                            != _argmax(survey, reviewed)),
+                        # The window where the band went silent at this
+                        # threshold: counted rather than inferred, because how
+                        # often it happens is the point of the fix.
+                        "retest_silent": float(silent),
+                        "n_events_stricter": float(strict.sum()),
                     })
                     rows.append(row)
                 print(f"{band_name} {subject} w{index}: "

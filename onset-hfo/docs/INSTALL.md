@@ -159,30 +159,53 @@ onset-review --open /data/study-001.edf \
 
 ## The assistant, with a real model
 
-The **Assistant** tab opens on a deterministic backend that runs no model at
-all, so it works out of the box and answers instantly. To put an open-weight
-model behind it:
+The reviewer's assistant panel runs an open-weight Qwen that can only quote the
+window on screen (see [`AGENT.md`](AGENT.md)). One flag sets it up:
 
 ```bash
-curl -fsSL https://ollama.com/install.sh | sh    # if you do not have it
-ollama pull qwen2.5:7b-instruct                  # ~4.7 GB, once
-ollama serve                                     # usually already running
+./packaging/install-ubuntu.sh --with-assistant        # or add it to an existing install:
+./packaging/install-ubuntu.sh --with-assistant --skip-install
 ```
 
-Then pick **Qwen2.5 via Ollama** in the panel. The model runs on your machine;
-nothing is sent anywhere. `qwen2.5:7b-instruct` calls tools reliably and wants
-about 8 GB of RAM — `qwen2.5:3b-instruct` works on less and is noticeably
-worse at choosing which query to run.
+That installs [Ollama](https://ollama.com) if it is missing (its official
+script, one `sudo`), gives the service an **8192-token context** — the agent's
+opening turn is a few thousand tokens and Ollama's default of 2048 rejects it
+before the first answer — picks the Qwen that suits this machine (the same
+choice `onset-agent --hardware` prints: a 7B as a 4.6 GB Q4 file on a 16 GB
+laptop), pulls it once, and records the choice so the panel **opens on it**
+rather than on "No model". Use `--assistant-model qwen3:8b` to choose yourself,
+`--no-pull` to defer the download, and `--dry-run` to see the plan first.
 
-Any OpenAI-compatible server (vLLM, llama.cpp, LM Studio) works too: pick
-**OpenAI-compatible server** and give it the base URL.
+Why Ollama rather than running the model inside Python: on a machine without an
+NVIDIA card, `transformers` loads float32 — twice the memory and a fraction of
+the speed of the same model as a Q4 GGUF — and needs two gigabytes of torch to do
+it. Ollama runs the quantised model on CPU or GPU alike. The in-process route is
+still there for anyone who wants it: `pip install 'onset-hfo[llm]'` and
+`--backend transformers`.
 
-The assistant cannot invent a number whatever model is behind it. Everything it
-states is checked against the queries it actually ran, and an unverifiable
-answer is replaced by a refusal — see [`AGENT.md`](AGENT.md) for the threat
-model.
+If your Ollama listens somewhere other than `127.0.0.1:11434`, set
+`OLLAMA_HOST` the way Ollama itself reads it (`host:port`, or a URL); the
+installer, `onset-agent --backend auto` and the reviewer's panel all follow it.
 
----
+Any OpenAI-compatible server (vLLM, llama.cpp's `llama-server`, LM Studio)
+works too: pick **OpenAI-compatible server** in the panel and give it the URL —
+and give *that* server a context of at least 4096 as well (`-c 8192` for
+llama.cpp, `--max-model-len` for vLLM).
+
+Whatever the model, every number it states is checked against what the tools
+returned, and an answer that fails the check is replaced by a refusal — see
+[`AGENT.md`](AGENT.md) for the threat model. Asking it what to resect gets a
+refusal before the model is even called.
+
+### A release bundle instead of a checkout
+
+```bash
+./packaging/make-release.sh      # -> dist/onset-hfo-<version>-linux.tar.gz
+```
+
+The tarball holds the wheel, this installer as `install.sh`, the menu entry and
+icon, and these docs. Unpack it anywhere and run `./install.sh --with-assistant`;
+the installer sees the wheel beside it and installs that instead of a checkout.
 
 ## If something goes wrong
 
@@ -227,6 +250,12 @@ is. Neither public archive ships electrode coordinates; the positions come from
 the electrode names. [`CLINICAL_GUIDE.md`](CLINICAL_GUIDE.md) §2 explains what
 that view does and does not support. Point the software at BIDS data with an
 `electrodes.tsv` and it uses the real coordinates instead.
+
+**"The model server rejected the request (HTTP 400, context_length_exceeded)"**
+— the server's context window is too small for the agent's opening turn. The
+installer's `--with-assistant` sets 8192 for the Ollama service; by hand, start
+it with `OLLAMA_CONTEXT_LENGTH=8192 ollama serve`, or `-c 8192` for
+`llama-server`.
 
 **"The model could not be reached"** — Ollama is not running, or not on the
 default port. `ollama serve`, then `curl http://localhost:11434/api/tags` to
