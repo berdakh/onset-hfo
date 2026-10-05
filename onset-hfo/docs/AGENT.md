@@ -316,6 +316,19 @@ the 403 is what verifies the "the Hub may be blocked" error path rather than
 leaving it imagined. So `ensure_model` against the real Hub is the one step in
 the chain still unexercised. If it misbehaves, that is where to look first.
 
+**The catalogue is not yet pinned, for the same reason.** Every entry carries
+`revision="main"`, because a commit hash that was never looked up would be an
+invention. [`scripts/pin_catalogue.py`](../scripts/pin_catalogue.py) resolves
+each model's current Hub commit and writes it into `hardware.py` as one
+`revision=` line per entry; `--dry-run` shows what would change and `--check`
+exits non-zero once the pins have drifted from the Hub. Run it once on a
+machine that can see `huggingface.co`, commit the result, and delete the test
+in `tests/test_pin_catalogue.py` that documents the unpinned state. The
+rewrite itself is tested on the shipped source with stand-in hashes; only the
+lookup is unexercised here. Ollama tags are a separate matter: that registry
+keys models by its own digests, so a served-route result is pinned by the
+digest `ollama show` prints, not by a Hub commit.
+
 **What it does not tell you.** Whether the chosen size is *good enough at this
 task*. Fitting in memory and being competent at tool-constrained evidence work
 are different properties, and this project has measured the second for no Qwen
