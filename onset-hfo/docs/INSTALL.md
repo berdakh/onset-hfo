@@ -251,13 +251,23 @@ refusal before the model is even called.
 
 ### A release bundle instead of a checkout
 
+Every release on <https://github.com/berdakh/onset-hfo/releases> carries
+`onset-hfo-<version>-linux.tar.gz`. It holds the wheel, this installer as
+`install.sh`, the menu entry and icon, these docs, and the `site/` folder the
+study pages read. No git, no checkout:
+
+```bash
+tar xzf onset-hfo-<version>-linux.tar.gz
+cd onset-hfo-<version>-linux
+./install.sh --with-sample --with-assistant
+```
+
+The installer sees the wheel beside it and installs that. To build the same
+tarball from a checkout:
+
 ```bash
 ./packaging/make-release.sh      # -> dist/onset-hfo-<version>-linux.tar.gz
 ```
-
-The tarball holds the wheel, this installer as `install.sh`, the menu entry and
-icon, and these docs. Unpack it anywhere and run `./install.sh --with-assistant`;
-the installer sees the wheel beside it and installs that instead of a checkout.
 
 ## If something goes wrong
 

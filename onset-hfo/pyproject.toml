@@ -1,6 +1,6 @@
 [project]
 name = "onset-hfo"
-version = "0.1.0"
+version = "0.2.0"
 description = "Onset-HFO: a first prototype for detecting high-frequency oscillations and interictal epileptiform discharges in public intracranial EEG, with an evidence-only agent on an open-weight model"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -90,6 +90,12 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["onset_hfo", "onset_agent", "onset_review"]
+
+[tool.hatch.build.targets.sdist]
+# The build tool sweeps up the working tree, and the working tree holds things
+# that are not the software: the manuscript draft under paper/ (kept out of
+# git on purpose), run artifacts, and earlier builds.
+exclude = ["paper/", "artifacts/", "dist/", "**/__pycache__/"]
 
 [tool.ruff]
 line-length = 110
