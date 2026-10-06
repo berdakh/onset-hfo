@@ -8,6 +8,8 @@ explained rather than crashed on.
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from onset_review import studies
@@ -93,3 +95,57 @@ def test_the_markdown_table_helper_escapes_and_rounds():
     text = studies.table(frame)
     assert "a\\|b" in text and "0.123" in text and "| 3 |" in text
     assert studies.table(frame.iloc[0:0]) == "*(no rows)*\n"
+
+
+def test_the_loaders_are_read_from_their_file_not_through_the_sites_package():
+    """`app/__init__` imports Streamlit, which the desktop does not ship; the
+    loaders must not need it."""
+    studies._loaded.clear()
+    panels = studies._panels()
+    assert panels is not None and panels.__name__ == "onset_site_panels"
+    assert panels.__file__.endswith("app/panels.py")
+
+
+def test_an_installed_site_is_found_by_the_environment_and_sets_the_data_root(
+        tmp_path, monkeypatch):
+    """A release bundle puts the loaders and the tables under site/; the
+    reviewer must read both from there, not from a checkout it does not have."""
+    import shutil
+
+    from onset_hfo.config import PROJECT_ROOT
+
+    site = tmp_path / "site"
+    (site / "app").mkdir(parents=True)
+    shutil.copy(PROJECT_ROOT / "app" / "panels.py", site / "app" / "panels.py")
+    (site / "data").mkdir()
+    shutil.copytree(PROJECT_ROOT / "data" / "outcome", site / "data" / "outcome")
+    monkeypatch.setenv("ONSET_REVIEW_SITE_DIR", str(site))
+    monkeypatch.delenv("ONSET_HFO_DATA_ROOT", raising=False)
+    studies._loaded.clear()
+    try:
+        assert studies.site_root() == site
+        panels = studies._panels()
+        assert panels is not None
+        assert str(panels.COHORT).startswith(str(site)), "the tables come from the site"
+        assert studies.available()
+        assert "## One patient: sub-01" in studies.build("patients", subject="sub-01")
+        assert "not on this machine" not in studies.build("data")
+    finally:
+        # `_panels` set this itself, so it is cleared the same way: through
+        # monkeypatch it would be *restored* to the site's value at teardown.
+        studies._loaded.clear()
+        os.environ.pop("ONSET_HFO_DATA_ROOT", None)
+
+
+def test_no_site_anywhere_means_the_pages_say_so(tmp_path, monkeypatch):
+    monkeypatch.setenv("ONSET_REVIEW_SITE_DIR", str(tmp_path / "nowhere"))
+    monkeypatch.setattr(studies, "INSTALLED_SITE", tmp_path / "nothing")
+    import onset_hfo.config as config
+
+    monkeypatch.setattr(config, "PROJECT_ROOT", tmp_path / "bare")
+    studies._loaded.clear()
+    try:
+        assert studies.site_root() is None
+        assert "not on this machine" in studies.build("outcome")
+    finally:
+        studies._loaded.clear()

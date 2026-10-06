@@ -167,9 +167,12 @@ window from the same committed tables the site reads (`data/`), through the
 site's own loaders. They need no recording, so they are open before anything is
 loaded. Band, metric and patient are combo boxes above the text, and the
 Patients page can open a patient's cached window on the Recording page, which
-is the one link the site cannot make. They read the checkout: on an install
-without `app/` and `data/` the pages say so and point at the
+is the one link the site cannot make. They read the checkout, or the release
+bundle's `site/` folder, which `install.sh` copies next to the environment; on
+an install with neither the pages say so and point at the
 [results site](https://berdakh.github.io/onset-hfo/).
+
+![The window as it opens](images/onset-review-home.png)
 
 The original arrangement, every panel a dock on the trace's window with three
 task layouts, is still there: **View → Everything at once (docked panels)**

@@ -19,11 +19,10 @@ install that lacks them the builders say so, and the pages point at the site.
 
 from __future__ import annotations
 
-import importlib
 from pathlib import Path
 
 __all__ = ["STUDIES", "available", "build", "controls", "patient_rows",
-           "cached_window_for"]
+           "cached_window_for", "site_root"]
 
 #: (key, sidebar label, one-line description)
 STUDIES = (
@@ -51,13 +50,66 @@ SITE = "https://berdakh.github.io/onset-hfo/"
 
 # -- the data layer --------------------------------------------------------
 
+#: Where an installed release bundle keeps the site's loaders and tables
+#: (``install.sh`` copies the bundle's ``site/`` here).
+INSTALLED_SITE = Path.home() / ".local" / "share" / "onset-review" / "site"
+
+
+def site_root() -> Path | None:
+    """The directory holding ``app/panels.py`` and ``data/``, or None.
+
+    Three places, in order: ``ONSET_REVIEW_SITE_DIR``; the checkout this
+    package was imported from; the installed bundle's ``site/``.
+    """
+    import os
+
+    from onset_hfo.config import PROJECT_ROOT
+
+    named = os.environ.get("ONSET_REVIEW_SITE_DIR")
+    candidates = ([Path(named).expanduser()] if named else []) + [PROJECT_ROOT, INSTALLED_SITE]
+    for root in candidates:
+        if (root / "app" / "panels.py").exists():
+            return root
+    return None
+
+
+_loaded: dict = {}
+
 
 def _panels():
-    """The site's loaders, or None where the site is not on this machine."""
+    """The site's loaders, or None where the site is not on this machine.
+
+    ``app/panels.py`` is loaded from its file rather than imported as
+    ``app.panels``: the site's package ``__init__`` imports Streamlit, which
+    the desktop does not ship, and the loaders themselves need only pandas
+    and this project. The data root is pointed at the same place first, so
+    a bundle's tables are found beside a bundle's loaders.
+    """
+    root = site_root()
+    if root is None:
+        return None
+    if _loaded.get("root") == root:
+        return _loaded["module"]
+    import importlib.util
+    import os
+
+    from onset_hfo.config import PROJECT_ROOT
+
+    if root != PROJECT_ROOT:
+        os.environ["ONSET_HFO_DATA_ROOT"] = str(root / "data")
+    else:
+        # A checkout reads its own data/; a value left over from an earlier
+        # site must not redirect it.
+        os.environ.pop("ONSET_HFO_DATA_ROOT", None)
     try:
-        return importlib.import_module("app.panels")
+        spec = importlib.util.spec_from_file_location("onset_site_panels",
+                                                      root / "app" / "panels.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
     except Exception:       # noqa: BLE001 - absent, broken: both mean "not here"
         return None
+    _loaded.update(root=root, module=module)
+    return module
 
 
 def available() -> bool:
@@ -67,12 +119,20 @@ def available() -> bool:
     return Path(panels.COHORT).exists() or Path(panels.BENCHMARK).exists()
 
 
+def _image(name: str) -> Path | None:
+    """A figure of the site's docs, wherever the site is."""
+    root = site_root()
+    path = (root / "docs" / "img" / name) if root is not None else None
+    return path if path is not None and path.exists() else None
+
+
 def _missing(name: str) -> str:
     return (f"# {name}\n\n> **The study tables are not on this machine.** These "
             f"pages read the committed extracts under `data/` through the site's "
             f"own loaders (`app/panels.py`), which ship with a checkout of the "
-            f"repository and not with the wheel. The same page is on the results "
-            f"site: {SITE}\n")
+            f"repository and with the release bundle's `site/` (installed by "
+            f"`install.sh`), not with the bare wheel. The same page is on the "
+            f"results site: {SITE}\n")
 
 
 # -- Markdown helpers ----------------------------------------------------------
@@ -351,8 +411,6 @@ def _outcome(**_) -> str:
         return _missing("Surgical outcome, and whether any of it is stable")
     import pandas as pd
 
-    from onset_hfo.config import PROJECT_ROOT
-
     groups_path = Path(panels.STUDIES) / "outcome_groups_300s.csv"
     groups = pd.read_csv(groups_path) if groups_path.exists() else pd.DataFrame()
     out = ["# Surgical outcome, and whether any of it is stable\n",
@@ -391,8 +449,8 @@ in fewer than half the patients — worst case, 24 tied channels out of 37 — s
 Being honest about ties costs 0.017 AUC.
 """)
     out.append("## Does the window matter? The result that did not hold up\n")
-    figure = PROJECT_ROOT / "docs" / "img" / "window_stability.png"
-    if figure.exists():
+    figure = _image("window_stability.png")
+    if figure is not None:
         out.append(f"![Window stability]({figure.as_posix()})\n")
     out.append("""
 The first version of this study used the **first 60 seconds** of each recording
@@ -415,8 +473,8 @@ busiest channel in 12/20 patients against 7/20. Read it as reproducibility, not
 accuracy.
 """)
     out.append("## Does the night matter? A whole run is a stable unit; a minute is not\n")
-    figure = PROJECT_ROOT / "docs" / "img" / "run_stability.png"
-    if figure.exists():
+    figure = _image("run_stability.png")
+    if figure is not None:
         out.append(f"![Run stability]({figure.as_posix()})\n")
     out.append(table(pd.DataFrame([
         ("expert", "9/20", "18/20"), ("our RMS detector", "16/20", "16/20")],

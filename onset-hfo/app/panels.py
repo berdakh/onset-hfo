@@ -30,6 +30,7 @@ the numbers describe. Nothing is re-detected.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pandas as pd
@@ -37,22 +38,28 @@ import pandas as pd
 from onset_hfo.config import PROJECT_ROOT, RESULTS_DIR
 from onset_hfo.store import ResultStore
 
+#: Where the committed tables live. The checkout's ``data/`` unless
+#: ``ONSET_HFO_DATA_ROOT`` says otherwise -- which the desktop reviewer sets
+#: when it reads these loaders out of an installed release bundle rather
+#: than a checkout.
+DATA_ROOT = Path(os.environ.get("ONSET_HFO_DATA_ROOT") or PROJECT_ROOT / "data")
+
 #: A real 60 s analysis that ships with the source, so every page works on a
 #: fresh clone with no download: OpenNeuro ds003029, the slice the quickstart
 #: documents, gzipped.
-EXAMPLE = PROJECT_ROOT / "data" / "example_analysis"
+EXAMPLE = DATA_ROOT / "example_analysis"
 
 #: Cohort-study tables, committed so the evaluation and outcome pages need no
 #: download and no 90-minute rerun.
-STUDIES = PROJECT_ROOT / "data" / "stability"
+STUDIES = DATA_ROOT / "stability"
 
 #: The outcome study's **per-subject** tables, committed for the same reason.
 #: Group means are what a paper reports; a clinician asks about a patient.
-COHORT = PROJECT_ROOT / "data" / "outcome"
+COHORT = DATA_ROOT / "outcome"
 
 #: The detector threshold sweep against expert markings, and the per-subject
 #: reference counts it was scored against.
-BENCHMARK = PROJECT_ROOT / "data" / "benchmark"
+BENCHMARK = DATA_ROOT / "benchmark"
 
 # --------------------------------------------------------------------------
 # The standing disclaimer -- the canonical copy
