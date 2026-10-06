@@ -1197,7 +1197,7 @@ def test_the_panel_discovers_a_served_model_and_answers_through_it(
     loop, the guards pass an honest answer, and the citation is a link.
 
     The model is a protocol-faithful fake (tests/_fake_ollama.py) that does
-    what the system prompt asks -- survey, evidence, cite -- so this exercises
+    what the system prompt asks -- read the briefing, cite -- so this exercises
     the success path rather than the refusal path random weights produce.
     """
     from _fake_ollama import FakeOllama
@@ -1224,7 +1224,9 @@ def test_the_panel_discovers_a_served_model_and_answers_through_it(
             assert str(leader["rate_per_min"]) in text, text
             assert "stand behind" not in text          # not a refusal
             assert 'href="' in panel.transcript.toHtml()  # the citation is clickable
-            assert [c[2] for c in fake.calls] == [0, 1, 2]
+            # One model call, with the briefing's results already in front of it.
+            assert len(fake.calls) == 1 and fake.calls[0][2] >= 4
+            assert "Retrieved for the model top_channels" in text, "the work is shown"
         finally:
             panel.deleteLater()
 
