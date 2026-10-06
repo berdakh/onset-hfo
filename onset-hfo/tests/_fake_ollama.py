@@ -1,10 +1,12 @@
 """A stand-in Ollama that speaks the real wire protocol and answers like a
 careful model -- or, on request, like a careless one.
 
-Not a language model: an oracle. Asked with tools, it calls ``top_channels``;
-given that result it calls ``get_evidence`` for the leader, exactly as the
-system prompt instructs; given *that*, it writes the answer the contract
-demands and cites the evidence id it was handed. Every layer between the
+Not a language model: an oracle. It reads whatever tool results are in the
+conversation -- the agent's briefing puts the survey and the leaders' evidence
+there before the first call -- and calls ``top_channels`` only if no survey is
+there, ``get_evidence`` only if the leader's windows are not, exactly as the
+system prompt instructs; then it writes the answer the contract demands and
+cites the evidence id it was handed. Every layer between the
 reviewer and it -- the panel, the worker thread, OllamaBackend, the agent loop,
 the citation and number guards -- is the shipped code. Only the brain is
 scripted, and scripted to be right, so the success path is exercised rather
@@ -91,23 +93,25 @@ class FakeOllama:
                             tool_results.append({})
                 fake.calls.append(("chat", len(messages), len(tool_results)))
 
-                if not tool_results and "top_channels" in names:
+                survey = next((r for r in tool_results if r.get("channels")), None)
+                leader = _leader(survey) if survey else None
+                evidence = next((r for r in tool_results
+                                 if r.get("evidence") and leader
+                                 and r.get("channel") == leader.get("channel")), None)
+                if survey is None and "top_channels" in names:
                     message = {"role": "assistant", "content": None, "tool_calls": [{
                         "id": "call_1", "type": "function",
                         "function": {"name": "top_channels",
                                      "arguments": json.dumps({"k": 3})}}]}
-                elif len(tool_results) == 1 and "get_evidence" in names:
-                    leader = _leader(tool_results[0]) or {}
+                elif leader and evidence is None and "get_evidence" in names:
                     message = {"role": "assistant", "content": None, "tool_calls": [{
                         "id": "call_2", "type": "function",
                         "function": {"name": "get_evidence",
                                      "arguments": json.dumps(
                                          {"channel": leader.get("channel", "")})}}]}
                 else:
-                    leader = _leader(tool_results[0]) if tool_results else None
-                    evidence = tool_results[1] if len(tool_results) > 1 else {}
                     message = {"role": "assistant",
-                               "content": json.dumps(_answer(evidence, leader, fake.mode))}
+                               "content": json.dumps(_answer(evidence or {}, leader, fake.mode))}
                 self._send(200, {"id": "chatcmpl-fake", "object": "chat.completion",
                                  "model": fake.tag,
                                  "choices": [{"index": 0, "message": message,

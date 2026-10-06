@@ -264,7 +264,10 @@ def test_a_hallucinated_number_is_refused(store, mock_server):
     assert "999.9" not in answer.text
 
 
-def test_a_fabricated_citation_is_refused(store, mock_server):
+def test_a_fabricated_citation_with_nothing_real_behind_it_is_refused(store, mock_server):
+    """The answer names no channel, so there is no retrieved window to put in
+    place of the invented id -- and an answer whose only citation is to
+    nothing is refused for it."""
     url = mock_server([
         {"role": "assistant", "content": json.dumps(
             {"answer": "See the evidence.", "evidence_ids": ["sub-zz|FAKE|rms|0.000"]})},
@@ -272,6 +275,134 @@ def test_a_fabricated_citation_is_refused(store, mock_server):
     agent = OnsetAgent(store, OpenAICompatBackend(model="mock", base_url=url))
     answer = agent.ask("Show me the evidence for the top channel.")
     assert answer.refused
+    assert any("never returned" in p for e in answer.trace
+               if e.get("type") == "answer" for p in e["problems"])
+
+
+def test_a_placeholder_citation_is_replaced_by_the_real_evidence(store, mock_server):
+    """Seen with a 7B on a CPU: the model copied the contract's "<id>"
+    placeholder as `evidence_id_1`. Its numbers were right. The placeholder
+    is dropped, the retrieved windows of the channel it named are attached,
+    and the trace says which was which."""
+    top = store.top_channels(None, 1)[0]
+    url = mock_server([
+        {"role": "assistant", "content": json.dumps(
+            {"answer": f"{top['channel']} stands out with {top['rate_per_min']} events "
+                       f"per minute.",
+             "evidence_ids": ["evidence_id_1", "evidence_id_2"]})},
+    ])
+    agent = OnsetAgent(store, OpenAICompatBackend(model="mock", base_url=url))
+    answer = agent.ask("Does any channel actually stand out?")
+    assert not answer.refused, answer.trace
+    assert answer.evidence_ids and all(top["channel"] in i for i in answer.evidence_ids)
+    assert answer.attached_citations == answer.evidence_ids
+    cites = [e for e in answer.trace if e["type"] == "citations"][0]
+    assert cites["dropped"] == ["evidence_id_1", "evidence_id_2"]
+
+
+def test_a_prose_answer_is_checked_as_written(store, mock_server):
+    """A small model writes the sentence instead of the JSON. The sentence is
+    the answer; it goes through the same number check, and passes when the
+    numbers are the tools' -- with no retry round-trip spent on the format."""
+    top = store.top_channels(None, 1)[0]
+    url = mock_server([
+        {"role": "assistant",
+         "content": f"The channel {top['channel']} has the highest rate at "
+                    f"{top['rate_per_min']} events per minute (95% CI: "
+                    f"{top['rate_ci_95'][0]} to {top['rate_ci_95'][1]}). "
+                    "证据_id：[\"evidence-001\"]"},
+    ])
+    agent = OnsetAgent(store, OpenAICompatBackend(model="mock", base_url=url))
+    answer = agent.ask("Which channels have the highest ripple rate?")
+    assert not answer.refused, answer.trace
+    assert answer.text.startswith("The channel") and "证据" not in answer.text
+    assert [e["type"] for e in answer.trace if e["type"] in ("prose", "format_error")] == ["prose"]
+    assert len(answer.tools_called) == 0 and answer.looked_at, "the briefing did the fetching"
+
+
+def test_a_prose_answer_with_an_invented_number_is_still_refused(store, mock_server):
+    url = mock_server([
+        {"role": "assistant", "content": "The top channel fires at 999.9 events per minute."},
+    ] * 4)
+    agent = OnsetAgent(store, OpenAICompatBackend(model="mock", base_url=url))
+    answer = agent.ask("How often does the top channel fire?")
+    assert answer.refused and "999.9" not in answer.text
+
+
+def test_the_confidence_level_is_a_number_the_tools_returned(store):
+    """"95 %" was flagged as invented: the tool says it as the key
+    `rate_ci_95`, and keys are part of the result."""
+    from onset_agent.guard import collect_numbers
+
+    seen = collect_numbers(dispatch(store, "top_channels", {"k": 1}))
+    assert 95.0 in seen
+    assert verify_answer("The 95 % interval is wide.", [], set(), seen).ok
+
+
+def test_the_briefing_runs_before_the_model_and_is_marked(store, mock_server):
+    seen_by_model = []
+
+    class Recorder(BaseHTTPRequestHandler):
+        pass
+
+    url = mock_server([
+        {"role": "assistant", "content": json.dumps({"answer": "Read above.", "evidence_ids": []})},
+    ])
+    events = []
+    agent = OnsetAgent(store, OpenAICompatBackend(model="mock", base_url=url))
+    answer = agent.ask("What was analysed?", on_event=events.append)
+    briefed = [e for e in answer.trace if e.get("briefing")]
+    assert [e["tool"] for e in briefed][:2] == ["get_recording_metadata", "top_channels"]
+    assert any(e["tool"] == "get_evidence" for e in briefed)
+    assert all("digest" in e for e in briefed)
+    assert answer.tools_called == [] and answer.looked_at
+    # Every trace entry was reported as it happened, in order.
+    assert [e["type"] for e in events] == [e["type"] for e in answer.trace]
+    del seen_by_model, Recorder
+
+
+def test_the_briefing_fetches_a_channel_named_in_the_question(store):
+    from onset_agent.agent import briefing
+
+    channel = store.channels()[0]
+    calls = briefing(store, f"Tell me about {channel.lower()} and its seizure rate")
+    assert ("channel_summary", {"channel": channel}) in calls
+    assert ("get_evidence", {"channel": channel, "k": 2}) in calls
+    assert ("rate_change", {}) in calls
+    assert ("report_section", {"section": "limitations"}) in briefing(store, "what are the limitations?")
+
+
+def test_the_scripted_policy_keeps_its_own_routing(store):
+    """The briefing exists to save a language model round-trips; the scripted
+    policy has none to save and routes by question, so it is left alone."""
+    agent = OnsetAgent(store, ScriptedBackend())
+    assert not agent.brief
+    answer = agent.ask("What are the limitations of this analysis?")
+    assert answer.tools_called == ["report_section"]
+
+
+@pytest.mark.parametrize("question", ["What can you do?", "what can I ask you", "help",
+                                      "Who are you?", "How do you work?"])
+def test_questions_about_the_assistant_are_answered_without_a_model(store, question):
+    class Never(Backend):
+        name = "never"
+
+        def chat(self, messages, tools):
+            raise AssertionError("the model must not be called")
+
+    answer = OnsetAgent(store, Never()).ask(question)
+    assert not answer.refused and answer.verified
+    assert "treatment" in answer.text and "highest" in answer.text
+    assert answer.trace[0]["type"] == "about"
+
+
+@pytest.mark.parametrize("question", ["What can you tell me about AR1-AR2?",
+                                      "What do you know about the top channel?",
+                                      "help me understand the disagreement"])
+def test_questions_about_the_data_are_not_mistaken_for_questions_about_the_assistant(question):
+    from onset_agent.guard import about_the_assistant
+
+    assert not about_the_assistant(question)
 
 
 def test_the_model_cannot_call_an_unknown_tool(store, mock_server):

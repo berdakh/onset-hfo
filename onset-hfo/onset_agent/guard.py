@@ -23,7 +23,8 @@ import math
 import re
 from dataclasses import dataclass, field
 
-__all__ = ["check_question", "verify_answer", "collect_numbers", "GuardResult"]
+__all__ = ["check_question", "verify_answer", "collect_numbers", "GuardResult",
+           "about_the_assistant"]
 
 DIRECTIVE = re.compile(
     r"\b(resect\w*|ablat\w*|remov\w*|operat\w*|surg\w*|implant\w*|"
@@ -55,6 +56,27 @@ MAX_FREE_INTEGER = 20
 #: Channel names and evidence ids contain digits that are not measurements.
 CHANNEL_TOKEN = re.compile(r"\b[A-Za-z]{1,6}'?\d{1,3}(?:-[A-Za-z]{1,6}'?\d{1,3})?\b")
 EVIDENCE_TOKEN = re.compile(r"\[[^\]]*\]|\b\S+\|\S+\|\S+\|\S+\b")
+
+
+#: Questions about the assistant itself rather than the data. Answered from
+#: a fixed text, before any model runs: "what can you do" deserves a reply in
+#: under a second, and a model has no way of knowing the answer anyway. The
+#: list is deliberately tight -- "what can you tell me about AR1-AR2" and
+#: "what do you know about the top channel" are questions about the data.
+ABOUT = re.compile(
+    r"^\s*(?:hi|hello|hey)?[\s,!.]*(?:"
+    r"what can (?:you|i|this(?: assistant| tool)?) (?:do|ask(?: you)?|answer)|"
+    r"what (?:do|can) you do|what are you|who are you|how do you work|"
+    r"what (?:kinds? of |sort of )?questions? can i ask|"
+    r"what are your (?:capabilit\w*|limits|rules)|"
+    r"what (?:can't|cannot|won't) you (?:do|answer)|"
+    r"help|\?)[\s?!.]*$",
+    re.IGNORECASE)
+
+
+def about_the_assistant(question: str) -> bool:
+    """True for a question about what the assistant is and does."""
+    return bool(ABOUT.match(question or ""))
 
 
 @dataclass
@@ -100,7 +122,11 @@ def collect_numbers(value, out: set[float] | None = None) -> set[float]:
             out.add(round(float(token), 4))
         return out
     if isinstance(value, dict):
-        for v in value.values():
+        for key, v in value.items():
+            # A number in a key is in the result too: "rate_ci_95" is how a
+            # tool says 95 %, and an answer that says "95 % interval" is
+            # copying it, not inventing it.
+            collect_numbers(str(key), out)
             collect_numbers(v, out)
         return out
     if isinstance(value, (list, tuple, set)):

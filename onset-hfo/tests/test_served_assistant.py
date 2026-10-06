@@ -62,8 +62,9 @@ def test_the_agent_answers_with_the_right_number_and_a_real_citation(served, sto
     assert leader["channel"] in answer.text
     assert str(leader["rate_per_min"]) in answer.text
     assert answer.evidence_ids and set(answer.evidence_ids) <= expected_ids
-    # The oracle did what the prompt asks: survey, then evidence, then answer.
-    assert [c[2] for c in served.calls] == [0, 1, 2]
+    # The briefing had already surveyed and fetched the leader's evidence, so
+    # the oracle answered on its first call, with those results in front of it.
+    assert len(served.calls) == 1 and served.calls[0][2] >= 4
 
 
 def test_a_model_that_invents_a_number_is_refused_over_the_same_wire(store, monkeypatch):

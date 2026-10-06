@@ -214,10 +214,13 @@ window on screen (see [`AGENT.md`](AGENT.md)). One flag sets it up:
 ```
 
 Or do it from inside the window: the **Assistant** page has a box that looks
-at this machine, names the Qwen the chooser picks for it, and offers to pull
-it with a progress bar. It needs Ollama running first (`ollama serve`); it
-cannot install a daemon. Once pulled, the model is written as the default and
-the assistant switches to it on the spot.
+at this machine, lists every Qwen size it can serve, and offers to pull the
+one you pick with a progress bar. On a CPU it opens on the 3B
+(`qwen2.5:3b-instruct`, about 1.9 GB), which answers in well under a minute;
+the 7B the installer picks is more careful and several times slower. It needs
+Ollama running first (`ollama serve`); it cannot install a daemon. Once
+pulled, the model is written as the default and the assistant switches to it
+on the spot.
 
 That installs [Ollama](https://ollama.com) if it is missing (its official
 script, one `sudo`), gives the service an **8192-token context** — the agent's

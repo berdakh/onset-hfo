@@ -139,7 +139,7 @@ python -m onset_hfo.cli run --subject sub-pt01 --task ictal --run 01 \
 # 3. ask the agent about the results (no model needed for the scripted policy)
 python -m onset_agent.cli --results artifacts/results/sub-pt01_ictal_run-01 --demo
 
-# 4. with a real open-weight model
+# 4. with a real open-weight model (on a CPU, qwen2.5:3b-instruct answers sooner)
 ollama pull qwen2.5:7b-instruct && ollama serve &
 python -m onset_agent.cli --results artifacts/results/sub-pt01_ictal_run-01 \
        --backend ollama --chat

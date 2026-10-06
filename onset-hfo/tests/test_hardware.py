@@ -748,3 +748,26 @@ def test_a_pull_error_line_is_raised_not_swallowed(monkeypatch):
         lambda request, timeout=0: _Lines([b'{"error":"pull model manifest: file does not exist"}\n']))
     with pytest.raises(RuntimeError, match="does not exist"):
         ollama_pull_stream("qwen9:1b", "http://box:11434")
+
+
+def test_the_window_offers_every_served_size_and_opens_on_the_fast_one():
+    """`served_options` is the window's policy: all that fits, smallest first,
+    and on a CPU the largest Qwen2.5 Instruct at or under the fast size. The
+    CLI's `choose` keeps the reference size; the two are allowed to differ."""
+    from onset_agent.hardware import CPU_CEILING_PARAMS_B, CPU_FAST_PARAMS_B, served_options
+
+    fitting, default = served_options(cpu(16.0))
+    sizes = [c.model.params_b for c in fitting]
+    assert sizes == sorted(sizes) and all(s <= CPU_CEILING_PARAMS_B for s in sizes)
+    assert default == "qwen2.5:3b-instruct"
+    picked = next(c for c in fitting if c.ollama_tag == default)
+    assert picked.model.params_b <= CPU_FAST_PARAMS_B and picked.fits
+    assert all(c.route == "ollama" and c.fits for c in fitting)
+    # A tiny machine still gets the sizes that fit it, and nothing else.
+    small, small_default = served_options(cpu(6.0))
+    assert small and all(c.model.params_b < 4 for c in small)
+    assert small_default in [c.ollama_tag for c in small]
+    # Off a CPU the chooser's own pick is the default and the cap does not apply.
+    big, big_default = served_options(cuda(24.0))
+    assert big_default == choose(cuda(24.0), route="ollama").ollama_tag
+    assert max(c.model.params_b for c in big) > CPU_CEILING_PARAMS_B
