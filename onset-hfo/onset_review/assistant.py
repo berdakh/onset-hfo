@@ -34,7 +34,7 @@ import os
 import tempfile
 from pathlib import Path
 
-from qtpy.QtCore import QEventLoop, QThread, Signal
+from qtpy.QtCore import QEventLoop, QThread, QTimer, Signal
 from qtpy.QtWidgets import (
     QComboBox,
     QHBoxLayout,
@@ -139,19 +139,61 @@ class _AskWorker(QThread):
         self._store = store
         self._question = question
         self._kind, self._model, self._base_url = kind, model, base_url
+        self._backend = None
+        self._stop = False
         self.answer = None
         self.error: str | None = None
+
+    def stop(self) -> None:
+        """Abandon the question: the loop ends at its next step, and a
+        served model's connection is closed so it stops generating."""
+        self._stop = True
+        backend = self._backend
+        if backend is not None:
+            backend.abort()
 
     def run(self) -> None:
         try:
             from onset_agent.agent import OnsetAgent
             from onset_agent.backends import make_backend
 
-            backend = make_backend(self._kind, model=self._model or None,
-                                   base_url=self._base_url or None)
-            self.answer = OnsetAgent(self._store, backend=backend).ask(self._question)
+            self._backend = make_backend(self._kind, model=self._model or None,
+                                         base_url=self._base_url or None)
+            if self._stop:
+                self._backend.abort()
+            self.answer = OnsetAgent(self._store, backend=self._backend).ask(
+                self._question, should_stop=lambda: self._stop)
         except Exception as error:
             self.error = f"{type(error).__name__}: {error}"
+
+
+def explain_refusal(answer) -> list[str]:
+    """What the model did and why it was refused, from the trace, as HTML lines.
+
+    A refusal that says only "verification failed" leaves a reviewer unable to
+    tell a model that invented a number from one that copied it with a
+    different rounding. The trace knows; this reads it out.
+    """
+    lines: list[str] = []
+    for entry in getattr(answer, "trace", None) or []:
+        kind = entry.get("type")
+        if kind == "answer" and not entry.get("verified", True):
+            said = html.escape(str(entry.get("text") or "")[:300])
+            problems = "; ".join(html.escape(str(p)) for p in entry.get("problems") or [])
+            lines.append(f"The model wrote: <i>{said}</i> — refused because {problems or 'the checks failed'}.")
+        elif kind == "format_error":
+            said = html.escape(str(entry.get("content") or "")[:200])
+            lines.append(f"The model did not reply in the required JSON shape; it wrote: <i>{said}</i>")
+        elif kind == "tool_call" and not entry.get("ok", True):
+            lines.append(f"A tool call failed: {html.escape(str(entry.get('error') or ''))}")
+        elif kind == "model_refusal":
+            lines.append("The model itself declined to answer.")
+        elif kind == "stopped":
+            lines.append("Stopped by you.")
+        elif kind == "gave_up":
+            lines.append(f"Gave up after {entry.get('steps')} steps and "
+                         f"{entry.get('retries')} retries.")
+    return lines
 
 
 def _run(worker) -> None:
@@ -217,10 +259,28 @@ class AssistantPanel(QWidget):
         self.question.returnPressed.connect(self.ask)
         self.send = QPushButton("Ask")
         self.send.clicked.connect(self.ask)
+        # A model on a CPU can take a minute per step, and a loop is up to
+        # six of them. The reviewer must be able to end that, and to see it
+        # is still alive meanwhile.
+        self.stop_button = QPushButton("Stop")
+        self.stop_button.setObjectName("onset_assistant_stop")
+        self.stop_button.setToolTip("Abandon this question: the model's request is "
+                                    "closed and the loop ends at its next step")
+        self.stop_button.setEnabled(False)
+        self.stop_button.clicked.connect(self.stop)
+        self.busy = QLabel("")
+        self.busy.setObjectName("onset_assistant_busy")
+        self.busy.setStyleSheet(f"color:{theme.current().text_muted};font-size:9pt;")
+        self._clock = QTimer(self)
+        self._clock.setInterval(1000)
+        self._clock.timeout.connect(self._tick)
+        self._started = 0.0
 
         row = QHBoxLayout()
         row.addWidget(self.question)
         row.addWidget(self.send)
+        row.addWidget(self.stop_button)
+        row.addWidget(self.busy)
 
         prompts = QHBoxLayout()
         prompts.setSpacing(3)
@@ -358,15 +418,15 @@ class AssistantPanel(QWidget):
             return
 
         self._say_system("Thinking…")
-        self.setEnabled(False)
         self._worker = _AskWorker(self._store, text,
                                   str(self.backend.currentData() or "scripted"),
                                   self.model.text().strip(),
                                   self.base_url.text().strip())
+        self._set_busy(True)
         try:
             _run(self._worker)
         finally:
-            self.setEnabled(True)
+            self._set_busy(False)
             self.question.setFocus()
 
         if self._worker.error:
@@ -375,6 +435,37 @@ class AssistantPanel(QWidget):
                 "<br>Switch to <i>No model</i> to use the deterministic backend.")
             return
         self._say_answer(self._worker.answer)
+
+    def stop(self) -> None:
+        """The Stop button: end the question in flight, if there is one."""
+        worker = self._worker
+        if worker is None or not worker.isRunning():
+            return
+        worker.stop()
+        self.stop_button.setEnabled(False)
+        self.busy.setText("stopping…")
+
+    def _set_busy(self, on: bool) -> None:
+        """While a question runs: only Stop works, and the clock shows."""
+        import time
+
+        for widget in (self.question, self.send, self.backend, self.model,
+                       self.base_url, self.setup):
+            widget.setEnabled(not on)
+        self.stop_button.setEnabled(on)
+        if on:
+            self._started = time.monotonic()
+            self.busy.setText("thinking… 0 s")
+            self._clock.start()
+        else:
+            self._clock.stop()
+            self.busy.setText("")
+
+    def _tick(self) -> None:
+        import time
+
+        if self.stop_button.isEnabled():
+            self.busy.setText(f"thinking… {time.monotonic() - self._started:.0f} s")
 
     # -- transcript --------------------------------------------------------
     def _append(self, body: str) -> None:
@@ -395,13 +486,16 @@ class AssistantPanel(QWidget):
             self._say_system("No answer came back.")
             return
         if answer.refused:
+            why = "".join(f"<li>{line}</li>" for line in explain_refusal(answer))
             self._append(
                 f"<div style='margin:2px 0 6px;padding:6px;"
                 f"background:{theme.current().bad_surface};"
                 f"border-left:3px solid {theme.current().bad};'>"
                 f"<b>Refused.</b> {html.escape(answer.text)}"
                 f"<div style='color:{theme.current().text_muted};font-size:11px;margin-top:3px;'>"
-                f"{html.escape(answer.reason)}</div></div>")
+                f"{html.escape(answer.reason)}</div>"
+                + (f"<ul style='font-size:11px;margin:4px 0 0 0;'>{why}</ul>" if why else "")
+                + "</div>")
             return
 
         parts = [f"<div style='margin:2px 0 4px;'>{html.escape(answer.text)}</div>"]

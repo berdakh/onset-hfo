@@ -104,3 +104,51 @@ def test_the_panel_switches_to_the_model_the_box_made_ready(qapp, monkeypatch):
     assert panel.model.text() == "qwen3:4b"
     assert "qwen3:4b" in panel.transcript.toPlainText()
     panel.close()
+
+
+# -- stopping, and saying why ----------------------------------------------------
+
+
+def test_the_stop_button_is_only_live_while_a_question_runs(qapp, monkeypatch):
+    from onset_review.assistant import AssistantPanel
+
+    monkeypatch.setenv("ONSET_ASSISTANT_NO_PROBE", "1")
+    panel = AssistantPanel(session=object())
+    assert not panel.stop_button.isEnabled() and panel.send.isEnabled()
+    panel._set_busy(True)
+    assert panel.stop_button.isEnabled() and not panel.send.isEnabled()
+    assert panel.busy.text().startswith("thinking")
+    panel._set_busy(False)
+    assert not panel.stop_button.isEnabled() and panel.send.isEnabled()
+    assert panel.busy.text() == ""
+    panel.stop()        # nothing running: a no-op, not an error
+    panel.close()
+
+
+def test_a_refusal_says_what_the_model_wrote_and_which_check_failed(qapp, monkeypatch):
+    from onset_agent.agent import AgentAnswer
+    from onset_review.assistant import AssistantPanel, explain_refusal
+
+    monkeypatch.setenv("ONSET_ASSISTANT_NO_PROBE", "1")
+    answer = AgentAnswer(
+        question="q", text="I could not produce an answer I can stand behind.",
+        refused=True, reason="verification failed", trace=[
+            {"type": "tool_call", "tool": "top_channels", "ok": True},
+            {"type": "answer", "step": 1, "verified": False,
+             "problems": ["the value '99.5 events/min' does not appear in any tool result"],
+             "text": "AR1-AR2 had 99.5 events/min.", "evidence_ids": []},
+            {"type": "format_error", "step": 2, "content": "Sure! Here is"},
+            {"type": "gave_up", "steps": 6, "retries": 2}])
+    lines = explain_refusal(answer)
+    assert any("99.5 events/min" in line and "AR1-AR2 had" in line for line in lines)
+    assert any("required JSON" in line for line in lines)
+    assert any("Gave up after 6 steps" in line for line in lines)
+    panel = AssistantPanel(session=object())
+    panel._say_answer(answer)
+    shown = panel.transcript.toPlainText()
+    assert "Refused." in shown and "99.5 events/min" in shown and "Gave up" in shown
+    stopped = AgentAnswer(question="q", text="Stopped before an answer was produced.",
+                          refused=True, reason="stopped by the reviewer",
+                          trace=[{"type": "stopped", "step": 0}])
+    assert explain_refusal(stopped) == ["Stopped by you."]
+    panel.close()

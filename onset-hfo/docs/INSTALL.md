@@ -157,9 +157,14 @@ at a time on the right, and the same disclaimer line on every page.
 | **Contacts** | the 3D view, the patient record, and where the coordinates came from |
 | **Quality** | data quality and preprocessing side by side, provenance under them; *Apply* re-runs the analysis and every page follows |
 | **Report** | the review as it will be exported, agreement with the archive's annotators, *Export review…* |
-| **Assistant** | the assistant, and the box that gets a local Qwen onto this machine |
+| **Assistant** | the assistant, a *Stop* button for a model taking too long, and the box that gets a local Qwen onto this machine. A refusal says what the model wrote and which check it failed |
 
 `Alt+1` to `Alt+9` switch pages, so do the entries at the top of **View**.
+Every boundary between regions — the sidebar and the page, the trend strip
+and the trace, the trace and its side column, the 3D view and its column, and
+so on — is a splitter you drag with the mouse. Sizes are remembered across
+re-analyses and across launches; **View → Restore the default layout** puts
+them back.
 
 Under the first group sit the six **study pages** of the results site —
 Detectors, Outcome, Patients, Data, Architecture, Research — built in the

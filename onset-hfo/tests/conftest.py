@@ -44,6 +44,14 @@ from onset_hfo.synthetic import make_synthetic_recording
 
 
 @pytest.fixture(scope="session", autouse=True)
+def _window_settings_go_to_a_temporary_directory(tmp_path_factory):
+    """The page window remembers its splitter sizes beside the assistant's
+    defaults; neither belongs in the developer's real config directory."""
+    os.environ.setdefault("ONSET_REVIEW_CONFIG_DIR",
+                          str(tmp_path_factory.mktemp("onset-review-config")))
+
+
+@pytest.fixture(scope="session", autouse=True)
 def _reads_go_to_a_temporary_directory(tmp_path_factory):
     """Keep the suite's verdicts out of the project's artifacts directory.
 

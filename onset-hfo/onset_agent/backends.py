@@ -29,8 +29,6 @@ from __future__ import annotations
 
 import json
 import re
-import urllib.error
-import urllib.request
 from dataclasses import dataclass, field
 
 __all__ = ["ToolCall", "AssistantMessage", "Backend", "ScriptedBackend", "OllamaBackend",
@@ -54,11 +52,22 @@ class AssistantMessage:
     raw: str = ""
 
 
+class Interrupted(RuntimeError):
+    """The request in flight was abandoned on purpose, by `Backend.abort`."""
+
+
 class Backend:
     """Interface every backend implements."""
 
     name = "backend"
     is_language_model = True
+
+    def abort(self) -> None:
+        """Stop whatever request is in flight, from another thread.
+
+        The base backend has nothing to interrupt; a served one closes its
+        connection, which is also how the server learns to stop generating.
+        """
 
     def chat(self, messages: list[dict], tools: list[dict]) -> AssistantMessage:
         raise NotImplementedError
@@ -148,6 +157,32 @@ class OpenAICompatBackend(Backend):
         self.max_tokens = max_tokens
         self.timeout = timeout
         self.name = f"{type(self).__name__.replace('Backend', '').lower()}:{model}"
+        #: The open HTTP response while `chat` is reading one, so that
+        #: `abort` can close it from the GUI thread.
+        self._inflight = None
+        self.aborted = False
+
+    def abort(self) -> None:
+        self.aborted = True
+        inflight = self._inflight
+        if inflight is None:
+            return
+        # Closing the response is not enough: a `recv` blocked on another
+        # thread keeps blocking on Linux until data or the timeout arrives.
+        # Shutting the socket down is what makes it return now -- and what
+        # the server sees as a disconnect, so it stops generating.
+        import socket
+
+        try:
+            sock = inflight.sock                 # http.client's connection socket
+            if sock is not None:
+                sock.shutdown(socket.SHUT_RDWR)
+        except Exception:       # noqa: BLE001 - best effort, any transport
+            pass
+        try:
+            inflight.close()
+        except Exception:       # noqa: BLE001
+            pass
 
     def describe(self) -> str:
         return f"{self.name} at {self.base_url}"
@@ -161,20 +196,53 @@ class OpenAICompatBackend(Backend):
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
-        request = urllib.request.Request(f"{self.base_url}/chat/completions",
-                                         data=json.dumps(body).encode(), headers=headers)
+        if self.aborted:
+            raise Interrupted("the request was stopped before it was sent")
+        # http.client rather than urlopen: the connection object exists from
+        # before the request goes out, so `abort` has a socket to shut while a
+        # slow model is still thinking about its first byte. urlopen hands
+        # back nothing until the status line arrives, which is exactly the
+        # stretch a reviewer wants to be able to end.
+        import http.client
+        import io
+        import urllib.parse
+
+        parts = urllib.parse.urlsplit(f"{self.base_url}/chat/completions")
+        maker = http.client.HTTPSConnection if parts.scheme == "https" else http.client.HTTPConnection
+        connection = maker(parts.hostname, parts.port, timeout=self.timeout)
+        self._inflight = connection
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as response:
-                payload = json.load(response)
-        except urllib.error.HTTPError as exc:
-            # The server was reached and said no. Telling the person to start
-            # one would be wrong, and the reason is in the body it sent back.
-            raise RuntimeError(_describe_rejection(self.base_url, exc)) from exc
-        except urllib.error.URLError as exc:  # pragma: no cover - environment dependent
-            raise RuntimeError(
-                f"Could not reach the model server at {self.base_url} ({exc}). "
-                "Start one (`ollama serve`, or vLLM), or use --backend scripted."
-            ) from exc
+            connection.request("POST", parts.path or "/", body=json.dumps(body).encode(),
+                               headers=headers)
+            response = connection.getresponse()
+            raw = response.read()
+            if response.status >= 400:
+                error = urllib.error.HTTPError(f"{self.base_url}/chat/completions",
+                                               response.status, response.reason,
+                                               response.headers, io.BytesIO(raw))
+                # The server was reached and said no. Telling the person to
+                # start one would be wrong; the reason is in the body it sent.
+                raise RuntimeError(_describe_rejection(self.base_url, error)) from error
+            payload = json.loads(raw.decode("utf-8", "replace"))
+        except Interrupted:
+            raise
+        except (OSError, ValueError, http.client.HTTPException) as exc:
+            # A connection cut by `abort` surfaces here as a socket, protocol
+            # or JSON error; either way it was asked for.
+            if self.aborted:
+                raise Interrupted("the request was stopped") from exc
+            if isinstance(exc, (ConnectionError, OSError)) and not isinstance(exc, ValueError):
+                raise RuntimeError(
+                    f"Could not reach the model server at {self.base_url} ({exc}). "
+                    "Start one (`ollama serve`, or vLLM), or use --backend scripted."
+                ) from exc
+            raise
+        finally:
+            self._inflight = None
+            try:
+                connection.close()
+            except Exception:       # noqa: BLE001
+                pass
         message = payload["choices"][0]["message"]
         content = message.get("content") or ""
         calls = []

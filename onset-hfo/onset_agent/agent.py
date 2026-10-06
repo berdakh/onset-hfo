@@ -84,9 +84,23 @@ class OnsetAgent:
                                     tool_names=list(TOOLS))
 
     # -- public API -------------------------------------------------------
-    def ask(self, question: str) -> AgentAnswer:
-        """Answer one question, or refuse and say why."""
+    def ask(self, question: str, should_stop=None) -> AgentAnswer:
+        """Answer one question, or refuse and say why.
+
+        `should_stop` is polled between steps; when it answers True, or when
+        the backend reports its request was aborted, the loop ends with a
+        refusal that says so rather than an answer nobody asked for.
+        """
+        from onset_agent.backends import Interrupted
+
         trace: list[dict] = []
+
+        def stopped(step: int) -> AgentAnswer:
+            trace.append({"type": "stopped", "step": step})
+            return AgentAnswer(question=question,
+                               text="Stopped before an answer was produced.",
+                               refused=True, reason="stopped by the reviewer",
+                               trace=trace, backend=self.backend.name, verified=False)
         scope = guard.check_question(question, self.store.subject)
         if not scope.ok:
             trace.append({"type": "scope_check", "result": "refused"})
@@ -101,7 +115,12 @@ class OnsetAgent:
         retries = 0
 
         for step in range(self.max_steps):
-            message = self.backend.chat(messages, tool_schemas())
+            if should_stop is not None and should_stop():
+                return stopped(step)
+            try:
+                message = self.backend.chat(messages, tool_schemas())
+            except Interrupted:
+                return stopped(step)
             if message.tool_calls:
                 calls = message.tool_calls[:MAX_CALLS_PER_TURN]
                 messages.append({
@@ -146,7 +165,8 @@ class OnsetAgent:
             ids = [str(i) for i in (parsed.get("evidence_ids") or []) if str(i).strip()]
             check = guard.verify_answer(text, ids, retrieved_ids, numbers_seen, self.store)
             trace.append({"type": "answer", "step": step, "verified": check.ok,
-                          "problems": check.problems})
+                          "problems": check.problems, "text": text[:600],
+                          "evidence_ids": ids})
             if check.ok:
                 return AgentAnswer(question=question, text=text, evidence_ids=ids, trace=trace,
                                    backend=self.backend.name, verified=True)

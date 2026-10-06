@@ -1240,6 +1240,10 @@ def _window_actions(view, host: QMainWindow, docks: dict,
         restore.triggered.connect(
             lambda _=False: host.restoreState(defaults.get("state")
                                               or host.saveState()))
+    elif hasattr(host, "reset_layout"):
+        restore = view.addAction("&Restore the default layout")
+        restore.setToolTip("Every region back to its opening size, on every page")
+        restore.triggered.connect(lambda _=False: host.reset_layout())
 
     shrink = view.addAction("&Fit the window to this screen")
     shrink.setShortcut("Ctrl+0")

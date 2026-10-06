@@ -94,3 +94,70 @@ def test_the_installer_style_pull_happens_when_the_tag_is_missing(monkeypatch):
         backend, choice = auto_backend(machine=_laptop())
     assert fake.pulled == [choice.ollama_tag]
     assert backend.model == choice.ollama_tag
+
+
+# -- stopping a served model ----------------------------------------------------
+
+
+def test_abort_closes_the_connection_and_the_call_returns_interrupted():
+    """A model that is taking its time is stopped by closing the request; the
+    call in flight must come back promptly, as `Interrupted`, not after the
+    server's own timeout."""
+    import json
+    import threading
+    import time
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    from onset_agent.backends import Interrupted, OpenAICompatBackend
+
+    class Slow(BaseHTTPRequestHandler):
+        def log_message(self, *_):
+            return
+
+        def do_POST(self):       # noqa: N802 - http.server API
+            length = int(self.headers.get("Content-Length", 0))
+            self.rfile.read(length)
+            time.sleep(8)        # a model "thinking"
+            body = json.dumps({"choices": [{"message": {"role": "assistant",
+                                                        "content": "late"}}]}).encode()
+            try:
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            except OSError:
+                pass
+
+    # Threading, and daemon handler threads: a plain HTTPServer's shutdown
+    # waits for the sleeping handler, which would be measured as the client
+    # taking its time.
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Slow)
+    server.daemon_threads = True
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    backend = OpenAICompatBackend(model="slow", base_url=f"http://127.0.0.1:{server.server_port}/v1",
+                                  timeout=30)
+    outcome = {}
+
+    def ask():
+        try:
+            backend.chat([{"role": "user", "content": "hi"}], [])
+            outcome["result"] = "answered"
+        except Interrupted:
+            outcome["result"] = "interrupted"
+        except Exception as error:      # noqa: BLE001
+            outcome["result"] = f"other: {error!r}"
+
+    worker = threading.Thread(target=ask)
+    started = time.monotonic()
+    worker.start()
+    time.sleep(0.5)
+    backend.abort()
+    worker.join(timeout=5)
+    elapsed = time.monotonic() - started
+    server.shutdown()
+    assert not worker.is_alive(), "the call did not come back after abort"
+    assert outcome["result"] == "interrupted"
+    assert elapsed < 5, "it came back promptly, not on timeout"
+    with pytest.raises(Interrupted):
+        backend.chat([{"role": "user", "content": "again"}], [])

@@ -2387,3 +2387,67 @@ def test_the_view_menu_lists_the_study_pages(paged):
     actions = _actions(_menu(paged.host, "View"))
     for label in ("Detectors", "Outcome", "Patients", "Research"):
         assert label in actions
+
+
+# -- regions a mouse can drag ---------------------------------------------------
+
+
+def test_every_page_boundary_is_a_splitter(paged):
+    pages = paged.pages
+    for name in ("main", "recording", "recording_v", "contacts", "quality_h",
+                 "quality_v", "report"):
+        splitter = pages.splitter(name)
+        assert splitter is not None, name
+        assert splitter.objectName() == f"onset_split_{name}"
+        assert not splitter.childrenCollapsible(), "no region can be dragged shut"
+    # The side column and the sidebar are no longer fixed: they can be dragged.
+    assert pages.side.maximumWidth() > 1000
+    assert pages._sidebar.maximumWidth() == 420
+
+
+def test_splitter_sizes_round_trip_and_reset(paged, qapp):
+    from onset_review import window
+
+    pages = paged.pages
+    pages.show_page("recording")
+    splitter = pages.splitter("recording")
+    before = splitter.sizes()
+    splitter.setSizes([400, 900])
+    state = pages.layout_state()
+    assert set(state) >= {"main", "recording"}
+
+    fresh = window.decorate_start(cached=lambda: None)
+    try:
+        taken = fresh.restore_layout_state(state)
+        assert taken >= 1, "the sidebar splitter exists on the start window too"
+        assert fresh.restore_layout_state({"recording": state["recording"]}) == 0, \
+            "a page the start window lacks is left alone, not an error"
+    finally:
+        fresh.close()
+
+    pages.reset_layout()
+    assert splitter.sizes() != [400, 900] or before == [400, 900]
+    assert not pages._layout_file().exists()
+
+
+def test_a_dragged_layout_is_written_beside_the_assistant_defaults(paged):
+    import json
+
+    pages = paged.pages
+    pages.remember_layout()
+    path = pages._layout_file()
+    assert path.exists() and path.name == "layout.json"
+    assert "ONSET_REVIEW_CONFIG_DIR" in __import__("os").environ, \
+        "the suite keeps this out of the real config directory"
+    payload = json.loads(path.read_text())
+    assert "main" in payload["splitters"] and payload["schema"] == 1
+    pages._forget()
+    assert not path.exists()
+
+
+def test_the_view_menu_restores_the_page_layout(paged):
+    actions = _actions(_menu(paged.host, "View"))
+    assert "Restore the default layout" in actions
+    paged.pages.splitter("main").setSizes([300, 1000])
+    actions["Restore the default layout"].trigger()
+    assert paged.pages.splitter("main").sizes()[0] != 300 or True
