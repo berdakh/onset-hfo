@@ -96,6 +96,10 @@ def _rate_change(store: ResultStore) -> dict:
             "note": "event rate per channel before versus during the clinician-marked seizure"}
 
 
+def _contact_map(store: ResultStore, detector: str | None = None) -> dict:
+    return store.contact_map(detector)
+
+
 def _report_section(store: ResultStore, section: str) -> dict:
     return {"section": section, "content": store.report_section(section)}
 
@@ -145,6 +149,13 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
          "Event rate per channel before versus during the clinician-marked seizure, when the "
          "analysed window contains one.",
          _obj({}), _rate_change),
+    Tool("contact_map",
+         "Where the activity sits: each channel's electrode shaft, side and region with "
+         "its rate, and how the leading channels distribute over shafts and sides. Use "
+         "for 'where', 'which side', 'how many electrodes', 'neighbours', 'spread'. Says "
+         "whether positions are measured or schematic; never mentions surgery.",
+         _obj({"detector": {"type": "string", "enum": ["rms", "line_length", "spike"]}}),
+         _contact_map),
     Tool("report_section",
          "One section of the structured report: summary, findings, disagreements, "
          "data_quality, methods, limitations, recording, rate_change. There is no "

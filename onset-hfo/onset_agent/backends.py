@@ -465,6 +465,9 @@ class ScriptedBackend(Backend):
     def _first_call(self, q: str) -> ToolCall:
         if re.search(r"disagree|differ|conflict", q):
             return ToolCall("detector_disagreements", {}, "call-1")
+        if re.search(r"\bwhere\b|\bside\b|hemisphere|shaft|electrode|region|\bmap\b|"
+                     r"neighbou?r|spread|location", q):
+            return ToolCall("contact_map", {}, "call-1")
         if re.search(r"seizure|ictal|before|during|change over time", q):
             return ToolCall("rate_change", {}, "call-1")
         if re.search(r"limitation|caveat|weakness|trust", q):
@@ -522,7 +525,8 @@ def _render(payloads: list) -> str:
     for payload in payloads:
         if not isinstance(payload, dict):
             continue
-        if payload.get("channels") and isinstance(payload["channels"], list):
+        if payload.get("channels") and isinstance(payload["channels"], list) \
+                and "shafts" not in payload:
             rows = payload["channels"][:3]
             det = payload.get("detector", "the detector")
             parts.append("Highest rates (" + det + "): " + "; ".join(
@@ -532,6 +536,12 @@ def _render(payloads: list) -> str:
             parts.append("Evidence on " + str(payload.get("channel", "")) + ": " + "; ".join(
                 f"{r['start']}-{r['stop']} s, peak {r.get('peak_frequency_hz')} Hz"
                 for r in rows) + ".")
+        if "shafts" in payload and "summary" in payload:
+            if payload.get("available") is False:
+                parts.append("Where the activity sits cannot be said: "
+                             + str(payload.get("note", "no positions")) + ".")
+            else:
+                parts.append(f"Positions are {payload['positions']}. {payload['summary']}")
         if "disagreements" in payload:
             rows = payload["disagreements"]
             parts.append(f"The two detectors rank {len(rows)} leading channel(s) very "

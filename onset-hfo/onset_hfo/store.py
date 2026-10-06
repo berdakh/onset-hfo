@@ -81,6 +81,11 @@ class ResultStore:
             if (self.dir / "agreement.json").exists() else {}
         self.comparison = _read_table(self.dir, "comparison.csv")
         self.rate_change = _read_table(self.dir, "rate_change.csv")
+        #: Where each channel sits, when whoever saved the analysis knew:
+        #: shaft, side, region, position and its provenance. Written by the
+        #: desktop window beside its analysis; absent from a plain pipeline
+        #: run, and then `contact_map` says so.
+        self.contacts = _read_table(self.dir, "contacts.csv")
         self.rates = {}
         for path in sorted(self.dir.glob("rates_*.csv*")):
             name = path.name.removeprefix("rates_").removesuffix(".gz").removesuffix(".csv")
@@ -237,6 +242,31 @@ class ResultStore:
         return [{k: _clean(v) for k, v in row.items()}
                 for row in self.rate_change.head(10).to_dict("records")]
 
+    def contact_map(self, detector: str | None = None, top: int = 5) -> dict:
+        """Where the activity sits: each channel's shaft, side and region
+        with its rate for `detector`, and how the leading channels
+        distribute over shafts and sides. Carries no resection, by design:
+        see ``onset_review.contactmap``."""
+        if self.contacts is None or self.contacts.empty:
+            return {"available": False,
+                    "note": "no contact positions were saved with this analysis"}
+        name = detector or self._default_detector()
+        frame = self.contacts.copy()
+        rates = self.rates.get(name)
+        if rates is not None and name != self._default_detector():
+            by_channel = rates.set_index("channel")["rate_per_min"]
+            frame["rate_per_min"] = [_clean(by_channel.get(c, 0.0)) for c in frame["channel"]]
+            order = frame["rate_per_min"].rank(ascending=False, method="first")
+            frame["rank"] = order.astype(int)
+        frame = frame.sort_values("rank")
+        rows = [{"channel": str(r.channel), "shaft": str(r.shaft), "side": str(r.hemisphere),
+                 "region": str(r.region), "rank": int(r.rank),
+                 "rate_per_min": _clean(r.rate_per_min)}
+                for r in frame.itertuples()]
+        out = summarise_contacts(frame, top=top)
+        out.update({"available": True, "detector": name, "placed": rows})
+        return out
+
     def report_section(self, section: str) -> dict | list | str:
         """One section of the structured report.
 
@@ -282,3 +312,43 @@ class ResultStore:
     def __repr__(self) -> str:  # pragma: no cover - cosmetic
         return (f"ResultStore({self.dir.name}: {self.subject}, "
                 f"{len(self.events)} events, detectors={self.detectors()})")
+
+
+#: Region labels that say nothing, left out of the sentence.
+_NO_REGION = {"", "unmapped", "unknown", "nan", "none"}
+
+
+def summarise_contacts(contacts: pd.DataFrame, top: int = 5) -> dict:
+    """How the leading channels distribute over shafts and sides, as counts
+    and one sentence. Five leaders on one shaft is one finding; five leaders
+    on five shafts is a different one, and this is what says which."""
+    if contacts is None or contacts.empty:
+        return {"positions": "none", "summary": "No channels to place.", "shafts": []}
+    frame = contacts.sort_values("rank").head(int(top))
+    positions = ("measured" if set(contacts["source"]) == {"archive"}
+                 else "schematic (inferred from electrode names)")
+    groups = []
+    for shaft, rows in frame.groupby("shaft", sort=False):
+        side = str(rows["hemisphere"].iloc[0])
+        region = str(rows["region"].iloc[0])
+        groups.append({"shaft": str(shaft),
+                       "side": side if side in ("left", "right") else "",
+                       "region": region if region.lower() not in _NO_REGION else "",
+                       "n_of_top": int(len(rows)),
+                       "channels": [str(c) for c in rows["channel"]]})
+    groups.sort(key=lambda g: -g["n_of_top"])
+    n = int(len(frame))
+    parts = []
+    for g in groups:
+        known = ", ".join(x for x in (g["side"], g["region"]) if x)
+        parts.append(f"{g['n_of_top']} of the top {n} channels on shaft {g['shaft']}"
+                     + (f" ({known})" if known else ""))
+    sides = sorted({g["side"] for g in groups if g["side"]})
+    summary = "; ".join(parts) + "."
+    if len(groups) == 1:
+        summary += " The leading channels are neighbours on one electrode."
+    elif len(sides) == 1 and sides[0] in ("left", "right"):
+        summary += f" All on the {sides[0]} side."
+    return {"positions": positions, "n_channels": int(len(contacts)),
+            "n_shafts": int(contacts["shaft"].nunique()), "top": n,
+            "shafts": groups, "summary": summary}

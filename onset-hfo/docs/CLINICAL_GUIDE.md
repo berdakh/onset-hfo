@@ -435,6 +435,38 @@ of detector is and is not for, and no summary statistic substitutes for it.
 The percentages on a single minute of one patient are far too noisy to be the
 detector's accuracy. Section 5 has the cohort numbers.
 
+### Map — the contacts flat, with a colour scale
+
+![The map](images/onset-review-map.png)
+
+The figure a paper prints: every channel a dot at its contacts' midpoint,
+coloured by the measure chosen above (the ranking detector's rate, either
+detector's, discharges, the archive annotators' markings, or rank), the
+biggest and brightest leading, the first eight numbered by rank, a star on
+the statistically tied set, and a ring on each contact the surgeon removed
+when that is known. Five views: top, left, right, front, back. **Save as
+PNG** writes it at print resolution.
+
+The channel chosen anywhere — the ranking, the event list, a click in the
+trend or on the trace, the 3D view — is haloed and named here, with its rank,
+rate, shaft and side, so an event under judgement can be found on the head
+without leaving the page it is judged on.
+
+**Measured or schematic, and it says which.** With a coordinate file (the
+dataset's `electrodes.tsv`, or one you place from the Contacts page) the map
+is this patient's head. Without one the layout is schematic — shafts in name
+order, contacts in number order, placed where the structure the name claims
+would be — and the title and the caption say so. It is enough to see which
+shafts are active and their order along the shaft; it is not anatomy, and
+no rendered cortex is drawn under it, because these archives ship no MRI and
+a surface nobody measured would be a picture of nothing.
+
+**Ask the assistant where** sends the assistant the counts behind the map:
+how the leading channels distribute over shafts and sides, and whether the
+positions are measured. It answers in those counts (*3 of the top 5 channels
+on shaft AR (right, amygdala); 2 on PHR (right)*). It is never told what was
+resected: the rings are for you.
+
 ### Assistant — ask about this window
 
 ![The assistant](images/onset-review-assistant.png)

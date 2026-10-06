@@ -50,6 +50,7 @@ PAGES = (
     ("home", "Home"),
     ("recording", "Recording"),
     ("contacts", "Contacts"),
+    ("map", "Map"),
     ("quality", "Quality"),
     ("report", "Report"),
     ("assistant", "Assistant"),
@@ -62,7 +63,7 @@ STUDY_PAGES = ("Detectors", "Outcome", "Patients", "Data", "Architecture",
                "Research")
 
 #: Desktop-only pages, marked as such in the sidebar.
-DESKTOP_ONLY = {"contacts", "quality"}
+DESKTOP_ONLY = {"contacts", "map", "quality"}
 
 #: The site's disclaimer, word for word (`app/panels.py`). A test pins the
 #: two copies to each other; it is duplicated rather than imported because the
@@ -93,6 +94,8 @@ HOW_TO_READ = (
     ("recording", "channel ranking with both detectors side by side, "
                   "disagreement highlighted, and the signal behind any event"),
     ("contacts", "where the contacts are, ranked, relative to the resection"),
+    ("map", "the same contacts flat, coloured by rate with a colour scale: the "
+            "figure a paper prints, and the one the assistant can describe"),
     ("quality", "which contacts and seconds were analysed, and what was done "
                 "to the signal first"),
     ("report", "the structured, cited report: findings, your read, data "
@@ -249,7 +252,8 @@ class PageWindow(QMainWindow):
     def _build_pages(self) -> None:
         builders = {
             "home": self._home_page, "recording": self._recording_page,
-            "contacts": self._contacts_page, "quality": self._quality_page,
+            "contacts": self._contacts_page, "map": self._map_page,
+            "quality": self._quality_page,
             "report": self._report_page, "assistant": self._assistant_page,
         }
         for key, _label in PAGES:
@@ -566,6 +570,50 @@ class PageWindow(QMainWindow):
                                   [self.panels["brain"], column],
                                   [1100, COLUMN_WIDTH], stretch=(1, 0)), 1)
         return page
+
+    def _map_page(self) -> QWidget:
+        page = QWidget()
+        row = QHBoxLayout(page)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(theme.SPACING)
+        column = QWidget()
+        column.setMinimumWidth(220)
+        box = QVBoxLayout(column)
+        box.setContentsMargins(0, 0, 0, 0)
+        box.setSpacing(theme.SPACING)
+        box.addWidget(theme.section_label("How to read it"))
+        box.addWidget(theme.muted(
+            "Each dot is one channel at its contacts' midpoint, coloured by the "
+            "measure chosen above; the biggest, brightest dots lead. Numbers are "
+            "ranks; a star marks a channel in the statistically tied set. Rings "
+            "say whether the surgeon removed the contact, when that is known. "
+            "The channel chosen anywhere in the window — the ranking, the event "
+            "list, the trace, the 3D view — is haloed here."))
+        box.addWidget(theme.section_label("And the assistant"))
+        box.addWidget(theme.muted(
+            "\u201cAsk the assistant where\u201d sends it the counts behind this "
+            "map: which shafts and which side the leading channels are on, and "
+            "whether the positions are measured or schematic. It is never told "
+            "what was resected."))
+        box.addWidget(theme.section_label("Measured or schematic"))
+        box.addWidget(theme.muted(
+            "With no coordinate file the layout is schematic: shafts in name "
+            "order, contacts in number order, placed where the structure the "
+            "name claims would be. Enough to see which shafts are active and "
+            "their order; not anatomy. Place the contacts from a file on the "
+            "Contacts page and this map becomes this patient's head."))
+        box.addStretch(1)
+        row.addWidget(self._split("map", Qt.Horizontal,
+                                  [self.panels["map"], column],
+                                  [1100, COLUMN_WIDTH], stretch=(1, 0)), 1)
+        self.panels["map"].askRequested.connect(self._ask_about_map)
+        return page
+
+    def _ask_about_map(self, question: str) -> None:
+        """The map's button: go to the assistant and ask, so the answer lands
+        where the person can read it."""
+        self.show_page("assistant")
+        self.panels["assistant"].ask(question)
 
     def _quality_page(self) -> QWidget:
         page = QWidget()

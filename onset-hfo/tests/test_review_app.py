@@ -69,7 +69,7 @@ def test_mne_figure_can_still_host_our_docks(built):
 
 def test_every_panel_is_docked(built):
     assert set(built.docks) == {"trends", "controls", "findings", "events",
-                                "detail", "brain", "agreement", "provenance",
+                                "detail", "brain", "map", "agreement", "provenance",
                                 "assistant", "preprocess", "patient", "quality"}
     assert all(dock.widget() is not None for dock in built.docks.values())
 
@@ -2504,3 +2504,79 @@ def test_the_view_menu_restores_the_page_layout(paged):
     paged.pages.splitter("main").setSizes([300, 1000])
     actions["Restore the default layout"].trigger()
     assert paged.pages.splitter("main").sizes()[0] != 300 or True
+
+
+# -- the Map page ------------------------------------------------------------
+
+
+def test_the_map_haloes_what_is_chosen_anywhere_and_picks_back(built, review):
+    """The flat map follows the ranking, the event list, the trend and the
+    3D view, and a click on it selects the channel for all of them."""
+    chart = built.panels["map"]
+    first = str(review.findings.iloc[0]["channel"])
+    second = str(review.findings.iloc[1]["channel"])
+    built.panels["findings"].channelPicked.emit(first)
+    assert chart._highlighted == first and first in chart.headline.text()
+    assert "rank 1" in chart.headline.text()
+    built.panels["events"].eventPicked.emit(1.0, second)
+    assert chart._highlighted == second
+    picked = []
+    chart.channelPicked.connect(picked.append)
+
+    class Pick:
+        artist = chart._points
+        ind = [0]
+
+    chart._picked(Pick())
+    assert picked == [str(chart.frame.iloc[0]["channel"])]
+    assert chart._highlighted == picked[0]
+
+
+def test_the_map_colours_by_every_measure_in_every_view_and_saves_a_figure(built, tmp_path):
+    chart = built.panels["map"]
+    for i in range(chart.measure.count()):
+        chart.measure.setCurrentIndex(i)
+        assert chart._points is not None and chart._colorbar is not None
+    for i in range(chart.view.count()):
+        chart.view.setCurrentIndex(i)
+        assert chart.view.currentData() in chart.axes.get_title(loc="left")
+    assert "schematic" in chart.axes.get_title(loc="left"), "no coordinates: the title says so"
+    assert "DIAGRAM" in chart.caption.text() or "SCHEMATIC" in chart.caption.text()
+    out = chart.save_png(tmp_path / "map.png")
+    assert out is not None and out.exists() and out.stat().st_size > 10_000
+
+
+def test_the_map_page_is_in_the_sidebar_and_its_button_asks_the_assistant(paged, qapp):
+    from onset_review.mapview import WHERE_QUESTION
+
+    host = paged.host
+    assert "map" in host.page_keys()
+    host.show_page("map")
+    asked = []
+    paged.panels["assistant"].ask = lambda q: asked.append(q)
+    paged.panels["map"].ask.click()
+    qapp.processEvents()
+    assert asked == [WHERE_QUESTION]
+    assert host.stack.currentWidget().objectName() == "page_assistant"
+
+
+def test_the_assistant_reads_where_the_activity_is_from_the_map(qapp, review):
+    """The table saved beside the analysis carries the positions and never the
+    resection; the scripted policy answers a "where" question from it."""
+    from onset_review.assistant import AssistantPanel
+
+    panel = AssistantPanel(review)
+    try:
+        assert panel._ensure_store()
+        store = panel._store
+        assert (store.dir / "contacts.csv").exists()
+        assert "zone" not in store.contacts.columns
+        where = store.contact_map()
+        assert where["available"] and where["n_channels"] == len(review.findings)
+        assert "resect" not in str(where).lower()
+        panel.ask("Where on the head is the activity, and on how many electrodes?")
+        text = panel.transcript.toPlainText()
+        assert "of the top 5 channels on shaft" in text
+        assert "contact_map" in text
+    finally:
+        panel.deleteLater()
