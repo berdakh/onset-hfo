@@ -772,9 +772,18 @@ def _wire(figure, host, panels: dict, session: ReviewSession,
 
     panels["events"].eventPicked.connect(lambda t, channel: select(channel, t))
     # The detail view follows the event list and nothing else: one place in
-    # the window decides which event is under discussion.
+    # the window decides which event is under discussion. So the trend and
+    # the trace do not drive it directly; they pick the nearest listed event,
+    # and the list does the rest -- or, when nothing is listed near there,
+    # the trace simply goes to the place that was clicked.
     panels["events"].eventKeyPicked.connect(panels["detail"].show_key)
-    panels["trends"].cellPicked.connect(lambda t, channel: select(channel, t))
+
+    def pick(t: float, channel: str) -> None:
+        if not panels["events"].select_nearest(t, channel):
+            select(channel, t)
+
+    panels["trends"].cellPicked.connect(pick)
+    _trace_clicks(figure, session, pick)
     panels["findings"].channelPicked.connect(lambda channel: select(channel))
     panels["agreement"].channelPicked.connect(lambda channel: select(channel))
     panels["brain"].channelPicked.connect(lambda channel: select(channel))
@@ -818,6 +827,46 @@ def _wire(figure, host, panels: dict, session: ReviewSession,
     panels["events"].judged.connect(
         lambda *_: panels["findings"].refresh(
             keep=panels["findings"].selected_channel()))
+
+
+def _trace_clicks(figure, session: ReviewSession, pick) -> None:
+    """A left click on the trace picks the event nearest to it, on the
+    channel under the pointer.
+
+    `mne-qt-browser` has no public click hook, so this listens to the plot
+    scene and resolves the click the way the browser's own crosshair does:
+    the vertical position names the trace, the horizontal one the time.
+    Guarded throughout, because a browser version that lays its state out
+    differently must cost a feature, never the window.
+    """
+    state = getattr(figure, "mne", None)
+    viewbox = getattr(state, "viewbox", None)
+    scene = getattr(getattr(state, "plt", None), "scene", lambda: None)()
+    if viewbox is None or scene is None:
+        return
+
+    def clicked(event) -> None:
+        try:
+            if event.button() != Qt.LeftButton:
+                return
+            point = viewbox.mapSceneToView(event.scenePos())
+            x, y = float(point.x()), float(point.y())
+            traces = [tr for tr in getattr(state, "traces", [])
+                      if getattr(tr, "ypos", None) is not None
+                      and tr.ypos - 0.5 < y < tr.ypos + 0.5]
+            if len(traces) != 1 or not getattr(traces[0], "ch_name", None):
+                return
+            # Trace seconds -> recording seconds -> the span seconds the
+            # panels quote, the inverse of what `select` does on the way out.
+            t_span = (x + float(session.t_offset)) - float(session.span[0])
+            pick(t_span, str(traces[0].ch_name))
+        except Exception:       # noqa: BLE001 - a click must never take the window down
+            return
+
+    try:
+        scene.sigMouseClicked.connect(clicked)
+    except Exception:       # noqa: BLE001
+        return
 
 
 def _file_time(session: ReviewSession, t_span: float) -> float:

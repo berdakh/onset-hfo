@@ -771,3 +771,26 @@ def test_the_window_offers_every_served_size_and_opens_on_the_fast_one():
     big, big_default = served_options(cuda(24.0))
     assert big_default == choose(cuda(24.0), route="ollama").ollama_tag
     assert max(c.model.params_b for c in big) > CPU_CEILING_PARAMS_B
+
+
+def test_a_quantisation_named_in_the_tag_is_its_own_option():
+    """`ollama run qwen2.5:3b-instruct-q4_K_M` pulls the file the plain tag
+    pulls, under a name Ollama lists apart, and `-q8_0` is a different file.
+    Both are known by name, on the command line and in the window's box."""
+    from onset_agent.hardware import expanded, served_options
+
+    explicit = choose(cpu(32.0), prefer="qwen2.5:3b-instruct-q4_K_M")
+    assert explicit.model_id == "Qwen/Qwen2.5-3B-Instruct" and explicit.route == "ollama"
+    assert explicit.ollama_tag == "qwen2.5:3b-instruct-q4_K_M"
+    assert explicit.download_gb == choose(cpu(32.0), prefer="qwen2.5:3b-instruct").download_gb
+    eight = choose(cpu(32.0), prefer="qwen2.5:3b-instruct-q8_0")
+    assert eight.download_gb > 1.6 * explicit.download_gb
+    assert "8-bit" in eight.model.note and eight.fits
+    tags = [c.ollama_tag for c, in zip(served_options(cpu(16.0))[0])]
+    i = tags.index("qwen2.5:3b-instruct")
+    assert tags[i:i + 3] == ["qwen2.5:3b-instruct", "qwen2.5:3b-instruct-q4_K_M",
+                             "qwen2.5:3b-instruct-q8_0"]
+    assert served_options(cpu(16.0))[1] == "qwen2.5:3b-instruct", "the default is unchanged"
+    # The plain catalogue is what the documentation lists; the variants are derived.
+    assert len(expanded(CATALOGUE)) == len(CATALOGUE) + 6
+    assert not any("-q" in spec.ollama_tag for spec in CATALOGUE)

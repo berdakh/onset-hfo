@@ -798,6 +798,28 @@ class EventsPanel(QWidget):
         if key:
             self.eventKeyPicked.emit(str(key))
 
+    def select_nearest(self, t: float, channel: str = "", within: float = 2.5) -> bool:
+        """Select the listed event nearest `t` (span seconds) on `channel`,
+        if one lies within `within` seconds; the selection then drives the
+        detail view exactly as a click in the list would. False when the
+        list holds nothing that close -- a trend cell with no events in it,
+        or a channel the filters have hidden."""
+        best, best_distance = -1, float(within)
+        for row in range(self.model.rowCount()):
+            if channel and str(self.model.row_value(row, "channel") or "") != channel:
+                continue
+            when = self.model.row_value(row, "t_local")
+            if when is None:
+                continue
+            distance = abs(float(when) - float(t))
+            if distance < best_distance:
+                best, best_distance = row, distance
+        if best < 0:
+            return False
+        self.view.selectRow(best)
+        self.view.scrollTo(self.model.index(best, 0))
+        return True
+
     def step(self, delta: int) -> None:
         """Move the selection by `delta` rows, which is what the toolbar does."""
         if not self.model.rowCount():

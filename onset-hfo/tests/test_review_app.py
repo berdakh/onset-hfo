@@ -482,6 +482,57 @@ def test_the_detail_view_says_the_signal_is_not_unprocessed(built):
     assert "island" in text and "column" in text
 
 
+def test_a_click_in_the_trend_draws_the_nearest_event_close_up(built):
+    """Seen on a desktop: a click in the trend moved the trace, and the "This
+    event" tab beside it stayed three empty frames with the hint at the
+    bottom. The trend now picks the nearest listed event on that channel,
+    which drives the detail view through the list; with nothing listed near
+    the click, the trace still goes there."""
+    events, close_up = built.panels["events"], built.panels["detail"]
+    close_up.clear("nothing yet")
+    assert not close_up.canvas.isVisibleTo(close_up), "no frames without an event"
+    t = float(events.model.row_value(3, "t_local"))
+    channel = str(events.model.row_value(3, "channel"))
+    built.panels["trends"].cellPicked.emit(t + 0.4, channel)
+    assert close_up._snapshot is not None and close_up._snapshot.channel == channel
+    assert close_up.canvas.isVisibleTo(close_up)
+    assert events.selected_key() == str(events.model.row_value(3, "key"))
+    # Far from any event: nothing selected, nothing drawn, and no error.
+    close_up.clear("again")
+    assert events.select_nearest(10_000.0, channel) is False
+    assert close_up._snapshot is None
+
+
+def test_a_click_on_the_trace_resolves_to_a_time_and_a_channel(built, review):
+    """The browser's scene click is turned into (span seconds, channel) the
+    way its own crosshair does it, then handed to the same picker the trend
+    uses."""
+    from qtpy.QtCore import QPointF, Qt
+
+    from onset_review import window
+
+    figure = built.figure
+    picked = []
+    window._trace_clicks(figure, review, lambda t, ch: picked.append((t, ch)))
+    trace = figure.mne.traces[0]
+    x_trace = 2.0
+    scene_point = figure.mne.viewbox.mapViewToScene(QPointF(x_trace, trace.ypos))
+
+    class Click:
+        def button(self):
+            return Qt.LeftButton
+
+        def scenePos(self):
+            return scene_point
+
+    figure.mne.plt.scene().sigMouseClicked.emit(Click())
+    assert picked, "the click reached the picker"
+    t_span, channel = picked[-1]
+    assert channel == trace.ch_name
+    assert t_span == pytest.approx(x_trace + float(review.t_offset) - float(review.span[0]),
+                                   abs=0.05)
+
+
 def test_a_key_with_no_event_leaves_the_panel_standing(built):
     close_up = built.panels["detail"]
     assert close_up.show_key("ZZ9-ZZ10|999.000|rms") is False

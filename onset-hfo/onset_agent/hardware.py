@@ -34,6 +34,7 @@ before spending a byte if the disk cannot hold the result.
 
 from __future__ import annotations
 
+import dataclasses
 import os
 import shutil
 from dataclasses import dataclass, field, replace
@@ -42,6 +43,8 @@ __all__ = [
     "CATALOGUE",
     "CPU_CEILING_PARAMS_B",
     "CPU_FAST_PARAMS_B",
+    "OLLAMA_VARIANTS",
+    "expanded",
     "served_options",
     "Choice",
     "Gpu",
@@ -183,6 +186,14 @@ class ModelSpec:
     #: vs ``-a3b``, ``-Instruct`` vs ``-instruct``) and a guessed tag that 404s
     #: is a worse experience than a short explicit table.
     ollama_tag: str = ""
+    #: What the Ollama blob costs per parameter: 0.6 for the Q4_K_M a plain
+    #: tag pulls, about 1.05 for an 8-bit one.
+    gguf_bytes_per_param: float = 0.6
+    #: Quantisation suffixes offered beside the plain tag, as separate
+    #: entries: ``qwen2.5:3b-instruct-q4_K_M`` names the same file the plain
+    #: tag pulls, but Ollama lists the two names apart, and a reviewer who
+    #: pulled one by hand should find it under the name they used.
+    variants: tuple[str, ...] = ()
 
     @property
     def family(self) -> str:
@@ -190,13 +201,39 @@ class ModelSpec:
 
     @property
     def q4_gb(self) -> float:
-        """Approximate size of the Q4_K_M GGUF, which is what Ollama fetches.
+        """Approximate size of the GGUF Ollama fetches for this tag.
 
         The Hub stores fp16 and bitsandbytes quantises on load, so the
         transformers download is the fp16 figure; the Ollama registry stores
-        the quantised blob, so that download is roughly 0.6 bytes a parameter.
+        the quantised blob, roughly 0.6 bytes a parameter at Q4_K_M and a
+        byte at 8-bit. The name keeps its first meaning; the number follows
+        the tag.
         """
-        return round(self.params_b * 0.6, 1)
+        return round(self.params_b * self.gguf_bytes_per_param, 1)
+
+
+#: The quantisations a Qwen2.5 Instruct tag comes in on the Ollama registry,
+#: beside the plain tag: (suffix, bytes per parameter, what to expect).
+OLLAMA_VARIANTS: tuple[tuple[str, float, str], ...] = (
+    ("q4_K_M", 0.6, "the same 4-bit file the plain tag pulls, under its explicit name"),
+    ("q8_0", 1.05, "8-bit: reads a table more carefully, about twice the download "
+                   "and slower on a CPU"),
+)
+
+
+def expanded(catalogue: tuple[ModelSpec, ...]) -> tuple[ModelSpec, ...]:
+    """The catalogue with each entry's quantisation variants spelled out as
+    entries of their own, right after it."""
+    out: list[ModelSpec] = []
+    for spec in catalogue:
+        out.append(spec)
+        for suffix, per_param, what in OLLAMA_VARIANTS:
+            if suffix in spec.variants and spec.ollama_tag:
+                out.append(dataclasses.replace(
+                    spec, ollama_tag=f"{spec.ollama_tag}-{suffix}",
+                    gguf_bytes_per_param=per_param,
+                    note=f"{spec.note}; {what}" if spec.note else what))
+    return tuple(out)
 
 
 #: Qwen3 Instruct, smallest first, with the Qwen2.5 7B kept because it is the
@@ -222,17 +259,20 @@ CATALOGUE: tuple[ModelSpec, ...] = (
               note="better instruction following than 0.6B, still laptop-sized"),
     ModelSpec("Qwen/Qwen2.5-1.5B-Instruct", 1.5, 3.1, ollama_tag="qwen2.5:1.5b-instruct",
               note="the fast one on a CPU: answers in seconds, no thinking phase; "
-                   "expect it to misread a table now and then, which the checks catch"),
+                   "expect it to misread a table now and then, which the checks catch",
+              variants=("q4_K_M", "q8_0")),
     ModelSpec("Qwen/Qwen2.5-3B-Instruct", 3.1, 6.2, ollama_tag="qwen2.5:3b-instruct",
               note="the balance on a CPU: reads a briefing and answers in one call, "
-                   "no thinking phase"),
+                   "no thinking phase",
+              variants=("q4_K_M", "q8_0")),
     ModelSpec("Qwen/Qwen3-4B", 4.0, 8.0, ollama_tag="qwen3:4b",
               note="the sweet spot for a free Colab T4 or an 8 GB card at int4; "
                    "thinks before it answers, which is slow on a CPU"),
     ModelSpec("Qwen/Qwen2.5-7B-Instruct", 7.6, 15.3,
               ollama_tag="qwen2.5:7b-instruct",
               note="the reference size for this project: the one whose tool "
-                   "calling has been observed to work here"),
+                   "calling has been observed to work here",
+              variants=("q4_K_M", "q8_0")),
     ModelSpec("Qwen/Qwen3-8B", 8.2, 16.4, ollama_tag="qwen3:8b",
               note="good tool calling and RAG quality; needs int4 to fit 8 GB"),
     ModelSpec("Qwen/Qwen3-14B", 14.8, 29.6, ollama_tag="qwen3:14b",
@@ -597,9 +637,9 @@ def choose(machine: Machine | None = None, *,
     candidates = list(catalogue)
     unknown = False
     if prefer:
-        wanted = [spec for spec in catalogue if spec.model_id == prefer
+        wanted = [spec for spec in expanded(catalogue) if spec.model_id == prefer
                   or spec.family.lower() == prefer.lower()
-                  or (spec.ollama_tag and spec.ollama_tag == prefer.lower())]
+                  or (spec.ollama_tag and spec.ollama_tag.lower() == prefer.lower())]
         if not wanted:
             unknown = True
             wanted = [ModelSpec(prefer, params_b=0.0, download_gb=0.0,
@@ -661,15 +701,17 @@ def served_options(machine: Machine | None = None, *,
     """The catalogue entries this machine can serve through Ollama, smallest
     first, and the tag the window should open on.
 
-    Every entry that fits is offered, so a person who finds the default slow
-    can go smaller and one who finds it careless can go bigger. On a CPU the
+    Every entry that fits is offered, each Qwen2.5 size under its plain tag,
+    its explicit ``-q4_K_M`` name and its 8-bit ``-q8_0``, so a person who
+    finds the default slow can go smaller and one who finds it careless can
+    go bigger or less quantised. On a CPU the
     ceiling for speed applies and the default is the largest Qwen2.5 Instruct
     at or under :data:`CPU_FAST_PARAMS_B`; elsewhere the default is what
     :func:`choose` picks.
     """
     machine = probe(machine)
     fitting: list[Choice] = []
-    for spec in sorted(catalogue, key=lambda s: s.params_b):
+    for spec in sorted(expanded(catalogue), key=lambda s: (s.params_b, s.gguf_bytes_per_param)):
         if not spec.ollama_tag:
             continue
         if machine.accelerator == "cpu" and spec.params_b > CPU_CEILING_PARAMS_B:
@@ -679,8 +721,10 @@ def served_options(machine: Machine | None = None, *,
             fitting.append(choice)
     default = choose(machine, catalogue=catalogue, route="ollama").ollama_tag
     if machine.accelerator == "cpu":
+        plain = {spec.ollama_tag for spec in catalogue}
         fast = [c for c in fitting
-                if c.model.params_b <= CPU_FAST_PARAMS_B and "Qwen2.5" in c.model_id]
+                if c.model.params_b <= CPU_FAST_PARAMS_B and "Qwen2.5" in c.model_id
+                and c.ollama_tag in plain]
         if fast:
             default = fast[-1].ollama_tag
     return fitting, default
