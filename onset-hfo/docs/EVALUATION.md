@@ -577,6 +577,130 @@ where that is affordable and sampled at 200,000 draws where it is not.
 
 ---
 
+## 3c. Does the montage change the rate ranking? Measured: the bipolar montage wins on both yardsticks, in both bands
+
+`ROADMAP.md` carried this as the cheapest unmeasured experiment in the list.
+The pipeline re-references to a bipolar montage because that is standard HFO
+practice — a common reference shares its noise with every channel — and
+nothing here had checked what the montage does to the one thing the pipeline
+reports, the ranking of channels by rate. The question has two halves, because
+a preprocessing choice can change a ranking without changing how good it is.
+
+**What is compared.** The same cached 60 s windows (20 patients × 5), the same
+RMS detector at each band's own operating point (ripple 2.0 SD, fast ripple
+5.0 SD), the same validation and the same metric functions. Only
+`PreprocessConfig`'s re-referencing changes:
+
+| arm | reference | ranks |
+|---|---|---|
+| `bipolar` | neighbouring contacts subtracted (the shipped default) | the reviewed pairs |
+| `referential` | the archive's own reference, left alone | the contacts behind those pairs |
+| `average` | common average across every recorded contact | the contacts behind those pairs |
+
+The unit is the hard part. The annotators marked HFOs on *bipolar pairs* and
+the archive stores *referential contacts*, so the two referential arms are
+scored on the contacts the reviewed pairs are built from — the same physical
+electrodes (26 pairs and 31 contacts per patient on average), in the unit
+each arm actually ranks. Expert counts are projected onto contacts (a contact
+is credited with every marking on a reviewed pair it belongs to) and rankings
+are compared by Spearman on that unit. Event-level precision and recall need
+one unit on both sides, so for the referential arms each detection is
+projected back onto the pairs its contact belongs to, overlapping detections
+on a pair's two contacts merged into one; that is an approximation, and the
+extract labels those rows `projected`. The resection labels are not symmetric
+either: a pair is `resected` only when both contacts were removed and
+`partial` when one was, while a contact is simply in or out, so the
+referential arms have no partial channels. Script:
+[`scripts/run_montage_comparison.py`](../scripts/run_montage_comparison.py);
+extract [`data/outcome/montage_screen.csv`](../data/outcome/montage_screen.csv);
+group table [`data/outcome/montage_groups.csv`](../data/outcome/montage_groups.csv).
+
+### Against the expert ranking
+
+Cohort means of per-patient means over the five windows.
+
+| band | metric | bipolar | referential | average |
+|---|---|---|---|---|
+| ripple | Spearman ρ with the expert | **0.536** | 0.302 | 0.381 |
+| ripple | top-5 channels shared with the expert | **2.86** / 5 | 2.07 / 5 | 2.07 / 5 |
+| ripple | event-level F1 | **0.422** | 0.336 | 0.393 |
+| fast ripple | Spearman ρ with the expert | **0.559** | 0.327 | 0.353 |
+| fast ripple | top-5 channels shared with the expert | **3.66** / 5 | 2.66 / 5 | 2.85 / 5 |
+| fast ripple | event-level F1 | 0.295 | 0.235 | **0.323** |
+
+Patient by patient, the bipolar arm has the highest ρ in 15 of 20 (ripple)
+and 18 of 20 (fast ripple); it beats the archive's reference in 17 and 19,
+and the common average in 16 and 18. The one cell it loses, fast-ripple F1,
+it loses on recall (0.225 against 0.324) while keeping the better precision
+(0.578 against 0.384): the common average finds more of the marked events and
+more that were not marked.
+
+### Against surgical outcome
+
+AUC for seizure-free (13) against recurrence (7), bootstrap 95% interval and
+exact permutation *p* where they bear on the reading. **No patient is lost
+from any arm** in either band.
+
+| band | metric | bipolar | referential | average |
+|---|---|---|---|---|
+| ripple | `top_channel_resected` | 0.747 [0.53–0.93], *p* 0.072 | 0.681 [0.42–0.92], *p* 0.175 | **0.764** [0.53–0.96], *p* 0.046 |
+| ripple | `top3_resected` | **0.698** | 0.610 | 0.632 |
+| ripple | `share_in_rz` | **0.527** | 0.429 | 0.484 |
+| ripple | `candidates_resected` | **0.648** | 0.505 | 0.626 |
+| fast ripple | `top_channel_resected` | **0.753** [0.53–0.95], *p* 0.038 | 0.615 [0.33–0.87], *p* 0.411 | 0.720 [0.47–0.92], *p* 0.106 |
+| fast ripple | `top3_resected` | **0.654** | 0.566 | 0.626 |
+| fast ripple | `share_in_rz` | **0.714** | 0.560 | 0.549 |
+| fast ripple | `candidates_resected` | **0.577** | 0.379 | 0.533 |
+
+The bipolar arm is first on seven of the eight cells. The exception is
+ripple `top_channel_resected`, where the common average edges it by 0.017
+inside intervals 0.4 wide. The archive's own reference is last on all eight.
+The fast-ripple bipolar `top_channel_resected` of 0.753 (*p* 0.038) is, to the
+third decimal, the `plain` row of §6c — the same pipeline on the same windows
+— which is the cross-check that the two screens agree on what they share.
+
+### How much the montage moves the ranking at all
+
+`rho_vs_bipolar` is the Spearman between each arm's ranking and the shipped
+default's, on the pairs both can rank (contact counts averaged onto pairs).
+Its per-patient median is 0.52 (ripple) and 0.69 (fast ripple) for the
+archive's reference and 0.76 / 0.77 for the common average, and the minima
+are below zero (−0.16 and −0.58): in some patients the referential ranking is
+unrelated to the bipolar one, or reversed. The referential arms also find
+*more* events — 1,449 and 1,523 ripples per window on average against 1,131,
+and 193 and 155 fast ripples against 94 — and are less often empty in the
+fast-ripple band (7 and 3 of 100 windows against 16). More events, lower
+agreement and a worse localisation is the signature of noise shared through
+the reference being counted as events on the channels that carry it, which
+is the mechanism the bipolar montage exists to remove.
+
+### What this does not establish
+
+- **No AUC difference between arms is significant, and none is claimed.**
+  With 13 against 7 only an AUC of 0.85 or better is resolvable (§0b), and the
+  arms' intervals overlap everywhere. The finding is the *direction*,
+  consistent across the eight outcome cells and across 15–19 of 20 patients on
+  the expert yardstick.
+- **The expert yardstick favours the bipolar arm by construction.** The
+  annotators read bipolar channels, so a referential ranking is being judged
+  through a projection. That is why the outcome yardstick, which has no such
+  bias, was run alongside it; it points the same way.
+- **Pairing is still by contact number** (item 3 of the roadmap), so this
+  measures the bipolar montage as shipped, not a distance-based one.
+- **Event-level numbers for the referential arms are projected**, as
+  described above, and should be read as "what a reader of the pair would
+  have been shown" rather than as the detector's own precision.
+
+**Decision.** The bipolar montage stays the default. The preprocessing panel
+keeps the other two references available for comparison, and this section is
+what to expect when they are chosen.
+
+Reproduce: `ONSET_HFO_OFFLINE=1 python scripts/run_montage_comparison.py`
+(about 40 minutes on the cached slices), or
+`--from-csv data/outcome/montage_screen.csv` to re-print the tables.
+
+---
+
 ## 4. How hard is the problem? Recall against SNR
 
 `ripple_snr` is the implanted ripple's peak amplitude divided by the RMS the

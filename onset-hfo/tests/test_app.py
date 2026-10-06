@@ -852,3 +852,28 @@ def test_the_pages_degrade_rather_than_crash_on_a_stale_module():
         assert "hasattr(panels" in source, f"{page} lost its stale-module guard"
         assert attribute in source
         assert "Reboot" in source, f"{page} no longer names the remedy"
+
+
+def test_the_montage_extract_keeps_every_patient_in_every_arm():
+    """§3c's premise: the three arms are scored on the same 20 patients, so a
+    difference between them is a difference of montage and nothing else."""
+    rows = panels.montage_screen()
+    assert not rows.empty
+    kept = rows.groupby(["band", "montage"]).subject.nunique()
+    assert (kept == 20).all(), kept.to_dict()
+    groups = panels.montage_groups()
+    outcome = groups[groups["kind"] == "outcome"]
+    assert (outcome["n_SF"] == 13).all() and (outcome["n_rec"] == 7).all()
+
+
+def test_the_research_page_quotes_the_montage_result_it_rests_on():
+    source = (Path(__file__).resolve().parents[1] / "app" / "pages"
+              / "9_Research.py").read_text()
+    assert "Four questions" in source
+    assert "15 of 20 patients" in source and "18 of 20" in source
+    assert "seven of eight" in source
+    # The numbers the page quotes are the extract's, not remembered ones.
+    groups = panels.montage_groups()
+    rho = groups[(groups["kind"] == "agreement") & (groups["metric"] == "spearman_rho")]
+    best = rho.loc[rho.groupby("band")["value"].idxmax(), "montage"]
+    assert set(best) == {"bipolar"}

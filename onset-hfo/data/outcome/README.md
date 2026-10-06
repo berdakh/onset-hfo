@@ -21,6 +21,8 @@ can work from a fresh clone with no 700 MB download and no 90-minute rerun.
 | `robustness_ablation.csv` | band × patient × window × rule × re-test | 800 |
 | `subpopulation_groups.csv` | band × metric × population | 18 |
 | `robustness_groups.csv` | band × metric × rule × re-test | 32 |
+| `montage_screen.csv` | band × patient × window × montage | 600 |
+| `montage_groups.csv` | band × montage × metric | 60 |
 
 ## What each file carries
 
@@ -99,8 +101,28 @@ windows with 36 in which a working ranking was zeroed.
 `tied_set_argmax_resected` is the comparable substitute — the tied set comes
 from the shared survey counts, so both rules are judged on the same channels.
 
+**`montage_screen.csv`** — the montage comparison
+([`EVALUATION.md`](../../docs/EVALUATION.md) §3c): the same pipeline under
+three references. One row per `band` × `subject` × `window` × `montage`, where
+`montage` is `bipolar` (the shipped default, ranking the reviewed pairs),
+`referential` (the archive's own reference) or `average` (common average), the
+last two ranking the contacts behind the reviewed pairs. The outcome columns
+are the plain-rule metrics of the other screens; `spearman_rho` and
+`top5_overlap` are agreement with the expert ranking on the arm's own unit;
+`precision`/`recall`/`f1` are event-level, and `event_scoring` says whether
+they were measured on the arm's own channels (`direct`, bipolar only) or on
+detections projected onto the reviewed pairs (`projected`). `rho_vs_bipolar` is
+how far the arm's ranking sits from the default's on the pairs both can rank
+(1.0 for the bipolar rows). The referential arms have no `partial` channels: a
+contact is in the resection or not.
+
+**`montage_groups.csv`** — the reduced table for it: `kind == outcome` rows
+carry the AUC, interval and exact permutation `p` per `band` × `montage` ×
+`metric`; `kind == agreement` rows carry the cohort mean of per-patient means
+in `value`.
+
 **`subpopulation_groups.csv`** and **`robustness_groups.csv`** — the reduced
-group tables for the two screens above: AUC, bootstrap interval, exact
+group tables for the screens above: AUC, bootstrap interval, exact
 permutation `p` and a Bonferroni column, with the realised `n_SF`/`n_rec` per
 arm. They exist for the same reason `../stability/` holds group tables beside
 the per-subject ones: reducing the per-window rows takes a bootstrap and an

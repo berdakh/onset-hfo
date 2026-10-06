@@ -726,6 +726,28 @@ def robustness_ablation() -> pd.DataFrame:
     return pd.read_csv(path) if path.exists() else pd.DataFrame()
 
 
+def montage_screen() -> pd.DataFrame:
+    """The montage comparison: the same pipeline under three references.
+
+    One row per ``band`` x ``subject`` x ``window`` x ``montage`` (``bipolar``,
+    ``referential``, ``average``), scored against the resection with the
+    plain rule and against the expert markings. ``event_scoring`` says whether
+    precision and recall were measured on the arm's own channels (``direct``,
+    bipolar only) or on detections projected onto the reviewed pairs
+    (``projected``); ``rho_vs_bipolar`` is how far the arm's ranking moved
+    from the shipped default's, on the pairs both can rank.
+    """
+    path = COHORT / "montage_screen.csv"
+    return pd.read_csv(path) if path.exists() else pd.DataFrame()
+
+
+def montage_groups() -> pd.DataFrame:
+    """The reduced montage table: outcome AUCs and cohort-mean agreement per
+    band x montage, as committed. See :func:`subpopulation_groups`."""
+    path = COHORT / "montage_groups.csv"
+    return pd.read_csv(path) if path.exists() else pd.DataFrame()
+
+
 def robustness_collapse() -> dict:
     """How often the ranking has no leader at all, by band.
 
