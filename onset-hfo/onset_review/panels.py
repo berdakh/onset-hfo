@@ -34,7 +34,7 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
-from onset_review import adjudication, theme, trends
+from onset_review import adjudication, compact, theme, trends
 from onset_review.session import ReviewSession
 from onset_review.theme import card
 
@@ -44,6 +44,8 @@ __all__ = ["FindingsPanel", "EventsPanel", "TrendsPanel", "AgreementPanel",
 #: Columns renamed for reading. A clinician should never have to learn that
 #: `mean_prominence_db` is how far the oscillation rises above the background.
 HEADERS = {
+    "rate": "Rate /min (95%)",
+    "annotators": "Annotators",
     "verdict": "My read",
     "my_read": "My read",
     "judged": "Judged",
@@ -402,7 +404,10 @@ class FindingsPanel(QWidget):
                 return theme.current().surface_alt
             return None
 
-        self.model = DataFrameModel(self._with_read(), self.COLUMNS, highlight)
+        # Compact first: four things a reader wants from a ranking, the other
+        # eleven columns behind a tick. See `onset_review.compact`.
+        self._compact = True
+        self.model = DataFrameModel(self._with_read(), self._columns(), highlight)
         self.view = _table_view()
         self.view.setModel(self.model)
         _indicate(self.view, self.model, "rank")
@@ -411,6 +416,11 @@ class FindingsPanel(QWidget):
         self.buttons = {}
         bar = QHBoxLayout()
         bar.setSpacing(4)
+        self.all_columns = QCheckBox("All columns")
+        self.all_columns.setObjectName("onset_findings_all_columns")
+        self.all_columns.setToolTip("Every measurement: intervals, frequency, duration, "
+                                    "prominence, spikes, the annotators' counts")
+        self.all_columns.toggled.connect(lambda on: self.set_compact(not on))
         bar.addWidget(QLabel("This contact:"))
         for verdict, text, tip in self.CHANNEL_KEYS:
             button = _compact(QPushButton(text))
@@ -434,12 +444,17 @@ class FindingsPanel(QWidget):
         caption.setStyleSheet(
             f"color:{theme.current().text_muted};font-size:9pt;padding:2px 4px;")
 
+        foot = QHBoxLayout()
+        foot.setSpacing(4)
+        foot.addWidget(caption, 1)
+        foot.addWidget(self.all_columns, 0, Qt.AlignTop)
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(2)
         layout.addWidget(self.view)
         layout.addLayout(bar)
-        layout.addWidget(caption)
+        layout.addLayout(foot)
 
     # -- the reader's verdicts ---------------------------------------------
     def _with_read(self) -> pd.DataFrame:
@@ -460,7 +475,7 @@ class FindingsPanel(QWidget):
         primary = self._session.request.primary
         progress = read.progress([e for e in self._session.events
                                   if e.accepted and e.detector == primary])
-        frame = self._session.findings.copy()
+        frame = compact.compact_findings(self._session.findings)
         if frame.empty:
             frame["my_read"] = []
             frame["judged"] = []
@@ -496,8 +511,27 @@ class FindingsPanel(QWidget):
         self.refresh(keep=channel)
         return channel
 
+    def _columns(self) -> list[str]:
+        return (compact.COMPACT_COLUMNS["findings"] if self._compact
+                else compact.FULL_COLUMNS["findings"])
+
+    @property
+    def compact(self) -> bool:
+        return self._compact
+
+    def set_compact(self, on: bool) -> None:
+        """Four columns a reader scans, or every measurement."""
+        on = bool(on)
+        if on == self._compact:
+            return
+        self._compact = on
+        self.all_columns.blockSignals(True)
+        self.all_columns.setChecked(not on)
+        self.all_columns.blockSignals(False)
+        self.refresh(keep=self.selected_channel())
+
     def refresh(self, keep: str = "") -> None:
-        self.model.set_frame(self._with_read(), self.COLUMNS)
+        self.model.set_frame(self._with_read(), self._columns())
         if keep:
             self.select_channel(keep)
 
@@ -581,15 +615,24 @@ class EventsPanel(QWidget):
             "Candidates the artifact filter removed, with the reason. Useful "
             "for asking why the detector did not mark something you can see.")
 
+        self.all_columns = QCheckBox("All columns")
+        self.all_columns.setObjectName("onset_events_all_columns")
+        self.all_columns.setToolTip("Every measurement of each event: amplitude, "
+                                    "prominence, peaks, the discharge flag, the "
+                                    "reason a rejected one was rejected")
+        self._compact = True
+        self.all_columns.toggled.connect(lambda on: self.set_compact(not on))
+
         bar = QHBoxLayout()
         for widget in (self.kind, self.channel, self.on_spike, self.rejected):
             bar.addWidget(widget)
         bar.addStretch(1)
+        bar.addWidget(self.all_columns)
         self.count = QLabel()
         self.count.setStyleSheet(f"color:{theme.current().text_muted};font-size:9pt;")
         bar.addWidget(self.count)
 
-        self.model = DataFrameModel(self._all, self.COLUMNS, self._tint)
+        self.model = DataFrameModel(self._all, self._columns(), self._tint)
         self.view = _table_view()
         self.view.setModel(self.model)
         self.view.selectionModel().selectionChanged.connect(self._emit)
@@ -767,7 +810,7 @@ class EventsPanel(QWidget):
         # order once the reader has clicked a header, which is why a row is
         # turned back into an event through the model and not through this.
         self._shown = self._verdicts_for(frame).reset_index(drop=True)
-        self.model.set_frame(self._shown, self.COLUMNS)
+        self.model.set_frame(self._shown, self._columns())
         hidden = self.model.column_index("key")
         if hidden >= 0:
             self.view.setColumnHidden(hidden, True)
@@ -797,6 +840,26 @@ class EventsPanel(QWidget):
             self.eventPicked.emit(float(t), str(channel or ""))
         if key:
             self.eventKeyPicked.emit(str(key))
+
+    def _columns(self) -> list[str]:
+        return (compact.COMPACT_COLUMNS["events"] if self._compact
+                else compact.FULL_COLUMNS["events"])
+
+    @property
+    def compact(self) -> bool:
+        return self._compact
+
+    def set_compact(self, on: bool) -> None:
+        """Six columns a reader walks, or every measurement."""
+        on = bool(on)
+        if on == self._compact:
+            return
+        self._compact = on
+        self.all_columns.blockSignals(True)
+        self.all_columns.setChecked(not on)
+        self.all_columns.blockSignals(False)
+        rows = self.view.selectionModel().selectedRows()
+        self.refilter(keep_row=rows[0].row() if rows else -1)
 
     def select_nearest(self, t: float, channel: str = "", within: float = 2.5) -> bool:
         """Select the listed event nearest `t` (span seconds) on `channel`,
@@ -969,16 +1032,96 @@ class AgreementPanel(QWidget):
         self.statement.setWordWrap(True)
         self.statement.setStyleSheet(card("info"))
 
-        self.model = DataFrameModel(trends.agreement(session), self.COLUMNS)
+        self._frame = trends.agreement(session)
+        self.model = DataFrameModel(self._frame, self.COLUMNS)
         self.view = _table_view()
         self.view.setModel(self.model)
         self.view.selectionModel().selectionChanged.connect(self._emit)
+
+        # Two bars per channel say in a glance what eight columns say in a
+        # minute: what the annotators marked, what the detector marked, and
+        # (the darker part) how much of it was the same events.
+        from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+        from matplotlib.figure import Figure
+
+        self.figure = Figure(figsize=(3.6, 2.6), facecolor=theme.current().surface)
+        self.canvas = FigureCanvasQTAgg(self.figure)
+        self.canvas.setMinimumHeight(120)
+        self.canvas.mpl_connect("pick_event", self._bar_picked)
+        self._bars = []
+        self.show_table = QCheckBox("Show the table")
+        self.show_table.setObjectName("onset_agreement_table")
+        self.show_table.setToolTip("Matched, detector-only and expert-only counts, "
+                                   "sensitivity and precision, per channel")
+        self._compact = True
+        self.show_table.toggled.connect(lambda on: self.set_compact(not on))
+        self.view.setVisible(False)
+        self._draw_bars()
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(4)
         layout.addWidget(self.statement)
-        layout.addWidget(self.view)
+        layout.addWidget(self.canvas, 1)
+        layout.addWidget(self.show_table)
+        layout.addWidget(self.view, 1)
+
+    @property
+    def compact(self) -> bool:
+        return self._compact
+
+    def set_compact(self, on: bool) -> None:
+        on = bool(on)
+        self._compact = on
+        self.show_table.blockSignals(True)
+        self.show_table.setChecked(not on)
+        self.show_table.blockSignals(False)
+        self.view.setVisible(not on)
+
+    def _draw_bars(self) -> None:
+        tokens = theme.current()
+        self.figure.clear()
+        axes = self.figure.add_axes((0.30, 0.06, 0.66, 0.90))
+        axes.set_facecolor(tokens.surface)
+        rows = compact.agreement_bars(self._frame)
+        self._bars = rows
+        if not rows:
+            axes.text(0.5, 0.5, "no reviewed channels in this window", ha="center",
+                      va="center", color=tokens.text_muted, fontsize=8,
+                      transform=axes.transAxes)
+            axes.set_xticks([])
+            axes.set_yticks([])
+            self.canvas.draw_idle()
+            return
+        y = list(range(len(rows)))[::-1]
+        expert = [r["expert"] for r in rows]
+        detector = [r["detector"] for r in rows]
+        matched = [r["matched"] for r in rows]
+        axes.barh([v + 0.2 for v in y], expert, height=0.38, color=tokens.text_muted,
+                  alpha=0.55, label="annotators", picker=True)
+        axes.barh([v - 0.2 for v in y], detector, height=0.38, color=tokens.accent,
+                  alpha=0.45, label="detector", picker=True)
+        axes.barh([v - 0.2 for v in y], matched, height=0.38, color=tokens.accent,
+                  label="same events")
+        axes.set_yticks(y)
+        axes.set_yticklabels([r["channel"] for r in rows], fontsize=7, color=tokens.text)
+        axes.tick_params(axis="x", labelsize=7, colors=tokens.text_muted)
+        for side in ("top", "right"):
+            axes.spines[side].set_visible(False)
+        for side in ("left", "bottom"):
+            axes.spines[side].set_color(tokens.separator)
+        axes.legend(fontsize=7, frameon=False, loc="lower right",
+                    labelcolor=tokens.text_muted)
+        axes.set_xlabel("events in this window", fontsize=7, color=tokens.text_muted)
+        self.canvas.draw_idle()
+
+    def _bar_picked(self, event) -> None:
+        try:
+            index = len(self._bars) - 1 - int(round(event.artist.get_y() + event.artist.get_height() / 2))
+        except Exception:       # noqa: BLE001
+            return
+        if 0 <= index < len(self._bars):
+            self.channelPicked.emit(self._bars[index]["channel"])
 
     def _emit(self) -> None:
         rows = self.view.selectionModel().selectedRows()

@@ -1080,7 +1080,7 @@ def _menus(figure, host: QMainWindow, panels: dict, docks: dict,
         lambda on: (setattr(display, "expert", bool(on)), parts.refresh_marks()))
 
     view.addSeparator()
-    _window_actions(view, host, docks, defaults)
+    _window_actions(view, host, docks, defaults, panels)
 
     navigate = menubar.addMenu("&Navigate")
     navigate.addAction("&Next event", lambda: panels["events"].step(+1))
@@ -1270,7 +1270,7 @@ def _window_note(host: QMainWindow, session: ReviewSession) -> None:
 
 
 def _window_actions(view, host: QMainWindow, docks: dict,
-                    defaults: dict) -> None:
+                    defaults: dict, panels: dict | None = None) -> None:
     """Fit, maximise and full screen, in the View menu.
 
     The window manager's own buttons are the usual way to do this, and they
@@ -1306,6 +1306,28 @@ def _window_actions(view, host: QMainWindow, docks: dict,
         restore = view.addAction("&Restore the default layout")
         restore.setToolTip("Every region back to its opening size, on every page")
         restore.triggered.connect(lambda _=False: host.reset_layout())
+
+    # Compact tables: the form a reader wants first, every column behind it.
+    # One tick for all four tables; each panel also has its own.
+    compact_action = view.addAction("&Compact tables")
+    compact_action.setCheckable(True)
+    compact_action.setChecked(True)
+    compact_action.setToolTip("Rank, channel, rate and the annotators' count in the "
+                              "ranking; six columns in the event list; bars rather "
+                              "than a table for the agreement; a strip of chips for "
+                              "data quality. Untick for every measurement.")
+    panels_for_compact = panels if panels is not None else getattr(host, "panels", None)
+
+    def set_compact(on: bool) -> None:
+        if hasattr(host, "set_compact"):
+            host.set_compact(bool(on))
+            return
+        for panel in (panels_for_compact or {}).values():
+            if hasattr(panel, "set_compact"):
+                panel.set_compact(bool(on))
+
+    compact_action.triggered.connect(lambda on: set_compact(bool(on)))
+    view.compact_action = compact_action        # type: ignore[attr-defined]
 
     shrink = view.addAction("&Fit the window to this screen")
     shrink.setShortcut("Ctrl+0")

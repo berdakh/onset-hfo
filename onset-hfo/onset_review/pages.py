@@ -23,6 +23,7 @@ from __future__ import annotations
 from qtpy.QtCore import QByteArray, QEvent, Qt, Signal
 from qtpy.QtGui import QKeySequence
 from qtpy.QtWidgets import (
+    QCheckBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -164,6 +165,11 @@ class PageWindow(QMainWindow):
 
         self.nav.currentItemChanged.connect(self._nav_changed)
         self.restore_layout_state(self._remembered())
+        if self._remembered_compact() is False:
+            for key in self.COMPACT_PANELS:
+                panel = self.panels.get(key)
+                if panel is not None and hasattr(panel, "set_compact"):
+                    panel.set_compact(False)
         from onset_review.studies import STUDIES
 
         keyed = [key for key, _label in PAGES] + [key for key, _, _ in STUDIES]
@@ -468,7 +474,7 @@ class PageWindow(QMainWindow):
         self.side.setTabToolTip(2, "The selected event wideband, filtered and in "
                                    "time-frequency — oscillation or filter ringing?")
         outer.addWidget(self._split("recording", Qt.Horizontal, [left, self.side],
-                                    [1100, COLUMN_WIDTH + 40], stretch=(1, 0)), 1)
+                                    [1000, COLUMN_WIDTH + 150], stretch=(1, 0)), 1)
         return page
 
     # -- the trace in a window of its own ----------------------------------
@@ -651,6 +657,13 @@ class PageWindow(QMainWindow):
         box.setSpacing(theme.SPACING)
         box.addWidget(theme.section_label("Agreement with the archive's annotators"))
         box.addWidget(self.panels["agreement"], 1)
+        self.appendix = QCheckBox("Show the appendix (every measurement)")
+        self.appendix.setObjectName("onset_report_appendix")
+        self.appendix.setChecked(False)
+        self.appendix.setToolTip("The exported file always carries the appendix; "
+                                 "this only shortens the preview")
+        self.appendix.toggled.connect(lambda _on: self.refresh_report())
+        box.addWidget(self.appendix)
         self.export_button = QPushButton("Export review…")
         self.export_button.setObjectName("onset_export")
         self.export_button.setEnabled(self._on_export is not None)
@@ -671,9 +684,11 @@ class PageWindow(QMainWindow):
         from onset_review.studypages import set_markdown
 
         reader = getattr(getattr(self.session, "read", None), "reader", "") or None
+        appendix = bool(getattr(self, "appendix", None) and self.appendix.isChecked())
         try:
             set_markdown(self.report_view,
-                         report.review_markdown(self.session, reviewer=reader))
+                         report.review_markdown(self.session, reviewer=reader,
+                                                appendix=appendix))
         except Exception as error:      # noqa: BLE001 - a preview must not kill a page
             self.report_view.setPlainText(f"The report could not be rendered: {error}")
 
@@ -714,6 +729,21 @@ class PageWindow(QMainWindow):
         return {name: bytes(splitter.saveState().data())
                 for name, (splitter, _default) in self._splitters.items()}
 
+    # -- compact tables, everywhere at once ----------------------------------
+    COMPACT_PANELS = ("findings", "events", "agreement", "quality")
+
+    def set_compact(self, on: bool) -> None:
+        """Every table to its compact form, or every column; remembered."""
+        for key in self.COMPACT_PANELS:
+            panel = self.panels.get(key)
+            if panel is not None and hasattr(panel, "set_compact"):
+                panel.set_compact(bool(on))
+        self.remember_layout()
+
+    def compact(self) -> bool:
+        panel = self.panels.get("findings")
+        return bool(getattr(panel, "compact", True))
+
     def restore_layout_state(self, state: dict | None) -> int:
         """Apply saved sizes to the splitters this window has. Returns how
         many took: a page not built in this state is simply left alone."""
@@ -747,6 +777,16 @@ class PageWindow(QMainWindow):
         except (OSError, ValueError, TypeError):
             return {}
 
+    def _remembered_compact(self):
+        import json
+
+        try:
+            payload = json.loads(self._layout_file().read_text(encoding="utf-8"))
+            value = payload.get("compact")
+            return None if value is None else bool(value)
+        except (OSError, ValueError, TypeError):
+            return None
+
     def remember_layout(self) -> None:
         """Write the splitter sizes beside the assistant's defaults, so the
         next launch opens the way this one was left."""
@@ -756,7 +796,7 @@ class PageWindow(QMainWindow):
         try:
             path = self._layout_file()
             path.parent.mkdir(parents=True, exist_ok=True)
-            payload = {"schema": 1, "splitters": {
+            payload = {"schema": 1, "compact": self.compact(), "splitters": {
                 k: base64.b64encode(v).decode("ascii") for k, v in self.layout_state().items()}}
             path.write_text(json.dumps(payload, indent=1) + "\n", encoding="utf-8")
         except OSError:

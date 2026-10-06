@@ -121,8 +121,16 @@ def _header(session: ReviewSession, reviewer: str | None) -> list[str]:
 
 
 def review_markdown(session: ReviewSession, reviewer: str | None = None,
-                    notes: str = "", max_events: int = 50) -> str:
-    """The whole review as one Markdown document."""
+                    notes: str = "", max_events: int = 50, appendix: bool = True) -> str:
+    """The whole review as one Markdown document.
+
+    The body carries the compact tables a reader scans -- rank, channel, the
+    rate with its interval, what the annotators marked -- and the appendix
+    carries every measurement, so the document is readable in a minute and
+    complete on the page after. `appendix=False` is the on-screen preview's
+    short form; an exported file always has it.
+    """
+    from onset_review import compact
     summary = session.summary()
     out: list[str] = [
         f"# iEEG review — {session.request.subject}, "
@@ -150,20 +158,24 @@ def review_markdown(session: ReviewSession, reviewer: str | None = None,
             f"{summary['accepted']} of {summary['detected']} candidate events "
             f"survived artifact rejection; {summary['spikes']} interictal "
             f"discharges were detected alongside them.", ""]
-    out += [_table(session.findings,
-                   ["rank", "channel", "n_events", "rate_per_min", "rate_ci_low",
-                    "rate_ci_high", "mean_amplitude_uv", "mean_frequency_hz",
-                    "mean_duration_ms", "mean_prominence_db", "n_with_spike",
-                    "reviewed", "expert_n", "expert_rate_per_min"])]
+    findings = compact.compact_findings(session.findings)
+    out += [_table(findings, ["rank", "channel", "n_events", "rate", "annotators"]),
+            "_Rate is events per minute with its 95% Poisson interval; every "
+            "measurement per channel is in the appendix._", ""]
 
     accord = trends.agreement_summary(session)
+    agreement = trends.agreement(session)
     out += ["## Against the archive's annotators", ""]
     if accord.get("available"):
+        bars = compact.agreement_bars(agreement, top=10)
         out += [accord["statement"], "",
-                _table(trends.agreement(session),
-                       ["channel", "n_expert", "n_detector", "matched",
-                        "detector_only", "expert_only", "sensitivity",
-                        "precision"])]
+                "| channel | annotators marked | detector marked | same events |",
+                "|---|---|---|---|"]
+        out += [f"| {b['channel']} | {b['expert']} | {b['detector']} | {b['matched']} |"
+                for b in bars]
+        out += ["", f"_The {len(bars)} channels the annotators marked most; all "
+                    f"{len(agreement)} reviewed channels, with sensitivity and "
+                    "precision, are in the appendix._", ""]
     else:
         out += [f"_{accord['reason']}._", ""]
 
@@ -172,9 +184,7 @@ def review_markdown(session: ReviewSession, reviewer: str | None = None,
             f"{len(table)} accepted events, earliest first"
             + (f"; the first {max_events} are listed." if len(table) > max_events
                else "."), "",
-            _table(table, ["t_file", "t_local", "channel", "kind",
-                           "duration_ms", "amplitude_uv", "frequency_hz",
-                           "prominence_db", "n_peaks", "with_spike"],
+            _table(table, ["t_file", "channel", "kind", "frequency_hz", "duration_ms"],
                    limit=max_events)]
 
     out += _read_section(session)
@@ -193,6 +203,26 @@ def review_markdown(session: ReviewSession, reviewer: str | None = None,
 
     if session.citation:
         out += ["## Source", "", session.citation, ""]
+
+    if appendix:
+        out += ["## Appendix — every measurement", "",
+                "### Per-channel findings, all columns", "",
+                _table(session.findings,
+                       ["rank", "channel", "n_events", "rate_per_min", "rate_ci_low",
+                        "rate_ci_high", "mean_amplitude_uv", "mean_frequency_hz",
+                        "mean_duration_ms", "mean_prominence_db", "n_with_spike",
+                        "reviewed", "expert_n", "expert_rate_per_min"])]
+        if accord.get("available"):
+            out += ["### Against the annotators, every reviewed channel", "",
+                    _table(agreement,
+                           ["channel", "n_expert", "n_detector", "matched",
+                            "detector_only", "expert_only", "sensitivity",
+                            "precision"])]
+        out += ["### Events, all columns", "",
+                _table(table, ["t_file", "t_local", "channel", "kind",
+                               "duration_ms", "amplitude_uv", "frequency_hz",
+                               "prominence_db", "n_peaks", "with_spike"],
+                       limit=max_events)]
     out += ["---", "",
             "Produced by `onset-review` "
             "(https://github.com/berdakh/onset-hfo). Re-running the same "

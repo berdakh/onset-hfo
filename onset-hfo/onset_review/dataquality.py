@@ -58,6 +58,7 @@ from qtpy.QtWidgets import (
 )
 
 from onset_hfo.quality import REASONS, SET_ASIDE, quality_summary
+from onset_review import compact
 from onset_review.theme import SPACING, card, current, muted, scrolled, section_label
 
 __all__ = ["QualityPanel", "COLUMNS", "REASONS", "SET_ASIDE"]
@@ -127,24 +128,53 @@ class QualityPanel(QWidget):
         column.addWidget(self.summary)
 
         column.addWidget(section_label("Contacts", self.tokens))
-        column.addWidget(muted(
+        # One chip per contact, the ones worth a look first. A reader takes
+        # forty verdicts in at a glance here where the table below says the
+        # same thing in nine columns; a click on a chip selects its row.
+        self.strip = QLabel()
+        self.strip.setObjectName("onset_quality_strip")
+        self.strip.setWordWrap(True)
+        self.strip.setTextFormat(Qt.RichText)
+        self.strip.setOpenExternalLinks(False)
+        self.strip.linkActivated.connect(self._chip_clicked)
+        column.addWidget(self.strip)
+        self.legend = muted("", self.tokens)
+        column.addWidget(self.legend)
+
+        self.explain = QCheckBox("Why nothing is repaired, and what a flag means")
+        self.explain.setObjectName("onset_quality_explain")
+        self.explain.setChecked(False)
+        column.addWidget(self.explain)
+        self._explanations = []
+        self._explanations.append(muted(
             "Nothing is repaired. A standard EEG cleaner interpolates a bad "
             "channel from its neighbours; here the whole output is a "
             "per-contact rate, so an interpolated contact's rate would be "
             "borrowed from the ones beside it and read as a finding about it.",
             self.tokens))
-        column.addWidget(muted(
+        self._explanations.append(muted(
             "And little is removed. A contact is only set aside for a fault "
             "no physiology produces. Where a measurement is odd in a way that "
             "could equally be the finding — far more band power than its "
             "neighbours, say — it is analysed and flagged instead, and the "
             "judgement is yours: open it on the trace.", self.tokens))
-        column.addWidget(muted(
+        self._explanations.append(muted(
             "Burstiness says which way a band-power flag leans. 6.6 is the "
             "value a contact carrying no events at all takes, whatever its "
             "amplitude — it falls out of the algebra, not out of this "
             "cohort. Far above it means the energy arrives in bursts.",
             self.tokens))
+        for label in self._explanations:
+            label.setVisible(False)
+            column.addWidget(label)
+        self.explain.toggled.connect(
+            lambda on: [label.setVisible(bool(on)) for label in self._explanations])
+
+        self.show_table = QCheckBox("Show the measurements")
+        self.show_table.setObjectName("onset_quality_table")
+        self.show_table.setToolTip("Amplitude, band-power outlier, burstiness, mains "
+                                   "share, clipping and the seconds analysed, per contact")
+        column.addWidget(self.show_table)
 
         self.table = QTableWidget(0, len(COLUMNS))
         self.table.setHorizontalHeaderLabels([label for _, label, _ in COLUMNS])
@@ -159,6 +189,11 @@ class QualityPanel(QWidget):
             1, QHeaderView.Stretch)
         self.table.setMinimumHeight(220)
         column.addWidget(self.table, 1)
+        # The table opens shown only when there is something in it to act on:
+        # a reviewer who opens this panel because a contact was set aside
+        # should not have to ask for the row.
+        self._compact = True
+        self.show_table.toggled.connect(lambda on: self.set_compact(not on))
 
         self.reinstate = QPushButton("Reinstate this contact")
         self.reinstate.setEnabled(False)
@@ -197,6 +232,64 @@ class QualityPanel(QWidget):
         self._fill()
         self.table.itemSelectionChanged.connect(self._selection_changed)
         self.enabled.toggled.connect(self._changed)
+        self.set_compact(not self._something_to_act_on())
+
+    # -- compact or not --------------------------------------------------------
+    @property
+    def compact(self) -> bool:
+        return self._compact
+
+    def set_compact(self, on: bool) -> None:
+        on = bool(on)
+        self._compact = on
+        self.show_table.blockSignals(True)
+        self.show_table.setChecked(not on)
+        self.show_table.blockSignals(False)
+        self.table.setVisible(not on)
+
+    def _something_to_act_on(self) -> bool:
+        quality = self._session.quality
+        if quality is None or quality.empty:
+            return False
+        return bool((~quality["good"]).any() or quality["flagged"].any())
+
+    def chips(self) -> list[dict]:
+        return compact.quality_chips(self._session.quality, kept=tuple(self._kept))
+
+    def _draw_strip(self) -> None:
+        chips = self.chips()
+        if not chips:
+            self.strip.setText("")
+            self.legend.setText("")
+            return
+        colours = {"bad": self.tokens.bad, "warn": self.tokens.warn,
+                   "accent": self.tokens.accent, "good": self.tokens.good}
+        kinds = {kind: (label, token) for kind, label, token in compact.QUALITY_KINDS}
+        parts = []
+        for chip in chips:
+            label, token = kinds[chip["kind"]]
+            reason = REASONS.get(chip["reason"], chip["reason"]) if chip["reason"] else label
+            parts.append(
+                f"<a href='{chip['channel']}' title='{label}: {reason}' "
+                f"style='text-decoration:none;color:{self.tokens.text};'>"
+                f"<span style='background:{colours[token]};color:{self.tokens.accent_text};"
+                f"border-radius:3px;padding:1px 5px;font-size:8pt;'>&nbsp;{chip['channel']}"
+                f"&nbsp;</span></a>")
+        self.strip.setText(" ".join(parts))
+        counts = compact.counts_by_kind(chips)
+        said = [f"{counts[kind]} {label}" for kind, label, _t in compact.QUALITY_KINDS
+                if counts.get(kind)]
+        self.legend.setText("Each chip is one contact, the ones to look at first: "
+                            + ", ".join(said) + ". Click one to select it.")
+
+    def _chip_clicked(self, href: str) -> None:
+        channel = str(href)
+        for row in range(self.table.rowCount()):
+            item = self.table.item(row, 0)
+            if item is not None and item.text() == channel:
+                self.table.selectRow(row)
+                self.table.scrollToItem(item)
+                return
 
     # -- what the table says -----------------------------------------------
     def rows(self) -> pd.DataFrame:
@@ -240,6 +333,7 @@ class QualityPanel(QWidget):
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.summary.setText(self._summary_text())
         self.summary.setStyleSheet(card(self._summary_kind(), self.tokens))
+        self._draw_strip()
         # Refill the button state too. Rewriting the rows does not change the
         # selection when the row count is the same, so `itemSelectionChanged`
         # does not fire -- and Reinstate would stay lit on a contact that has
