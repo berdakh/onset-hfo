@@ -29,6 +29,8 @@ from __future__ import annotations
 
 import json
 import re
+import urllib.error
+import urllib.parse
 from dataclasses import dataclass, field
 
 __all__ = ["ToolCall", "AssistantMessage", "Backend", "ScriptedBackend", "OllamaBackend",
@@ -205,7 +207,6 @@ class OpenAICompatBackend(Backend):
         # stretch a reviewer wants to be able to end.
         import http.client
         import io
-        import urllib.parse
 
         parts = urllib.parse.urlsplit(f"{self.base_url}/chat/completions")
         maker = http.client.HTTPSConnection if parts.scheme == "https" else http.client.HTTPConnection
