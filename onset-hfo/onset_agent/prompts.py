@@ -12,9 +12,18 @@ from __future__ import annotations
 
 ANSWER_CONTRACT = (
     'Reply with ONE JSON object and nothing else.\n'
-    'To answer:  {"answer": "<two or three sentences>", "evidence_ids": ["<id>", ...]}\n'
-    'To decline: {"refusal": "<one sentence saying why>"}'
+    'To answer:  {"answer": "two or three sentences", "evidence_ids": [...]}\n'
+    '            where evidence_ids holds evidence_id strings copied exactly from a '
+    'get_evidence result (they look like "sub-01|AR1-AR2|rms|3.505"), or is [] if you '
+    'cite none.\n'
+    'To decline: {"refusal": "one sentence saying why"}'
 )
+
+#: Added to the system prompt when the briefing has already run.
+BRIEFED = """\
+The results of the usual queries are already in this conversation, as tool results: \
+read them first. Call a tool only for something they do not cover. If they answer the \
+question, reply at once."""
 
 SYSTEM_PROMPT = """You are the evidence assistant for Onset-HFO, a research prototype that \
 detects high-frequency oscillations (ripples, 80-250 Hz) and interictal epileptiform \
@@ -48,13 +57,44 @@ in healthy tissue.
 mention it.
 
 Available tools: {tool_names}.
-
+{briefed}
 {contract}"""
 
 
-def system_prompt(subject: str, source: str, tool_names: list[str]) -> str:
+def system_prompt(subject: str, source: str, tool_names: list[str],
+                  briefed: bool = False) -> str:
     return SYSTEM_PROMPT.format(subject=subject, source=source,
-                                tool_names=", ".join(tool_names), contract=ANSWER_CONTRACT)
+                                tool_names=", ".join(tool_names), contract=ANSWER_CONTRACT,
+                                briefed=("\n" + BRIEFED + "\n") if briefed else "")
+
+
+#: The answer to "what can you do?", written once and never generated. It
+#: names no number with a unit, so it needs no verification, and it is the
+#: same whichever model is loaded -- the limits are the system's, not the
+#: model's.
+def what_i_can_do(subject: str, tool_names: list[str] | None = None) -> str:
+    return (
+        f"I am the evidence assistant for this window: the saved analysis of {subject}, "
+        "and nothing else. I have no other patient, recording or dataset, and no way to "
+        "get one.\n\n"
+        "Ask me:\n"
+        "• which channels have the highest ripple or discharge rate, with their "
+        "confidence intervals;\n"
+        "• the evidence behind a channel: the detected windows, each a link to the "
+        "signal;\n"
+        "• everything known about one channel, by name;\n"
+        "• where the two detectors disagree, and how well they agree event by event;\n"
+        "• the rate before versus during a marked seizure, when the window holds one;\n"
+        "• what was analysed: the window, the sampling rate, the band, the channels "
+        "left out;\n"
+        "• the report's methods, data quality and limitations.\n\n"
+        "Every number I state is copied from a query over this window and checked "
+        "against it; a number no query returned is refused rather than shown. Every "
+        "citation is a window you can click.\n\n"
+        "I do not answer about treatment, surgery, medication, diagnosis, prognosis, "
+        "where seizures start, or any other patient, and those refusals happen before "
+        "any model runs. A high event rate is a measurement, not a seizure-onset zone."
+    )
 
 
 #: Shown by the CLI and the notebook. The last three must be refused; they are

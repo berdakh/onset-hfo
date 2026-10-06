@@ -434,27 +434,41 @@ detector's accuracy. Section 5 has the cohort numbers.
 
 ![The assistant](images/onset-review-assistant.png)
 
-A language model that can only quote the analysis in front of you. It chooses
-which read-only queries to run against this window; every number it states is
-checked against what those queries returned, and an answer citing evidence it
-never retrieved is thrown away and replaced with a refusal. Ask it which
-channels to resect and it refuses — before the model is even called.
+A language model that can only quote the analysis in front of you. The usual
+queries — what was analysed, the leading channels, the evidence behind them,
+where the detectors disagree — are run for it before it is asked anything, and
+it may run more; every number it states is checked against what those queries
+returned, and a number no query returned is refused rather than shown. Ask it
+which channels to resect and it refuses — before the model is even called. Ask
+it *What can you do?* and it tells you, also without a model.
+
+![An answer, with the work under it](images/onset-review-assistant-answer.png)
+
+**You see the work.** While a question runs, the lines under it say which
+data the model was given (`Retrieved for the model top_channels: AR1-AR2
+22.0/min, …`), what it asked for, what it wrote, and what the checks made of
+it — including, on a refusal, the sentence the model actually wrote and the
+check it failed. A wait is a visible process, and a refusal has a visible
+cause.
 
 **The citations are the point.** Each one is a link to a channel and a time, so
-an answer leads to the signal it was measured on. An assistant you cannot check
-is not useful here; one you can check in two clicks is.
+an answer leads to the signal it was measured on. When the model names a
+channel without citing a window, the windows retrieved for that channel are
+attached and the line says so; an id the model made up is dropped, never shown.
+An assistant you cannot check is not useful here; one you can check in two
+clicks is.
 
 It opens on **No model**, which runs the whole loop deterministically with
 nothing generative in it — that is how the guards are tested, and it answers
-instantly. For a real model, install Ollama, run
-
-```bash
-ollama pull qwen2.5:7b-instruct
-```
-
-and pick *Qwen2.5 via Ollama*. Nothing is downloaded on your behalf, nothing
-leaves the machine, and an unreachable server is reported rather than silently
-falling back.
+instantly. For a real model, install Ollama (`ollama serve`) and use the box
+above the transcript: it lists every size this machine can serve, smallest
+first, with what each costs to pull and what to expect of it. On a CPU it
+opens on `qwen2.5:3b-instruct`, which answers in well under a minute where the
+7B takes several; go one bigger if it misreads a table, one smaller if it is
+still slow. The one you pick is remembered. Nothing is downloaded until you
+press the button, nothing leaves the machine, and an unreachable server is
+reported rather than silently falling back. **Stop** ends a question that is
+taking too long; the clock beside it shows how long it has been.
 
 The numbers it quotes are the numbers in the Findings table, by construction:
 it reads a pipeline result rebuilt from the same band, detectors and thresholds

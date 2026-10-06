@@ -214,10 +214,13 @@ window on screen (see [`AGENT.md`](AGENT.md)). One flag sets it up:
 ```
 
 Or do it from inside the window: the **Assistant** page has a box that looks
-at this machine, names the Qwen the chooser picks for it, and offers to pull
-it with a progress bar. It needs Ollama running first (`ollama serve`); it
-cannot install a daemon. Once pulled, the model is written as the default and
-the assistant switches to it on the spot.
+at this machine, lists every Qwen size it can serve, and offers to pull the
+one you pick with a progress bar. On a CPU it opens on the 3B
+(`qwen2.5:3b-instruct`, about 1.9 GB), which answers in well under a minute;
+the 7B the installer picks is more careful and several times slower. It needs
+Ollama running first (`ollama serve`); it cannot install a daemon. Once
+pulled, the model is written as the default and the assistant switches to it
+on the spot.
 
 That installs [Ollama](https://ollama.com) if it is missing (its official
 script, one `sudo`), gives the service an **8192-token context** — the agent's
@@ -251,13 +254,23 @@ refusal before the model is even called.
 
 ### A release bundle instead of a checkout
 
+Every release on <https://github.com/berdakh/onset-hfo/releases> carries
+`onset-hfo-<version>-linux.tar.gz`. It holds the wheel, this installer as
+`install.sh`, the menu entry and icon, these docs, and the `site/` folder the
+study pages read. No git, no checkout:
+
+```bash
+tar xzf onset-hfo-<version>-linux.tar.gz
+cd onset-hfo-<version>-linux
+./install.sh --with-sample --with-assistant
+```
+
+The installer sees the wheel beside it and installs that. To build the same
+tarball from a checkout:
+
 ```bash
 ./packaging/make-release.sh      # -> dist/onset-hfo-<version>-linux.tar.gz
 ```
-
-The tarball holds the wheel, this installer as `install.sh`, the menu entry and
-icon, and these docs. Unpack it anywhere and run `./install.sh --with-assistant`;
-the installer sees the wheel beside it and installs that instead of a checkout.
 
 ## If something goes wrong
 

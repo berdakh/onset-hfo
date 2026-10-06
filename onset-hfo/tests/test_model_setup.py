@@ -36,7 +36,7 @@ def _laptop() -> Machine:
 def described(monkeypatch, tmp_path):
     monkeypatch.setattr(hardware, "probe", lambda machine=None: _laptop())
     monkeypatch.setenv("ONSET_REVIEW_CONFIG_DIR", str(tmp_path))
-    return hardware.choose(_laptop(), route="ollama").ollama_tag
+    return hardware.served_options(_laptop())[1]
 
 
 def test_the_box_pulls_the_choosers_pick_and_hands_it_over(qapp, described, monkeypatch):
@@ -88,6 +88,40 @@ def test_no_server_means_the_address_and_a_disabled_button(qapp, described, monk
     assert "No Ollama server" in text and "ollama.com/download" in text
     assert described in text, "it still says what it would pull"
     assert not box.action.isEnabled() and box.again.isEnabled()
+
+
+def test_the_window_opens_on_the_fast_size_and_offers_the_others(qapp, described, monkeypatch):
+    """A 7B on a CPU took minutes per question. The box opens on the 3B --
+    the policy is the window's, the CLI keeps the reference size -- and lists
+    every size that fits, smallest first, so the reviewer can go either way."""
+    assert described == "qwen2.5:3b-instruct"
+    assert hardware.choose(_laptop(), route="ollama").ollama_tag == "qwen2.5:7b-instruct"
+    with FakeOllama(tag="qwen2.5:7b-instruct") as fake:        # the big one is there
+        monkeypatch.setenv("OLLAMA_HOST", fake.base)
+        box = ModelSetupBox()
+        box.look()
+        box.wait()
+        tags = [box.size.itemData(i) for i in range(box.size.count())]
+        assert tags[:3] == ["qwen3:0.6b", "qwen2.5:1.5b-instruct", "qwen3:1.7b"]
+        assert "qwen2.5:7b-instruct" in tags and tags == sorted(
+            tags, key=lambda t: [c.ollama_tag for c in hardware.served_options(_laptop())[0]].index(t))
+        assert box.size.currentData() == described
+        assert "not pulled" in box.status.text() and box.action.text() == "Download and use"
+        # Pick the size that is already there: no pull, straight to use.
+        box.size.setCurrentIndex(tags.index("qwen2.5:7b-instruct"))
+        assert "already holds" in box.status.text() and "your pick" in box.status.text()
+        assert box.action.text() == "Use this model"
+        ready = []
+        box.modelReady.connect(lambda tag, url: ready.append(tag))
+        box.action.click()
+        box.wait()
+        assert fake.pulled == [] and ready == ["qwen2.5:7b-instruct"]
+        # And back to a size that is not: the pull goes for that one.
+        box.size.setCurrentIndex(tags.index("qwen2.5:1.5b-instruct"))
+        assert box.action.text() == "Download and use"
+        box.action.click()
+        box.wait()
+        assert fake.pulled == ["qwen2.5:1.5b-instruct"]
 
 
 def test_the_panel_switches_to_the_model_the_box_made_ready(qapp, monkeypatch):
@@ -151,4 +185,63 @@ def test_a_refusal_says_what_the_model_wrote_and_which_check_failed(qapp, monkey
                           refused=True, reason="stopped by the reviewer",
                           trace=[{"type": "stopped", "step": 0}])
     assert explain_refusal(stopped) == ["Stopped by you."]
+    panel.close()
+
+
+# -- seeing the work, and the larger type --------------------------------------
+
+
+def test_the_transcript_shows_which_data_the_model_saw_and_what_the_checks_made_of_it(
+        qapp, monkeypatch):
+    """Asked for twice: a wait with nothing on screen is a hang as far as the
+    person at the window is concerned, and a refusal with no visible cause is
+    a bug as far as they are concerned. Every trace entry is a line, as it
+    happens."""
+    from onset_review.assistant import AssistantPanel, describe_step
+
+    monkeypatch.setenv("ONSET_ASSISTANT_NO_PROBE", "1")
+    panel = AssistantPanel(session=object())
+    assert panel.transcript.font().pointSizeF() >= 11, "the transcript was asked to be larger"
+    lines = [describe_step(e) for e in [
+        {"type": "tool_call", "tool": "top_channels", "arguments": {"k": 5}, "ok": True,
+         "briefing": True, "digest": "rms: AR1-AR2 22.0/min, AHR1-AHR2 19.0/min"},
+        {"type": "tool_call", "tool": "get_evidence", "arguments": {"channel": "AR1-AR2"},
+         "ok": True, "digest": "AR1-AR2: 2 window(s), 3.5–3.6 s (120 Hz)"},
+        {"type": "model", "step": 0, "asked_for": ["get_evidence(channel=AR1-AR2)"],
+         "content": ""},
+        {"type": "prose", "step": 1, "content": "AR1-AR2 leads."},
+        {"type": "citations", "attached": ["sub-01|AR1-AR2|rms|3.505"],
+         "dropped": ["evidence_id_1"]},
+        {"type": "answer", "verified": True, "evidence_ids": ["sub-01|AR1-AR2|rms|3.505"]},
+        {"type": "answer", "verified": False, "problems": ["the value '99 /min' does not appear"]},
+    ]]
+    assert "Retrieved for the model" in lines[0] and "22.0/min" in lines[0]
+    assert "The model asked for" in lines[1] and "get_evidence" in lines[1]
+    assert lines[2] is None, "the tool line says it"
+    assert "sentence" in lines[3]
+    assert "Attached 1" in lines[4] and "Dropped 1" in lines[4] and "evidence_id_1" in lines[4]
+    assert lines[5].startswith("Checks passed") and "1 citation" in lines[5]
+    assert lines[6].startswith("Check failed") and "99 /min" in lines[6]
+    for line in lines:
+        if line:
+            panel._progress({"type": "x"})      # unknown entries are ignored
+    panel._progress({"type": "tool_call", "tool": "top_channels", "arguments": {}, "ok": True,
+                     "briefing": True, "digest": "rms: AR1-AR2 22.0/min"})
+    assert "Retrieved for the model top_channels: rms: AR1-AR2 22.0/min" \
+        in panel.transcript.toPlainText().replace("· ", "")
+    panel.close()
+
+
+def test_what_can_you_do_is_answered_at_once_without_evidence_or_a_model(qapp, monkeypatch):
+    """The first thing a reviewer types, often before any recording is open;
+    it must not build a pipeline result or reach for a server to answer."""
+    from onset_review.assistant import AssistantPanel
+
+    monkeypatch.setenv("ONSET_ASSISTANT_NO_PROBE", "1")
+    panel = AssistantPanel(session=object())          # no recording at all
+    panel.ask("What can you do?")
+    text = panel.transcript.toPlainText()
+    assert "highest ripple" in text and "treatment" in text and "this window" in text
+    assert "no recording attached" not in text and panel._store is None
+    assert "no model needed" in text
     panel.close()

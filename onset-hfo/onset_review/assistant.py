@@ -49,7 +49,18 @@ from qtpy.QtWidgets import (
 
 from onset_review import theme
 
-__all__ = ["AssistantPanel", "BACKENDS", "SUGGESTIONS", "parse_evidence_id"]
+__all__ = ["AssistantPanel", "BACKENDS", "SUGGESTIONS", "parse_evidence_id",
+           "explain_refusal", "describe_step"]
+
+#: The transcript's type sizes, in points. The application font is 10 pt; a
+#: transcript is read, not scanned, and was asked to be larger.
+TEXT_PT = 11
+SMALL_PT = 10
+
+#: The most a served model may write per call. An answer is two or three
+#: sentences; a tool call is a line. At the five tokens a second a CPU
+#: manages, 512 was nearly two minutes of a model that had lost the thread.
+ANSWER_TOKENS = 320
 
 #: The backends offered, in the order a reviewer should try them. Labels say
 #: what each one *is* rather than naming a library, because "scripted" means
@@ -67,6 +78,7 @@ BACKENDS = [
 #: across a docked column elide into illegibility; the question itself is the
 #: tooltip and is what gets asked.
 SUGGESTIONS = [
+    ("What can you do?", "What can you do?"),
     ("Which channels have the highest ripple rate?", "Highest rates"),
     ("Show me the evidence for the busiest channel", "Show evidence"),
     ("Does any channel actually stand out?", "Anything stand out?"),
@@ -133,6 +145,10 @@ def _result_name(recording) -> str:
 class _AskWorker(QThread):
     """One question, off the GUI thread: a local model can take a while."""
 
+    #: Every trace entry as the agent makes it: a query and what it returned,
+    #: what the model wrote, a check. The panel shows them while it waits.
+    progress = Signal(dict)
+
     def __init__(self, store, question: str, kind: str, model: str,
                  base_url: str, parent=None):
         super().__init__(parent)
@@ -157,14 +173,70 @@ class _AskWorker(QThread):
             from onset_agent.agent import OnsetAgent
             from onset_agent.backends import make_backend
 
+            served = self._kind in ("ollama", "openai_compat")
             self._backend = make_backend(self._kind, model=self._model or None,
-                                         base_url=self._base_url or None)
+                                         base_url=self._base_url or None,
+                                         **({"max_tokens": ANSWER_TOKENS} if served else {}))
             if self._stop:
                 self._backend.abort()
             self.answer = OnsetAgent(self._store, backend=self._backend).ask(
-                self._question, should_stop=lambda: self._stop)
+                self._question, should_stop=lambda: self._stop,
+                on_event=self.progress.emit)
         except Exception as error:
             self.error = f"{type(error).__name__}: {error}"
+
+
+def describe_step(entry: dict) -> str | None:
+    """One trace entry as a line a reviewer can read while the loop runs: which
+    data the model was given, what it asked for, what it wrote, and what the
+    checks made of it. HTML. None for entries that say nothing on their own."""
+    kind = entry.get("type")
+    if kind == "tool_call":
+        call = html.escape(str(entry.get("tool") or ""))
+        args = entry.get("arguments") or {}
+        if args:
+            call += "(" + html.escape(", ".join(f"{k}={v}" for k, v in args.items())) + ")"
+        if not entry.get("ok", True):
+            return f"A query failed: <code>{call}</code> — {html.escape(str(entry.get('error') or ''))}"
+        who = "Retrieved for the model" if entry.get("briefing") else "The model asked for"
+        return f"{who} <code>{call}</code>: {html.escape(str(entry.get('digest') or ''))}"
+    if kind == "model":
+        # A request for tools is said by the tool lines that follow; a
+        # well-formed answer is shown as the answer. A failed one is quoted
+        # by the refusal, with the check it failed.
+        return None
+    if kind == "prose":
+        return ("The model answered in a sentence rather than the JSON form; "
+                "checking the sentence as written.")
+    if kind == "format_error":
+        return "The model's reply was empty; asked again."
+    if kind == "citations":
+        parts = []
+        if entry.get("attached"):
+            parts.append(f"Attached {len(entry['attached'])} citation(s) from the retrieved "
+                         "evidence for the channels the answer names.")
+        if entry.get("dropped"):
+            dropped = ", ".join(html.escape(str(i)) for i in entry["dropped"][:3])
+            parts.append(f"Dropped {len(entry['dropped'])} citation(s) the model made up: "
+                         f"<i>{dropped}</i>.")
+        return " ".join(parts) or None
+    if kind == "answer":
+        if entry.get("verified"):
+            n = len(entry.get("evidence_ids") or [])
+            return ("Checks passed: every number traced to a query result"
+                    + (f"; {n} citation(s) resolved." if n else "."))
+        problems = "; ".join(html.escape(str(p)) for p in entry.get("problems") or [])
+        return f"Check failed: {problems or 'the checks did not pass'}. Asking the model again."
+    if kind == "model_refusal":
+        return "The model declined to answer."
+    if kind == "scope_check":
+        return "Refused before any model ran: out of scope."
+    if kind == "stopped":
+        return "Stopped."
+    if kind == "gave_up":
+        return (f"Gave up after {entry.get('steps')} step(s) and "
+                f"{entry.get('retries')} retry/retries.")
+    return None
 
 
 def explain_refusal(answer) -> list[str]:
@@ -186,14 +258,26 @@ def explain_refusal(answer) -> list[str]:
             lines.append(f"The model did not reply in the required JSON shape; it wrote: <i>{said}</i>")
         elif kind == "tool_call" and not entry.get("ok", True):
             lines.append(f"A tool call failed: {html.escape(str(entry.get('error') or ''))}")
+        elif kind == "citations" and entry.get("dropped"):
+            dropped = ", ".join(html.escape(str(i)) for i in entry["dropped"][:3])
+            lines.append(f"Dropped {len(entry['dropped'])} citation(s) the model made up: "
+                         f"<i>{dropped}</i>")
         elif kind == "model_refusal":
-            lines.append("The model itself declined to answer.")
+            lines.append("The model itself declined to answer"
+                         + (f": <i>{html.escape(str(entry.get('text') or '')[:300])}</i>"
+                            if entry.get("text") else "."))
         elif kind == "stopped":
             lines.append("Stopped by you.")
         elif kind == "gave_up":
             lines.append(f"Gave up after {entry.get('steps')} steps and "
                          f"{entry.get('retries')} retries.")
     return lines
+
+
+def _paragraphs(text: str) -> str:
+    """Plain text with line breaks, as HTML. The capabilities answer is a
+    list; the rest is a sentence or three."""
+    return html.escape(text).replace("\n", "<br>")
 
 
 def _run(worker) -> None:
@@ -252,6 +336,10 @@ class AssistantPanel(QWidget):
         self.transcript.setOpenLinks(False)
         self.transcript.setOpenExternalLinks(False)
         self.transcript.anchorClicked.connect(self._citation_clicked)
+        font = self.transcript.font()
+        font.setPointSizeF(TEXT_PT)
+        self.transcript.setFont(font)
+        self.transcript.document().setDefaultFont(font)
 
         self.question = QLineEdit()
         self.question.setPlaceholderText(
@@ -270,7 +358,7 @@ class AssistantPanel(QWidget):
         self.stop_button.clicked.connect(self.stop)
         self.busy = QLabel("")
         self.busy.setObjectName("onset_assistant_busy")
-        self.busy.setStyleSheet(f"color:{theme.current().text_muted};font-size:9pt;")
+        self.busy.setStyleSheet(f"color:{theme.current().text_muted};font-size:{SMALL_PT}pt;")
         self._clock = QTimer(self)
         self._clock.setInterval(1000)
         self._clock.timeout.connect(self._tick)
@@ -287,7 +375,7 @@ class AssistantPanel(QWidget):
         for text, short in SUGGESTIONS:
             button = QPushButton(short)
             button.setToolTip(text)
-            button.setStyleSheet("font-size:11px;padding:2px 8px;")
+            button.setStyleSheet(f"font-size:{SMALL_PT}pt;padding:2px 8px;")
             button.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
             button.clicked.connect(lambda _=False, q=text: self.ask(q))
             prompts.addWidget(button)
@@ -328,13 +416,16 @@ class AssistantPanel(QWidget):
         self._backend_changed()
         self._say_system(
             "Ask about <b>this window</b>. Every answer is checked against the "
-            "analysis on screen: a number no query returned, or a citation for "
-            "evidence never retrieved, is discarded and you get a refusal "
-            "instead. Citations are links — click one to take the trace there."
+            "analysis on screen: a number no query returned is refused rather "
+            "than shown. Citations are links — click one to take the trace "
+            "there. While a question runs, the lines below it say which data "
+            "the model was given, what it asked for, what it wrote, and what "
+            "the checks made of it. Ask <i>What can you do?</i> to start."
             "<br><br>Pick a model above. <i>No model</i> runs the whole loop "
             "deterministically, with nothing generative in it, which is how the "
             "guards are tested. For a Qwen on this machine, use the box above: "
-            "it names the model that fits and downloads it.")
+            "it lists the sizes that fit, opens on the one that answers in "
+            "reasonable time on this hardware, and downloads it.")
 
     # -- plumbing ----------------------------------------------------------
     def showEvent(self, event):      # noqa: N802  (Qt's spelling)
@@ -414,6 +505,8 @@ class AssistantPanel(QWidget):
             return
         self.question.clear()
         self._say_user(text)
+        if self._about(text):
+            return
         if not self._ensure_store():
             return
 
@@ -422,6 +515,7 @@ class AssistantPanel(QWidget):
                                   str(self.backend.currentData() or "scripted"),
                                   self.model.text().strip(),
                                   self.base_url.text().strip())
+        self._worker.progress.connect(self._progress)
         self._set_busy(True)
         try:
             _run(self._worker)
@@ -435,6 +529,30 @@ class AssistantPanel(QWidget):
                 "<br>Switch to <i>No model</i> to use the deterministic backend.")
             return
         self._say_answer(self._worker.answer)
+
+    def _about(self, text: str) -> bool:
+        """"What can you do?" is answered here, at once, from a fixed text: it
+        needs no evidence built and no model, and a reviewer asking it is
+        often waiting to find out whether the thing works at all."""
+        from onset_agent import guard
+        from onset_agent.agent import AgentAnswer
+        from onset_agent.prompts import what_i_can_do
+
+        if not guard.about_the_assistant(text):
+            return False
+        recording = getattr(self._session, "recording", None)
+        subject = getattr(recording, "subject", None) or "this window"
+        self._say_answer(AgentAnswer(question=text, text=what_i_can_do(str(subject)),
+                                     backend="no model needed",
+                                     trace=[{"type": "about"}]))
+        return True
+
+    def _progress(self, entry: dict) -> None:
+        """A trace entry, as it happens: shown under the question in small
+        type, so the wait is a visible process rather than a spinner."""
+        line = describe_step(entry)
+        if line:
+            self._say_step(line)
 
     def stop(self) -> None:
         """The Stop button: end the question in flight, if there is one."""
@@ -474,8 +592,12 @@ class AssistantPanel(QWidget):
         bar.setValue(bar.maximum())
 
     def _say_system(self, body: str) -> None:
-        self._append(f"<div style='color:{theme.current().text_muted};font-size:11px;"
+        self._append(f"<div style='color:{theme.current().text_muted};font-size:{SMALL_PT}pt;"
                      f"margin:6px 0;'>{body}</div>")
+
+    def _say_step(self, body: str) -> None:
+        self._append(f"<div style='color:{theme.current().text_muted};font-size:{SMALL_PT}pt;"
+                     f"margin:1px 0 1px 14px;'>· {body}</div>")
 
     def _say_user(self, text: str) -> None:
         self._append(f"<div style='margin:10px 0 2px;'><b>{html.escape(text)}</b>"
@@ -491,14 +613,14 @@ class AssistantPanel(QWidget):
                 f"<div style='margin:2px 0 6px;padding:6px;"
                 f"background:{theme.current().bad_surface};"
                 f"border-left:3px solid {theme.current().bad};'>"
-                f"<b>Refused.</b> {html.escape(answer.text)}"
-                f"<div style='color:{theme.current().text_muted};font-size:11px;margin-top:3px;'>"
-                f"{html.escape(answer.reason)}</div>"
-                + (f"<ul style='font-size:11px;margin:4px 0 0 0;'>{why}</ul>" if why else "")
+                f"<b>Refused.</b> {_paragraphs(answer.text)}"
+                f"<div style='color:{theme.current().text_muted};font-size:{SMALL_PT}pt;"
+                f"margin-top:3px;'>{html.escape(answer.reason)}</div>"
+                + (f"<ul style='font-size:{SMALL_PT}pt;margin:4px 0 0 0;'>{why}</ul>" if why else "")
                 + "</div>")
             return
 
-        parts = [f"<div style='margin:2px 0 4px;'>{html.escape(answer.text)}</div>"]
+        parts = [f"<div style='margin:2px 0 4px;'>{_paragraphs(answer.text)}</div>"]
         if answer.evidence_ids:
             links = []
             for evidence_id in answer.evidence_ids:
@@ -508,13 +630,17 @@ class AssistantPanel(QWidget):
                 links.append(
                     f"<a href='evidence:{html.escape(evidence_id)}'>"
                     f"{html.escape(label)}</a>")
-            parts.append("<div style='font-size:11px;margin-bottom:2px;'>"
-                         "cites: " + " · ".join(links) + "</div>")
+            attached = getattr(answer, "attached_citations", None) or []
+            how = (" (attached from the retrieved evidence for the channels named)"
+                   if attached and set(attached) >= set(answer.evidence_ids) else "")
+            parts.append(f"<div style='font-size:{SMALL_PT}pt;margin-bottom:2px;'>"
+                         "cites: " + " · ".join(links) + how + "</div>")
+        looked = len(getattr(answer, "looked_at", None) or [])
         tools = ", ".join(answer.tools_called) or "none"
         flag = "" if answer.verified else " · <b>unverified</b>"
-        parts.append(f"<div style='color:#666;font-size:11px;'>"
-                     f"{html.escape(answer.backend)} · tools: "
-                     f"{html.escape(tools)}{flag}</div>")
+        parts.append(f"<div style='color:{theme.current().text_muted};font-size:{SMALL_PT}pt;'>"
+                     f"{html.escape(answer.backend)} · {looked} quer{'y' if looked == 1 else 'ies'} "
+                     f"run · the model asked for: {html.escape(tools)}{flag}</div>")
         self._append("".join(parts))
 
     def _citation_clicked(self, url) -> None:

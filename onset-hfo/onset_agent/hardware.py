@@ -41,6 +41,8 @@ from dataclasses import dataclass, field, replace
 __all__ = [
     "CATALOGUE",
     "CPU_CEILING_PARAMS_B",
+    "CPU_FAST_PARAMS_B",
+    "served_options",
     "Choice",
     "Gpu",
     "Machine",
@@ -218,8 +220,15 @@ CATALOGUE: tuple[ModelSpec, ...] = (
                    "fail this project's tool contract"),
     ModelSpec("Qwen/Qwen3-1.7B", 1.7, 3.4, ollama_tag="qwen3:1.7b",
               note="better instruction following than 0.6B, still laptop-sized"),
+    ModelSpec("Qwen/Qwen2.5-1.5B-Instruct", 1.5, 3.1, ollama_tag="qwen2.5:1.5b-instruct",
+              note="the fast one on a CPU: answers in seconds, no thinking phase; "
+                   "expect it to misread a table now and then, which the checks catch"),
+    ModelSpec("Qwen/Qwen2.5-3B-Instruct", 3.1, 6.2, ollama_tag="qwen2.5:3b-instruct",
+              note="the balance on a CPU: reads a briefing and answers in one call, "
+                   "no thinking phase"),
     ModelSpec("Qwen/Qwen3-4B", 4.0, 8.0, ollama_tag="qwen3:4b",
-              note="the sweet spot for a free Colab T4 or an 8 GB card at int4"),
+              note="the sweet spot for a free Colab T4 or an 8 GB card at int4; "
+                   "thinks before it answers, which is slow on a CPU"),
     ModelSpec("Qwen/Qwen2.5-7B-Instruct", 7.6, 15.3,
               ollama_tag="qwen2.5:7b-instruct",
               note="the reference size for this project: the one whose tool "
@@ -232,6 +241,12 @@ CATALOGUE: tuple[ModelSpec, ...] = (
               note="mixture-of-experts: the memory of a 30B at the speed of a "
                    "3B, so it is worth reaching for when the memory is there"),
 )
+
+#: On a CPU the desktop window offers the sizes below the ceiling and opens
+#: on the largest at or under this: a 3B answers a briefed question in well
+#: under a minute where a 7B takes several. The CLI's default stays the
+#: reference size; this is the window's policy, for a person waiting at it.
+CPU_FAST_PARAMS_B = 3.5
 
 #: The smallest model this project is willing to describe as a reasonable
 #: default. Below it, `choose` still answers -- refusing to run on a small
@@ -639,6 +654,36 @@ def choose(machine: Machine | None = None, *,
     smallest = biggest_first[-1]
     return _build(machine, smallest, options[-1], options, route)
 
+
+
+def served_options(machine: Machine | None = None, *,
+                   catalogue: tuple[ModelSpec, ...] = CATALOGUE) -> tuple[list[Choice], str]:
+    """The catalogue entries this machine can serve through Ollama, smallest
+    first, and the tag the window should open on.
+
+    Every entry that fits is offered, so a person who finds the default slow
+    can go smaller and one who finds it careless can go bigger. On a CPU the
+    ceiling for speed applies and the default is the largest Qwen2.5 Instruct
+    at or under :data:`CPU_FAST_PARAMS_B`; elsewhere the default is what
+    :func:`choose` picks.
+    """
+    machine = probe(machine)
+    fitting: list[Choice] = []
+    for spec in sorted(catalogue, key=lambda s: s.params_b):
+        if not spec.ollama_tag:
+            continue
+        if machine.accelerator == "cpu" and spec.params_b > CPU_CEILING_PARAMS_B:
+            continue
+        choice = choose(machine, catalogue=catalogue, prefer=spec.ollama_tag, route="ollama")
+        if choice.fits:
+            fitting.append(choice)
+    default = choose(machine, catalogue=catalogue, route="ollama").ollama_tag
+    if machine.accelerator == "cpu":
+        fast = [c for c in fitting
+                if c.model.params_b <= CPU_FAST_PARAMS_B and "Qwen2.5" in c.model_id]
+        if fast:
+            default = fast[-1].ollama_tag
+    return fitting, default
 
 
 def _build(machine: Machine, spec: ModelSpec, quantization: str,

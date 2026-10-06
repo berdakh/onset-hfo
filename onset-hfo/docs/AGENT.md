@@ -9,24 +9,36 @@ both before and after the model runs.
 ```
 question
    │
+   ├─ about the assistant? ────► a fixed text (no model called)
+   │   "what can you do", "help"
    ├─ scope check ─────────────► refuse (no model called)
    │   treatment · diagnosis · another patient
    ▼
-system prompt + question
+briefing: the usual queries run first, as tool results (no model called)
+   metadata · top_channels · get_evidence for the leaders · disagreements
+   · whatever the wording asks for: a named channel, the seizure, a section
+   ▼
+system prompt + question + briefing
    │
    ├─► model picks a tool ──► strict validation ──► ResultStore query ──┐
    │        ▲                                                           │
    │        └───────────────── tool result as JSON ◄────────────────────┘
-   │   (up to max_steps times)
+   │   (up to max_steps times; usually none, the briefing was enough)
    ▼
 model returns JSON  {"answer", "evidence_ids"}  or  {"refusal"}
+   or a sentence, which is read as the answer
    │
-   ├─ citation check: every id must have been returned by a tool in this session
+   ├─ citations: real ids kept · invented ids dropped · when none are real,
+   │             the retrieved windows of each channel the answer names are attached
    ├─ number check:   every number must appear in a tool result
    │
    ├─ pass ──► answer
-   └─ fail ──► tell the model what was wrong, retry (twice), then refuse
+   └─ fail ──► tell the model what was wrong, retry (once), then refuse
 ```
+
+Every step is reported as it happens (`ask(..., on_event=)`), so the desktop
+panel shows which data the model was given, what it asked for, what it wrote
+and what the checks made of it, while the person waits.
 
 ## Why an agent at all
 
@@ -81,20 +93,45 @@ The agent says what it *can* do instead.
 
 ### 2. Citation verification
 
-Every `evidence_id` in an answer must (a) have been returned by a tool during
-this conversation and (b) resolve in the store. An id the model invented, or
-one it copied from its own earlier output, fails.
+Every `evidence_id` an answer goes out with must (a) have been returned by a
+tool during this conversation and (b) resolve in the store. An id the model
+invented, or one it copied from its own earlier output, is dropped and never
+shown; the trace records it. When nothing the model cited was real -- a 7B on
+a CPU was seen copying the contract's placeholder as `evidence_id_1` -- the
+retrieved windows of each channel the answer names are attached in its place,
+two per channel, so the sentence about AR1-AR2 links to AR1-AR2's own windows
+and the trace says the agent attached them. An answer that cites only
+invented ids and names no channel with retrieved evidence is refused for the
+citation.
+
+The model does not get to make up a citation. It also does not get refused
+for a formatting slip when the numbers it wrote are the pipeline's; the
+numbers are what the next check is about.
 
 ### 3. Number verification
 
 Every number in the answer that carries a unit (`/min`, `Hz`, `ms`, `s`, `dB`,
 `µV`, `%`, `x`) and every bare number larger than 20 must appear among the
-numbers the tools returned, allowing for rounding. Small integers without a
-unit are allowed through — "the top 3 channels", "two detectors" — and that
-exception is the known soft spot in this check.
+numbers the tools returned, allowing for rounding. Numbers in a result's keys
+count as returned: `rate_ci_95` is how a tool says "95 %", and an answer that
+says "95 % interval" is copying it. Small integers without a unit are allowed
+through — "the top 3 channels", "two detectors" — and that exception is the
+known soft spot in this check.
 
-On failure the model is told exactly what was wrong and gets two more attempts;
-then the agent declines and points at the report, which is authoritative.
+On failure the model is told exactly what was wrong and gets one more
+attempt; then the agent declines and points at the report, which is
+authoritative. It was two attempts; on a CPU each one is most of a minute,
+and a model that invented a number once tends to invent it again.
+
+### Prose is read as an answer
+
+Small models write the sentence instead of the JSON object. The sentence is
+what the reader wanted, so it is taken as the answer, stripped of the
+protocol leftovers a small model appends (an unclosed tool-call tag, a
+citation list in its own words), and put through exactly the checks above.
+Nothing about the number check is relaxed by this: a rate no tool returned is
+refused however it was formatted. What changes is that a correct sentence is
+no longer refused for its shape, at the cost of a retry round-trip.
 
 Notebook 2 demonstrates this with a backend that deliberately lies:
 
@@ -108,14 +145,15 @@ problems: ["citation 'sub-xx|MADE-UP|rms|0.000' was never returned by a tool",
 | Risk | What stops it |
 |---|---|
 | Model invents a rate | number verification; the answer is dropped |
-| Model invents a citation | citation verification against retrieved ids |
+| Model invents a citation | dropped, never shown; real windows for the channels named are attached in its place, or the answer is refused |
 | Model is talked into a treatment answer | scope refusal before the model runs |
 | Model is asked about another patient | scope refusal; no tool takes a subject |
 | **Prompt injection through data** — a channel name or report string that says "ignore your instructions" | tool results are passed as JSON and the prompt states they are data; more importantly, nothing the model says survives the citation and number checks, so injected text cannot become a false claim |
 | Model calls a tool that does not exist | dispatcher rejects it; the error goes back as a tool result |
 | Model passes a malicious argument | strict schema validation: unknown keys rejected, enums enforced, integers clamped; arguments are never `eval`ed or shelled out |
 | Model loops forever | `max_steps` (6) and at most 3 calls per turn |
-| Small model garbles the protocol | tool calls are recovered from message content; malformed JSON gets one corrective retry; otherwise refusal |
+| Small model garbles the protocol | tool calls are recovered from message content; a sentence instead of JSON is checked as the answer; an empty reply gets one corrective retry; otherwise refusal |
+| Model is slow | the briefing runs the usual queries before the first call, so most questions take one call; the desktop panel caps each reply at 320 tokens and has a Stop button |
 
 What is **not** defended against, and should not be pretended otherwise: this
 is research code with no authentication, no audit log, no rate limiting and no

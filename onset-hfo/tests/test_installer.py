@@ -191,3 +191,22 @@ def test_bundle_mode_installs_the_wheel_beside_the_script(tmp_path):
     assert "pip install --quiet -e" not in done.stdout
     # The study pages' tables travel with the bundle, to the prefix.
     assert f"cp -R {bundle}/site {tmp_path / 'p'}/site" in done.stdout
+
+
+# -- what the source distribution must never carry ------------------------------
+
+
+def test_the_sdist_excludes_the_manuscript_and_the_artifacts():
+    """hatchling sweeps the working tree into the sdist and does not read
+    `.git/info/exclude`, so a local `python -m build` once packed the
+    manuscript draft under paper/ into a tarball. The exclusion lives in
+    pyproject.toml, where the build backend actually looks."""
+    text = (REPO / "pyproject.toml").read_text()
+    section = text.split("[tool.hatch.build.targets.sdist]", 1)
+    assert len(section) == 2, "no sdist section"
+    body = section[1].split("\n[", 1)[0]
+    for path in ("paper/", "artifacts/", "dist/"):
+        assert f'"{path}"' in body, f"{path} is not excluded from the sdist"
+    # And the release bundle copies only named folders, never the tree.
+    release = (REPO / "packaging" / "make-release.sh").read_text()
+    assert "paper" not in release
