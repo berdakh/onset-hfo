@@ -20,7 +20,7 @@ recording, so they are open even before one is loaded.
 
 from __future__ import annotations
 
-from qtpy.QtCore import QEvent, Qt, Signal
+from qtpy.QtCore import QByteArray, QEvent, Qt, Signal
 from qtpy.QtGui import QKeySequence
 from qtpy.QtWidgets import (
     QFrame,
@@ -129,10 +129,12 @@ class PageWindow(QMainWindow):
         self._on_export = on_export
         self._pages: dict[str, QWidget] = {}
         self._items: dict[str, QListWidgetItem] = {}
+        #: name -> (splitter, default sizes). Every region boundary a mouse
+        #: can drag, so a page can be arranged and the arrangement kept.
+        self._splitters: dict[str, tuple[QSplitter, list[int]]] = {}
 
         self.nav = QListWidget()
         self.nav.setObjectName("onset_pages")
-        self.nav.setFixedWidth(SIDEBAR_WIDTH)
         self.nav.setFrameShape(QFrame.NoFrame)
         self.nav.setSpacing(1)
         self.stack = QStackedWidget()
@@ -153,15 +155,12 @@ class PageWindow(QMainWindow):
         column.addWidget(self.banner)
         column.addWidget(self.stack, 1)
 
-        body = QWidget()
-        row = QHBoxLayout(body)
-        row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(0)
-        row.addWidget(self._sidebar)
-        row.addWidget(right, 1)
+        body = self._split("main", Qt.Horizontal, [self._sidebar, right],
+                           [SIDEBAR_WIDTH, 1400], stretch=(0, 1))
         self.setCentralWidget(body)
 
         self.nav.currentItemChanged.connect(self._nav_changed)
+        self.restore_layout_state(self._remembered())
         from onset_review.studies import STUDIES
 
         keyed = [key for key, _label in PAGES] + [key for key, _, _ in STUDIES]
@@ -225,7 +224,8 @@ class PageWindow(QMainWindow):
 
         sidebar = QWidget()
         sidebar.setObjectName("onset_sidebar")
-        sidebar.setFixedWidth(SIDEBAR_WIDTH)
+        sidebar.setMinimumWidth(140)
+        sidebar.setMaximumWidth(420)
         box = QVBoxLayout(sidebar)
         box.setContentsMargins(theme.SPACING, theme.SPACING, 0, theme.SPACING)
         box.setSpacing(4)
@@ -422,10 +422,12 @@ class PageWindow(QMainWindow):
         strip.addStretch(1)
         strip.addWidget(self.pop_button)
         box.addLayout(strip)
-        self.panels["trends"].setMinimumHeight(100)
-        self.panels["trends"].setMaximumHeight(220)
-        box.addWidget(self.panels["trends"])
-        box.addWidget(self.panels["controls"])
+        self.panels["trends"].setMinimumHeight(90)
+        lower = QWidget()
+        under = QVBoxLayout(lower)
+        under.setContentsMargins(0, 0, 0, 0)
+        under.setSpacing(4)
+        under.addWidget(self.panels["controls"])
         # MNE's browser is a QMainWindow of its own; given a parent it becomes
         # an ordinary child widget, toolbar and all. It sits in a slot of its
         # own so that it can be lifted out into a window and put back.
@@ -445,12 +447,14 @@ class PageWindow(QMainWindow):
         slot.addWidget(self.trace_placeholder, 1)
         self.figure.setParent(self._trace_slot)
         slot.addWidget(self.figure, 1)
-        box.addWidget(self._trace_slot, 1)
-        outer.addWidget(left, 1)
+        under.addWidget(self._trace_slot, 1)
+        box.addWidget(self._split("recording_v", Qt.Vertical,
+                                  [self.panels["trends"], lower], [200, 700],
+                                  stretch=(0, 1)), 1)
 
         self.side = QTabWidget()
         self.side.setObjectName("onset_side")
-        self.side.setFixedWidth(COLUMN_WIDTH + 40)
+        self.side.setMinimumWidth(260)
         self.side.addTab(self.panels["findings"], "Ranking")
         self.side.addTab(self.panels["events"], "Events")
         self.side.addTab(self.panels["detail"], "This event")
@@ -459,7 +463,8 @@ class PageWindow(QMainWindow):
                                    "the busiest.")
         self.side.setTabToolTip(2, "The selected event wideband, filtered and in "
                                    "time-frequency — oscillation or filter ringing?")
-        outer.addWidget(self.side)
+        outer.addWidget(self._split("recording", Qt.Horizontal, [left, self.side],
+                                    [1100, COLUMN_WIDTH + 40], stretch=(1, 0)), 1)
         return page
 
     # -- the trace in a window of its own ----------------------------------
@@ -534,10 +539,8 @@ class PageWindow(QMainWindow):
         row = QHBoxLayout(page)
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(theme.SPACING)
-        row.addWidget(self.panels["brain"], 1)
-
         column = QWidget()
-        column.setFixedWidth(COLUMN_WIDTH)
+        column.setMinimumWidth(220)
         box = QVBoxLayout(column)
         box.setContentsMargins(0, 0, 0, 0)
         box.setSpacing(theme.SPACING)
@@ -559,7 +562,9 @@ class PageWindow(QMainWindow):
             "name order, contacts in number order. Enough to see which shafts "
             "are active; not enough for anything metric."))
         box.addStretch(1)
-        row.addWidget(column)
+        row.addWidget(self._split("contacts", Qt.Horizontal,
+                                  [self.panels["brain"], column],
+                                  [1100, COLUMN_WIDTH], stretch=(1, 0)), 1)
         return page
 
     def _quality_page(self) -> QWidget:
@@ -567,18 +572,18 @@ class PageWindow(QMainWindow):
         box = QVBoxLayout(page)
         box.setContentsMargins(0, 0, 0, 0)
         box.setSpacing(theme.SPACING)
-        split = QSplitter(Qt.Horizontal)
-        split.setObjectName("onset_quality_split")
-        split.addWidget(self._titled("Data quality — which contacts and which "
-                                     "seconds were analysed",
-                                     self.panels["quality"]))
-        split.addWidget(self._titled("Preprocessing — what is done to the signal "
-                                     "before any detector sees it",
-                                     self.panels["preprocess"]))
-        split.setSizes([1, 1])
-        box.addWidget(split, 3)
-        box.addWidget(self._titled("Provenance — how this was produced, step by step",
-                                   self.panels["provenance"]), 2)
+        split = self._split(
+            "quality_h", Qt.Horizontal,
+            [self._titled("Data quality — which contacts and which seconds were "
+                          "analysed", self.panels["quality"]),
+             self._titled("Preprocessing — what is done to the signal before any "
+                          "detector sees it", self.panels["preprocess"])],
+            [700, 700])
+        box.addWidget(self._split(
+            "quality_v", Qt.Vertical,
+            [split, self._titled("Provenance — how this was produced, step by step",
+                                 self.panels["provenance"])],
+            [540, 360]), 1)
         return page
 
     def _report_page(self) -> QWidget:
@@ -589,11 +594,10 @@ class PageWindow(QMainWindow):
         self.report_view = QTextBrowser()
         self.report_view.setObjectName("onset_report")
         self.report_view.setOpenExternalLinks(False)
-        row.addWidget(self._titled("The review as it will be exported",
-                                   self.report_view), 1)
+        preview = self._titled("The review as it will be exported", self.report_view)
 
         column = QWidget()
-        column.setFixedWidth(COLUMN_WIDTH)
+        column.setMinimumWidth(220)
         box = QVBoxLayout(column)
         box.setContentsMargins(0, 0, 0, 0)
         box.setSpacing(theme.SPACING)
@@ -608,7 +612,8 @@ class PageWindow(QMainWindow):
         box.addWidget(theme.muted("Markdown or a web page. Your verdicts and notes "
                                   "go in under your name; name yourself under "
                                   "Read first."))
-        row.addWidget(column)
+        row.addWidget(self._split("report", Qt.Horizontal, [preview, column],
+                                  [1100, COLUMN_WIDTH], stretch=(1, 0)), 1)
         page.refresh = self.refresh_report      # type: ignore[attr-defined]
         return page
 
@@ -630,6 +635,90 @@ class PageWindow(QMainWindow):
         box.setContentsMargins(0, 0, 0, 0)
         box.addWidget(self.panels["assistant"])
         return page
+
+    # -- regions a mouse can drag ------------------------------------------
+    def _split(self, name: str, orientation, widgets: list, sizes: list[int],
+               stretch: tuple[int, ...] | None = None) -> QSplitter:
+        """A splitter between regions, registered so its sizes can be kept.
+
+        Nothing collapses to zero: a region dragged shut is a region a
+        reviewer cannot find again, and every one of these is worth having.
+        """
+        splitter = QSplitter(orientation)
+        splitter.setObjectName(f"onset_split_{name}")
+        splitter.setChildrenCollapsible(False)
+        splitter.setHandleWidth(6)
+        for index, widget in enumerate(widgets):
+            splitter.addWidget(widget)
+            if stretch is not None:
+                splitter.setStretchFactor(index, stretch[index])
+        splitter.setSizes(sizes)
+        splitter.splitterMoved.connect(lambda *_: self.remember_layout())
+        self._splitters[name] = (splitter, list(sizes))
+        return splitter
+
+    def splitter(self, name: str) -> QSplitter | None:
+        entry = self._splitters.get(name)
+        return entry[0] if entry else None
+
+    def layout_state(self) -> dict[str, bytes]:
+        """Every splitter's sizes, to carry across a rebuild or a launch."""
+        return {name: bytes(splitter.saveState().data())
+                for name, (splitter, _default) in self._splitters.items()}
+
+    def restore_layout_state(self, state: dict | None) -> int:
+        """Apply saved sizes to the splitters this window has. Returns how
+        many took: a page not built in this state is simply left alone."""
+        taken = 0
+        for name, blob in (state or {}).items():
+            entry = self._splitters.get(name)
+            if entry is None or not blob:
+                continue
+            if entry[0].restoreState(QByteArray(bytes(blob))):
+                taken += 1
+        return taken
+
+    def reset_layout(self) -> None:
+        """Every region back to its opening size, and nothing remembered."""
+        for splitter, default in self._splitters.values():
+            splitter.setSizes(default)
+        self._forget()
+
+    def _layout_file(self):
+        from onset_review.assistant_config import config_path
+
+        return config_path().with_name("layout.json")
+
+    def _remembered(self) -> dict:
+        import base64
+        import json
+
+        try:
+            payload = json.loads(self._layout_file().read_text(encoding="utf-8"))
+            return {k: base64.b64decode(v) for k, v in payload.get("splitters", {}).items()}
+        except (OSError, ValueError, TypeError):
+            return {}
+
+    def remember_layout(self) -> None:
+        """Write the splitter sizes beside the assistant's defaults, so the
+        next launch opens the way this one was left."""
+        import base64
+        import json
+
+        try:
+            path = self._layout_file()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            payload = {"schema": 1, "splitters": {
+                k: base64.b64encode(v).decode("ascii") for k, v in self.layout_state().items()}}
+            path.write_text(json.dumps(payload, indent=1) + "\n", encoding="utf-8")
+        except OSError:
+            pass        # a layout that cannot be saved is still a layout
+
+    def _forget(self) -> None:
+        try:
+            self._layout_file().unlink()
+        except OSError:
+            pass
 
     @staticmethod
     def _titled(title: str, widget: QWidget) -> QWidget:

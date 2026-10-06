@@ -146,6 +146,12 @@ if [[ "${SKIP_INSTALL}" == "0" ]]; then
   if [[ -n "${BUNDLE_WHEEL}" && ! -f "${HERE}/pyproject.toml" ]]; then
     say "Installing the release wheel with the desktop reviewer (a few minutes)"
     run "${VENV_PY}" -m pip install --quiet "${BUNDLE_WHEEL}[review]"
+    if [[ -d "${HERE}/site" ]]; then
+      # The study pages' loaders and tables, which the wheel does not carry.
+      say "Installing the study pages' tables in ${PREFIX}/site"
+      run rm -rf "${PREFIX}/site"
+      run cp -R "${HERE}/site" "${PREFIX}/site"
+    fi
   else
     say "Installing onset-hfo with the desktop reviewer (a few minutes)"
     run "${VENV_PY}" -m pip install --quiet -e "${HERE}[review]"

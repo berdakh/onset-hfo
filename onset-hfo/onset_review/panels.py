@@ -175,7 +175,22 @@ class DataFrameModel(QAbstractTableModel):
             keep = [c for c in columns if c in frame.columns]
             frame = frame[keep] if keep else frame
         self._frame = self._ordered(frame).reset_index(drop=True)
+        self._cache()
         self.endResetModel()
+
+    def _cache(self) -> None:
+        """The frame as plain Python rows, built once per reset.
+
+        `data` is called once per cell per layout pass, and a view sizing
+        its columns asks for every cell of every row. At one `iat` on an
+        Arrow-backed frame per call that was twenty seconds for a 500-row
+        events list, on the GUI thread, at every window open; a list lookup
+        is microseconds.
+        """
+        frame = self._frame
+        self._names = [str(c) for c in frame.columns]
+        self._cells = frame.to_numpy(dtype=object).tolist() if len(frame) else []
+        self._colours: dict[int, object] = {}
 
     def _ordered(self, frame: pd.DataFrame) -> pd.DataFrame:
         if self._order is None or frame.empty:
@@ -201,6 +216,7 @@ class DataFrameModel(QAbstractTableModel):
                        order == Qt.AscendingOrder)
         self.beginResetModel()
         self._frame = self._ordered(self._frame).reset_index(drop=True)
+        self._cache()
         self.endResetModel()
 
     @property
@@ -244,8 +260,11 @@ class DataFrameModel(QAbstractTableModel):
     def data(self, index: QModelIndex, role=Qt.DisplayRole):
         if not index.isValid():
             return None
-        value = self._frame.iat[index.row(), index.column()]
-        name = str(self._frame.columns[index.column()])
+        row, col = index.row(), index.column()
+        if not (0 <= row < len(self._cells) and 0 <= col < len(self._names)):
+            return None
+        value = self._cells[row][col]
+        name = self._names[col]
 
         if role == Qt.DisplayRole:
             return _format(value, name)
@@ -254,7 +273,11 @@ class DataFrameModel(QAbstractTableModel):
             return int(Qt.AlignRight | Qt.AlignVCenter) if numeric and not isinstance(
                 value, (bool, np.bool_)) else int(Qt.AlignLeft | Qt.AlignVCenter)
         if role == Qt.BackgroundRole and self._highlight is not None:
-            colour = self._highlight(self._frame.iloc[index.row()])
+            # One call per row, not per cell: the highlight reads the whole
+            # row and answers the same for every column of it.
+            if row not in self._colours:
+                self._colours[row] = self._highlight(self._frame.iloc[row])
+            colour = self._colours[row]
             return QColor(colour) if colour else None
         if role == Qt.ToolTipRole:
             return _format(value, name)
@@ -312,6 +335,12 @@ def _table_view() -> QTableView:
     view.verticalHeader().setVisible(False)
     view.verticalHeader().setDefaultSectionSize(20)
     view.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+    # Size columns from a sample of rows, not every row: in the resize-to-
+    # contents mode Qt re-measures every cell of every column on each layout
+    # pass, and a 500-row events list is 5,000 measurements a pass. A hundred
+    # rows is enough to find the widest value of a column that is formatted
+    # the same all the way down.
+    view.horizontalHeader().setResizeContentsPrecision(100)
     view.horizontalHeader().setStretchLastSection(True)
     view.setMinimumHeight(MIN_TABLE_HEIGHT)
     return view

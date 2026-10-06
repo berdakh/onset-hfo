@@ -178,6 +178,8 @@ def test_bundle_mode_installs_the_wheel_beside_the_script(tmp_path):
     (bundle / "onset_hfo-9.9.9-py3-none-any.whl").write_bytes(b"not really a wheel")
     for asset in ("onset-review.desktop", "onset-review.svg"):
         (bundle / asset).write_text((REPO / "packaging" / asset).read_text())
+    (bundle / "site" / "app").mkdir(parents=True)
+    (bundle / "site" / "app" / "panels.py").write_text("# the loaders\n")
     env = _home(tmp_path)
     done = subprocess.run(["bash", str(script), "--no-apt", "--dry-run",
                            "--prefix", str(tmp_path / "p")],
@@ -187,3 +189,5 @@ def test_bundle_mode_installs_the_wheel_beside_the_script(tmp_path):
     assert "Installing the release wheel" in done.stdout
     assert "onset_hfo-9.9.9-py3-none-any.whl[review]" in done.stdout
     assert "pip install --quiet -e" not in done.stdout
+    # The study pages' tables travel with the bundle, to the prefix.
+    assert f"cp -R {bundle}/site {tmp_path / 'p'}/site" in done.stdout

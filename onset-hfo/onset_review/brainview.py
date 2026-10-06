@@ -130,7 +130,10 @@ class BrainPanel(QWidget):
         # up occupying about a third of the canvas.
         self.headline = QLabel()
         self.headline.setWordWrap(True)
-        self.headline.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Minimum)
+        # Maximum, not Minimum: the two captions take the height their text
+        # needs and no more, so spare height goes to the scene. With Minimum
+        # the caption grew to fill a page and the scene sat in a strip.
+        self.headline.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Maximum)
         self.headline.setStyleSheet(
             f"font-size:9pt;padding:1px 4px;color:{theme.current().text};")
 
@@ -160,7 +163,7 @@ class BrainPanel(QWidget):
         self.caption = QLabel(layout_caption(self.layout_frame,
                                              self._origin))
         self.caption.setWordWrap(True)
-        self.caption.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Minimum)
+        self.caption.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Maximum)
         schematic = (not self.layout_frame.empty
                      and "inferred" in set(self.layout_frame["source"]))
         self.caption.setStyleSheet(card("warn" if schematic else "info"))
@@ -183,7 +186,7 @@ class BrainPanel(QWidget):
         # showed a row of controls, a line of text and then blank canvas --
         # which looks like a panel that failed to draw rather than one that
         # needs more room.
-        box.addWidget(self.canvas)
+        box.addWidget(self.canvas, 1)
         box.addWidget(self.headline)
         box.addWidget(self.caption)
 

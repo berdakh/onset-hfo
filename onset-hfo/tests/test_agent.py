@@ -357,3 +357,43 @@ def test_the_ollama_backend_follows_ollama_host(monkeypatch):
     assert OllamaBackend().base_url == "http://127.0.0.1:43210/v1"
     # An explicit URL still wins.
     assert OllamaBackend(base_url="http://box:1/v1").base_url == "http://box:1/v1"
+
+
+# -- stopping ------------------------------------------------------------------
+
+
+def test_a_stop_between_steps_ends_the_loop_with_a_refusal_that_says_so(store):
+    agent = OnsetAgent(store, ScriptedBackend())
+    answer = agent.ask("Which channel had the highest ripple rate?",
+                       should_stop=lambda: True)
+    assert answer.refused and answer.reason == "stopped by the reviewer"
+    assert answer.trace and answer.trace[-1]["type"] == "stopped"
+    assert answer.tools_called == [], "nothing ran after the stop"
+
+
+def test_a_stop_after_the_first_step_keeps_what_ran_in_the_trace(store):
+    polls = []
+
+    def should_stop():
+        polls.append(1)
+        return len(polls) > 1       # let one step run, then stop
+
+    answer = OnsetAgent(store, ScriptedBackend()).ask(
+        "Which channel had the highest ripple rate?", should_stop=should_stop)
+    assert answer.refused and answer.reason == "stopped by the reviewer"
+    assert answer.tools_called, "the first step's tool call is on record"
+
+
+def test_an_unverified_answer_keeps_what_the_model_wrote_in_the_trace(store):
+    """The window explains a refusal from the trace, so the trace must carry
+    the model's words and the checks they failed."""
+    from onset_agent.agent import AgentAnswer
+
+    trace = [{"type": "tool_call", "tool": "top_channels", "ok": True},
+             {"type": "answer", "step": 1, "verified": False,
+              "problems": ["the value '99.5 events/min' does not appear in any tool result"],
+              "text": "AR1-AR2 had 99.5 events/min.", "evidence_ids": []},
+             {"type": "gave_up", "steps": 6, "retries": 2}]
+    answer = AgentAnswer(question="q", text="refused", refused=True,
+                         reason="verification failed", trace=trace)
+    assert [e for e in answer.trace if e["type"] == "answer"][0]["text"].startswith("AR1-AR2")
