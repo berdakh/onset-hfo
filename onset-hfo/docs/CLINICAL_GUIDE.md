@@ -207,9 +207,14 @@ hits a sharp transient, which is the classic way HFO detectors fool themselves.
 
 ### This event — the picture the judgement is made on
 
-Select an event anywhere and this panel shows it three ways on one time axis.
-It is the view to use before you press `A` or `D`, and the reason the two keys
-mean anything.
+Select an event anywhere and this panel shows it three ways on one time axis:
+a row in the Events list, a cell in the Trend, or a click on the trace itself
+at the event's place on its channel. The Trend and the trace pick the nearest
+listed event on that channel, within a couple of seconds, and the list does
+the rest; a click with nothing listed nearby moves the trace there and leaves
+this panel as it was. Until an event is picked, the panel is the one sentence
+saying so, not three empty frames. It is the view to use before you press `A`
+or `D`, and the reason the two keys mean anything.
 
 **Top — wideband.** The signal as the detector saw it: high-passed, notched and
 re-referenced. *Not* unprocessed, and the panel says so, because the one view
@@ -465,7 +470,16 @@ above the transcript: it lists every size this machine can serve, smallest
 first, with what each costs to pull and what to expect of it. On a CPU it
 opens on `qwen2.5:3b-instruct`, which answers in well under a minute where the
 7B takes several; go one bigger if it misreads a table, one smaller if it is
-still slow. The one you pick is remembered. Nothing is downloaded until you
+still slow. Each Qwen2.5 size is also listed under its explicit
+`-q4_K_M` name (the same file the plain tag pulls, so a model pulled by hand
+as `ollama run qwen2.5:3b-instruct-q4_K_M` is found under the name you used)
+and as an 8-bit `-q8_0`, which reads a table more carefully for twice the
+download. The one you pick is remembered.
+
+On a CPU the wait is the model *reading* the question and the evidence before
+it writes a word, so the first question of a session is the slow one; the
+second reuses what the first read. If a question runs past fifteen minutes
+the panel gives up and says so; before that, **Stop** is yours. Nothing is downloaded until you
 press the button, nothing leaves the machine, and an unreachable server is
 reported rather than silently falling back. **Stop** ends a question that is
 taking too long; the clock beside it shows how long it has been.

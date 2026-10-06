@@ -40,6 +40,20 @@ Every step is reported as it happens (`ask(..., on_event=)`), so the desktop
 panel shows which data the model was given, what it asked for, what it wrote
 and what the checks made of it, while the person waits.
 
+**The prompt is kept small, and in a fixed order.** On a CPU the model reads
+every token of the prompt before it writes one; a 3,000-token first turn was
+a three-minute wait on a desktop, longer than the request timeout. So the
+briefed first call carries no tool schemas (884 tokens the model does not need
+to read the briefing; they are offered from the second step on, when it has
+said it needs more), the system prompt is a third of its old length, the
+briefing fetches two leading channels rather than three, and the part of the
+conversation that is the same for every question -- system prompt and base
+briefing -- comes *before* the question, so a served model's prompt cache
+covers it and the second question costs only its own tokens. The
+question-specific retrievals (a channel it names, the seizure comparison, a
+report section) follow the question. About 1,300 tokens in all on the first
+question; a few hundred new ones on the next.
+
 ## Why an agent at all
 
 Reading a detection table well is genuinely multi-step work: look at the

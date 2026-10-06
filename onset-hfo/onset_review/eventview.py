@@ -112,6 +112,7 @@ class EventDetailPanel(QWidget):
                        "window, so there is nothing to draw.")
             return
         self._draw(snap)
+        self.canvas.setVisible(True)
         self.headline.setText(self._headline(snap))
         self.caption.setText(self._caption(snap))
         self.caption.setStyleSheet(card("warn" if snap.notes else "info"))
@@ -125,6 +126,10 @@ class EventDetailPanel(QWidget):
             axis.set_yticks([])
         self._mesh = None
         self.canvas.draw_idle()
+        # Three empty frames above a sentence at the bottom of a tall column
+        # read as a panel that failed to draw. With nothing to draw, the
+        # sentence is the panel.
+        self.canvas.setVisible(False)
         self.headline.setText("")
         self.caption.setText(message)
         self.caption.setStyleSheet(card("info"))

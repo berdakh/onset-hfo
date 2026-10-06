@@ -102,7 +102,8 @@ def test_the_window_opens_on_the_fast_size_and_offers_the_others(qapp, described
         box.look()
         box.wait()
         tags = [box.size.itemData(i) for i in range(box.size.count())]
-        assert tags[:3] == ["qwen3:0.6b", "qwen2.5:1.5b-instruct", "qwen3:1.7b"]
+        assert tags[:5] == ["qwen3:0.6b", "qwen2.5:1.5b-instruct", "qwen2.5:1.5b-instruct-q4_K_M",
+                            "qwen2.5:1.5b-instruct-q8_0", "qwen3:1.7b"]
         assert "qwen2.5:7b-instruct" in tags and tags == sorted(
             tags, key=lambda t: [c.ollama_tag for c in hardware.served_options(_laptop())[0]].index(t))
         assert box.size.currentData() == described

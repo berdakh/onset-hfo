@@ -528,3 +528,43 @@ def test_an_unverified_answer_keeps_what_the_model_wrote_in_the_trace(store):
     answer = AgentAnswer(question="q", text="refused", refused=True,
                          reason="verification failed", trace=trace)
     assert [e for e in answer.trace if e["type"] == "answer"][0]["text"].startswith("AR1-AR2")
+
+
+def test_the_briefed_first_call_is_small_and_cache_friendly(store):
+    """On a CPU the model reads every prompt token before it writes one, so
+    the first call carries no tool schemas, the constant part (system prompt,
+    base briefing) comes before the question, and the question-specific
+    retrievals come after it. Tools are offered from the second step on."""
+    seen = []
+
+    class Spy(Backend):
+        name = "spy"
+
+        def chat(self, messages, tools):
+            seen.append((list(messages), list(tools)))
+            if len(seen) == 1:
+                return AssistantMessage(content="The top channel fires at 999.9 events per minute.")
+            return AssistantMessage(content=json.dumps({"refusal": "enough"}))
+
+    agent = OnsetAgent(store, Spy(), max_retries=1)
+    channel = store.channels()[0]
+    agent.ask(f"What are the limitations for {channel}?")
+    first, second = seen
+    assert first[1] == [] and second[1], "no schemas on the first call, schemas on the second"
+    roles = [m["role"] for m in first[0]]
+    question_at = roles.index("user")
+    assert roles[0] == "system" and roles[1] == "assistant" and roles[2] == "tool"
+    assert set(roles[1:question_at]) == {"assistant", "tool"}, "the base briefing precedes the question"
+    names_before = [m["name"] for m in first[0][:question_at] if m["role"] == "tool"]
+    names_after = [m["name"] for m in first[0][question_at:] if m["role"] == "tool"]
+    assert names_before[:2] == ["get_recording_metadata", "top_channels"]
+    assert names_before.count("get_evidence") == 2 and "detector_disagreements" in names_before
+    assert "channel_summary" in names_after and "report_section" in names_after
+    assert "Answer from them" in first[0][0]["content"]
+    assert "Call one of" in second[0][0]["content"]
+    # The whole first request of a plain question, system prompt and all, is
+    # small enough to read on a CPU: it was about 3,000 tokens before.
+    seen.clear()
+    agent.ask("Which channels have the highest ripple rate?")
+    plain = len(json.dumps(seen[0][0])) // 4
+    assert plain < 1700, plain

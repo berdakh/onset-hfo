@@ -26,6 +26,18 @@ run before the model is asked anything and handed to it as tool results it
 can read at once. The model may still call tools for what the briefing did
 not cover; on most questions it does not need to, and one call answers.
 
+**The prompt is kept small, and in a fixed order.** On a CPU the model reads
+every token of the prompt before it writes one, at a rate that made a
+3,000-token prompt a three-minute wait. So the first call carries no tool
+schemas (884 tokens the model does not need to read the briefing), the
+briefing fetches two leading channels rather than three, and the part of the
+conversation that is the same for every question -- the system prompt and
+the base briefing -- comes *before* the question, so a served model's prompt
+cache covers it on the second question and only the question itself is new.
+Question-specific retrievals (a channel named in it, the seizure comparison,
+a report section) follow the question. Tool schemas are offered from the
+second step on, when the model has said it needs more.
+
 **Prose is an answer.** Small models write the answer as a sentence instead
 of the JSON object they were asked for. The sentence is what a reader wanted;
 it is checked exactly as a JSON answer would be, number by number. What is
@@ -56,11 +68,14 @@ from onset_agent.prompts import system_prompt, what_i_can_do
 from onset_agent.tools import TOOLS, ToolError, dispatch, tool_schemas
 from onset_hfo.store import ResultStore
 
-__all__ = ["OnsetAgent", "AgentAnswer", "briefing", "attach_citations", "digest"]
+__all__ = ["OnsetAgent", "AgentAnswer", "briefing", "briefing_base", "briefing_extras",
+           "attach_citations", "digest"]
 
 MAX_CALLS_PER_TURN = 3
-#: How many leading channels the briefing fetches evidence windows for.
-BRIEFING_CHANNELS = 3
+#: How many leading channels the briefing fetches evidence windows for. Two:
+#: each costs about 190 tokens of prompt, and the questions that need a third
+#: name it, which fetches it.
+BRIEFING_CHANNELS = 2
 
 
 @dataclass
@@ -125,39 +140,52 @@ _SECTIONS = (
 )
 
 
-def briefing(store: ResultStore, question: str) -> list[tuple[str, dict]]:
-    """The queries run for the model before it is asked anything.
-
-    Always: what was analysed, the leading channels with their intervals, the
-    evidence windows of the first few of them, and where the detectors
-    disagree. Then whatever the question's wording asks for -- a named
-    channel, the seizure comparison, a report section -- so that the common
-    questions are answerable from the first model call.
-    """
+def briefing_base(store: ResultStore) -> list[tuple[str, dict]]:
+    """The queries run for every question, in a fixed order: what was
+    analysed, the leading channels with their intervals, the evidence windows
+    of the first two, and where the detectors disagree. The same for every
+    question, so a served model's prompt cache covers it."""
     calls: list[tuple[str, dict]] = [("get_recording_metadata", {}),
                                      ("top_channels", {"k": 5})]
     try:
         leading = [str(r["channel"]) for r in store.top_channels(None, BRIEFING_CHANNELS)]
     except Exception:       # noqa: BLE001 - a store with no rates still gets a briefing
         leading = []
+    for channel in leading:
+        calls.append(("get_evidence", {"channel": channel, "k": 2}))
+    calls.append(("detector_disagreements", {}))
+    return calls
+
+
+def briefing_extras(store: ResultStore, question: str,
+                    already: list[tuple[str, dict]] = ()) -> list[tuple[str, dict]]:
+    """What the question's wording asks for beyond the base: a channel it
+    names, the seizure comparison, a report section."""
+    calls: list[tuple[str, dict]] = []
     known = {name.upper(): name for name in _channels(store)}
     named: list[str] = []
     for token in guard.CHANNEL_TOKEN.findall(question):
         channel = known.get(token.upper())
         if channel and channel not in named:
             named.append(channel)
-    for channel in list(reversed(named)) + leading:
-        if ("get_evidence", {"channel": channel, "k": 2}) not in calls:
-            calls.append(("get_evidence", {"channel": channel, "k": 2}))
     for channel in named[:2]:
+        evidence = ("get_evidence", {"channel": channel, "k": 2})
+        if evidence not in already:
+            calls.append(evidence)
         calls.append(("channel_summary", {"channel": channel}))
-    calls.append(("detector_disagreements", {}))
     if _SEIZURE.search(question):
         calls.append(("rate_change", {}))
     for section, pattern in _SECTIONS:
         if pattern.search(question):
             calls.append(("report_section", {"section": section}))
     return calls
+
+
+def briefing(store: ResultStore, question: str) -> list[tuple[str, dict]]:
+    """Every query run for the model before it is asked anything: the base,
+    then what the question's wording asks for."""
+    base = briefing_base(store)
+    return base + briefing_extras(store, question, base)
 
 
 def _channels(store: ResultStore) -> list[str]:
@@ -283,9 +311,13 @@ class OnsetAgent:
         # so it keeps calling its own tools.
         self.brief = self.backend.is_language_model if brief is None else brief
         meta = store.metadata()
-        self.system = system_prompt(subject=str(meta.get("subject")),
-                                    source=str(meta.get("source")),
-                                    tool_names=list(TOOLS), briefed=self.brief)
+        self._subject, self._source = str(meta.get("subject")), str(meta.get("source"))
+        self.system = self._system(tools_offered=not self.brief)
+
+    def _system(self, tools_offered: bool) -> str:
+        return system_prompt(subject=self._subject, source=self._source,
+                             tool_names=list(TOOLS), briefed=self.brief,
+                             tools_offered=tools_offered)
 
     # -- public API -------------------------------------------------------
     def ask(self, question: str, should_stop: Callable[[], bool] | None = None,
@@ -332,8 +364,7 @@ class OnsetAgent:
                                reason="out of scope (checked before the model ran)",
                                trace=trace, backend=self.backend.name)
 
-        messages = [{"role": "system", "content": self.system},
-                    {"role": "user", "content": question}]
+        messages = [{"role": "system", "content": self.system}]
         retrieved: list[str] = []
         numbers_seen: set[float] = set()
         retries = 0
@@ -365,15 +396,29 @@ class OnsetAgent:
         if self.brief:
             from onset_agent.backends import ToolCall
 
+            base = briefing_base(self.store)
             run_calls([ToolCall(name, args, id=f"brief-{i + 1}")
-                       for i, (name, args) in enumerate(briefing(self.store, question))],
-                      briefed=True)
+                       for i, (name, args) in enumerate(base)], briefed=True)
+            messages.append({"role": "user", "content": question})
+            extras = briefing_extras(self.store, question, base)
+            if extras:
+                run_calls([ToolCall(name, args, id=f"brief-{len(base) + i + 1}")
+                           for i, (name, args) in enumerate(extras)], briefed=True)
+        else:
+            messages.append({"role": "user", "content": question})
 
         for step in range(self.max_steps):
             if should_stop is not None and should_stop():
                 return stopped(step)
+            # The briefed first call carries no tool schemas: they are most of
+            # a thousand tokens the model does not need to read the briefing.
+            # From the second step on they are offered, and the system prompt
+            # says so.
+            offer_tools = not self.brief or step > 0
+            if self.brief and step == 1:
+                messages[0] = {"role": "system", "content": self._system(tools_offered=True)}
             try:
-                message = self.backend.chat(messages, tool_schemas())
+                message = self.backend.chat(messages, tool_schemas() if offer_tools else [])
             except Interrupted:
                 return stopped(step)
             if message.tool_calls:

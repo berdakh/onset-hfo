@@ -207,6 +207,7 @@ class OpenAICompatBackend(Backend):
         # stretch a reviewer wants to be able to end.
         import http.client
         import io
+        import socket
 
         parts = urllib.parse.urlsplit(f"{self.base_url}/chat/completions")
         maker = http.client.HTTPSConnection if parts.scheme == "https" else http.client.HTTPConnection
@@ -232,6 +233,15 @@ class OpenAICompatBackend(Backend):
             # or JSON error; either way it was asked for.
             if self.aborted:
                 raise Interrupted("the request was stopped") from exc
+            if isinstance(exc, (TimeoutError, socket.timeout)) or "timed out" in str(exc):
+                # The server was there; the model had not written a byte in
+                # the time allowed. On a CPU that is the prompt being read.
+                raise RuntimeError(
+                    f"The model at {self.base_url} did not answer within "
+                    f"{self.timeout:.0f} s. On a CPU the model reads the whole prompt "
+                    "before it writes, so a smaller size answers sooner; or Stop and ask "
+                    "again, as the second question reuses what the first one read."
+                ) from exc
             if isinstance(exc, (ConnectionError, OSError)) and not isinstance(exc, ValueError):
                 raise RuntimeError(
                     f"Could not reach the model server at {self.base_url} ({exc}). "

@@ -61,6 +61,11 @@ SMALL_PT = 10
 #: sentences; a tool call is a line. At the five tokens a second a CPU
 #: manages, 512 was nearly two minutes of a model that had lost the thread.
 ANSWER_TOKENS = 320
+#: How long one model call may take before the panel gives up on it. The
+#: library's 180 s was hit by a 7B on a CPU reading its prompt; the person
+#: has a Stop button and a clock, so the limit is for a server that has
+#: really gone away, not for a slow one.
+ANSWER_TIMEOUT = 900.0
 
 #: The backends offered, in the order a reviewer should try them. Labels say
 #: what each one *is* rather than naming a library, because "scripted" means
@@ -176,7 +181,8 @@ class _AskWorker(QThread):
             served = self._kind in ("ollama", "openai_compat")
             self._backend = make_backend(self._kind, model=self._model or None,
                                          base_url=self._base_url or None,
-                                         **({"max_tokens": ANSWER_TOKENS} if served else {}))
+                                         **({"max_tokens": ANSWER_TOKENS,
+                                             "timeout": ANSWER_TIMEOUT} if served else {}))
             if self._stop:
                 self._backend.abort()
             self.answer = OnsetAgent(self._store, backend=self._backend).ask(
