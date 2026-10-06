@@ -78,6 +78,10 @@ class Coordinates:
     frame: pd.DataFrame = field(default_factory=pd.DataFrame)
     path: Path | None = None
     units: str = ""                      #: "millimetres" or "metres"
+    #: "template" (MNI, fsaverage or Talairach, per a BIDS coordsystem.json
+    #: beside the file), "patient" (a scanner or surgical space named there),
+    #: or "unknown" when nothing says.
+    space: str = "unknown"
     matched: tuple = ()                  #: contacts in both the file and the recording
     unplaced: tuple = ()                 #: contacts in the recording but not the file
     unused: tuple = ()                   #: contacts in the file but not the recording
@@ -167,7 +171,33 @@ def read_coordinates(path, session=None) -> Coordinates:
     unplaced = tuple(name for name in wanted if name not in have)
     unused = tuple(sorted(have - set(wanted))) if wanted else ()
     return Coordinates(frame=frame, path=path, units=units, matched=matched,
-                       unplaced=unplaced, unused=unused)
+                       unplaced=unplaced, unused=unused, space=coordinate_space(path))
+
+
+#: Coordinate systems a BIDS sidecar names that are a template, not a head.
+TEMPLATE_SPACES = ("MNI", "FSAVERAGE", "TALAIRACH", "ICBM")
+
+
+def coordinate_space(path) -> str:
+    """"template", "patient" or "unknown", from a BIDS ``*coordsystem.json``
+    beside the file, when there is one. A file alone says nothing about its
+    space, and nothing here guesses."""
+    import json
+
+    path = Path(path)
+    sidecars = sorted(path.parent.glob("*coordsystem.json"))
+    for sidecar in sidecars:
+        try:
+            payload = json.loads(sidecar.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        for key, value in payload.items():
+            if "CoordinateSystem" in str(key) and isinstance(value, str):
+                named = value.upper()
+                if any(token in named for token in TEMPLATE_SPACES):
+                    return "template"
+                return "patient"
+    return "unknown"
 
 
 # --------------------------------------------------------------------------

@@ -85,8 +85,24 @@ Nine tools, all read-only, all over one `ResultStore`
 | `contact_map` | where each channel sits (shaft, side, region, measured or schematic) with its rate, and how the leading channels distribute over shafts and sides. Saved beside the analysis by the desktop window; a plain pipeline run has none and the tool says so. Carries no resection, by design: the reviewer sees it as rings, the model is never told |
 | `report_section` | one section of the structured report |
 
-There is **no** tool that runs a detector, changes a parameter, writes a file,
-executes code or fetches a URL. There is no `subject` argument anywhere: the
+Two more exist only inside the desktop window, where there is a reviewer to
+consent to them ([`onset_review/assistant_tools.py`](../onset_review/assistant_tools.py)):
+
+| Tool | Returns | Offered when |
+|---|---|---|
+| `explain_event` | the measurements of the selected event's own picture: cycles, in-band power against the background at that moment, and the detail panel's reading (*island*, *column*, *unclear*) with its reasons | an event is selected and the question is about it |
+| `run_analysis` | one of six analyses from the pipeline's own registry — detect HFOs with other settings, detect spikes, spectral power, compare the detectors, propagation lead, channel QC — with its run id and how long it took | the reviewer has ticked *Let it run analyses on this window*; the briefing names each one with its cost in seconds, and the transcript says when one ran |
+
+Both are the exception to the rule below, and are bounded the same way as
+the rest: fixed to this window's recording, no file written, no setting
+changed in the window, every number they return checked like any other.
+
+The agent also carries the last six exchanges of a conversation into the next
+question, as plain user and assistant turns before it, so a follow-up has
+its context; *New conversation* in the window clears them.
+
+There is **no** tool that runs a detector on another patient, changes a
+window setting, writes a file, executes code or fetches a URL. There is no `subject` argument anywhere: the
 patient is fixed by the application when it opens the store, so no model
 output can change which patient is being discussed (`test_no_tool_can_change_the_patient`).
 
@@ -427,4 +443,7 @@ every time it runs, and so does this sentence.
 Do not add a tool that computes anything new. If a number is worth reporting,
 the pipeline should compute it, store it, and the tool should read it. The
 moment a tool starts calculating, the "the pipeline decides what is true"
-guarantee weakens.
+guarantee weakens. The desktop window's `run_analysis` is the one deliberate
+exception, and it keeps the guarantee by running the pipeline's own analysis
+registry, reproducible by name and run id, only when the reviewer has ticked
+the box that offers it.

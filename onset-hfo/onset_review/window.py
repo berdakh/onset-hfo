@@ -52,6 +52,7 @@ from onset_review.panels import (
 from onset_review.patient import PatientPanel
 from onset_review.preprocessing import PreprocessPanel
 from onset_review.session import BAND_COLOURS, ReviewSession, annotations_for
+from onset_review.spectrumview import SpectrumPanel
 
 __all__ = ["decorate", "open_trace", "has_dock_host", "marks_for",
            "fit_to_screen", "work_area",
@@ -100,7 +101,7 @@ DEFAULT_SCALING = 50e-6
 #: layout.
 LAYOUTS = {
     "Screening": ("Look for the activity",
-                  ("trends", "controls", "findings", "events", "brain", "map"),
+                  ("trends", "controls", "findings", "events", "brain", "map", "spectrum"),
                   "brain"),
     "Reading": ("Judge it event by event",
                 ("controls", "findings", "events", "detail", "assistant"),
@@ -462,6 +463,7 @@ def build_panels(figure, session: ReviewSession) -> dict:
         "map": ContactMapPanel(session, resection=session.resection,
                                electrodes=session.electrodes),
         "detail": EventDetailPanel(session),
+        "spectrum": SpectrumPanel(session),
         "assistant": AssistantPanel(session),
         "preprocess": PreprocessPanel(session),
         "quality": QualityPanel(session),
@@ -547,6 +549,8 @@ def decorate(figure, session: ReviewSession, show_expert: bool = False,
                     panels["detail"],
                     "The selected event wideband, filtered and in "
                     "time-frequency — is it an oscillation or filter ringing?")
+    spectral = dock("spectrum", "Spectrum", Qt.RightDockWidgetArea, panels["spectrum"],
+                    "Each channel's power spectrum: noisy, busy, or mains")
     # Agreement and provenance are reference rather than working views, so they
     # share a tab stack and start behind the panels a reviewer uses minute to
     # minute.
@@ -583,6 +587,7 @@ def decorate(figure, session: ReviewSession, show_expert: bool = False,
                panels["quality"],
                "Data quality — which contacts and which seconds were "
                "analysed, which were only flagged, and why")
+    host.tabifyDockWidget(close_up, spectral)
     host.tabifyDockWidget(close_up, who)
     host.tabifyDockWidget(who, brain)
     host.tabifyDockWidget(brain, chart)
@@ -783,6 +788,7 @@ def _wire(figure, host, panels: dict, session: ReviewSession,
     # and the list does the rest -- or, when nothing is listed near there,
     # the trace simply goes to the place that was clicked.
     panels["events"].eventKeyPicked.connect(panels["detail"].show_key)
+    panels["events"].eventKeyPicked.connect(panels["assistant"].note_event)
 
     def pick(t: float, channel: str) -> None:
         if not panels["events"].select_nearest(t, channel):
@@ -798,6 +804,11 @@ def _wire(figure, host, panels: dict, session: ReviewSession,
     # can be found on the head without leaving the page it is judged on.
     panels["findings"].channelPicked.connect(panels["map"].highlight)
     panels["brain"].channelPicked.connect(panels["map"].highlight)
+    for key in ("findings", "brain", "map"):
+        panels[key].channelPicked.connect(panels["spectrum"].highlight)
+    panels["spectrum"].channelPicked.connect(lambda channel: select(channel))
+    panels["events"].eventPicked.connect(
+        lambda _t, channel: panels["spectrum"].highlight(channel))
     panels["events"].eventPicked.connect(lambda _t, channel: panels["map"].highlight(channel))
     panels["trends"].cellPicked.connect(lambda _t, channel: panels["map"].highlight(channel))
     # A citation names a time in the archive's seconds, which is what a report
@@ -1480,11 +1491,10 @@ def _load_coordinates(host: QMainWindow, session: ReviewSession, panels: dict,
     if answer != QMessageBox.Yes:
         return
     session.electrodes = read.frame
-    for key in ("brain", "map"):
-        panels[key].set_electrodes(
-            read.frame,
-            origin=f"the coordinate file you supplied ({read.path.name}), read as "
-                   f"{read.units}")
+    origin = (f"the coordinate file you supplied ({read.path.name}), read as "
+              f"{read.units}")
+    panels["brain"].set_electrodes(read.frame, origin=origin, space=read.space)
+    panels["map"].set_electrodes(read.frame, origin=origin)
     if on_electrodes is not None:
         # So that a later re-analysis keeps them: a filter change does not
         # move an electrode.

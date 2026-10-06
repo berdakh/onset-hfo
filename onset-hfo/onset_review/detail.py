@@ -48,7 +48,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-__all__ = ["Snapshot", "snapshot", "PAD_S", "N_FREQS", "find_event"]
+__all__ = ["Snapshot", "snapshot", "PAD_S", "N_FREQS", "find_event", "read_event"]
 
 #: Seconds of signal shown on each side of the event. Half a second is enough
 #: to see what led into it -- a discharge, a step, a movement artifact -- and
@@ -180,6 +180,60 @@ def snapshot(session, event, pad_s: float = PAD_S) -> Snapshot:
         times=times, wideband=data, band_passed=band_passed, band=band,
         onset=0.0, offset=stop_s - start_s, freqs=freqs, power_db=power_db,
         sfreq=sfreq, measurements=_measurements(event), notes=tuple(notes))
+
+
+def read_event(snap: Snapshot) -> dict:
+    """The numbers the three pictures are made of, and what they read as.
+
+    An oscillation is an island: energy confined to a band of frequencies and
+    lasting several cycles. Filter ringing is a column: a sharp transient is
+    broadband, so at the moment of the event there is as much energy outside
+    the band as inside it. The contrast between the two, in dB, at the
+    event's own moment and against the surrounding signal, is what the
+    bottom picture shows; this reads it off and says which.
+    """
+    out = {"channel": snap.channel, "detector": snap.detector, "kind": snap.kind,
+           "band_hz": list(snap.band), "duration_ms": round(float(snap.duration_ms), 1)}
+    out.update({k: (round(v, 2) if isinstance(v, float) else v)
+                for k, v in snap.measurements.items()})
+    frequency = float(snap.measurements.get("frequency_hz", 0.0) or 0.0)
+    cycles = (snap.duration_ms / 1000.0) * frequency if frequency > 0 else float("nan")
+    out["cycles"] = round(cycles, 1) if np.isfinite(cycles) else None
+    contrast = None
+    if snap.available and snap.power_db.size and snap.freqs.size:
+        during = (snap.times >= snap.onset) & (snap.times <= snap.offset)
+        if during.any():
+            lo, hi = snap.band
+            inside = (snap.freqs >= lo) & (snap.freqs <= hi)
+            outside = (snap.freqs < 0.8 * lo) | (snap.freqs > 1.25 * hi)
+            if inside.any() and outside.any():
+                moment = snap.power_db[:, during]
+                contrast = float(np.nanmean(moment[inside]) - np.nanmean(moment[outside]))
+    out["band_contrast_db"] = round(contrast, 1) if contrast is not None else None
+    if contrast is None or out["cycles"] is None:
+        reading, why = "unclear", "the time-frequency picture could not be computed here"
+    elif contrast >= 3.0 and cycles >= 3.0:
+        reading = "island"
+        why = (f"energy at the event's moment is {contrast:.1f} dB higher inside "
+               f"{lo:.0f}–{hi:.0f} Hz than outside it, over {cycles:.1f} cycles: confined "
+               "in frequency and sustained, which is what an oscillation looks like")
+    elif contrast < 1.5:
+        reading = "column"
+        why = (f"energy at the event's moment is only {contrast:.1f} dB higher inside the "
+               "band than outside it: broadband, which is what a sharp transient and the "
+               "filter's ringing look like, whatever the band-passed trace shows")
+    elif cycles < 3.0:
+        reading = "unclear"
+        why = (f"confined in frequency ({contrast:.1f} dB) but only {cycles:.1f} cycles long; "
+               "too short to call an oscillation on this picture")
+    else:
+        reading = "unclear"
+        why = (f"{contrast:.1f} dB more energy inside the band than outside over "
+               f"{cycles:.1f} cycles: between an island and a column; open it on the trace")
+    out["reading"] = reading
+    out["why"] = why
+    out["notes"] = list(snap.notes)
+    return out
 
 
 def _kind(event) -> str:

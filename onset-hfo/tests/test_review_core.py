@@ -908,3 +908,176 @@ def test_where_summary_counts_the_leaders_per_shaft_and_says_nothing_it_does_not
     assert "unknown" not in out["summary"] and "unmapped" not in out["summary"]
     assert out["positions"].startswith("schematic")
     assert out["summary"].startswith("3 of the top 5 channels on shaft AR;")
+
+
+
+# -- the spectrum (Qt-free) ----------------------------------------------------
+
+
+def test_the_spectrum_is_of_the_preprocessed_signal_in_microvolts(review):
+    from onset_review import spectrum
+
+    spec = spectrum.compute(review)
+    assert spec.available and spec.power.shape == (len(spec.channels), spec.freqs.size)
+    assert spec.channels == list(review.raw.ch_names)
+    assert spec.freqs[0] >= 0.5 and spec.freqs[-1] <= spec.sfreq / 2.0
+    assert (spec.power >= 0).all()
+    # Microvolts squared per hertz: the integral is the variance in µV².
+    i = 0
+    variance = float(np.var(review.raw.get_data()[i] * 1e6))
+    integral = float(np.trapezoid(spec.power[i], spec.freqs)) if hasattr(np, "trapezoid") \
+        else float(np.trapz(spec.power[i], spec.freqs))
+    assert 0.2 * variance < integral < 5.0 * variance
+
+
+def test_the_slope_tells_a_steep_background_from_a_flat_carpet():
+    from onset_review import spectrum
+
+    freqs = np.linspace(0.5, 500.0, 1000)
+    steep = freqs ** -2.0
+    flat = np.full_like(freqs, 1e-3)
+    spec = spectrum.Spectrum(freqs, np.vstack([steep, flat]), ["steep", "flat"],
+                             sfreq=1000.0, line_freq=50.0, band=(80.0, 250.0))
+    slope, _ = spectrum.slope_fit(spec, "steep")
+    assert slope == pytest.approx(-2.0, abs=0.05)
+    assert spectrum.slope_fit(spec, "flat")[0] == pytest.approx(0.0, abs=0.05)
+    assert spectrum.band_share(spec, "flat") > spectrum.band_share(spec, "steep")
+    table = spectrum.summarise(spec)
+    assert list(table["reading"]) == ["steep", "flat"]
+    assert spectrum.mains_lines(spec) == [50.0 * k for k in range(1, 10)]
+    # A comb of mains peaks reads as mains.
+    comb = steep.copy()
+    for line in spectrum.mains_lines(spec):
+        comb[np.abs(freqs - line) <= 1.0] += 10.0
+    spec = spectrum.Spectrum(freqs, comb[None, :], ["comb"], 1000.0, 50.0, (80.0, 250.0))
+    assert spectrum.summarise(spec)["reading"].iloc[0] == "mains"
+    assert "mains lines" in spectrum.describe(spec, "comb")
+
+
+# --------------------------------------------------------------------------
+# The template surface: a real cortex, only where real coordinates can sit on it
+# --------------------------------------------------------------------------
+
+def _write_stand_in_template(subjects_dir):
+    """A tiny closed surface written the way FreeSurfer writes a pial one, in
+    both hemispheres, so the reader and the decimation run on the real path
+    without the real 300 MB download."""
+    from onset_review.anatomy import TEMPLATE_SUBJECT, TEMPLATE_SURFACE
+
+    surf = subjects_dir / TEMPLATE_SUBJECT / "surf"
+    surf.mkdir(parents=True)
+    # An octahedron per hemisphere, in millimetres, 60 mm across, offset left
+    # and right the way the hemispheres are.
+    base = np.array([[30, 0, 0], [-30, 0, 0], [0, 30, 0], [0, -30, 0],
+                     [0, 0, 30], [0, 0, -30]], dtype=float)
+    faces = np.array([[0, 2, 4], [2, 1, 4], [1, 3, 4], [3, 0, 4],
+                      [2, 0, 5], [1, 2, 5], [3, 1, 5], [0, 3, 5]])
+    for hemi, shift in (("lh", -40.0), ("rh", 40.0)):
+        vertices = base + np.array([shift, 0.0, 0.0])
+        _write_freesurfer_triangles(surf / f"{hemi}.{TEMPLATE_SURFACE}", vertices, faces)
+    return subjects_dir
+
+
+def _write_freesurfer_triangles(path, vertices, faces):
+    """FreeSurfer's triangle format, as nibabel writes it: the format
+    ``lh.pial`` is in. Written here so the test does not need nibabel."""
+    with open(path, "wb") as handle:
+        handle.write(b"\xff\xff\xfe")
+        handle.write(b"created by a test\n\n")
+        np.array([len(vertices), len(faces)], dtype=">i4").tofile(handle)
+        np.asarray(vertices, dtype=">f4").reshape(-1).tofile(handle)
+        np.asarray(faces, dtype=">i4").reshape(-1).tofile(handle)
+
+
+def test_a_freesurfer_surface_is_read_without_nibabel(tmp_path):
+    from onset_review.anatomy import read_surface
+
+    vertices = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]])
+    faces = np.array([[0, 1, 2]])
+    _write_freesurfer_triangles(tmp_path / "lh.pial", vertices, faces)
+    got_v, got_f = read_surface(tmp_path / "lh.pial")
+    assert np.allclose(got_v, vertices) and np.array_equal(got_f, faces)
+    (tmp_path / "lh.bad").write_bytes(b"nope")
+    with pytest.raises((ValueError, OSError)):
+        read_surface(tmp_path / "lh.bad")
+
+
+def test_vertex_clustering_merges_a_cell_and_drops_collapsed_faces():
+    from onset_review.anatomy import cluster_decimate
+
+    # Four vertices, two of them within one cell: a triangle on each pair.
+    vertices = np.array([[0.0, 0.0, 0.0], [0.5, 0.5, 0.0], [10.0, 0.0, 0.0],
+                         [0.0, 10.0, 0.0]])
+    faces = np.array([[0, 1, 2], [0, 2, 3], [1, 2, 3]])
+    merged, kept = cluster_decimate(vertices, faces, cell=4.0)
+    assert merged.shape[0] == 3                       # 0 and 1 became one
+    assert kept.shape[0] == 1                         # the two big triangles became one
+    assert (kept[:, 0] != kept[:, 1]).all() and (kept[:, 1] != kept[:, 2]).all()
+    # The merged vertex sits at the pair's mean.
+    assert np.allclose(sorted(merged[:, 0]), [0.0, 0.25, 10.0])
+    # No decimation asked for: everything comes back as it went in.
+    same_v, same_f = cluster_decimate(vertices, faces, cell=0)
+    assert same_v.shape == vertices.shape and same_f.shape == faces.shape
+
+
+def test_the_template_is_found_only_where_it_has_been_fetched(tmp_path):
+    from onset_review.anatomy import template_dir
+
+    empty = tmp_path / "nothing"
+    empty.mkdir()
+    assert template_dir(empty) is None or template_dir(empty) != empty
+    root = _write_stand_in_template(tmp_path / "subjects")
+    assert template_dir(root) == root
+
+
+def test_the_template_surface_is_both_hemispheres_in_metres_and_cached(tmp_path):
+    from onset_review.anatomy import TEMPLATE_SUBJECT, template_surface
+
+    root = _write_stand_in_template(tmp_path / "subjects")
+    cache = tmp_path / "cache"
+    vertices, faces = template_surface(root, cell_mm=1.0, cache_dir=cache)
+    assert vertices.shape[1] == 3 and faces.shape[1] == 3
+    assert vertices.shape[0] == 12                    # six a hemisphere, none merged at 1 mm
+    assert faces.shape[0] == 16
+    assert faces.max() < vertices.shape[0]
+    # Millimetres became metres: the hemispheres sit 40 mm either side of the midline.
+    assert abs(vertices[:, 0].min() + 0.070) < 1e-6
+    assert abs(vertices[:, 0].max() - 0.070) < 1e-6
+    assert set(np.sign(vertices[:, 0]).astype(int)) == {-1, 1}
+    cached = list(cache.glob(f"template-{TEMPLATE_SUBJECT}-*.npz"))
+    assert len(cached) == 1
+    # The second read comes from the cache, so it works with the surfaces gone.
+    import shutil
+
+    shutil.rmtree(root / TEMPLATE_SUBJECT / "surf")
+    again_v, again_f = template_surface(root, cell_mm=1.0, cache_dir=cache)
+    assert np.allclose(again_v, vertices) and np.array_equal(again_f, faces)
+
+
+def test_a_missing_template_says_how_to_fetch_it(tmp_path, monkeypatch):
+    from onset_review import anatomy
+
+    # Whatever this machine has configured in MNE, the template is not found.
+    monkeypatch.setattr(anatomy, "template_dir", lambda _subjects_dir=None: None)
+    with pytest.raises(FileNotFoundError, match="fetch_fsaverage"):
+        anatomy.template_surface(tmp_path, cache_dir=tmp_path)
+
+
+def test_the_coordinate_space_is_read_from_the_sidecar_and_never_guessed(tmp_path):
+    import json
+
+    from onset_review.coordinates import coordinate_space
+
+    path = tmp_path / "sub-01_electrodes.tsv"
+    path.write_text("name\tx\ty\tz\nA1\t0\t0\t0\n", encoding="utf-8")
+    assert coordinate_space(path) == "unknown"
+    sidecar = tmp_path / "sub-01_coordsystem.json"
+    sidecar.write_text(json.dumps({"iEEGCoordinateSystem": "MNI152NLin2009aSym"}),
+                       encoding="utf-8")
+    assert coordinate_space(path) == "template"
+    sidecar.write_text(json.dumps({"iEEGCoordinateSystem": "Other",
+                                   "iEEGCoordinateSystemDescription": "scanner RAS"}),
+                       encoding="utf-8")
+    assert coordinate_space(path) == "patient"
+    sidecar.write_text("not json", encoding="utf-8")
+    assert coordinate_space(path) == "unknown"

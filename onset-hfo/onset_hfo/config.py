@@ -557,6 +557,53 @@ class PreprocessConfig:
     #: with the analysis configuration and lands in the report.
     exclude: tuple[str, ...] = ()
 
+    # -- filter design ---------------------------------------------------------
+    #: ``"fir"`` (the default: a windowed zero-phase FIR, what MNE and this
+    #: project have always used) or ``"iir"`` (a Butterworth, applied forwards
+    #: and backwards for zero phase). HFO detection is filter-sensitive: a
+    #: long FIR rings at a sharp discharge and the ringing looks like a
+    #: ripple, which is why the choice is exposed rather than fixed.
+    filter_method: str = "fir"
+    #: Butterworth order for the IIR design. Applied twice (zero phase), so
+    #: the effective order is double this.
+    iir_order: int = 4
+    #: ``"zero"`` (no delay, the default) or ``"minimum"`` (causal FIR: a
+    #: ripple is never smeared backwards in time, at the cost of a delay).
+    filter_phase: str = "zero"
+    #: FIR transition bandwidth in Hz for the high- and low-pass edges;
+    #: ``None`` lets MNE choose from the cut-off. Narrower is sharper and
+    #: longer; longer rings more.
+    transition_bandwidth: float | None = None
+
+    # -- reference ------------------------------------------------------------
+    #: The reference scheme by name: ``"bipolar"``, ``"average"``,
+    #: ``"median"`` (common median: the average's robust cousin, which one
+    #: faulty contact cannot drag), ``"shaft"`` (each contact minus the mean
+    #: of its own electrode shaft, the usual choice for SEEG) or ``"none"``.
+    #: ``None`` keeps the older two flags deciding, so saved configurations
+    #: read as they did.
+    reference: str | None = None
+
+    # -- artifact annotation ----------------------------------------------------
+    #: Mark seconds where broadband high-frequency power rises across the
+    #: montage at once, as muscle and movement do (MNE's
+    #: ``annotate_muscle_zscore``). The marked seconds are set aside by the
+    #: data-quality stage. Off by default: its band overlaps the ripple band,
+    #: and a reviewer should turn it on knowing that.
+    annotate_muscle: bool = False
+    #: The z-score above which a second is marked muscle.
+    muscle_z: float = 4.0
+    #: Mark seconds whose peak-to-peak amplitude exceeds a ceiling, per
+    #: contact (MNE's ``annotate_amplitude``). Off by default for the reason
+    #: :class:`QualityConfig` documents: amplitude cannot tell a discharge
+    #: from a pop, and the seconds it removes are the epileptic ones.
+    annotate_amplitude: bool = False
+    #: The peak-to-peak ceiling in microvolts; ``None`` learns one per contact
+    #: from the data by cross-validation, the way ``autoreject`` does for its
+    #: global threshold -- and, like it, learns a ceiling that discharges
+    #: exceed. Nothing is interpolated.
+    amplitude_ptp_uv: float | None = None
+
 
 @dataclass
 class PipelineConfig:

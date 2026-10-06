@@ -37,7 +37,13 @@ from qtpy.QtWidgets import (
 )
 
 from onset_review import theme
-from onset_review.anatomy import ARCHIVE_ORIGIN, UNKNOWN, electrode_layout, layout_caption
+from onset_review.anatomy import (
+    ARCHIVE_ORIGIN,
+    TEMPLATE_CAPTION,
+    UNKNOWN,
+    electrode_layout,
+    layout_caption,
+)
 from onset_review.theme import card
 
 __all__ = ["BrainPanel", "VIEWS", "ZONE_EDGES"]
@@ -106,11 +112,24 @@ class BrainPanel(QWidget):
             if self.resection_only.isEnabled()
             else "No resection record for this dataset")
 
+        # The template cortex, under measured contacts only. Disabled until a
+        # coordinate file is loaded: a rendered brain under schematic contacts
+        # reads as a registered implantation, which is the one impression the
+        # cartoon exists to avoid.
+        self.template = QCheckBox("Template brain")
+        self.template.setObjectName("onset_brain_template")
+        self.template.setChecked(False)
+        self._surface = None
+        self._surface_error = ""
+        self._space = "unknown"
+        self._update_template_gate()
+
         bar = QHBoxLayout()
         bar.addWidget(self.colour_by)
         bar.addWidget(self.labels)
         bar.addWidget(self.shafts)
         bar.addWidget(self.resection_only)
+        bar.addWidget(self.template)
         bar.addSpacing(8)
         # A combo rather than one button per angle. Six buttons set a minimum
         # width of about 900 px for this panel, which in a docked column is a
@@ -195,7 +214,7 @@ class BrainPanel(QWidget):
         outer.addWidget(theme.scrolled(body))
 
         self.colour_by.currentIndexChanged.connect(self.redraw)
-        for toggle in (self.labels, self.shafts, self.resection_only):
+        for toggle in (self.labels, self.shafts, self.resection_only, self.template):
             toggle.stateChanged.connect(self.redraw)
         self.canvas.mpl_connect("pick_event", self._picked)
 
@@ -206,7 +225,52 @@ class BrainPanel(QWidget):
                 self.layout_frame.iloc[0]["x"]) >= 0 else -140
         self.redraw()
 
-    def set_electrodes(self, electrodes, origin: str = ARCHIVE_ORIGIN) -> None:
+    # -- the template surface ------------------------------------------------
+    @property
+    def measured(self) -> bool:
+        """Every drawn contact has a measured position."""
+        return (not self.layout_frame.empty
+                and set(self.layout_frame["source"]) == {"archive"})
+
+    def template_allowed(self) -> bool:
+        """The template may be drawn: measured coordinates, and not in a
+        space a sidecar says is the patient's own."""
+        return self.measured and self._space != "patient"
+
+    def _update_template_gate(self) -> None:
+        allowed = self.template_allowed()
+        self.template.setEnabled(allowed)
+        if not allowed and self.template.isChecked():
+            self.template.setChecked(False)
+        self.template.setToolTip(
+            "Draw the fsaverage template cortex under the contacts. " + (
+                "Only meaningful for coordinates in MNI or fsaverage space; the caption "
+                "says so whenever it is drawn." if allowed else
+                "Needs measured coordinates (place the contacts from a file); a "
+                "rendered brain under schematic contacts would read as a registered "
+                "implantation." if not self.measured else
+                "This file's sidecar names a patient space, not a template, so the "
+                "template surface would be the wrong geometry."))
+
+    def surface(self):
+        """The decimated template, read once; None with a reason when it is
+        not on this machine."""
+        if self._surface is None and not self._surface_error:
+            from onset_review.anatomy import template_surface
+            from onset_review.assistant_config import config_path
+
+            try:
+                self._surface = template_surface(cache_dir=config_path().parent)
+            except Exception as error:      # noqa: BLE001 - say why, draw the cartoon
+                self._surface_error = str(error)
+        return self._surface
+
+    def set_space(self, space: str) -> None:
+        self._space = str(space or "unknown")
+        self._update_template_gate()
+
+    def set_electrodes(self, electrodes, origin: str = ARCHIVE_ORIGIN,
+                       space: str | None = None) -> None:
         """Re-place every contact from a coordinate table, and redraw.
 
         Rebuilding the layout rather than nudging the points: which hemisphere
@@ -216,9 +280,12 @@ class BrainPanel(QWidget):
         patient's geometry with this one's labels.
         """
         self._origin = origin
+        if space is not None:
+            self._space = str(space)
         self.layout_frame = electrode_layout(self._session,
                                              resection=self._resection,
                                              electrodes=electrodes)
+        self._update_template_gate()
         self.caption.setText(layout_caption(self.layout_frame, self._origin))
         schematic = (not self.layout_frame.empty
                      and "inferred" in set(self.layout_frame["source"]))
@@ -294,12 +361,30 @@ class BrainPanel(QWidget):
         self._colorbar = bar
 
         self._finish_axes(frame)
+        self._say_surface()
         self.canvas.draw_idle()
+
+    def _say_surface(self) -> None:
+        """The caption carries the template's sentence whenever it is drawn,
+        and the reason when it was asked for and could not be."""
+        text = layout_caption(self.layout_frame, self._origin)
+        if getattr(self, "_template_drawn", False):
+            text = TEMPLATE_CAPTION + " " + text
+        elif self.template.isChecked() and self._surface_error:
+            text = f"Template not drawn: {self._surface_error} " + text
+        self.caption.setText(text)
 
     def _draw_head(self) -> None:
         from onset_review.anatomy import brain_surface
 
-        vertices, faces = brain_surface()
+        vertices, faces = None, None
+        if self.template.isChecked() and self.template_allowed():
+            got = self.surface()
+            if got is not None:
+                vertices, faces = got
+        self._template_drawn = vertices is not None
+        if vertices is None:
+            vertices, faces = brain_surface()
         self._head_bounds = (vertices.min(axis=0), vertices.max(axis=0))
         # Faint edges as well as a translucent fill. A smooth low-alpha surface
         # with no edges renders as a flat disc from every angle, which tells a

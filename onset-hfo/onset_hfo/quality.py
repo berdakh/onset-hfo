@@ -97,6 +97,12 @@ REASONS: dict[str, str] = {
                  "and flagged rather than removed",
     "mostly_bad_segments": "too little of the window survived segment "
                            "rejection to call a rate",
+    "annotated_muscle": "broadband high-frequency power rose across the whole "
+                        "montage at once here, as muscle and movement do; marked "
+                        "by the preprocessing stage's muscle annotator",
+    "annotated_amplitude": "peak-to-peak amplitude above the ceiling the "
+                           "preprocessing stage was given, or learned, for this "
+                           "contact; marked, never interpolated",
     "segment_jump": "the unfiltered signal steps discontinuously here — a "
                     "pop or a disconnection, not a discharge, which is sharp "
                     "but continuous",
@@ -235,6 +241,21 @@ def segment_quality(prep: Prepared, cfg: QualityConfig | None = None) -> pd.Data
     jump_sd = jump / np.maximum(diff_scale, np.finfo(float).eps)
 
     starts = prep.t_offset + np.arange(n_segments) * (width / prep.sfreq)
+    stops = starts + width / prep.sfreq
+    # Seconds the preprocessing stage's annotators marked, per channel or for
+    # every channel: a segment that overlaps one is set aside with that reason.
+    marked: dict[str | None, list[tuple[float, float, str]]] = {}
+    for note in getattr(prep, "annotations", None) or []:
+        marked.setdefault(note.get("channel"), []).append(
+            (float(note["t_start"]), float(note["t_stop"]), str(note.get("reason") or "annotated")))
+
+    def annotated(name: str, j: int) -> str:
+        for key in (None, name):
+            for t0, t1, why in marked.get(key, ()):
+                if t0 < stops[j] and t1 > starts[j]:
+                    return why
+        return ""
+
     rows = []
     for i, name in enumerate(names):
         for j in range(n_segments):
@@ -246,7 +267,7 @@ def segment_quality(prep: Prepared, cfg: QualityConfig | None = None) -> pd.Data
             elif step > cfg.segment_jump_sd:
                 reason = "segment_jump"
             else:
-                reason = ""
+                reason = annotated(name, j) if marked else ""
             rows.append({
                 "channel": name,
                 "segment": j,

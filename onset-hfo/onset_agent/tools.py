@@ -168,16 +168,22 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
 ]}
 
 
-def tool_schemas() -> list[dict]:
+def tool_schemas(tools: dict[str, Tool] | None = None) -> list[dict]:
     """All tool schemas, for the model's ``tools`` parameter."""
-    return [t.schema() for t in TOOLS.values()]
+    return [t.schema() for t in (tools if tools is not None else TOOLS).values()]
 
 
-def dispatch(store: ResultStore, name: str, arguments: dict | None) -> Any:
-    """Validate and run one tool call. Never evaluates model text as code."""
-    tool = TOOLS.get(name)
+def dispatch(store: ResultStore, name: str, arguments: dict | None,
+             tools: dict[str, Tool] | None = None) -> Any:
+    """Validate and run one tool call. Never evaluates model text as code.
+
+    `tools` is the set in force; the desktop window adds analysis tools bound
+    to its own session, under the same validation.
+    """
+    tools = tools if tools is not None else TOOLS
+    tool = tools.get(name)
     if tool is None:
-        raise ToolError(f"unknown tool {name!r}; available: {', '.join(TOOLS)}")
+        raise ToolError(f"unknown tool {name!r}; available: {', '.join(tools)}")
     args = dict(arguments or {})
     schema = tool.parameters
     allowed = set(schema["properties"])
@@ -202,4 +208,18 @@ def dispatch(store: ResultStore, name: str, arguments: dict | None) -> Any:
                 raise ToolError(f"{key} must be an integer") from None
             value = max(spec.get("minimum", value), min(spec.get("maximum", value), value))
             args[key] = value
+        elif spec["type"] == "number":
+            try:
+                value = float(value)
+            except (TypeError, ValueError):
+                raise ToolError(f"{key} must be a number") from None
+            if "minimum" in spec:
+                value = max(float(spec["minimum"]), value)
+            if "maximum" in spec:
+                value = min(float(spec["maximum"]), value)
+            args[key] = value
+        elif spec["type"] == "array":
+            if not isinstance(value, (list, tuple)):
+                raise ToolError(f"{key} must be a list")
+            args[key] = list(value)
     return tool.handler(store, **args)
