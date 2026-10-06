@@ -221,7 +221,7 @@ def test_decorate_takes_the_trace_loader(qapp):
 
 def test_the_review_menu_moves_to_another_window(built):
     menu = [action.menu() for action in built.host.menuBar().actions()
-            if "Review" in action.text()][0]
+            if "File" in action.text()][0]
     entries = {action.text().replace("&", ""): action for action in menu.actions()
                if action.text()}
     assert "Next window" in entries
@@ -335,7 +335,7 @@ def test_the_reader_is_carried_to_the_next_window(review):
 
 def test_the_review_menu_offers_to_place_the_contacts(built):
     menu = [action.menu() for action in built.host.menuBar().actions()
-            if "Review" in action.text()][0]
+            if "File" in action.text()][0]
     entries = {action.text().replace("&", "") for action in menu.actions()
                if action.text()}
     assert "Electrode coordinates…" in entries
@@ -1860,7 +1860,7 @@ def test_every_test_that_builds_a_widget_asks_for_the_application():
     #: dependencies are listed by hand: this check parses the file rather than
     #: resolving pytest's fixture graph, so a fixture that takes `built` has
     #: to be named here too.
-    PROVIDES_APP = {"qapp", "built", "judging"}
+    PROVIDES_APP = {"qapp", "built", "judging", "paged"}
 
     tree = ast.parse(pathlib.Path(__file__).read_text())
     offenders = []
@@ -2085,3 +2085,250 @@ def test_dense_annotation_labels_are_thinned_not_overprinted(built):
     app.processEvents()
     shown_narrow = planted_shown()
     assert shown_narrow > shown_wide, (shown_narrow, shown_wide)
+
+
+# -- the page layout -----------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def paged(qapp, review):
+    """The same session laid out as pages, with every callback recorded."""
+    import pandas as pd
+
+    from onset_review import window
+
+    calls = {"opened": [], "relayout": [], "imported": 0}
+    frame = pd.DataFrame([{"dataset": "ds003498", "subject": "sub-01", "run": "01",
+                           "task": None, "t_start": 0.0, "t_stop": 60.0,
+                           "sfreq": 2000.0, "n_channels": 50}])
+    figure = window.open_trace(review, show=False)
+    parts = window.decorate(
+        figure, review, mode="pages", cached=lambda: frame,
+        on_open_cached=calls["opened"].append,
+        on_relayout=calls["relayout"].append,
+        on_import=lambda: calls.__setitem__("imported", calls["imported"] + 1),
+        on_window=lambda a, b: None, on_step_window=lambda d: None)
+    parts.calls = calls
+    yield parts
+    try:
+        figure.close()
+    except Exception:
+        pass
+
+
+def _menu(host, title: str):
+    for action in host.menuBar().actions():
+        if action.text().replace("&", "") == title:
+            return action.menu()
+    raise AssertionError(f"no {title} menu")
+
+
+def _actions(menu) -> dict:
+    return {a.text().replace("&", ""): a for a in menu.actions() if a.text()}
+
+
+def test_the_page_window_is_its_own_window_and_holds_every_panel(paged):
+    host = paged.host
+    assert isinstance(host, qt.QMainWindow)
+    assert host is not paged.figure, "the host is a window around the figure"
+    assert paged.pages is host and paged.docks == {}
+    for key, panel in paged.panels.items():
+        assert host.isAncestorOf(panel), f"{key} is not inside the page window"
+    assert host.isAncestorOf(paged.figure), "the trace is on a page, not loose"
+
+
+def test_the_sidebar_lists_the_sites_pages_in_order(paged):
+    from onset_review.pages import PAGES, STUDY_PAGES
+
+    nav = paged.pages.nav
+    enabled = [nav.item(i) for i in range(nav.count())
+               if nav.item(i).flags() & Qt.ItemIsEnabled]
+    assert [i.data(Qt.UserRole) for i in enabled] == [k for k, _ in PAGES]
+    disabled = [nav.item(i).text() for i in range(nav.count())
+                if not (nav.item(i).flags() & Qt.ItemIsEnabled)]
+    for study in STUDY_PAGES:
+        assert study in disabled, "the study pages are listed, disabled, until phase 2"
+    assert paged.pages.page_keys() == [k for k, _ in PAGES]
+
+
+def test_a_window_opens_on_home_and_switches_pages(paged):
+    pages = paged.pages
+    seen = []
+    pages.pageChanged.connect(seen.append)
+    pages.show_page("home")
+    assert pages.current_page() == "home"
+    assert pages.show_page("report") is True
+    assert pages.current_page() == "report"
+    assert pages.stack.currentWidget().objectName() == "page_report"
+    assert pages.show_page("nowhere") is False
+    assert pages.current_page() == "report"
+    assert seen[-1] == "report"
+
+
+def test_a_citation_reveals_the_recording_page(paged, review):
+    pages = paged.pages
+    pages.show_page("assistant")
+    channel = review.leader.get("leader") or review.findings.iloc[0]["channel"]
+    paged.panels["assistant"].evidencePicked.emit(channel, float(review.span[0]) + 1.0)
+    assert pages.current_page() == "recording"
+
+
+def test_home_lists_the_windows_on_disk_and_opens_one(paged):
+    pages = paged.pages
+    pages.show_page("home")
+    model = pages.cached_table.model()
+    assert model is not None and model.rowCount() == 1
+    pages.cached_table.selectRow(0)
+    pages.open_button.click()
+    assert paged.calls["opened"] and paged.calls["opened"][-1]["subject"] == "sub-01"
+    pages.import_button.click()
+    assert paged.calls["imported"] == 1
+
+
+def test_the_report_page_renders_the_review_as_it_will_be_exported(paged, review):
+    pages = paged.pages
+    pages.show_page("report")
+    html = pages.report_view.toHtml()
+    assert review.request.subject in html
+    assert "Findings" in html or "findings" in html
+
+
+def test_the_view_menu_switches_arrangements_both_ways(paged, built):
+    actions = _actions(_menu(paged.host, "View"))
+    assert "Everything at once (docked panels)" in actions
+    for _key, label in __import__("onset_review.pages", fromlist=["PAGES"]).PAGES:
+        assert label in actions, f"the View menu should list the {label} page"
+    actions["Everything at once (docked panels)"].trigger()
+    assert paged.calls["relayout"] == ["docks"]
+    # And the docked window offers the way back, disabled here because the
+    # fixture gave it nobody to rebuild the window.
+    docked = _actions(_menu(built.host, "View"))
+    assert "Pages (sidebar)" in docked
+    assert docked["Pages (sidebar)"].isEnabled() is False
+
+
+def test_the_caveat_and_the_reader_are_on_the_page_window(paged, review):
+    from onset_review import window
+
+    assert paged.host.statusBar().findChild(qt.QLabel, "onset_caveat") is not None
+    assert paged.pages.banner.text().startswith("Research prototype")
+    review.read.reader = "BO"
+    window._set_reader_status(paged.host, review)
+    assert "BO" in paged.pages.reader.text()
+    review.read.reader = ""
+    window._set_reader_status(paged.host, review)
+
+
+def test_the_disclaimer_is_the_sites_word_for_word():
+    from app import panels as site
+    from onset_review.pages import DISCLAIMER
+
+    assert DISCLAIMER == " ".join(
+        [site.DISCLAIMER_LEAD, site.DATA_SENTENCE, site.DISCLAIMER_TAIL])
+
+
+def test_the_trend_strip_folds_away(paged):
+    pages = paged.pages
+    pages.show_page("recording")
+    pages.trend_toggle.setChecked(False)
+    assert paged.panels["trends"].isHidden()
+    pages.trend_toggle.setChecked(True)
+    assert not paged.panels["trends"].isHidden()
+
+
+def test_an_unknown_arrangement_is_refused(qapp, review):
+    from onset_review import window
+
+    figure = window.open_trace(review, show=False)
+    try:
+        with pytest.raises(ValueError, match="mode"):
+            window.decorate(figure, review, mode="tiles")
+    finally:
+        figure.close()
+
+
+def test_the_trace_can_be_lifted_into_its_own_window_and_put_back(paged):
+    pages, figure = paged.pages, paged.figure
+    pages.show_page("recording")
+    assert not pages.trace_popped
+    assert paged.host.isAncestorOf(figure)
+
+    pages.pop_out_trace()
+    assert pages.trace_popped and figure.isWindow()
+    assert not paged.host.isAncestorOf(figure)
+    assert not pages.trace_placeholder.isHidden()
+    assert pages.pop_button.text() == "Bring the trace back"
+    # The controls still drive the same browser, wherever it is.
+    paged.panels["controls"].sync()
+
+    pages.dock_trace()
+    assert not pages.trace_popped and paged.host.isAncestorOf(figure)
+    assert pages.trace_placeholder.isHidden()
+
+
+def test_closing_the_popped_out_window_brings_the_trace_back(paged):
+    pages, figure = paged.pages, paged.figure
+    pages.pop_out_trace()
+    figure.close()
+    assert not pages.trace_popped, "close put it back rather than destroying it"
+    assert paged.host.isAncestorOf(figure)
+    assert figure.mne is not None, "MNE's own close did not run"
+
+
+def test_the_view_menu_toggles_the_trace_window(paged):
+    actions = _actions(_menu(paged.host, "View"))
+    assert "Trace in its own window" in actions
+    actions["Trace in its own window"].trigger()
+    assert paged.pages.trace_popped
+    actions["Trace in its own window"].trigger()
+    assert not paged.pages.trace_popped
+
+
+# -- the start window --------------------------------------------------------
+
+
+def test_the_application_opens_on_home_with_nothing_loaded(qapp):
+    """The window first, the data from inside it: Home is the only page that
+    works, the others wait, and the File menu is where the data comes from."""
+    import pandas as pd
+
+    from onset_review import window
+    from onset_review.pages import PAGES
+
+    calls = {"opened": [], "chosen": 0, "imported": 0}
+    frame = pd.DataFrame([{"dataset": "ds003498", "subject": "sub-03", "run": "01",
+                           "task": None, "t_start": 60.0, "t_stop": 120.0,
+                           "sfreq": 2000.0, "n_channels": 64}])
+    host = window.decorate_start(
+        cached=lambda: frame, on_open_cached=calls["opened"].append,
+        on_import=lambda: calls.__setitem__("imported", calls["imported"] + 1),
+        on_choose=lambda: calls.__setitem__("chosen", calls["chosen"] + 1))
+    try:
+        assert not host.loaded and host.current_page() == "home"
+        assert host.page_keys() == [k for k, _ in PAGES]
+        for key in host.page_keys():
+            if key != "home":
+                assert host.show_page(key) is False, f"{key} must wait for a recording"
+        assert host.findChild(qt.QLabel, "onset_nothing_open") is not None
+        assert host.where.text() == "No recording open"
+
+        menu = _actions(_menu(host, "File"))
+        assert "Open a recording…" in menu and "Open a file…" in menu
+        menu["Open a recording…"].trigger()
+        menu["Open a file…"].trigger()
+        assert calls["chosen"] == 1 and calls["imported"] == 1
+
+        host.cached_table.selectRow(0)
+        host.open_button.click()
+        assert calls["opened"][-1]["subject"] == "sub-03"
+    finally:
+        host.close()
+
+
+def test_the_file_menu_of_the_full_window_opens_recordings_and_files(paged):
+    menu = _actions(_menu(paged.host, "File"))
+    for entry in ("Open a recording…", "Open a file…", "Next window",
+                  "Electrode coordinates…", "Export review…", "Close window"):
+        assert entry in menu, entry
+    assert menu["Open a recording…"].isEnabled() is False, \
+        "the fixture gave it no chooser, so it says so rather than doing nothing"

@@ -208,6 +208,9 @@ class ReviewWindowParts:
         self.session = session
         #: False when the panels had to go into their own window.
         self.docked = host is figure
+        #: The `pages.PageWindow` when the window is laid out as pages; None
+        #: for the docked arrangement.
+        self.pages = None
         #: Set by `decorate`; what is currently drawn over the signal.
         self.display: _Display | None = None
 
@@ -438,26 +441,16 @@ def goto(figure, t: float, channel: str | None = None,
                 pass
 
 
-def decorate(figure, session: ReviewSession, show_expert: bool = False,
-             on_preprocess=None, on_import=None, on_quality=None,
-             on_electrodes=None, on_window=None, on_step_window=None,
-             on_trace_at=None) -> ReviewWindowParts:
-    """Add the menus, the toolbar, the panels and the caveat to MNE's window.
+#: The two arrangements of the same panels. ``docks`` is the original: every
+#: panel a dock on MNE's own window, three task layouts over them. ``pages``
+#: is the sidebar of pages the project's web site has, with the trace on the
+#: Recording page. Both are built by `decorate`; the View menu switches.
+MODES = ("pages", "docks")
 
-    `on_preprocess` is called with a new `PreprocessConfig` when the reviewer
-    applies one. `on_quality` is called with (check_quality, keep_channels)
-    when they change which contacts are analysed. `on_import` is called with
-    no arguments when they ask to open a recording from this machine. All
-    three are callbacks rather than something
-    this module does itself, because re-running the analysis means fetching,
-    detecting and rebuilding every panel -- which is the entry point's job, and
-    keeps this file free of the loader and the progress dialog.
-    """
-    host = figure if has_dock_host(figure) else QMainWindow()
-    display = _Display("selected", session.leader.get("leader"), show_expert)
-    host.setWindowTitle(f"Onset Review — {session.request.label()}")
 
-    panels = {
+def build_panels(figure, session: ReviewSession) -> dict:
+    """Every panel, built against one session. The same dict in both modes."""
+    return {
         "trends": TrendsPanel(session),
         "controls": TraceControls(figure),
         "findings": FindingsPanel(session),
@@ -472,7 +465,47 @@ def decorate(figure, session: ReviewSession, show_expert: bool = False,
         "agreement": AgreementPanel(session),
         "provenance": ProvenancePanel(session),
     }
-    docks = {}
+
+
+def decorate(figure, session: ReviewSession, show_expert: bool = False,
+             on_preprocess=None, on_import=None, on_quality=None,
+             on_electrodes=None, on_window=None, on_step_window=None,
+             on_trace_at=None, mode: str = "docks", cached=None,
+             on_open_cached=None, on_relayout=None,
+             on_choose=None) -> ReviewWindowParts:
+    """Add the menus, the toolbar, the panels and the caveat around the trace.
+
+    `on_preprocess` is called with a new `PreprocessConfig` when the reviewer
+    applies one. `on_quality` is called with (check_quality, keep_channels)
+    when they change which contacts are analysed. `on_import` is called with
+    no arguments when they ask to open a recording from this machine. All
+    three are callbacks rather than something
+    this module does itself, because re-running the analysis means fetching,
+    detecting and rebuilding every panel -- which is the entry point's job, and
+    keeps this file free of the loader and the progress dialog.
+
+    `mode` is one of `MODES`. In ``pages`` the host is a `pages.PageWindow`
+    around the figure; `cached` lists the windows on disk for its Home page,
+    `on_open_cached` opens one of them, and `on_relayout` is called with the
+    other mode's name when the reviewer switches from the View menu.
+    """
+    if mode not in MODES:
+        raise ValueError(f"mode must be one of {MODES}, not {mode!r}")
+    display = _Display("selected", session.leader.get("leader"), show_expert)
+    panels = build_panels(figure, session)
+    docks: dict = {}
+
+    if mode == "pages":
+        return _decorate_pages(figure, session, panels, display, show_expert,
+                               on_preprocess=on_preprocess, on_import=on_import,
+                               on_quality=on_quality, on_electrodes=on_electrodes,
+                               on_window=on_window, on_step_window=on_step_window,
+                               on_trace_at=on_trace_at, cached=cached,
+                               on_open_cached=on_open_cached,
+                               on_relayout=on_relayout, on_choose=on_choose)
+
+    host = figure if has_dock_host(figure) else QMainWindow()
+    host.setWindowTitle(f"Onset Review — {session.request.label()}")
 
     def dock(key: str, title: str, area, widget: QWidget,
              tip: str = "") -> QDockWidget:
@@ -586,7 +619,8 @@ def decorate(figure, session: ReviewSession, show_expert: bool = False,
     _menus(figure, host, panels, docks, session, display, parts,
            defaults, on_import=on_import,
            on_electrodes=on_electrodes, on_window=on_window,
-           on_step_window=on_step_window)
+           on_step_window=on_step_window, on_relayout=on_relayout,
+           on_choose=on_choose)
     _set_reader_status(host, session)
     # Opened in a layout rather than with everything showing: eleven docked
     # panels at once is an arrangement a reviewer has to undo before they can
@@ -596,6 +630,14 @@ def decorate(figure, session: ReviewSession, show_expert: bool = False,
     # Captured here, after the opening layout: "the default layout" has to mean
     # what the window actually opened as, panels hidden and all.
     defaults["state"] = host.saveState()
+    _finish(figure, session, panels, display, on_preprocess, on_quality)
+    return parts
+
+
+def _finish(figure, session: ReviewSession, panels: dict, display: _Display,
+            on_preprocess, on_quality) -> None:
+    """What both arrangements do last: connect re-analysis, draw the marks,
+    land on the channel they belong to."""
     if on_quality is not None:
         panels["quality"].applied.connect(on_quality)
     else:
@@ -616,12 +658,84 @@ def decorate(figure, session: ReviewSession, show_expert: bool = False,
     if display.channel:
         _goto_channel(figure, session, display.channel)
         panels["findings"].select_channel(display.channel)
+
+
+def _decorate_pages(figure, session: ReviewSession, panels: dict,
+                    display: _Display, show_expert: bool, *, on_preprocess,
+                    on_import, on_quality, on_electrodes, on_window,
+                    on_step_window, on_trace_at, cached, on_open_cached,
+                    on_relayout, on_choose=None) -> ReviewWindowParts:
+    """The same panels as a sidebar of pages. See `onset_review.pages`."""
+    from onset_review.pages import PageWindow
+
+    holder: dict = {}
+    host = PageWindow(
+        figure, panels, session, cached=cached, on_open_cached=on_open_cached,
+        on_import=on_import,
+        on_place_contacts=lambda: _load_coordinates(holder["host"], session,
+                                                    panels, on_electrodes),
+        on_export=lambda: _export(holder["host"], session))
+    holder["host"] = host
+    host.setWindowTitle(f"Onset Review — {session.request.label()}")
+    parts = ReviewWindowParts(figure, host, panels, {}, session)
+    parts.display = display
+    parts.pages = host
+    _wire(figure, host, panels, session, display, parts,
+          on_trace_at=on_trace_at,
+          reveal=lambda: host.show_page("recording"))
+    _status(host, session)
+    _menus(figure, host, panels, {}, session, display, parts, {},
+           on_import=on_import, on_electrodes=on_electrodes,
+           on_window=on_window, on_step_window=on_step_window,
+           on_relayout=on_relayout, pages=host, on_choose=on_choose)
+    _set_reader_status(host, session)
+    _finish(figure, session, panels, display, on_preprocess, on_quality)
     return parts
+
+
+def decorate_start(*, cached=None, on_open_cached=None, on_import=None,
+                   on_choose=None):
+    """The window the application opens on: Home, and nothing loaded yet.
+
+    A `pages.PageWindow` without a session, with the one menu that makes
+    sense before there is a recording. Opening one replaces this window with
+    the full one at the same size and place, which is the entry point's job.
+    """
+    from onset_review.pages import PageWindow
+
+    host = PageWindow(cached=cached, on_open_cached=on_open_cached,
+                      on_import=on_import)
+    host.setWindowTitle("Onset Review")
+    menubar = host.menuBar()
+    file_menu = menubar.addMenu("&File")
+    choose = file_menu.addAction("Open a &recording…")
+    choose.setShortcut("Ctrl+O")
+    choose.setEnabled(on_choose is not None)
+    if on_choose is not None:
+        choose.triggered.connect(lambda _=False: on_choose())
+    opener = file_menu.addAction("&Open a file…")
+    opener.setShortcut("Ctrl+Shift+O")
+    opener.setEnabled(on_import is not None)
+    if on_import is not None:
+        opener.triggered.connect(lambda _=False: on_import())
+    file_menu.addSeparator()
+    file_menu.addAction("&Close window", host.close)
+    help_menu = menubar.addMenu("&Help")
+    help_menu.addAction(
+        "What am I looking at?",
+        lambda: QMessageBox.information(
+            host, "What am I looking at?",
+            "Onset Review, with nothing open. Pick a cached window on the "
+            "Home page, or File → Open a recording… for the full choice of "
+            "band and detectors, or File → Open a file… for a recording of "
+            "your own."))
+    host.statusBar().showMessage("Open a recording to begin.")
+    return host
 
 
 def _wire(figure, host, panels: dict, session: ReviewSession,
           display: _Display, parts: ReviewWindowParts,
-          on_trace_at=None) -> None:
+          on_trace_at=None, reveal=None) -> None:
     """Make every panel's selection move the one trace, and the marks with it.
 
     The second half is what makes the default mark scope workable: choosing a
@@ -667,9 +781,14 @@ def _wire(figure, host, panels: dict, session: ReviewSession,
     # A citation names a time in the archive's seconds, which is what a report
     # quotes; the panels count from the start of the analysed span, so that
     # comes off here.
-    panels["assistant"].evidencePicked.connect(
-        lambda channel, t_file: select(channel,
-                                       float(t_file) - session.span[0]))
+    def cited(channel: str, t_file: float) -> None:
+        # In the page layout the assistant is on its own page; a citation
+        # that moved a trace nobody could see would look like nothing.
+        if reveal is not None:
+            reveal()
+        select(channel, float(t_file) - session.span[0])
+
+    panels["assistant"].evidencePicked.connect(cited)
     # ...and the 3D view turns to face whatever was chosen elsewhere, so the
     # three views never disagree about which contact is under discussion.
     panels["findings"].channelPicked.connect(panels["brain"].highlight)
@@ -773,13 +892,27 @@ def _menus(figure, host: QMainWindow, panels: dict, docks: dict,
            session: ReviewSession, display: _Display,
            parts: ReviewWindowParts, defaults: dict,
            on_import=None, on_electrodes=None, on_window=None,
-           on_step_window=None) -> None:
-    """Menus and a toolbar, in the vocabulary of the task rather than the code."""
+           on_step_window=None, on_relayout=None, pages=None,
+           on_choose=None) -> None:
+    """Menus and a toolbar, in the vocabulary of the task rather than the code.
+
+    `pages` is the `PageWindow` when the window is laid out as pages, in
+    which case the View menu lists the pages instead of the dock layouts.
+    `on_relayout` is called with the other arrangement's name.
+    """
     menubar = host.menuBar()
 
-    file_menu = menubar.addMenu("&Review")
+    file_menu = menubar.addMenu("&File")
+    choose = file_menu.addAction("Open a &recording…")
+    choose.setShortcut("Ctrl+O")
+    choose.setEnabled(on_choose is not None)
+    choose.setToolTip("A cached window of an archive patient, with the band, "
+                      "the detectors and the threshold to analyse it with. "
+                      "This window is replaced.")
+    if on_choose is not None:
+        choose.triggered.connect(lambda _=False: on_choose())
     opener = file_menu.addAction("&Open a file…")
-    opener.setShortcut("Ctrl+O")
+    opener.setShortcut("Ctrl+Shift+O")
     opener.setEnabled(on_import is not None)
     opener.setToolTip(
         "Read a recording from this machine through MNE — EDF, BrainVision, "
@@ -804,27 +937,60 @@ def _menus(figure, host: QMainWindow, panels: dict, docks: dict,
     file_menu.addAction("&Close window", host.close)
 
     view = menubar.addMenu("&View")
-    # The layouts come first because they are the entries a reviewer wants
-    # most of the time; the eleven individual toggles below them are for the
-    # one panel the layout did not include.
-    for index, (name, (what, _, _focus)) in enumerate(LAYOUTS.items(), start=1):
-        entry = view.addAction(f"&{name}")
-        entry.setShortcut(f"Alt+{index}")
-        entry.setToolTip(what)
-        entry.triggered.connect(
-            lambda _=False, name=name: (
-                apply_layout(docks, name),
-                host.statusBar().showMessage(f"{name}: {LAYOUTS[name][0]}.",
-                                             6000)))
-    everything = view.addAction("E&verything at once")
-    everything.setToolTip("Every panel visible. There are eleven of them, and "
-                          "the tabs will not all fit.")
-    everything.triggered.connect(
-        lambda _=False: [dock.setVisible(True) for dock in docks.values()])
-    view.addSeparator()
-    for dock_widget in docks.values():
-        view.addAction(dock_widget.toggleViewAction())
-    view.addSeparator()
+    if pages is not None:
+        # One entry per page, in the sidebar's order, on the keys the
+        # sidebar already answers to.
+        from onset_review.pages import PAGES
+
+        for index, (key, label) in enumerate(PAGES, start=1):
+            entry = view.addAction(f"&{label}")
+            entry.setToolTip(f"Alt+{index}")
+            entry.triggered.connect(
+                lambda _=False, key=key: pages.show_page(key))
+        view.addSeparator()
+        popped = view.addAction("&Trace in its own window")
+        popped.setShortcut("Ctrl+Shift+T")
+        popped.setCheckable(True)
+        popped.setToolTip("Lift MNE's browser out of the Recording page into a "
+                          "window of its own; everything keeps driving it.")
+        popped.triggered.connect(lambda _=False: pages.toggle_trace_window())
+        view.aboutToShow.connect(lambda: popped.setChecked(pages.trace_popped))
+        view.addSeparator()
+        docked = view.addAction("E&verything at once (docked panels)")
+        docked.setToolTip("The original arrangement: every panel a dock on "
+                          "the trace's window, with the three task layouts.")
+        docked.setEnabled(on_relayout is not None)
+        if on_relayout is not None:
+            docked.triggered.connect(lambda _=False: on_relayout("docks"))
+        view.addSeparator()
+    else:
+        # The layouts come first because they are the entries a reviewer
+        # wants most of the time; the eleven individual toggles below them
+        # are for the one panel the layout did not include.
+        for index, (name, (what, _, _focus)) in enumerate(LAYOUTS.items(), start=1):
+            entry = view.addAction(f"&{name}")
+            entry.setShortcut(f"Alt+{index}")
+            entry.setToolTip(what)
+            entry.triggered.connect(
+                lambda _=False, name=name: (
+                    apply_layout(docks, name),
+                    host.statusBar().showMessage(f"{name}: {LAYOUTS[name][0]}.",
+                                                 6000)))
+        everything = view.addAction("E&verything at once")
+        everything.setToolTip("Every panel visible. There are eleven of them, and "
+                              "the tabs will not all fit.")
+        everything.triggered.connect(
+            lambda _=False: [dock.setVisible(True) for dock in docks.values()])
+        paged = view.addAction("&Pages (sidebar)")
+        paged.setToolTip("The arrangement of the results site: a sidebar of "
+                         "pages, the trace on the Recording page.")
+        paged.setEnabled(on_relayout is not None)
+        if on_relayout is not None:
+            paged.triggered.connect(lambda _=False: on_relayout("pages"))
+        view.addSeparator()
+        for dock_widget in docks.values():
+            view.addAction(dock_widget.toggleViewAction())
+        view.addSeparator()
     group = QActionGroup(host)
     group.setExclusive(True)
     for scope, text in MARK_SCOPES.items():
@@ -942,11 +1108,15 @@ def _set_reader_status(host: QMainWindow, session: ReviewSession) -> None:
         return
     read = session.read
     counts = read.counts()
-    if not read.reader and not counts["judged"]:
-        label.setText("")
-        return
-    label.setText(f"Read by {read.reader or 'nobody named'} — "
-                  f"{counts['judged']} judged")
+    text = ("" if not read.reader and not counts["judged"]
+            else f"Read by {read.reader or 'nobody named'} — "
+                 f"{counts['judged']} judged")
+    label.setText(text)
+    # The page layout also says it in the sidebar, where the reader's name
+    # sits above the pages rather than at the foot of the window.
+    sidebar = getattr(host, "set_reader", None)
+    if callable(sidebar):
+        sidebar(text)
 
 
 def _read_menu(menubar, host: QMainWindow, panels: dict,
@@ -1059,11 +1229,12 @@ def _window_actions(view, host: QMainWindow, docks: dict,
     # one state the window never opens in.
     _name_mnes_widgets(host)
 
-    restore = view.addAction("&Restore the default layout")
-    restore.setToolTip("Put the panels back where they started")
-    restore.triggered.connect(
-        lambda _=False: host.restoreState(defaults.get("state")
-                                          or host.saveState()))
+    if docks:
+        restore = view.addAction("&Restore the default layout")
+        restore.setToolTip("Put the panels back where they started")
+        restore.triggered.connect(
+            lambda _=False: host.restoreState(defaults.get("state")
+                                              or host.saveState()))
 
     shrink = view.addAction("&Fit the window to this screen")
     shrink.setShortcut("Ctrl+0")

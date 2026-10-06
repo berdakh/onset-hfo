@@ -904,6 +904,46 @@ def ollama_pull(tag: str, base_url: str | None = None, timeout: float = 3600.0) 
         response.read()
 
 
+def ollama_pull_stream(tag: str, base_url: str | None = None, *,
+                       on_progress=None, timeout: float = 3600.0) -> str:
+    """Pull ``tag`` and report progress as Ollama streams it.
+
+    Ollama answers ``/api/pull`` with one JSON object per line: a ``status``
+    string and, while a layer is downloading, ``completed`` and ``total`` byte
+    counts. Each line is handed to ``on_progress(status, completed, total)``
+    (the counts are ``0`` when the line has none), so a window can draw a bar
+    instead of freezing for the several gigabytes a 7B model is. The last
+    status seen is returned; ``"success"`` is Ollama's word for done.
+
+    A server that answers in one unstreamed object -- the test double does --
+    is handled the same way, since one line is a stream of one.
+    """
+    import json
+    import urllib.request
+
+    base_url = base_url or ollama_url()
+    body = json.dumps({"name": tag, "stream": True}).encode("utf-8")
+    request = urllib.request.Request(f"{base_url.rstrip('/')}/api/pull", data=body,
+                                     headers={"Content-Type": "application/json"})
+    status = ""
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        for raw in response:
+            line = raw.decode("utf-8", "replace").strip()
+            if not line:
+                continue
+            try:
+                item = json.loads(line)
+            except ValueError:
+                continue
+            if "error" in item:
+                raise RuntimeError(str(item["error"]))
+            status = str(item.get("status", status))
+            if on_progress is not None:
+                on_progress(status, int(item.get("completed") or 0),
+                            int(item.get("total") or 0))
+    return status
+
+
 def _has_tag(wanted: str, names: list[str]) -> bool:
     """``qwen3:8b`` matches ``qwen3:8b`` and ``qwen3:8b-instruct-q4_K_M``-style
     names only on the exact tag; a bare family name matches ``:latest``."""

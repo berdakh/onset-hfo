@@ -357,7 +357,7 @@ simulator defaults to 2000 Hz for exactly that reason.
 
 ## Using your own data
 
-**The desktop reviewer does this with a file dialog.** *Review → Open a file…*
+**The desktop reviewer does this with a file dialog.** *File → Open a file…*
 reads EDF, BDF, GDF, BrainVision, Persyst, Nihon Kohden, Nicolet, Curry,
 Blackrock, Neuralynx, MEF3, EEGLAB, EGI, Neuroscan, Eximia and FIF through
 `onset_hfo.io`, which dispatches on the extension to one of MNE's readers and

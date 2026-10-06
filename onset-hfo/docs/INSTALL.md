@@ -103,7 +103,7 @@ Everything is cached under `artifacts/data/`, so a window is fetched once.
 
 ### Or a recording of your own
 
-**Review → Open a file…**, or the *Open a file…* button in the open dialog,
+**File → Open a file…**, or the *Open a file…* button in the open dialog,
 reads a file from this machine through MNE's readers — EDF, BDF, GDF,
 BrainVision, Persyst, Nihon Kohden, Nicolet, Curry, Blackrock, Neuralynx,
 MEF3, EEGLAB, EGI, Neuroscan, Eximia, FIF. There is no conversion step and no
@@ -132,12 +132,43 @@ approval or data governance either; those stay yours.
 | Straight into your own file | `onset-review --open /data/study-001.edf` |
 | Every option | `onset-review --help` |
 
+`onset-review` on its own opens the window first, on **Home**, with nothing
+loaded. The data comes from inside it: pick a cached window on Home and press
+*Open*, or **File → Open a recording…** for the dialog below with the band,
+the detectors and the threshold, or **File → Open a file…** for a recording of
+your own. The other pages wake up once something is open.
+
 ![The open dialog](images/onset-review-open.png)
 
 The dialog lists only the windows you have cached, and offers only the bands
 the recording's sampling rate can actually support — the fast-ripple band is
 greyed out on a 1000 Hz recording, because a 500 Hz band on a 500 Hz Nyquist
 is not a conservative analysis, it is a meaningless one.
+
+### The window is a sidebar of pages
+
+The window has the shape of the results site: a sidebar on the left, one page
+at a time on the right, and the same disclaimer line on every page.
+
+| page | what is on it |
+|---|---|
+| **Home** | what this is and is not, the numbers of this window, the windows cached on this machine (double-click one to open it), *Open a file…* |
+| **Recording** | *Does any channel actually stand out?*, the trend strip, the trace, and a side column with the ranking, the events and the selected event close up. *Open the trace in a new window* (`Ctrl+Shift+T`) lifts MNE's browser into a window of its own, for a second monitor; closing that window puts it back |
+| **Contacts** | the 3D view, the patient record, and where the coordinates came from |
+| **Quality** | data quality and preprocessing side by side, provenance under them; *Apply* re-runs the analysis and every page follows |
+| **Report** | the review as it will be exported, agreement with the archive's annotators, *Export review…* |
+| **Assistant** | the assistant, and the box that gets a local Qwen onto this machine |
+
+`Alt+1` to `Alt+6` switch pages, so do the entries at the top of **View**. The
+six study pages of the site are listed under the first group and disabled:
+they are the next phase, and until then they are on the
+[results site](https://berdakh.github.io/onset-hfo/).
+
+The original arrangement, every panel a dock on the trace's window with three
+task layouts, is still there: **View → Everything at once (docked panels)**
+rebuilds the window that way, **View → Pages (sidebar)** comes back, and
+`onset-review --layout docks` opens in it. Nothing is lost either way: both
+arrangements are the same panels, wired the same way.
 
 Without a display at all — over SSH, or in a batch — the review still produces
 its document:
@@ -166,6 +197,12 @@ window on screen (see [`AGENT.md`](AGENT.md)). One flag sets it up:
 ./packaging/install-ubuntu.sh --with-assistant        # or add it to an existing install:
 ./packaging/install-ubuntu.sh --with-assistant --skip-install
 ```
+
+Or do it from inside the window: the **Assistant** page has a box that looks
+at this machine, names the Qwen the chooser picks for it, and offers to pull
+it with a progress bar. It needs Ollama running first (`ollama serve`); it
+cannot install a daemon. Once pulled, the model is written as the default and
+the assistant switches to it on the spot.
 
 That installs [Ollama](https://ollama.com) if it is missing (its official
 script, one `sudo`), gives the service an **8192-token context** — the agent's

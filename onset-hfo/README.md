@@ -81,7 +81,7 @@ detector threshold over the whole span rather than per chunk — so the answer
 does not depend on where the boundaries fell. Measured: 30 s, 60 s and 100 s
 chunks give byte-identical HFO events.
 
-**Review → Next window** re-analyses the next stretch of the same recording
+**File → Next window** re-analyses the next stretch of the same recording
 without a trip back through the open dialog, carrying your name, your
 coordinates and your layout. That is the one step this software most wants you
 to take: across these twenty patients the annotators' own busiest fast-ripple
@@ -90,7 +90,7 @@ another minute of the *same* recording.
 
 The 3D view says *schematic* because neither public archive ships
 `electrodes.tsv`. Your patients have coordinates — a post-implant CT
-coregistered to the planning MRI — so **Review → Electrode coordinates…** takes
+coregistered to the planning MRI — so **File → Electrode coordinates…** takes
 that file, in whatever shape the planning system exported it, tells you how
 many contacts it would place before anything moves, and then stops calling the
 view a montage diagram.

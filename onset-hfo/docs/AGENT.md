@@ -140,6 +140,19 @@ python -m onset_agent.cli --results artifacts/results/sub-pt01_ictal_run-01 \
 ### Letting it choose the model
 
 On a Linux desktop the installer does all of this once:
+**From inside the window.** The reviewer's Assistant page carries a *Local
+model on this machine* box (`onset_review/modelsetup.py`). It probes the
+machine and runs the same `choose(route="ollama")` as the CLI, asks the
+server what it holds, and offers one button: *Download and use* streams
+`/api/pull` with a progress bar on a worker thread, writes the assistant
+defaults, and switches the panel to the model; *Use this model* when the tag
+is already there; and when nothing answers on Ollama's port it gives the
+download address and the two commands, with *Check again* for afterwards.
+`tests/test_model_setup.py` drives it against the stand-in server: the pull
+goes to the server once, the defaults file names the chooser's tag, and the
+panel switches. The one thing it does not do is install Ollama, for the same
+reason the CLI does not.
+
 `./packaging/install-ubuntu.sh --with-assistant` installs Ollama, sets its
 context window, runs the same chooser, pulls the model and records the choice so
 the reviewer's assistant panel opens on it. See [`INSTALL.md`](INSTALL.md).

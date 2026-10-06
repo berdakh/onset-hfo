@@ -90,6 +90,11 @@ def build_parser() -> argparse.ArgumentParser:
                         help="where cached slices live (default artifacts/data)")
     parser.add_argument("--allow-fetch", action="store_true",
                         help="permit downloading a window that is not cached")
+    parser.add_argument("--layout", choices=["pages", "docks"], default="pages",
+                        help="'pages' (default) is a sidebar of pages, the shape of "
+                             "the results site; 'docks' is every panel docked on "
+                             "the trace with three task layouts. The View menu "
+                             "switches between them.")
     parser.add_argument("--theme", choices=["auto", "light", "dark"],
                         default="auto",
                         help="follow the desktop's setting, or force one")
@@ -261,6 +266,13 @@ def main(argv: list[str] | None = None) -> int:
         overlay = False
     elif args.subject or args.open_path is not None:
         request, overlay = _request_from(args), args.expert
+    elif args.layout == "pages":
+        # The window first, the data from inside it. The docked arrangement
+        # cannot do this: its window *is* the trace, so it needs a recording
+        # before it can exist, and keeps the dialog.
+        review = _Review(app, None, False, args)
+        review.start()
+        return app.exec_() if hasattr(app, "exec_") else app.exec()
     else:
         request, overlay = launcher.choose_request(args.cache_dir)
         if request is None:
@@ -327,12 +339,59 @@ class _Review:
         self.overlay = overlay
         self.args = args
         self.parts = None
+        self.mode = getattr(args, "layout", "pages") or "pages"
+        #: The window with nothing open, while it is showing.
+        self.start_window = None
+
+    def start(self) -> None:
+        """Open on Home with nothing loaded; everything else comes from there."""
+        from onset_review import window
+
+        self.start_window = window.decorate_start(
+            cached=self.cached_windows, on_open_cached=self.open_cached,
+            on_import=self.import_file, on_choose=self.choose_window)
+        if window.fit_to_screen(self.start_window):
+            self.start_window.showMaximized()
+        else:
+            self.start_window.resize(1280, 820)
+            self.start_window.show()
+
+    def _host(self):
+        """Whatever window is up, for dialogs to be parented to."""
+        if self.parts is not None:
+            return self.parts.host
+        return self.start_window
+
+    def choose_window(self) -> None:
+        """File → Open a recording…: the full dialog, then open its choice."""
+        from onset_review import launcher
+
+        request, overlay = launcher.choose_request(self.args.cache_dir,
+                                                   parent=self._host())
+        if request is None:
+            return
+        session = launcher.load_with_progress(request, self.args.cache_dir,
+                                              parent=self._host())
+        if session is None:
+            return
+        self.request, self.overlay = request, overlay
+        self.open(session)
 
     def open(self, session) -> None:
         from onset_review import window
 
         previous = self.parts
-        state = previous.host.saveState() if previous is not None else None
+        # A dock arrangement is worth carrying across a rebuild; a saved
+        # dock state means nothing to a page window and the other way round.
+        same_docks = (previous is not None and previous.pages is None
+                      and self.mode == "docks")
+        state = previous.host.saveState() if same_docks else None
+        page = (previous.pages.current_page()
+                if previous is not None and previous.pages is not None else "")
+        if previous is None and self.start_window is not None:
+            # From the start window, straight to the trace: Home was only
+            # ever the way in.
+            page = "recording"
         self._attach_read(session)
 
         figure = window.open_trace(session, show_expert=self.overlay,
@@ -344,8 +403,25 @@ class _Review:
                                      on_electrodes=self.use_coordinates,
                                      on_window=self.go_to_window,
                                      on_step_window=self.step_window,
-                                     on_trace_at=self.trace_at)
+                                     on_trace_at=self.trace_at,
+                                     mode=self.mode,
+                                     cached=self.cached_windows,
+                                     on_open_cached=self.open_cached,
+                                     on_relayout=self.relayout)
+        if page and self.parts.pages is not None:
+            # The page the reviewer was on, after a re-analysis: a filter
+            # applied from the Quality page should leave them on it.
+            self.parts.pages.show_page(page)
         maximised = False
+        if previous is not None and state is None:
+            self.parts.host.resize(previous.host.size())
+            maximised = previous.host.isMaximized()
+        if previous is None and self.start_window is not None:
+            # The same window, as far as the reviewer is concerned: the full
+            # one takes the start window's size and place before it shows.
+            self.parts.host.resize(self.start_window.size())
+            self.parts.host.move(self.start_window.pos())
+            maximised = self.start_window.isMaximized()
         if state is not None:
             # Restored after the docks exist and before the window is shown, so
             # the reviewer never sees the default arrangement flash past.
@@ -369,6 +445,9 @@ class _Review:
                 previous.figure.close()
             except Exception:
                 pass
+        if self.start_window is not None:
+            self.start_window.close()
+            self.start_window = None
         # Said out loud, because the alternative is a reviewer noticing later
         # that some of their verdicts are no longer on the screen and having
         # to guess whether the software lost them. It did not: they are in the
@@ -378,6 +457,52 @@ class _Review:
                 f"{self._orphans} of your verdicts no longer match an event "
                 f"in this analysis. They are kept, and come back if you undo "
                 f"the change.", 15000)
+
+    def relayout(self, mode: str) -> None:
+        """Rebuild the window in the other arrangement, same analysis."""
+        if mode == self.mode or self.parts is None:
+            return
+        self.mode = mode
+        self.open(self.parts.session)
+
+    def cached_windows(self):
+        """What is on disk, for the Home page's list."""
+        from onset_review.launcher import cached_windows
+
+        return cached_windows(self.args.cache_dir)
+
+    def open_cached(self, row: dict) -> None:
+        """Open another cached window from the Home page, replacing this one.
+
+        The analysis settings travel: the same detectors, band and threshold
+        as the window being left, so that two patients opened one after the
+        other were analysed the same way.
+        """
+        from onset_review import launcher
+        from onset_review.session import ReviewRequest
+
+        # With nothing open yet the defaults apply; otherwise the window being
+        # left sets them, so two patients opened in a row are analysed alike.
+        base = self.request if self.request is not None else ReviewRequest()
+        task = row.get("task")
+        request = ReviewRequest(
+            dataset=str(row.get("dataset", "ds003498")),
+            subject=str(row.get("subject", "sub-01")),
+            run=str(row.get("run", "01")),
+            task=None if task is None or str(task) in ("", "nan", "—") else str(task),
+            t_start=float(row.get("t_start", 0.0)),
+            t_stop=float(row.get("t_stop", 60.0)),
+            detectors=base.detectors, band=base.band,
+            threshold_sd=base.threshold_sd, with_spikes=base.with_spikes,
+            preprocess=base.preprocess)
+        if request == self.request:
+            return
+        session = launcher.load_with_progress(request, self.args.cache_dir,
+                                              parent=self._host())
+        if session is None:
+            return
+        self.request, self.overlay = request, False
+        self.open(session)
 
     def _attach_read(self, session) -> None:
         """Bring the reader's previous verdicts onto this analysis.
@@ -482,11 +607,11 @@ class _Review:
         from onset_review import launcher
         from onset_review.importer import choose_file
 
-        request = choose_file(self.parts.host, self.args.cache_dir)
+        request = choose_file(self._host(), self.args.cache_dir)
         if request is None:
             return
         session = launcher.load_with_progress(request, self.args.cache_dir,
-                                              parent=self.parts.host)
+                                              parent=self._host())
         if session is None:
             return
         self.request, self.overlay = request, False
@@ -551,7 +676,25 @@ def _screenshot(app, parts, path: Path) -> int:
         QThread.msleep(60)
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
+    pages = parts.pages
+    if pages is not None:
+        # One file per page beside the one asked for, which gets the
+        # Recording page: the trace is what a screenshot is for.
+        pages.show_page("recording")
+        for _ in range(4):
+            app.processEvents()
+            QThread.msleep(60)
     ok = parts.host.grab().save(str(path))
+    if pages is not None and ok:
+        for key in pages.page_keys():
+            pages.show_page(key)
+            for _ in range(4):
+                app.processEvents()
+                QThread.msleep(60)
+            extra = path.with_name(f"{path.stem}-{key}{path.suffix}")
+            if parts.host.grab().save(str(extra)):
+                print(extra)
+        pages.show_page("recording")
 
     # Close before returning. `mne-qt-browser` loads and downsamples its data on
     # a worker thread, and returning from here with that thread still running
