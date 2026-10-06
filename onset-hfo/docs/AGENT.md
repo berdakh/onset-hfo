@@ -70,7 +70,7 @@ minute" when the table says 75. So the split is:
 
 ## What it can see
 
-Eight tools, all read-only, all over one `ResultStore`
+Nine tools, all read-only, all over one `ResultStore`
 ([`onset_agent/tools.py`](../onset_agent/tools.py)):
 
 | Tool | Returns |
@@ -82,6 +82,7 @@ Eight tools, all read-only, all over one `ResultStore`
 | `get_evidence` | the strongest events on a channel, each with an `evidence_id` |
 | `detector_disagreements` | channels the two detectors rank very differently, plus event-level agreement |
 | `rate_change` | rate before versus during the marked seizure |
+| `contact_map` | where each channel sits (shaft, side, region, measured or schematic) with its rate, and how the leading channels distribute over shafts and sides. Saved beside the analysis by the desktop window; a plain pipeline run has none and the tool says so. Carries no resection, by design: the reviewer sees it as rings, the model is never told |
 | `report_section` | one section of the structured report |
 
 There is **no** tool that runs a detector, changes a parameter, writes a file,

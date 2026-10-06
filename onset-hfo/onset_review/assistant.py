@@ -87,6 +87,7 @@ SUGGESTIONS = [
     ("Which channels have the highest ripple rate?", "Highest rates"),
     ("Show me the evidence for the busiest channel", "Show evidence"),
     ("Does any channel actually stand out?", "Anything stand out?"),
+    ("Where on the head is the activity, and on how many electrodes?", "Where is it?"),
     ("Which channels should I resect?", "Ask it to overstep"),
 ]
 
@@ -133,8 +134,21 @@ class _StoreWorker(QThread):
                 detectors=tuple(request.detectors),
                 with_spikes=request.with_spikes,
                 save_to=self._directory, verbose=False)
-            self.store = ResultStore(
-                Path(self._directory) / _result_name(self._session.recording))
+            saved = Path(self._directory) / _result_name(self._session.recording)
+            # Where each channel sits, for the map query. Written beside the
+            # analysis so the assistant reads it like any other table; no
+            # resection in it (see onset_review.contactmap).
+            try:
+                from onset_review.contactmap import contacts_table
+
+                contacts = contacts_table(
+                    self._session, resection=getattr(self._session, "resection", None),
+                    electrodes=getattr(self._session, "electrodes", None))
+                if not contacts.empty:
+                    contacts.to_csv(saved / "contacts.csv", index=False)
+            except Exception:       # noqa: BLE001 - a map is a convenience, not the analysis
+                pass
+            self.store = ResultStore(saved)
             del result
         except Exception as error:
             self.error = f"{type(error).__name__}: {error}"

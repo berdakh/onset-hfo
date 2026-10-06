@@ -23,6 +23,7 @@ from __future__ import annotations
 from qtpy.QtCore import QByteArray, QEvent, Qt, Signal
 from qtpy.QtGui import QKeySequence
 from qtpy.QtWidgets import (
+    QCheckBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -50,6 +51,7 @@ PAGES = (
     ("home", "Home"),
     ("recording", "Recording"),
     ("contacts", "Contacts"),
+    ("map", "Map"),
     ("quality", "Quality"),
     ("report", "Report"),
     ("assistant", "Assistant"),
@@ -62,7 +64,7 @@ STUDY_PAGES = ("Detectors", "Outcome", "Patients", "Data", "Architecture",
                "Research")
 
 #: Desktop-only pages, marked as such in the sidebar.
-DESKTOP_ONLY = {"contacts", "quality"}
+DESKTOP_ONLY = {"contacts", "map", "quality"}
 
 #: The site's disclaimer, word for word (`app/panels.py`). A test pins the
 #: two copies to each other; it is duplicated rather than imported because the
@@ -93,6 +95,8 @@ HOW_TO_READ = (
     ("recording", "channel ranking with both detectors side by side, "
                   "disagreement highlighted, and the signal behind any event"),
     ("contacts", "where the contacts are, ranked, relative to the resection"),
+    ("map", "the same contacts flat, coloured by rate with a colour scale: the "
+            "figure a paper prints, and the one the assistant can describe"),
     ("quality", "which contacts and seconds were analysed, and what was done "
                 "to the signal first"),
     ("report", "the structured, cited report: findings, your read, data "
@@ -161,6 +165,11 @@ class PageWindow(QMainWindow):
 
         self.nav.currentItemChanged.connect(self._nav_changed)
         self.restore_layout_state(self._remembered())
+        if self._remembered_compact() is False:
+            for key in self.COMPACT_PANELS:
+                panel = self.panels.get(key)
+                if panel is not None and hasattr(panel, "set_compact"):
+                    panel.set_compact(False)
         from onset_review.studies import STUDIES
 
         keyed = [key for key, _label in PAGES] + [key for key, _, _ in STUDIES]
@@ -249,7 +258,8 @@ class PageWindow(QMainWindow):
     def _build_pages(self) -> None:
         builders = {
             "home": self._home_page, "recording": self._recording_page,
-            "contacts": self._contacts_page, "quality": self._quality_page,
+            "contacts": self._contacts_page, "map": self._map_page,
+            "quality": self._quality_page,
             "report": self._report_page, "assistant": self._assistant_page,
         }
         for key, _label in PAGES:
@@ -464,7 +474,7 @@ class PageWindow(QMainWindow):
         self.side.setTabToolTip(2, "The selected event wideband, filtered and in "
                                    "time-frequency — oscillation or filter ringing?")
         outer.addWidget(self._split("recording", Qt.Horizontal, [left, self.side],
-                                    [1100, COLUMN_WIDTH + 40], stretch=(1, 0)), 1)
+                                    [1000, COLUMN_WIDTH + 150], stretch=(1, 0)), 1)
         return page
 
     # -- the trace in a window of its own ----------------------------------
@@ -567,6 +577,50 @@ class PageWindow(QMainWindow):
                                   [1100, COLUMN_WIDTH], stretch=(1, 0)), 1)
         return page
 
+    def _map_page(self) -> QWidget:
+        page = QWidget()
+        row = QHBoxLayout(page)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(theme.SPACING)
+        column = QWidget()
+        column.setMinimumWidth(220)
+        box = QVBoxLayout(column)
+        box.setContentsMargins(0, 0, 0, 0)
+        box.setSpacing(theme.SPACING)
+        box.addWidget(theme.section_label("How to read it"))
+        box.addWidget(theme.muted(
+            "Each dot is one channel at its contacts' midpoint, coloured by the "
+            "measure chosen above; the biggest, brightest dots lead. Numbers are "
+            "ranks; a star marks a channel in the statistically tied set. Rings "
+            "say whether the surgeon removed the contact, when that is known. "
+            "The channel chosen anywhere in the window — the ranking, the event "
+            "list, the trace, the 3D view — is haloed here."))
+        box.addWidget(theme.section_label("And the assistant"))
+        box.addWidget(theme.muted(
+            "\u201cAsk the assistant where\u201d sends it the counts behind this "
+            "map: which shafts and which side the leading channels are on, and "
+            "whether the positions are measured or schematic. It is never told "
+            "what was resected."))
+        box.addWidget(theme.section_label("Measured or schematic"))
+        box.addWidget(theme.muted(
+            "With no coordinate file the layout is schematic: shafts in name "
+            "order, contacts in number order, placed where the structure the "
+            "name claims would be. Enough to see which shafts are active and "
+            "their order; not anatomy. Place the contacts from a file on the "
+            "Contacts page and this map becomes this patient's head."))
+        box.addStretch(1)
+        row.addWidget(self._split("map", Qt.Horizontal,
+                                  [self.panels["map"], column],
+                                  [1100, COLUMN_WIDTH], stretch=(1, 0)), 1)
+        self.panels["map"].askRequested.connect(self._ask_about_map)
+        return page
+
+    def _ask_about_map(self, question: str) -> None:
+        """The map's button: go to the assistant and ask, so the answer lands
+        where the person can read it."""
+        self.show_page("assistant")
+        self.panels["assistant"].ask(question)
+
     def _quality_page(self) -> QWidget:
         page = QWidget()
         box = QVBoxLayout(page)
@@ -603,6 +657,13 @@ class PageWindow(QMainWindow):
         box.setSpacing(theme.SPACING)
         box.addWidget(theme.section_label("Agreement with the archive's annotators"))
         box.addWidget(self.panels["agreement"], 1)
+        self.appendix = QCheckBox("Show the appendix (every measurement)")
+        self.appendix.setObjectName("onset_report_appendix")
+        self.appendix.setChecked(False)
+        self.appendix.setToolTip("The exported file always carries the appendix; "
+                                 "this only shortens the preview")
+        self.appendix.toggled.connect(lambda _on: self.refresh_report())
+        box.addWidget(self.appendix)
         self.export_button = QPushButton("Export review…")
         self.export_button.setObjectName("onset_export")
         self.export_button.setEnabled(self._on_export is not None)
@@ -623,9 +684,11 @@ class PageWindow(QMainWindow):
         from onset_review.studypages import set_markdown
 
         reader = getattr(getattr(self.session, "read", None), "reader", "") or None
+        appendix = bool(getattr(self, "appendix", None) and self.appendix.isChecked())
         try:
             set_markdown(self.report_view,
-                         report.review_markdown(self.session, reviewer=reader))
+                         report.review_markdown(self.session, reviewer=reader,
+                                                appendix=appendix))
         except Exception as error:      # noqa: BLE001 - a preview must not kill a page
             self.report_view.setPlainText(f"The report could not be rendered: {error}")
 
@@ -666,6 +729,21 @@ class PageWindow(QMainWindow):
         return {name: bytes(splitter.saveState().data())
                 for name, (splitter, _default) in self._splitters.items()}
 
+    # -- compact tables, everywhere at once ----------------------------------
+    COMPACT_PANELS = ("findings", "events", "agreement", "quality")
+
+    def set_compact(self, on: bool) -> None:
+        """Every table to its compact form, or every column; remembered."""
+        for key in self.COMPACT_PANELS:
+            panel = self.panels.get(key)
+            if panel is not None and hasattr(panel, "set_compact"):
+                panel.set_compact(bool(on))
+        self.remember_layout()
+
+    def compact(self) -> bool:
+        panel = self.panels.get("findings")
+        return bool(getattr(panel, "compact", True))
+
     def restore_layout_state(self, state: dict | None) -> int:
         """Apply saved sizes to the splitters this window has. Returns how
         many took: a page not built in this state is simply left alone."""
@@ -699,6 +777,16 @@ class PageWindow(QMainWindow):
         except (OSError, ValueError, TypeError):
             return {}
 
+    def _remembered_compact(self):
+        import json
+
+        try:
+            payload = json.loads(self._layout_file().read_text(encoding="utf-8"))
+            value = payload.get("compact")
+            return None if value is None else bool(value)
+        except (OSError, ValueError, TypeError):
+            return None
+
     def remember_layout(self) -> None:
         """Write the splitter sizes beside the assistant's defaults, so the
         next launch opens the way this one was left."""
@@ -708,7 +796,7 @@ class PageWindow(QMainWindow):
         try:
             path = self._layout_file()
             path.parent.mkdir(parents=True, exist_ok=True)
-            payload = {"schema": 1, "splitters": {
+            payload = {"schema": 1, "compact": self.compact(), "splitters": {
                 k: base64.b64encode(v).decode("ascii") for k, v in self.layout_state().items()}}
             path.write_text(json.dumps(payload, indent=1) + "\n", encoding="utf-8")
         except OSError:

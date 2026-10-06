@@ -41,6 +41,7 @@ from onset_review.brainview import BrainPanel
 from onset_review.controls import AMPLITUDE_STEP, TraceControls
 from onset_review.dataquality import QualityPanel
 from onset_review.eventview import EventDetailPanel
+from onset_review.mapview import ContactMapPanel
 from onset_review.panels import (
     AgreementPanel,
     EventsPanel,
@@ -99,7 +100,7 @@ DEFAULT_SCALING = 50e-6
 #: layout.
 LAYOUTS = {
     "Screening": ("Look for the activity",
-                  ("trends", "controls", "findings", "events", "brain"),
+                  ("trends", "controls", "findings", "events", "brain", "map"),
                   "brain"),
     "Reading": ("Judge it event by event",
                 ("controls", "findings", "events", "detail", "assistant"),
@@ -458,6 +459,8 @@ def build_panels(figure, session: ReviewSession) -> dict:
         "patient": PatientPanel(session),
         "brain": BrainPanel(session, resection=session.resection,
                             electrodes=session.electrodes),
+        "map": ContactMapPanel(session, resection=session.resection,
+                               electrodes=session.electrodes),
         "detail": EventDetailPanel(session),
         "assistant": AssistantPanel(session),
         "preprocess": PreprocessPanel(session),
@@ -557,6 +560,8 @@ def decorate(figure, session: ReviewSession, show_expert: bool = False,
                "Who this recording belongs to, as far as the archive says")
     brain = dock("brain", "Contacts", Qt.RightDockWidgetArea, panels["brain"],
                  "Where the contacts are, ranked and relative to the resection")
+    chart = dock("map", "Map", Qt.RightDockWidgetArea, panels["map"],
+                 "The contacts flat, coloured by rate, with a colour scale")
     accord = dock("agreement", "Agreement", Qt.RightDockWidgetArea,
                   panels["agreement"],
                   "This detector against the archive's own annotators")
@@ -580,6 +585,7 @@ def decorate(figure, session: ReviewSession, show_expert: bool = False,
                "analysed, which were only flagged, and why")
     host.tabifyDockWidget(close_up, who)
     host.tabifyDockWidget(who, brain)
+    host.tabifyDockWidget(brain, chart)
     host.tabifyDockWidget(brain, accord)
     host.tabifyDockWidget(accord, prov)
     host.tabifyDockWidget(prov, prep)
@@ -787,6 +793,13 @@ def _wire(figure, host, panels: dict, session: ReviewSession,
     panels["findings"].channelPicked.connect(lambda channel: select(channel))
     panels["agreement"].channelPicked.connect(lambda channel: select(channel))
     panels["brain"].channelPicked.connect(lambda channel: select(channel))
+    panels["map"].channelPicked.connect(lambda channel: select(channel))
+    # The map haloes whatever is chosen anywhere, so an event under judgement
+    # can be found on the head without leaving the page it is judged on.
+    panels["findings"].channelPicked.connect(panels["map"].highlight)
+    panels["brain"].channelPicked.connect(panels["map"].highlight)
+    panels["events"].eventPicked.connect(lambda _t, channel: panels["map"].highlight(channel))
+    panels["trends"].cellPicked.connect(lambda _t, channel: panels["map"].highlight(channel))
     # A citation names a time in the archive's seconds, which is what a report
     # quotes; the panels count from the start of the analysed span, so that
     # comes off here.
@@ -1067,7 +1080,7 @@ def _menus(figure, host: QMainWindow, panels: dict, docks: dict,
         lambda on: (setattr(display, "expert", bool(on)), parts.refresh_marks()))
 
     view.addSeparator()
-    _window_actions(view, host, docks, defaults)
+    _window_actions(view, host, docks, defaults, panels)
 
     navigate = menubar.addMenu("&Navigate")
     navigate.addAction("&Next event", lambda: panels["events"].step(+1))
@@ -1257,7 +1270,7 @@ def _window_note(host: QMainWindow, session: ReviewSession) -> None:
 
 
 def _window_actions(view, host: QMainWindow, docks: dict,
-                    defaults: dict) -> None:
+                    defaults: dict, panels: dict | None = None) -> None:
     """Fit, maximise and full screen, in the View menu.
 
     The window manager's own buttons are the usual way to do this, and they
@@ -1293,6 +1306,28 @@ def _window_actions(view, host: QMainWindow, docks: dict,
         restore = view.addAction("&Restore the default layout")
         restore.setToolTip("Every region back to its opening size, on every page")
         restore.triggered.connect(lambda _=False: host.reset_layout())
+
+    # Compact tables: the form a reader wants first, every column behind it.
+    # One tick for all four tables; each panel also has its own.
+    compact_action = view.addAction("&Compact tables")
+    compact_action.setCheckable(True)
+    compact_action.setChecked(True)
+    compact_action.setToolTip("Rank, channel, rate and the annotators' count in the "
+                              "ranking; six columns in the event list; bars rather "
+                              "than a table for the agreement; a strip of chips for "
+                              "data quality. Untick for every measurement.")
+    panels_for_compact = panels if panels is not None else getattr(host, "panels", None)
+
+    def set_compact(on: bool) -> None:
+        if hasattr(host, "set_compact"):
+            host.set_compact(bool(on))
+            return
+        for panel in (panels_for_compact or {}).values():
+            if hasattr(panel, "set_compact"):
+                panel.set_compact(bool(on))
+
+    compact_action.triggered.connect(lambda on: set_compact(bool(on)))
+    view.compact_action = compact_action        # type: ignore[attr-defined]
 
     shrink = view.addAction("&Fit the window to this screen")
     shrink.setShortcut("Ctrl+0")
@@ -1445,10 +1480,11 @@ def _load_coordinates(host: QMainWindow, session: ReviewSession, panels: dict,
     if answer != QMessageBox.Yes:
         return
     session.electrodes = read.frame
-    panels["brain"].set_electrodes(
-        read.frame,
-        origin=f"the coordinate file you supplied ({read.path.name}), read as "
-               f"{read.units}")
+    for key in ("brain", "map"):
+        panels[key].set_electrodes(
+            read.frame,
+            origin=f"the coordinate file you supplied ({read.path.name}), read as "
+                   f"{read.units}")
     if on_electrodes is not None:
         # So that a later re-analysis keeps them: a filter change does not
         # move an electrode.

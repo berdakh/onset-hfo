@@ -131,6 +131,9 @@ class AgentAnswer:
 # --------------------------------------------------------------------------
 
 _SEIZURE = re.compile(r"seizure|ictal|before|during|change over time", re.IGNORECASE)
+_WHERE = re.compile(r"\bwhere\b|\bside\b|\bleft\b|\bright\b|hemisphere|\bshaft|electrode|"
+                    r"region|lobe|\bmap\b|spatial|neighbou?r|adjacen|spread|cluster|"
+                    r"location|locali[sz]", re.IGNORECASE)
 _SECTIONS = (
     ("limitations", re.compile(r"limitation|caveat|weakness|trust|reliab", re.IGNORECASE)),
     ("methods", re.compile(r"\bmethod|how (?:did|do|does) (?:you|it|the)|algorithm|threshold",
@@ -175,6 +178,8 @@ def briefing_extras(store: ResultStore, question: str,
         calls.append(("channel_summary", {"channel": channel}))
     if _SEIZURE.search(question):
         calls.append(("rate_change", {}))
+    if _WHERE.search(question):
+        calls.append(("contact_map", {}))
     for section, pattern in _SECTIONS:
         if pattern.search(question):
             calls.append(("report_section", {"section": section}))
@@ -277,6 +282,10 @@ def digest(tool: str, payload) -> str:
                     f"{payload.get('duration_s')} s at {payload.get('sampling_rate_hz')} Hz, "
                     f"{payload.get('channels_analysed')} channels analysed, "
                     f"band {payload.get('band_hz')} Hz")
+        if tool == "contact_map":
+            if not payload.get("available"):
+                return str(payload.get("note") or "no positions")
+            return f"{payload.get('positions')} positions; {payload.get('summary')}"
         if tool == "rate_change":
             if not payload.get("available"):
                 return "no clinician-marked seizure in the analysed window"

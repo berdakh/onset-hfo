@@ -78,6 +78,8 @@ def what_i_can_do(subject: str, tool_names: list[str] | None = None) -> str:
         "• the evidence behind a channel: the detected windows, each a link to the "
         "signal;\n"
         "• everything known about one channel, by name;\n"
+        "• where the activity sits: which electrode shafts and which side the leading "
+        "channels are on, and whether the positions are measured or schematic;\n"
         "• where the two detectors disagree, and how well they agree event by event;\n"
         "• the rate before versus during a marked seizure, when the window holds one;\n"
         "• what was analysed: the window, the sampling rate, the band, the channels "

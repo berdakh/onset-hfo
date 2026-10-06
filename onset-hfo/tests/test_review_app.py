@@ -69,7 +69,7 @@ def test_mne_figure_can_still_host_our_docks(built):
 
 def test_every_panel_is_docked(built):
     assert set(built.docks) == {"trends", "controls", "findings", "events",
-                                "detail", "brain", "agreement", "provenance",
+                                "detail", "brain", "map", "agreement", "provenance",
                                 "assistant", "preprocess", "patient", "quality"}
     assert all(dock.widget() is not None for dock in built.docks.values())
 
@@ -707,6 +707,7 @@ def test_clicking_a_header_actually_sorts(built):
     `QAbstractItemModel.sort`, whose base implementation does nothing. Every
     header in this window was a control that moved and changed nothing."""
     events = built.panels["events"]
+    events.set_compact(False)           # amplitude is one of the columns behind the tick
     column = events.model.column_index("amplitude_uv")
     try:
         events.view.sortByColumn(column, Qt.DescendingOrder)
@@ -717,6 +718,7 @@ def test_clicking_a_header_actually_sorts(built):
     finally:
         events.view.sortByColumn(events.model.column_index("t_local"),
                                  Qt.AscendingOrder)
+        events.set_compact(True)
 
 
 def test_a_verdict_follows_the_row_it_was_given_on_after_a_sort(judging, review):
@@ -724,6 +726,7 @@ def test_a_verdict_follows_the_row_it_was_given_on_after_a_sort(judging, review)
     an event through a frame held beside the model, sorting one and not the
     other would file the verdict against a different event."""
     events = judging.panels["events"]
+    events.set_compact(False)           # amplitude is behind the tick
     try:
         events.view.sortByColumn(events.model.column_index("amplitude_uv"),
                                  Qt.DescendingOrder)
@@ -738,6 +741,7 @@ def test_a_verdict_follows_the_row_it_was_given_on_after_a_sort(judging, review)
     finally:
         events.view.sortByColumn(events.model.column_index("t_local"),
                                  Qt.AscendingOrder)
+        events.set_compact(True)
 
 
 def test_the_sort_arrow_points_at_the_order_the_rows_are_in(built):
@@ -2504,3 +2508,182 @@ def test_the_view_menu_restores_the_page_layout(paged):
     paged.pages.splitter("main").setSizes([300, 1000])
     actions["Restore the default layout"].trigger()
     assert paged.pages.splitter("main").sizes()[0] != 300 or True
+
+
+# -- the Map page ------------------------------------------------------------
+
+
+def test_the_map_haloes_what_is_chosen_anywhere_and_picks_back(built, review):
+    """The flat map follows the ranking, the event list, the trend and the
+    3D view, and a click on it selects the channel for all of them."""
+    chart = built.panels["map"]
+    first = str(review.findings.iloc[0]["channel"])
+    second = str(review.findings.iloc[1]["channel"])
+    built.panels["findings"].channelPicked.emit(first)
+    assert chart._highlighted == first and first in chart.headline.text()
+    assert "rank 1" in chart.headline.text()
+    built.panels["events"].eventPicked.emit(1.0, second)
+    assert chart._highlighted == second
+    picked = []
+    chart.channelPicked.connect(picked.append)
+
+    class Pick:
+        artist = chart._points
+        ind = [0]
+
+    chart._picked(Pick())
+    assert picked == [str(chart.frame.iloc[0]["channel"])]
+    assert chart._highlighted == picked[0]
+
+
+def test_the_map_colours_by_every_measure_in_every_view_and_saves_a_figure(built, tmp_path):
+    chart = built.panels["map"]
+    for i in range(chart.measure.count()):
+        chart.measure.setCurrentIndex(i)
+        assert chart._points is not None and chart._colorbar is not None
+    for i in range(chart.view.count()):
+        chart.view.setCurrentIndex(i)
+        assert chart.view.currentData() in chart.axes.get_title(loc="left")
+    assert "schematic" in chart.axes.get_title(loc="left"), "no coordinates: the title says so"
+    assert "DIAGRAM" in chart.caption.text() or "SCHEMATIC" in chart.caption.text()
+    out = chart.save_png(tmp_path / "map.png")
+    assert out is not None and out.exists() and out.stat().st_size > 10_000
+
+
+def test_the_map_page_is_in_the_sidebar_and_its_button_asks_the_assistant(paged, qapp):
+    from onset_review.mapview import WHERE_QUESTION
+
+    host = paged.host
+    assert "map" in host.page_keys()
+    host.show_page("map")
+    asked = []
+    paged.panels["assistant"].ask = lambda q: asked.append(q)
+    paged.panels["map"].ask.click()
+    qapp.processEvents()
+    assert asked == [WHERE_QUESTION]
+    assert host.stack.currentWidget().objectName() == "page_assistant"
+
+
+def test_the_assistant_reads_where_the_activity_is_from_the_map(qapp, review):
+    """The table saved beside the analysis carries the positions and never the
+    resection; the scripted policy answers a "where" question from it."""
+    from onset_review.assistant import AssistantPanel
+
+    panel = AssistantPanel(review)
+    try:
+        assert panel._ensure_store()
+        store = panel._store
+        assert (store.dir / "contacts.csv").exists()
+        assert "zone" not in store.contacts.columns
+        where = store.contact_map()
+        assert where["available"] and where["n_channels"] == len(review.findings)
+        assert "resect" not in str(where).lower()
+        panel.ask("Where on the head is the activity, and on how many electrodes?")
+        text = panel.transcript.toPlainText()
+        assert "of the top 5 channels on shaft" in text
+        assert "contact_map" in text
+    finally:
+        panel.deleteLater()
+
+
+
+# -- compact first, every column behind a tick ---------------------------------
+
+
+def test_the_ranking_opens_compact_and_every_column_is_one_tick_away(built):
+    from onset_review import compact
+
+    findings = built.panels["findings"]
+    assert findings.compact
+    shown = list(findings.model.frame.columns)
+    assert shown == [c for c in compact.COMPACT_COLUMNS["findings"] if c in shown]
+    assert "rate" in shown and "mean_prominence_db" not in shown
+    cell = findings.model.row_value(0, "rate")
+    assert "(" in cell and "–" in cell, cell       # "52 (39–67)"
+    findings.view.selectRow(2)
+    kept = findings.selected_channel()
+    findings.all_columns.setChecked(True)
+    assert not findings.compact
+    assert "mean_prominence_db" in findings.model.frame.columns
+    assert findings.selected_channel() == kept, "the selection survives the switch"
+    findings.set_compact(True)
+    assert not findings.all_columns.isChecked()
+
+
+def test_the_event_list_keeps_its_keys_in_the_compact_form(judging):
+    events = judging.panels["events"]
+    assert events.compact and events.model.column_index("key") >= 0
+    assert events.view.isColumnHidden(events.model.column_index("key"))
+    assert events.model.column_index("amplitude_uv") < 0
+    events.view.selectRow(0)
+    key = events.selected_key()
+    assert key and events.judge("agree") == key
+    moved_to = events.selected_key()        # a verdict advances to the next row
+    events.set_compact(False)
+    assert events.model.column_index("amplitude_uv") >= 0
+    assert events.selected_key() == moved_to, "the selection survives the switch"
+    events.set_compact(True)
+    assert events.selected_key() == moved_to
+
+
+def test_the_agreement_panel_draws_bars_and_hides_its_table(built, review):
+    from onset_review import trends
+
+    accord = built.panels["agreement"]
+    assert accord.compact and not accord.view.isVisibleTo(accord)
+    if trends.agreement_summary(review).get("available"):
+        assert accord._bars and accord._bars[0]["expert"] >= accord._bars[-1]["expert"]
+    else:
+        assert accord._bars == [], "no annotators on the synthetic window: no bars"
+    accord.show_table.setChecked(True)
+    assert accord.view.isVisibleTo(accord) and not accord.compact
+    accord.set_compact(True)
+    assert not accord.show_table.isChecked()
+
+
+def test_the_quality_panel_is_a_strip_of_chips_first(built):
+    quality = built.panels["quality"]
+    chips = quality.chips()
+    assert chips and len(chips) == quality.table.rowCount()
+    assert "chip" in quality.legend.text() and "Click one" in quality.legend.text()
+    assert all(chip["channel"] in quality.strip.text() for chip in chips)
+    assert not quality.explain.isChecked()
+    assert all(not label.isVisibleTo(quality) for label in quality._explanations)
+    # Nothing set aside or flagged in the synthetic window: the table waits.
+    assert quality.compact == (not quality._something_to_act_on())
+    quality._chip_clicked(chips[-1]["channel"])
+    assert quality.selected_channel() == chips[-1]["channel"]
+    quality.show_table.setChecked(True)
+    assert quality.table.isVisibleTo(quality)
+
+
+def test_the_view_menu_sets_every_table_compact_or_not(built):
+    from qtpy.QtWidgets import QMenu
+
+    action = None
+    for menu in built.host.menuBar().findChildren(QMenu):
+        action = getattr(menu, "compact_action", None) or action
+    assert action is not None and action.isChecked()
+    action.trigger()        # unticks
+    for key in ("findings", "events", "agreement", "quality"):
+        assert not built.panels[key].compact, key
+    action.trigger()
+    for key in ("findings", "events", "agreement", "quality"):
+        assert built.panels[key].compact, key
+
+
+def test_the_report_preview_is_short_and_the_export_is_complete(paged, tmp_path, review):
+    from onset_review import report
+
+    host = paged.host
+    host.show_page("report")
+    host.refresh_report()
+    preview = host.report_view.toPlainText()
+    assert "Appendix" not in preview and "52 (39" in preview or "(" in preview
+    host.appendix.setChecked(True)
+    assert "Appendix" in host.report_view.toPlainText()
+    written = report.write_review(review, tmp_path / "review.md")
+    text = written.read_text()
+    assert "## Appendix — every measurement" in text
+    assert "| rank | channel | n events | rate | annotators |" in text
+    assert "mean prominence db" in text, "every measurement is in the appendix"

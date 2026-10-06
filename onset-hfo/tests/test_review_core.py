@@ -817,3 +817,94 @@ def test_every_cli_command_this_project_tells_people_to_run_exists():
     assert not unknown, (
         "these are told to users but are not commands: "
         + "; ".join(f"{c} (in {', '.join(w)})" for c, w in unknown.items()))
+
+
+# -- the flat contact map (Qt-free) ------------------------------------------
+
+
+def test_the_map_frame_carries_a_value_for_every_measure(review):
+    from onset_review import contactmap
+
+    primary = contactmap.map_frame(review)
+    assert not primary.empty and "value" in primary.columns
+    assert (primary["value"] == primary["rate_per_min"]).all()
+    rank = contactmap.map_frame(review, measure="rank")
+    assert (rank["value"] == rank["rank"]).all()
+    # A detector counted from the window's own events, per minute.
+    minutes = (float(review.span[1]) - float(review.span[0])) / 60.0
+    rms = contactmap.map_frame(review, measure="rms")
+    counted = {}
+    for event in review.events:
+        if event.accepted and event.detector == "rms":
+            counted[event.channel] = counted.get(event.channel, 0) + 1
+    for row in rms.itertuples():
+        assert row.value == pytest.approx(counted.get(row.channel, 0) / minutes)
+    assert (contactmap.map_frame(review, measure="expert")["value"] >= 0).all()
+
+
+def test_every_view_projects_and_mirrors_as_seen_from_that_side(review):
+    from onset_review import contactmap
+
+    frame = contactmap.map_frame(review)
+    for view in contactmap.VIEWS:
+        h, v = contactmap.project(frame, view)
+        assert h.shape == v.shape == (len(frame),)
+    right_h, _ = contactmap.project(frame, "Right")
+    left_h, _ = contactmap.project(frame, "Left")
+    assert np.allclose(left_h, -right_h), "left is right mirrored"
+    top_h, top_v = contactmap.project(frame, "Top")
+    assert np.allclose(top_h, frame["x"]) and np.allclose(top_v, frame["y"])
+
+
+def test_the_head_outline_is_a_closed_convex_curve_round_the_contacts(review):
+    from onset_review import contactmap
+
+    frame = contactmap.map_frame(review)
+    for view in contactmap.VIEWS:
+        h, v = contactmap.head_outline(view)
+        assert h[0] == h[-1] and v[0] == v[-1], "closed"
+        assert len(h) > 8
+        # Convex: every turn goes the same way.
+        dx, dy = np.diff(h), np.diff(v)
+        cross = dx[:-1] * dy[1:] - dy[:-1] * dx[1:]
+        assert (cross >= -1e-12).all() or (cross <= 1e-12).all()
+        ph, pv = contactmap.project(frame, view)
+        assert ph.min() > h.min() - 0.05 and ph.max() < h.max() + 0.05
+
+
+def test_the_assistants_contact_table_never_carries_the_resection(review):
+    """The reviewer sees the resection as rings; the model is never told what
+    the surgeon removed, so nothing it says can read as an opinion on it."""
+    from onset_review import contactmap
+
+    table = contactmap.contacts_table(review)
+    assert list(table.columns) == contactmap.CONTACT_COLUMNS
+    assert "zone" not in table.columns and "resect" not in " ".join(table.columns)
+    assert set(table["hemisphere"]) <= {"left", "right", "unknown"}
+    assert len(table) == len(review.findings)
+
+
+def test_where_summary_counts_the_leaders_per_shaft_and_says_nothing_it_does_not_know():
+    import pandas as pd
+
+    from onset_review import contactmap
+
+    rows = [
+        ("AR1-AR2", "AR", "right", "amygdala", 1), ("AR2-AR3", "AR", "right", "amygdala", 2),
+        ("PHR1-PHR2", "PHR", "right", "parahippocampal", 3), ("AR3-AR4", "AR", "right", "amygdala", 4),
+        ("HL1-HL2", "HL", "left", "hippocampus", 5), ("HL2-HL3", "HL", "left", "hippocampus", 6),
+    ]
+    frame = pd.DataFrame([{"channel": c, "shaft": s, "hemisphere": h, "region": r, "rank": k,
+                           "rate_per_min": 10.0 - k, "n_events": 10 - k, "source": "archive",
+                           "x": 0.0, "y": 0.0, "z": 0.0} for c, s, h, r, k in rows])
+    out = contactmap.where_summary(frame, top=5)
+    assert out["positions"] == "measured" and out["n_shafts"] == 3
+    assert out["shafts"][0] == {"shaft": "AR", "side": "right", "region": "amygdala",
+                                "n_of_top": 3, "channels": ["AR1-AR2", "AR2-AR3", "AR3-AR4"]}
+    assert out["summary"].startswith("3 of the top 5 channels on shaft AR (right, amygdala)")
+    # Unknown side and an unmapped region are left unsaid, not said as "unknown".
+    frame["hemisphere"], frame["region"], frame["source"] = "unknown", "unmapped", "inferred"
+    out = contactmap.where_summary(frame, top=5)
+    assert "unknown" not in out["summary"] and "unmapped" not in out["summary"]
+    assert out["positions"].startswith("schematic")
+    assert out["summary"].startswith("3 of the top 5 channels on shaft AR;")

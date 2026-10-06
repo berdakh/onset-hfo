@@ -97,6 +97,15 @@ whatever your window manager does with title bars. On a short screen a panel
 scrolls rather than the window overflowing; the 3D view in particular is worth
 more height than a laptop's tab stack has, which is why it is floatable.
 
+**Compact first, everything one tick away.** Every table opens in the form a
+reader scans — the ranking as rank, channel, rate with its interval, and what
+the annotators marked; the event list as six columns; the agreement as two
+bars per channel; data quality as a strip of chips — and each has a tick
+(*All columns*, *Show the table*, *Show the measurements*) that turns the
+whole thing on. **View → Compact tables** flips all of them at once, and the
+choice is remembered. The exported report is built the same way: the short
+tables in the body, every measurement in an appendix.
+
 ### Trend — read this first
 
 One row per channel, one column per five seconds, brightness for how many
@@ -166,6 +175,12 @@ barcode.
 
 Sorted by events per minute, busiest first. The columns that matter:
 
+Four columns to start with: the rank, the channel, the rate with its 95 %
+interval in one cell (*52 (39–67)*), and what the annotators marked on that
+channel, or *not reviewed* where they never looked, which is a different
+thing from zero. *All columns* adds the counts, the intervals as numbers,
+mean frequency, duration, prominence and spike co-occurrence.
+
 | column | what it means |
 |---|---|
 | **Rate /min** | events per minute on that channel |
@@ -192,6 +207,11 @@ Time-ordered. Click a row and the trace centres on it; **Navigate → Next
 event** walks the window. The filters answer the three questions people
 actually ask of this list: one band, one channel, or only the events riding an
 interictal discharge.
+
+Six columns by default — your read, the time, the channel, the kind, the
+peak frequency and the duration — which is what you walk with the arrow
+keys. *All columns* adds amplitude, prominence, the number of peaks, the
+discharge flag and the reason a rejected candidate was rejected.
 
 **Show rejected** displays the candidates the artifact filter removed, with the
 reason — useful when you can see something on the trace and want to know why it
@@ -427,6 +447,12 @@ This dataset's annotators marked HFOs channel by channel, so on these
 recordings you can see exactly where the detector agrees with them and where it
 does not, on the minute in front of you.
 
+It opens as two bars per reviewed channel — grey for what the annotators
+marked, blue for what the detector marked, the darker blue for the events
+both marked — because that is the comparison, and a glance at twenty pairs
+of bars says it where eight columns take a minute. *Show the table* gives the
+counts, sensitivity and precision per channel.
+
 **The two "only" columns are what to look at.** *Only ours* is where the
 detector marked something nobody did; *only theirs* is what it missed. Open a
 few of each on the trace. That is the half-hour that teaches you what this kind
@@ -434,6 +460,38 @@ of detector is and is not for, and no summary statistic substitutes for it.
 
 The percentages on a single minute of one patient are far too noisy to be the
 detector's accuracy. Section 5 has the cohort numbers.
+
+### Map — the contacts flat, with a colour scale
+
+![The map](images/onset-review-map.png)
+
+The figure a paper prints: every channel a dot at its contacts' midpoint,
+coloured by the measure chosen above (the ranking detector's rate, either
+detector's, discharges, the archive annotators' markings, or rank), the
+biggest and brightest leading, the first eight numbered by rank, a star on
+the statistically tied set, and a ring on each contact the surgeon removed
+when that is known. Five views: top, left, right, front, back. **Save as
+PNG** writes it at print resolution.
+
+The channel chosen anywhere — the ranking, the event list, a click in the
+trend or on the trace, the 3D view — is haloed and named here, with its rank,
+rate, shaft and side, so an event under judgement can be found on the head
+without leaving the page it is judged on.
+
+**Measured or schematic, and it says which.** With a coordinate file (the
+dataset's `electrodes.tsv`, or one you place from the Contacts page) the map
+is this patient's head. Without one the layout is schematic — shafts in name
+order, contacts in number order, placed where the structure the name claims
+would be — and the title and the caption say so. It is enough to see which
+shafts are active and their order along the shaft; it is not anatomy, and
+no rendered cortex is drawn under it, because these archives ship no MRI and
+a surface nobody measured would be a picture of nothing.
+
+**Ask the assistant where** sends the assistant the counts behind the map:
+how the leading channels distribute over shafts and sides, and whether the
+positions are measured. It answers in those counts (*3 of the top 5 channels
+on shaft AR (right, amygdala); 2 on PHR (right)*). It is never told what was
+resected: the rings are for you.
 
 ### Assistant — ask about this window
 
@@ -537,6 +595,13 @@ evidence. The panels you have dragged into place stay where you put them.
 ### Data quality — which contacts and which seconds were analysed
 
 *(The tab is labelled **Quality**.)*
+
+The contacts are a strip of chips, the ones to look at first: red for set
+aside, amber for analysed but flagged, blue for one you reinstated, green
+for analysed. Hover for the reason, click to select the contact. The
+measurement table opens on its own when a contact was set aside or flagged;
+otherwise it is behind *Show the measurements*, and the explanation of why
+nothing is repaired is behind its own tick.
 
 ![The data quality panel](images/onset-review-quality.png)
 
