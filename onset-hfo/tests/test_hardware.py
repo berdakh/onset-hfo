@@ -691,3 +691,60 @@ def test_ollama_host_is_honoured_in_every_spelling_ollama_accepts(value, expecte
     from onset_agent.hardware import ollama_url
 
     assert ollama_url({"OLLAMA_HOST": value}) == expected
+
+
+# -- the streamed pull -------------------------------------------------------
+
+
+class _Lines:
+    """What `urlopen` hands back for a streamed pull: iterable, closable."""
+
+    def __init__(self, lines):
+        self.lines = lines
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        return False
+
+    def __iter__(self):
+        return iter(self.lines)
+
+
+def test_a_streamed_pull_reports_each_line_and_returns_the_last_status(monkeypatch):
+    import json
+    import urllib.request
+
+    from onset_agent.hardware import ollama_pull_stream
+
+    sent = {}
+
+    def urlopen(request, timeout=0):
+        sent["body"] = json.loads(request.data)
+        sent["url"] = request.full_url
+        return _Lines([b'{"status":"pulling manifest"}\n', b"\n",
+                       b'{"status":"pulling 1a2b","completed":5,"total":10}\n',
+                       b"not json\n", b'{"status":"success"}\n'])
+
+    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    seen = []
+    status = ollama_pull_stream("qwen3:4b", "http://box:11434/",
+                                on_progress=lambda s, d, t: seen.append((s, d, t)))
+    assert status == "success"
+    assert seen == [("pulling manifest", 0, 0), ("pulling 1a2b", 5, 10),
+                    ("success", 0, 0)]
+    assert sent["body"] == {"name": "qwen3:4b", "stream": True}
+    assert sent["url"] == "http://box:11434/api/pull"
+
+
+def test_a_pull_error_line_is_raised_not_swallowed(monkeypatch):
+    import urllib.request
+
+    from onset_agent.hardware import ollama_pull_stream
+
+    monkeypatch.setattr(
+        urllib.request, "urlopen",
+        lambda request, timeout=0: _Lines([b'{"error":"pull model manifest: file does not exist"}\n']))
+    with pytest.raises(RuntimeError, match="does not exist"):
+        ollama_pull_stream("qwen9:1b", "http://box:11434")

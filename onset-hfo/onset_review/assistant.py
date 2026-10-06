@@ -30,6 +30,7 @@ model or starts a server; `packaging/install-ubuntu.sh --with-assistant` does.
 from __future__ import annotations
 
 import html
+import os
 import tempfile
 from pathlib import Path
 
@@ -243,6 +244,16 @@ class AssistantPanel(QWidget):
         box.setContentsMargins(0, 0, 0, 0)
         box.setSpacing(4)
         box.addLayout(top)
+        # Getting a model onto this machine, from here rather than from a
+        # terminal. The probe it runs is deferred to the first time the panel
+        # is shown: most windows never open this panel, and a torch import
+        # on a worker thread is still work nobody asked for.
+        from onset_review.modelsetup import ModelSetupBox
+
+        self.setup = ModelSetupBox(parent=self)
+        self.setup.modelReady.connect(self._use_served)
+        self._looked = False
+        box.addWidget(self.setup)
         box.addWidget(self.transcript)
         box.addLayout(prompts)
 
@@ -262,10 +273,29 @@ class AssistantPanel(QWidget):
             "instead. Citations are links — click one to take the trace there."
             "<br><br>Pick a model above. <i>No model</i> runs the whole loop "
             "deterministically, with nothing generative in it, which is how the "
-            "guards are tested. For Qwen, run "
-            "<code>ollama pull qwen2.5:7b-instruct</code> and choose Ollama.")
+            "guards are tested. For a Qwen on this machine, use the box above: "
+            "it names the model that fits and downloads it.")
 
     # -- plumbing ----------------------------------------------------------
+    def showEvent(self, event):      # noqa: N802  (Qt's spelling)
+        super().showEvent(event)
+        if self._looked:
+            return
+        self._looked = True
+        if os.environ.get("ONSET_ASSISTANT_NO_PROBE"):
+            self.setup.idle()
+        else:
+            self.setup.look()
+
+    def _use_served(self, tag: str, base_url: str) -> None:
+        """Switch this panel to the model the setup box just made ready."""
+        index = self.backend.findData("ollama")
+        if index >= 0:
+            self.backend.setCurrentIndex(index)
+        self.model.setText(tag)
+        self._say_system(f"Using <b>{html.escape(tag)}</b> on Ollama at "
+                         f"{html.escape(base_url)}.")
+
     def _apply_defaults(self) -> None:
         """Open on whatever `assistant_config` decided, and say where it came
         from -- a preselected model with no explanation looks like a guess."""
