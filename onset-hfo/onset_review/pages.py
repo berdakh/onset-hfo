@@ -20,7 +20,7 @@ misdescribe what the software is.
 
 from __future__ import annotations
 
-from qtpy.QtCore import Qt, Signal
+from qtpy.QtCore import QEvent, Qt, Signal
 from qtpy.QtGui import QKeySequence
 from qtpy.QtWidgets import (
     QFrame,
@@ -110,12 +110,16 @@ class PageWindow(QMainWindow):
     #: The key of the page just shown.
     pageChanged = Signal(str)
 
-    def __init__(self, figure, panels: dict, session, *, cached=None,
-                 on_open_cached=None, on_import=None, on_place_contacts=None,
-                 on_export=None, parent=None):
+    def __init__(self, figure=None, panels: dict | None = None, session=None, *,
+                 cached=None, on_open_cached=None, on_import=None,
+                 on_place_contacts=None, on_export=None, parent=None):
+        """With a session, the whole window. Without one, the start state:
+        the same sidebar and Home page, the other pages disabled until a
+        recording is opened from Home or from the File menu. The application
+        opens on this and loads the data from inside it."""
         super().__init__(parent)
         self.figure = figure
-        self.panels = panels
+        self.panels = panels or {}
         self.session = session
         self._cached = cached
         self._on_open_cached = on_open_cached
@@ -164,11 +168,18 @@ class PageWindow(QMainWindow):
         self.show_page("home")
 
     # -- the sidebar ------------------------------------------------------
+    @property
+    def loaded(self) -> bool:
+        return self.session is not None
+
     def _build_sidebar(self) -> None:
-        request = self.session.request
-        self.where = QLabel(f"<b>{request.subject}</b><br>"
-                            f"{request.t_start:g}–{request.t_stop:g} s · "
-                            f"{request.band_label()}")
+        if self.loaded:
+            request = self.session.request
+            self.where = QLabel(f"<b>{request.subject}</b><br>"
+                                f"{request.t_start:g}–{request.t_stop:g} s · "
+                                f"{request.band_label()}")
+        else:
+            self.where = QLabel("No recording open")
         self.where.setObjectName("onset_where")
         self.where.setWordWrap(True)
         self.reader = QLabel("No reader named")
@@ -192,8 +203,12 @@ class PageWindow(QMainWindow):
             item.setData(Qt.UserRole, key)
             item.setToolTip("Only on the desktop: needs a running analysis"
                             if key in DESKTOP_ONLY else "")
+            if key != "home" and not self.loaded:
+                item.setFlags(Qt.NoItemFlags)
+                item.setToolTip("Open a recording first: Home, or File → Open")
             self.nav.addItem(item)
-            self._items[key] = item
+            if key == "home" or self.loaded:
+                self._items[key] = item
         heading("The study")
         for label in STUDY_PAGES:
             item = QListWidgetItem(label)
@@ -232,6 +247,8 @@ class PageWindow(QMainWindow):
             "report": self._report_page, "assistant": self._assistant_page,
         }
         for key, _label in PAGES:
+            if key != "home" and not self.loaded:
+                continue
             page = builders[key]()
             page.setObjectName(f"page_{key}")
             self._pages[key] = page
@@ -248,22 +265,33 @@ class PageWindow(QMainWindow):
             label.setWordWrap(True)
             box.addWidget(label)
 
-        summary = self.session.summary()
-        numbers = QHBoxLayout()
-        numbers.setSpacing(theme.SPACING)
-        for value, caption in (
-            (summary.get("n_channels", len(self.session.findings)), "channels analysed"),
-            (len(self.session.accepted), "events accepted"),
-            (len(self.session.findings), "channels ranked"),
-            (f"{self.session.span_duration:g} s", "analysed span"),
-        ):
-            tile = QLabel(f"<div style='font-size:18pt;font-weight:700;'>{value}</div>"
-                          f"<div style='font-size:9pt;'>{caption}</div>")
-            tile.setStyleSheet(theme.card("plain"))
-            tile.setObjectName("onset_tile")
-            numbers.addWidget(tile)
-        numbers.addStretch(1)
-        box.addLayout(numbers)
+        if self.loaded:
+            summary = self.session.summary()
+            numbers = QHBoxLayout()
+            numbers.setSpacing(theme.SPACING)
+            for value, caption in (
+                (summary.get("n_channels", len(self.session.findings)),
+                 "channels analysed"),
+                (len(self.session.accepted), "events accepted"),
+                (len(self.session.findings), "channels ranked"),
+                (f"{self.session.span_duration:g} s", "analysed span"),
+            ):
+                tile = QLabel(f"<div style='font-size:18pt;font-weight:700;'>{value}</div>"
+                              f"<div style='font-size:9pt;'>{caption}</div>")
+                tile.setStyleSheet(theme.card("plain"))
+                tile.setObjectName("onset_tile")
+                numbers.addWidget(tile)
+            numbers.addStretch(1)
+            box.addLayout(numbers)
+        else:
+            opener = QLabel("<b>Nothing is open yet.</b> Pick a window below and "
+                            "press Open, or use <b>File → Open a recording…</b> to "
+                            "choose the band and the detectors as well, or "
+                            "<b>File → Open a file…</b> for a recording of your own.")
+            opener.setObjectName("onset_nothing_open")
+            opener.setWordWrap(True)
+            opener.setStyleSheet(theme.card("info"))
+            box.addWidget(opener)
 
         box.addWidget(theme.section_label("How to read the pages"))
         guide = QLabel("<ol>" + "".join(
@@ -274,6 +302,8 @@ class PageWindow(QMainWindow):
         guide.setOpenExternalLinks(False)
         guide.linkActivated.connect(
             lambda link: self.show_page(link.split(":", 1)[1]))
+        if not self.loaded:
+            guide.setToolTip("These pages open once a recording is loaded")
         box.addWidget(guide)
 
         box.addWidget(theme.section_label("Windows on this machine"))
@@ -361,15 +391,44 @@ class PageWindow(QMainWindow):
         self.trend_toggle.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.trend_toggle.setAutoRaise(True)
         self.trend_toggle.toggled.connect(self._toggle_trend)
-        box.addWidget(self.trend_toggle)
+        self.pop_button = QToolButton()
+        self.pop_button.setObjectName("onset_pop_trace")
+        self.pop_button.setText("Open the trace in a new window")
+        self.pop_button.setToolTip("Give MNE's browser a window of its own — on a "
+                                   "second monitor, or just bigger. Everything "
+                                   "here keeps driving it. Ctrl+Shift+T.")
+        self.pop_button.setAutoRaise(True)
+        self.pop_button.clicked.connect(lambda _=False: self.toggle_trace_window())
+        strip = QHBoxLayout()
+        strip.setContentsMargins(0, 0, 0, 0)
+        strip.addWidget(self.trend_toggle)
+        strip.addStretch(1)
+        strip.addWidget(self.pop_button)
+        box.addLayout(strip)
         self.panels["trends"].setMinimumHeight(100)
         self.panels["trends"].setMaximumHeight(220)
         box.addWidget(self.panels["trends"])
         box.addWidget(self.panels["controls"])
         # MNE's browser is a QMainWindow of its own; given a parent it becomes
-        # an ordinary child widget, toolbar and all.
-        self.figure.setParent(left)
-        box.addWidget(self.figure, 1)
+        # an ordinary child widget, toolbar and all. It sits in a slot of its
+        # own so that it can be lifted out into a window and put back.
+        self._trace_slot = QWidget()
+        self._trace_slot.setObjectName("onset_trace_slot")
+        slot = QVBoxLayout(self._trace_slot)
+        slot.setContentsMargins(0, 0, 0, 0)
+        slot.setSpacing(0)
+        self.trace_placeholder = QLabel(
+            "The trace is open in its own window. Close that window, or press "
+            "<b>Bring the trace back</b>, to put it back here.")
+        self.trace_placeholder.setObjectName("onset_trace_placeholder")
+        self.trace_placeholder.setWordWrap(True)
+        self.trace_placeholder.setAlignment(Qt.AlignCenter)
+        self.trace_placeholder.setStyleSheet(theme.card("info"))
+        self.trace_placeholder.setVisible(False)
+        slot.addWidget(self.trace_placeholder, 1)
+        self.figure.setParent(self._trace_slot)
+        slot.addWidget(self.figure, 1)
+        box.addWidget(self._trace_slot, 1)
         outer.addWidget(left, 1)
 
         self.side = QTabWidget()
@@ -385,6 +444,69 @@ class PageWindow(QMainWindow):
                                    "time-frequency — oscillation or filter ringing?")
         outer.addWidget(self.side)
         return page
+
+    # -- the trace in a window of its own ----------------------------------
+    @property
+    def trace_popped(self) -> bool:
+        return self.figure is not None and bool(self.figure.isWindow())
+
+    def toggle_trace_window(self) -> None:
+        if self.trace_popped:
+            self.dock_trace()
+        else:
+            self.pop_out_trace()
+
+    def pop_out_trace(self) -> None:
+        """Lift MNE's browser out of the page into a top-level window.
+
+        The same widget, reparented: the trace controls, the event list, the
+        trend and every citation keep driving it, because they hold the
+        figure and not its place on the page. A placeholder stays where it
+        was so the page does not read as broken.
+        """
+        if self.trace_popped:
+            return
+        size = self.figure.size()
+        self.figure.setParent(None)
+        self.figure.setWindowFlags(Qt.Window)
+        self.figure.setWindowTitle(
+            f"Onset Review — trace — {self.session.request.label()}")
+        if size.width() > 200 and size.height() > 200:
+            self.figure.resize(size)
+        # Closing that window must not close the browser: MNE's own close
+        # tears the figure down, and the page would be left holding a corpse.
+        self.figure.installEventFilter(self)
+        self.figure.show()
+        self.trace_placeholder.setVisible(True)
+        self.pop_button.setText("Bring the trace back")
+        self.figure.raise_()
+        self.figure.activateWindow()
+
+    def dock_trace(self) -> None:
+        """Put the browser back in its slot on the Recording page."""
+        if not self.trace_popped:
+            return
+        self.figure.removeEventFilter(self)
+        self.figure.setWindowFlags(Qt.Widget)
+        self.figure.setParent(self._trace_slot)
+        self._trace_slot.layout().addWidget(self.figure, 1)
+        self.figure.show()
+        self.trace_placeholder.setVisible(False)
+        self.pop_button.setText("Open the trace in a new window")
+
+    def eventFilter(self, watched, event):      # noqa: N802  (Qt's spelling)
+        if watched is self.figure and event.type() == QEvent.Close and self.trace_popped:
+            event.ignore()
+            self.dock_trace()
+            return True
+        return super().eventFilter(watched, event)
+
+    def closeEvent(self, event):      # noqa: N802  (Qt's spelling)
+        # A popped-out trace is a second top-level window; closing this one
+        # must take it along rather than leave a browser nobody can reach.
+        if self.trace_popped:
+            self.dock_trace()
+        super().closeEvent(event)
 
     def _toggle_trend(self, on: bool) -> None:
         self.panels["trends"].setVisible(bool(on))

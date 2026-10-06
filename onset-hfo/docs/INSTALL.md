@@ -103,7 +103,7 @@ Everything is cached under `artifacts/data/`, so a window is fetched once.
 
 ### Or a recording of your own
 
-**Review → Open a file…**, or the *Open a file…* button in the open dialog,
+**File → Open a file…**, or the *Open a file…* button in the open dialog,
 reads a file from this machine through MNE's readers — EDF, BDF, GDF,
 BrainVision, Persyst, Nihon Kohden, Nicolet, Curry, Blackrock, Neuralynx,
 MEF3, EEGLAB, EGI, Neuroscan, Eximia, FIF. There is no conversion step and no
@@ -132,6 +132,12 @@ approval or data governance either; those stay yours.
 | Straight into your own file | `onset-review --open /data/study-001.edf` |
 | Every option | `onset-review --help` |
 
+`onset-review` on its own opens the window first, on **Home**, with nothing
+loaded. The data comes from inside it: pick a cached window on Home and press
+*Open*, or **File → Open a recording…** for the dialog below with the band,
+the detectors and the threshold, or **File → Open a file…** for a recording of
+your own. The other pages wake up once something is open.
+
 ![The open dialog](images/onset-review-open.png)
 
 The dialog lists only the windows you have cached, and offers only the bands
@@ -147,7 +153,7 @@ at a time on the right, and the same disclaimer line on every page.
 | page | what is on it |
 |---|---|
 | **Home** | what this is and is not, the numbers of this window, the windows cached on this machine (double-click one to open it), *Open a file…* |
-| **Recording** | *Does any channel actually stand out?*, the trend strip, the trace, and a side column with the ranking, the events and the selected event close up |
+| **Recording** | *Does any channel actually stand out?*, the trend strip, the trace, and a side column with the ranking, the events and the selected event close up. *Open the trace in a new window* (`Ctrl+Shift+T`) lifts MNE's browser into a window of its own, for a second monitor; closing that window puts it back |
 | **Contacts** | the 3D view, the patient record, and where the coordinates came from |
 | **Quality** | data quality and preprocessing side by side, provenance under them; *Apply* re-runs the analysis and every page follows |
 | **Report** | the review as it will be exported, agreement with the archive's annotators, *Export review…* |

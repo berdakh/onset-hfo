@@ -221,7 +221,7 @@ def test_decorate_takes_the_trace_loader(qapp):
 
 def test_the_review_menu_moves_to_another_window(built):
     menu = [action.menu() for action in built.host.menuBar().actions()
-            if "Review" in action.text()][0]
+            if "File" in action.text()][0]
     entries = {action.text().replace("&", ""): action for action in menu.actions()
                if action.text()}
     assert "Next window" in entries
@@ -335,7 +335,7 @@ def test_the_reader_is_carried_to_the_next_window(review):
 
 def test_the_review_menu_offers_to_place_the_contacts(built):
     menu = [action.menu() for action in built.host.menuBar().actions()
-            if "Review" in action.text()][0]
+            if "File" in action.text()][0]
     entries = {action.text().replace("&", "") for action in menu.actions()
                if action.text()}
     assert "Electrode coordinates…" in entries
@@ -2245,3 +2245,90 @@ def test_an_unknown_arrangement_is_refused(qapp, review):
             window.decorate(figure, review, mode="tiles")
     finally:
         figure.close()
+
+
+def test_the_trace_can_be_lifted_into_its_own_window_and_put_back(paged):
+    pages, figure = paged.pages, paged.figure
+    pages.show_page("recording")
+    assert not pages.trace_popped
+    assert paged.host.isAncestorOf(figure)
+
+    pages.pop_out_trace()
+    assert pages.trace_popped and figure.isWindow()
+    assert not paged.host.isAncestorOf(figure)
+    assert not pages.trace_placeholder.isHidden()
+    assert pages.pop_button.text() == "Bring the trace back"
+    # The controls still drive the same browser, wherever it is.
+    paged.panels["controls"].sync()
+
+    pages.dock_trace()
+    assert not pages.trace_popped and paged.host.isAncestorOf(figure)
+    assert pages.trace_placeholder.isHidden()
+
+
+def test_closing_the_popped_out_window_brings_the_trace_back(paged):
+    pages, figure = paged.pages, paged.figure
+    pages.pop_out_trace()
+    figure.close()
+    assert not pages.trace_popped, "close put it back rather than destroying it"
+    assert paged.host.isAncestorOf(figure)
+    assert figure.mne is not None, "MNE's own close did not run"
+
+
+def test_the_view_menu_toggles_the_trace_window(paged):
+    actions = _actions(_menu(paged.host, "View"))
+    assert "Trace in its own window" in actions
+    actions["Trace in its own window"].trigger()
+    assert paged.pages.trace_popped
+    actions["Trace in its own window"].trigger()
+    assert not paged.pages.trace_popped
+
+
+# -- the start window --------------------------------------------------------
+
+
+def test_the_application_opens_on_home_with_nothing_loaded(qapp):
+    """The window first, the data from inside it: Home is the only page that
+    works, the others wait, and the File menu is where the data comes from."""
+    import pandas as pd
+
+    from onset_review import window
+    from onset_review.pages import PAGES
+
+    calls = {"opened": [], "chosen": 0, "imported": 0}
+    frame = pd.DataFrame([{"dataset": "ds003498", "subject": "sub-03", "run": "01",
+                           "task": None, "t_start": 60.0, "t_stop": 120.0,
+                           "sfreq": 2000.0, "n_channels": 64}])
+    host = window.decorate_start(
+        cached=lambda: frame, on_open_cached=calls["opened"].append,
+        on_import=lambda: calls.__setitem__("imported", calls["imported"] + 1),
+        on_choose=lambda: calls.__setitem__("chosen", calls["chosen"] + 1))
+    try:
+        assert not host.loaded and host.current_page() == "home"
+        assert host.page_keys() == [k for k, _ in PAGES]
+        for key in host.page_keys():
+            if key != "home":
+                assert host.show_page(key) is False, f"{key} must wait for a recording"
+        assert host.findChild(qt.QLabel, "onset_nothing_open") is not None
+        assert host.where.text() == "No recording open"
+
+        menu = _actions(_menu(host, "File"))
+        assert "Open a recording…" in menu and "Open a file…" in menu
+        menu["Open a recording…"].trigger()
+        menu["Open a file…"].trigger()
+        assert calls["chosen"] == 1 and calls["imported"] == 1
+
+        host.cached_table.selectRow(0)
+        host.open_button.click()
+        assert calls["opened"][-1]["subject"] == "sub-03"
+    finally:
+        host.close()
+
+
+def test_the_file_menu_of_the_full_window_opens_recordings_and_files(paged):
+    menu = _actions(_menu(paged.host, "File"))
+    for entry in ("Open a recording…", "Open a file…", "Next window",
+                  "Electrode coordinates…", "Export review…", "Close window"):
+        assert entry in menu, entry
+    assert menu["Open a recording…"].isEnabled() is False, \
+        "the fixture gave it no chooser, so it says so rather than doing nothing"

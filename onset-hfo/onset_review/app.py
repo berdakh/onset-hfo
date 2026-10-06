@@ -266,6 +266,13 @@ def main(argv: list[str] | None = None) -> int:
         overlay = False
     elif args.subject or args.open_path is not None:
         request, overlay = _request_from(args), args.expert
+    elif args.layout == "pages":
+        # The window first, the data from inside it. The docked arrangement
+        # cannot do this: its window *is* the trace, so it needs a recording
+        # before it can exist, and keeps the dialog.
+        review = _Review(app, None, False, args)
+        review.start()
+        return app.exec_() if hasattr(app, "exec_") else app.exec()
     else:
         request, overlay = launcher.choose_request(args.cache_dir)
         if request is None:
@@ -333,6 +340,42 @@ class _Review:
         self.args = args
         self.parts = None
         self.mode = getattr(args, "layout", "pages") or "pages"
+        #: The window with nothing open, while it is showing.
+        self.start_window = None
+
+    def start(self) -> None:
+        """Open on Home with nothing loaded; everything else comes from there."""
+        from onset_review import window
+
+        self.start_window = window.decorate_start(
+            cached=self.cached_windows, on_open_cached=self.open_cached,
+            on_import=self.import_file, on_choose=self.choose_window)
+        if window.fit_to_screen(self.start_window):
+            self.start_window.showMaximized()
+        else:
+            self.start_window.resize(1280, 820)
+            self.start_window.show()
+
+    def _host(self):
+        """Whatever window is up, for dialogs to be parented to."""
+        if self.parts is not None:
+            return self.parts.host
+        return self.start_window
+
+    def choose_window(self) -> None:
+        """File → Open a recording…: the full dialog, then open its choice."""
+        from onset_review import launcher
+
+        request, overlay = launcher.choose_request(self.args.cache_dir,
+                                                   parent=self._host())
+        if request is None:
+            return
+        session = launcher.load_with_progress(request, self.args.cache_dir,
+                                              parent=self._host())
+        if session is None:
+            return
+        self.request, self.overlay = request, overlay
+        self.open(session)
 
     def open(self, session) -> None:
         from onset_review import window
@@ -345,6 +388,10 @@ class _Review:
         state = previous.host.saveState() if same_docks else None
         page = (previous.pages.current_page()
                 if previous is not None and previous.pages is not None else "")
+        if previous is None and self.start_window is not None:
+            # From the start window, straight to the trace: Home was only
+            # ever the way in.
+            page = "recording"
         self._attach_read(session)
 
         figure = window.open_trace(session, show_expert=self.overlay,
@@ -369,6 +416,12 @@ class _Review:
         if previous is not None and state is None:
             self.parts.host.resize(previous.host.size())
             maximised = previous.host.isMaximized()
+        if previous is None and self.start_window is not None:
+            # The same window, as far as the reviewer is concerned: the full
+            # one takes the start window's size and place before it shows.
+            self.parts.host.resize(self.start_window.size())
+            self.parts.host.move(self.start_window.pos())
+            maximised = self.start_window.isMaximized()
         if state is not None:
             # Restored after the docks exist and before the window is shown, so
             # the reviewer never sees the default arrangement flash past.
@@ -392,6 +445,9 @@ class _Review:
                 previous.figure.close()
             except Exception:
                 pass
+        if self.start_window is not None:
+            self.start_window.close()
+            self.start_window = None
         # Said out loud, because the alternative is a reviewer noticing later
         # that some of their verdicts are no longer on the screen and having
         # to guess whether the software lost them. It did not: they are in the
@@ -425,6 +481,9 @@ class _Review:
         from onset_review import launcher
         from onset_review.session import ReviewRequest
 
+        # With nothing open yet the defaults apply; otherwise the window being
+        # left sets them, so two patients opened in a row are analysed alike.
+        base = self.request if self.request is not None else ReviewRequest()
         task = row.get("task")
         request = ReviewRequest(
             dataset=str(row.get("dataset", "ds003498")),
@@ -433,14 +492,13 @@ class _Review:
             task=None if task is None or str(task) in ("", "nan", "—") else str(task),
             t_start=float(row.get("t_start", 0.0)),
             t_stop=float(row.get("t_stop", 60.0)),
-            detectors=self.request.detectors, band=self.request.band,
-            threshold_sd=self.request.threshold_sd,
-            with_spikes=self.request.with_spikes,
-            preprocess=self.request.preprocess)
+            detectors=base.detectors, band=base.band,
+            threshold_sd=base.threshold_sd, with_spikes=base.with_spikes,
+            preprocess=base.preprocess)
         if request == self.request:
             return
         session = launcher.load_with_progress(request, self.args.cache_dir,
-                                              parent=self.parts.host)
+                                              parent=self._host())
         if session is None:
             return
         self.request, self.overlay = request, False
@@ -549,11 +607,11 @@ class _Review:
         from onset_review import launcher
         from onset_review.importer import choose_file
 
-        request = choose_file(self.parts.host, self.args.cache_dir)
+        request = choose_file(self._host(), self.args.cache_dir)
         if request is None:
             return
         session = launcher.load_with_progress(request, self.args.cache_dir,
-                                              parent=self.parts.host)
+                                              parent=self._host())
         if session is None:
             return
         self.request, self.overlay = request, False

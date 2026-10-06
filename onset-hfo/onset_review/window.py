@@ -471,7 +471,8 @@ def decorate(figure, session: ReviewSession, show_expert: bool = False,
              on_preprocess=None, on_import=None, on_quality=None,
              on_electrodes=None, on_window=None, on_step_window=None,
              on_trace_at=None, mode: str = "docks", cached=None,
-             on_open_cached=None, on_relayout=None) -> ReviewWindowParts:
+             on_open_cached=None, on_relayout=None,
+             on_choose=None) -> ReviewWindowParts:
     """Add the menus, the toolbar, the panels and the caveat around the trace.
 
     `on_preprocess` is called with a new `PreprocessConfig` when the reviewer
@@ -501,7 +502,7 @@ def decorate(figure, session: ReviewSession, show_expert: bool = False,
                                on_window=on_window, on_step_window=on_step_window,
                                on_trace_at=on_trace_at, cached=cached,
                                on_open_cached=on_open_cached,
-                               on_relayout=on_relayout)
+                               on_relayout=on_relayout, on_choose=on_choose)
 
     host = figure if has_dock_host(figure) else QMainWindow()
     host.setWindowTitle(f"Onset Review — {session.request.label()}")
@@ -618,7 +619,8 @@ def decorate(figure, session: ReviewSession, show_expert: bool = False,
     _menus(figure, host, panels, docks, session, display, parts,
            defaults, on_import=on_import,
            on_electrodes=on_electrodes, on_window=on_window,
-           on_step_window=on_step_window, on_relayout=on_relayout)
+           on_step_window=on_step_window, on_relayout=on_relayout,
+           on_choose=on_choose)
     _set_reader_status(host, session)
     # Opened in a layout rather than with everything showing: eleven docked
     # panels at once is an arrangement a reviewer has to undo before they can
@@ -662,7 +664,7 @@ def _decorate_pages(figure, session: ReviewSession, panels: dict,
                     display: _Display, show_expert: bool, *, on_preprocess,
                     on_import, on_quality, on_electrodes, on_window,
                     on_step_window, on_trace_at, cached, on_open_cached,
-                    on_relayout) -> ReviewWindowParts:
+                    on_relayout, on_choose=None) -> ReviewWindowParts:
     """The same panels as a sidebar of pages. See `onset_review.pages`."""
     from onset_review.pages import PageWindow
 
@@ -685,10 +687,50 @@ def _decorate_pages(figure, session: ReviewSession, panels: dict,
     _menus(figure, host, panels, {}, session, display, parts, {},
            on_import=on_import, on_electrodes=on_electrodes,
            on_window=on_window, on_step_window=on_step_window,
-           on_relayout=on_relayout, pages=host)
+           on_relayout=on_relayout, pages=host, on_choose=on_choose)
     _set_reader_status(host, session)
     _finish(figure, session, panels, display, on_preprocess, on_quality)
     return parts
+
+
+def decorate_start(*, cached=None, on_open_cached=None, on_import=None,
+                   on_choose=None):
+    """The window the application opens on: Home, and nothing loaded yet.
+
+    A `pages.PageWindow` without a session, with the one menu that makes
+    sense before there is a recording. Opening one replaces this window with
+    the full one at the same size and place, which is the entry point's job.
+    """
+    from onset_review.pages import PageWindow
+
+    host = PageWindow(cached=cached, on_open_cached=on_open_cached,
+                      on_import=on_import)
+    host.setWindowTitle("Onset Review")
+    menubar = host.menuBar()
+    file_menu = menubar.addMenu("&File")
+    choose = file_menu.addAction("Open a &recording…")
+    choose.setShortcut("Ctrl+O")
+    choose.setEnabled(on_choose is not None)
+    if on_choose is not None:
+        choose.triggered.connect(lambda _=False: on_choose())
+    opener = file_menu.addAction("&Open a file…")
+    opener.setShortcut("Ctrl+Shift+O")
+    opener.setEnabled(on_import is not None)
+    if on_import is not None:
+        opener.triggered.connect(lambda _=False: on_import())
+    file_menu.addSeparator()
+    file_menu.addAction("&Close window", host.close)
+    help_menu = menubar.addMenu("&Help")
+    help_menu.addAction(
+        "What am I looking at?",
+        lambda: QMessageBox.information(
+            host, "What am I looking at?",
+            "Onset Review, with nothing open. Pick a cached window on the "
+            "Home page, or File → Open a recording… for the full choice of "
+            "band and detectors, or File → Open a file… for a recording of "
+            "your own."))
+    host.statusBar().showMessage("Open a recording to begin.")
+    return host
 
 
 def _wire(figure, host, panels: dict, session: ReviewSession,
@@ -850,7 +892,8 @@ def _menus(figure, host: QMainWindow, panels: dict, docks: dict,
            session: ReviewSession, display: _Display,
            parts: ReviewWindowParts, defaults: dict,
            on_import=None, on_electrodes=None, on_window=None,
-           on_step_window=None, on_relayout=None, pages=None) -> None:
+           on_step_window=None, on_relayout=None, pages=None,
+           on_choose=None) -> None:
     """Menus and a toolbar, in the vocabulary of the task rather than the code.
 
     `pages` is the `PageWindow` when the window is laid out as pages, in
@@ -859,9 +902,17 @@ def _menus(figure, host: QMainWindow, panels: dict, docks: dict,
     """
     menubar = host.menuBar()
 
-    file_menu = menubar.addMenu("&Review")
+    file_menu = menubar.addMenu("&File")
+    choose = file_menu.addAction("Open a &recording…")
+    choose.setShortcut("Ctrl+O")
+    choose.setEnabled(on_choose is not None)
+    choose.setToolTip("A cached window of an archive patient, with the band, "
+                      "the detectors and the threshold to analyse it with. "
+                      "This window is replaced.")
+    if on_choose is not None:
+        choose.triggered.connect(lambda _=False: on_choose())
     opener = file_menu.addAction("&Open a file…")
-    opener.setShortcut("Ctrl+O")
+    opener.setShortcut("Ctrl+Shift+O")
     opener.setEnabled(on_import is not None)
     opener.setToolTip(
         "Read a recording from this machine through MNE — EDF, BrainVision, "
@@ -896,6 +947,14 @@ def _menus(figure, host: QMainWindow, panels: dict, docks: dict,
             entry.setToolTip(f"Alt+{index}")
             entry.triggered.connect(
                 lambda _=False, key=key: pages.show_page(key))
+        view.addSeparator()
+        popped = view.addAction("&Trace in its own window")
+        popped.setShortcut("Ctrl+Shift+T")
+        popped.setCheckable(True)
+        popped.setToolTip("Lift MNE's browser out of the Recording page into a "
+                          "window of its own; everything keeps driving it.")
+        popped.triggered.connect(lambda _=False: pages.toggle_trace_window())
+        view.aboutToShow.connect(lambda: popped.setChecked(pages.trace_popped))
         view.addSeparator()
         docked = view.addAction("E&verything at once (docked panels)")
         docked.setToolTip("The original arrangement: every panel a dock on "

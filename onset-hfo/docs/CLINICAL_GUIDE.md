@@ -385,7 +385,7 @@ your patients. A post-implant CT coregistered to the planning MRI gives real
 coordinates for every contact; they are simply in the planning system rather
 than in the archive.
 
-**Review → Electrode coordinates…** takes that file. A BIDS `electrodes.tsv`,
+**File → Electrode coordinates…** takes that file. A BIDS `electrodes.tsv`,
 or a CSV out of anything else — the columns may be called `name`/`label` and
 `x`/`y`/`z` or `R`/`A`/`S`, in any order, comma- or tab-separated, with or
 without a header. Millimetres and metres are told apart by magnitude and the
@@ -701,7 +701,7 @@ simpler, and none of the caveats above apply.
     the report under your name — including the ones where you disagreed. Mark
     the contact itself *Ignore it* if the answer is that its signal is not
     worth counting.
-12. Now the same patient's **second minute** — **Review → Next window**
+12. Now the same patient's **second minute** — **File → Next window**
     (`Ctrl+Shift+Right`), which re-analyses the next stretch of the same
     length and keeps your name, your coordinates and your panel layout.
     **Go to window…** (`Ctrl+G`) takes you anywhere in the recording, in the
@@ -716,7 +716,7 @@ experts, not our detector. A single-minute answer — from anyone — is less
 stable than it looks, which is why this interface puts confidence intervals and
 a candidate set in front of you rather than a number.
 
-**Review → Export review…** writes everything above to a file, with the
+**File → Export review…** writes everything above to a file, with the
 provenance, the caveat and the tables. Re-running the same patient, window,
 band, detector and threshold reproduces it exactly.
 
@@ -750,7 +750,7 @@ the `On spike` column tells the two apart.
 
 ![The import dialog](images/onset-review-import.png)
 
-**Review → Open a file…** (or the *Open a file…* button in the open dialog)
+**File → Open a file…** (or the *Open a file…* button in the open dialog)
 reads a recording from this machine. There is no conversion step and no
 proprietary format: the file goes to one of MNE's readers and comes back as the
 same recording the archive produces, so every panel, the report and the
