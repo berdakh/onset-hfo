@@ -941,10 +941,15 @@ def _menus(figure, host: QMainWindow, panels: dict, docks: dict,
         # One entry per page, in the sidebar's order, on the keys the
         # sidebar already answers to.
         from onset_review.pages import PAGES
+        from onset_review.studies import STUDIES
 
-        for index, (key, label) in enumerate(PAGES, start=1):
+        listed = [(key, label) for key, label in PAGES] + \
+                 [(key, label) for key, label, _what in STUDIES]
+        for index, (key, label) in enumerate(listed, start=1):
+            if index == len(PAGES) + 1:
+                view.addSeparator()
             entry = view.addAction(f"&{label}")
-            entry.setToolTip(f"Alt+{index}")
+            entry.setToolTip(f"Alt+{index}" if index <= 9 else "")
             entry.triggered.connect(
                 lambda _=False, key=key: pages.show_page(key))
         view.addSeparator()

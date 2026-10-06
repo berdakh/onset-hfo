@@ -159,9 +159,16 @@ at a time on the right, and the same disclaimer line on every page.
 | **Report** | the review as it will be exported, agreement with the archive's annotators, *Export review…* |
 | **Assistant** | the assistant, and the box that gets a local Qwen onto this machine |
 
-`Alt+1` to `Alt+6` switch pages, so do the entries at the top of **View**. The
-six study pages of the site are listed under the first group and disabled:
-they are the next phase, and until then they are on the
+`Alt+1` to `Alt+9` switch pages, so do the entries at the top of **View**.
+
+Under the first group sit the six **study pages** of the results site —
+Detectors, Outcome, Patients, Data, Architecture, Research — built in the
+window from the same committed tables the site reads (`data/`), through the
+site's own loaders. They need no recording, so they are open before anything is
+loaded. Band, metric and patient are combo boxes above the text, and the
+Patients page can open a patient's cached window on the Recording page, which
+is the one link the site cannot make. They read the checkout: on an install
+without `app/` and `data/` the pages say so and point at the
 [results site](https://berdakh.github.io/onset-hfo/).
 
 The original arrangement, every panel a dock on the trace's window with three

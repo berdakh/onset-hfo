@@ -2139,16 +2139,17 @@ def test_the_page_window_is_its_own_window_and_holds_every_panel(paged):
 
 def test_the_sidebar_lists_the_sites_pages_in_order(paged):
     from onset_review.pages import PAGES, STUDY_PAGES
+    from onset_review.studies import STUDIES
 
     nav = paged.pages.nav
     enabled = [nav.item(i) for i in range(nav.count())
                if nav.item(i).flags() & Qt.ItemIsEnabled]
-    assert [i.data(Qt.UserRole) for i in enabled] == [k for k, _ in PAGES]
-    disabled = [nav.item(i).text() for i in range(nav.count())
-                if not (nav.item(i).flags() & Qt.ItemIsEnabled)]
+    assert [i.data(Qt.UserRole) for i in enabled] == \
+        [k for k, _ in PAGES] + [k for k, _, _ in STUDIES]
+    labels = [nav.item(i).text() for i in range(nav.count())]
     for study in STUDY_PAGES:
-        assert study in disabled, "the study pages are listed, disabled, until phase 2"
-    assert paged.pages.page_keys() == [k for k, _ in PAGES]
+        assert study in labels, "the study pages are listed, in the site's order"
+    assert paged.pages.page_keys() == [k for k, _ in PAGES] + [k for k, _, _ in STUDIES]
 
 
 def test_a_window_opens_on_home_and_switches_pages(paged):
@@ -2305,10 +2306,11 @@ def test_the_application_opens_on_home_with_nothing_loaded(qapp):
         on_choose=lambda: calls.__setitem__("chosen", calls["chosen"] + 1))
     try:
         assert not host.loaded and host.current_page() == "home"
-        assert host.page_keys() == [k for k, _ in PAGES]
-        for key in host.page_keys():
+        assert host.page_keys()[:len(PAGES)] == [k for k, _ in PAGES]
+        for key, _label in PAGES:
             if key != "home":
                 assert host.show_page(key) is False, f"{key} must wait for a recording"
+        host.show_page("home")
         assert host.findChild(qt.QLabel, "onset_nothing_open") is not None
         assert host.where.text() == "No recording open"
 
@@ -2332,3 +2334,56 @@ def test_the_file_menu_of_the_full_window_opens_recordings_and_files(paged):
         assert entry in menu, entry
     assert menu["Open a recording…"].isEnabled() is False, \
         "the fixture gave it no chooser, so it says so rather than doing nothing"
+
+
+# -- the study pages -----------------------------------------------------------
+
+
+def test_the_study_pages_are_open_in_both_states(paged, qapp):
+    from onset_review import window
+    from onset_review.studies import STUDIES
+
+    for key, _label, _what in STUDIES:
+        assert key in paged.pages.page_keys()
+        assert paged.pages.show_page(key), f"{key} opens on a loaded window"
+    start = window.decorate_start(cached=lambda: None)
+    try:
+        assert start.show_page("outcome"), "no recording is needed for the study"
+        assert start.current_page() == "outcome"
+        assert "Surgical outcome" in start.stack.currentWidget().view.toPlainText()
+    finally:
+        start.close()
+
+
+def test_a_study_page_renders_its_tables_and_rebuilds_on_a_choice(paged):
+    pages = paged.pages
+    pages.show_page("detectors")
+    page = pages.stack.currentWidget()
+    text = page.view.toPlainText()
+    assert "Detectors and how they are scored" in text
+    assert "threshold (SD)" in text, "the sweep table rendered"
+    page.combos["band"].setCurrentIndex(page.combos["band"].findData("fast_ripple"))
+    assert "Fast ripples" in page.view.toPlainText()
+
+
+def test_the_patients_page_opens_a_cached_window_of_the_patient(paged):
+    pages = paged.pages
+    pages.show_page("patients")
+    page = pages.stack.currentWidget()
+    subject = page.combos["subject"]
+    assert subject.count() == 20
+    # The fixture's cache holds sub-01 only.
+    subject.setCurrentIndex(subject.findData("sub-01"))
+    assert page.open_button.isEnabled()
+    before = len(paged.calls["opened"])
+    page.open_button.click()
+    assert paged.calls["opened"][-1]["subject"] == "sub-01"
+    assert len(paged.calls["opened"]) == before + 1
+    subject.setCurrentIndex(subject.findData("sub-02"))
+    assert not page.open_button.isEnabled(), "nothing of sub-02 is cached"
+
+
+def test_the_view_menu_lists_the_study_pages(paged):
+    actions = _actions(_menu(paged.host, "View"))
+    for label in ("Detectors", "Outcome", "Patients", "Research"):
+        assert label in actions

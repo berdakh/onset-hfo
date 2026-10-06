@@ -13,9 +13,9 @@ the same widgets, wired the same way, can be laid out either as docks or as
 pages. A reviewer who prefers the docks gets them back from the View menu.
 
 Two desktop-only pages sit in the first group (Contacts, Quality) because they
-need a running analysis. The six study pages are listed and disabled: they
-are phase 2, and a sidebar that showed only half the site's pages would
-misdescribe what the software is.
+need a running analysis. The six study pages of the site follow, read-only,
+built from the committed tables by `onset_review.studies`; they need no
+recording, so they are open even before one is loaded.
 """
 
 from __future__ import annotations
@@ -55,8 +55,9 @@ PAGES = (
     ("assistant", "Assistant"),
 )
 
-#: The site's cohort pages, listed so the sidebar describes the whole
-#: product, and disabled until they are built (phase 2).
+#: The site's cohort pages, read-only, built from the committed tables by
+#: `onset_review.studies` and shown by `onset_review.studypages`. They need
+#: no recording, so they are open in the start state too.
 STUDY_PAGES = ("Detectors", "Outcome", "Patients", "Data", "Architecture",
                "Research")
 
@@ -161,7 +162,10 @@ class PageWindow(QMainWindow):
         self.setCentralWidget(body)
 
         self.nav.currentItemChanged.connect(self._nav_changed)
-        for index, (key, _label) in enumerate(PAGES, start=1):
+        from onset_review.studies import STUDIES
+
+        keyed = [key for key, _label in PAGES] + [key for key, _, _ in STUDIES]
+        for index, key in enumerate(keyed[:9], start=1):
             shortcut = QShortcut(QKeySequence(f"Alt+{index}"), self)
             shortcut.setContext(Qt.WindowShortcut)
             shortcut.activated.connect(lambda key=key: self.show_page(key))
@@ -210,12 +214,14 @@ class PageWindow(QMainWindow):
             if key == "home" or self.loaded:
                 self._items[key] = item
         heading("The study")
-        for label in STUDY_PAGES:
+        from onset_review.studies import STUDIES
+
+        for key, label, what in STUDIES:
             item = QListWidgetItem(label)
-            item.setFlags(Qt.NoItemFlags)
-            item.setToolTip("The site's study pages come to the desktop in "
-                            "phase 2; until then they are on the results site.")
+            item.setData(Qt.UserRole, key)
+            item.setToolTip(what)
             self.nav.addItem(item)
+            self._items[key] = item
 
         sidebar = QWidget()
         sidebar.setObjectName("onset_sidebar")
@@ -251,6 +257,16 @@ class PageWindow(QMainWindow):
                 continue
             page = builders[key]()
             page.setObjectName(f"page_{key}")
+            self._pages[key] = page
+            self.stack.addWidget(page)
+        from onset_review.studies import STUDIES
+        from onset_review.studypages import StudyPage
+
+        for key, _label, _what in STUDIES:
+            page = StudyPage(key, cached=self._cached)
+            page.setObjectName(f"page_{key}")
+            if self._on_open_cached is not None:
+                page.openRequested.connect(self._on_open_cached)
             self._pages[key] = page
             self.stack.addWidget(page)
 
@@ -303,7 +319,8 @@ class PageWindow(QMainWindow):
         guide.linkActivated.connect(
             lambda link: self.show_page(link.split(":", 1)[1]))
         if not self.loaded:
-            guide.setToolTip("These pages open once a recording is loaded")
+            guide.setToolTip("These pages open once a recording is loaded; "
+                             "the study pages below are open now")
         box.addWidget(guide)
 
         box.addWidget(theme.section_label("Windows on this machine"))
@@ -598,11 +615,12 @@ class PageWindow(QMainWindow):
     def refresh_report(self) -> None:
         """Rebuild the preview from the session as it is now, verdicts and all."""
         from onset_review import report
+        from onset_review.studypages import set_markdown
 
         reader = getattr(getattr(self.session, "read", None), "reader", "") or None
         try:
-            text = report.review_markdown(self.session, reviewer=reader)
-            self.report_view.setHtml(report._as_html(text, self.session))
+            set_markdown(self.report_view,
+                         report.review_markdown(self.session, reviewer=reader))
         except Exception as error:      # noqa: BLE001 - a preview must not kill a page
             self.report_view.setPlainText(f"The report could not be rendered: {error}")
 
@@ -625,7 +643,9 @@ class PageWindow(QMainWindow):
 
     # -- the public surface ----------------------------------------------
     def page_keys(self) -> list[str]:
-        return [key for key, _label in PAGES]
+        from onset_review.studies import STUDIES
+
+        return [key for key, _label in PAGES] + [key for key, _, _ in STUDIES]
 
     def current_page(self) -> str:
         widget = self.stack.currentWidget()

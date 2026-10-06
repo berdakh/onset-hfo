@@ -63,8 +63,10 @@ dataset — what the original annotators marked on the same minute.
 There are eleven panels and the window does not show them all at once, because
 a screen with eleven docked panels on it is one you have to tidy before you can
 use it. By default they are arranged as **pages** — a sidebar on the left with
-Home, Recording, Contacts, Quality, Report and Assistant, one page showing at a
-time, `Alt+1` to `Alt+6` to switch — the same shape as the project's results
+Home, Recording, Contacts, Quality, Report and Assistant, then the six study
+pages of the results site (Detectors, Outcome, Patients, Data, Architecture,
+Research, read-only, from the committed tables), one page showing at a time,
+`Alt+1` to `Alt+9` to switch — the same shape as the project's results
 site, with the trace on the Recording page and the ranking, the events and the
 selected event in a column beside it. The diagram above and the rest of this
 section describe the **docked** arrangement, which **View → Everything at once
