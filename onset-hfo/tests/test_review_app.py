@@ -69,8 +69,9 @@ def test_mne_figure_can_still_host_our_docks(built):
 
 def test_every_panel_is_docked(built):
     assert set(built.docks) == {"trends", "controls", "findings", "events",
-                                "detail", "spectrum", "brain", "map", "agreement", "provenance",
-                                "assistant", "preprocess", "patient", "quality"}
+                                "detail", "spectrum", "average", "sensitivity", "brain", "map",
+                                "agreement", "provenance", "assistant", "preprocess", "patient",
+                                "quality"}
     assert all(dock.widget() is not None for dock in built.docks.values())
 
 
@@ -2558,8 +2559,11 @@ def test_the_map_page_is_in_the_sidebar_and_its_button_asks_the_assistant(paged,
     host.show_page("map")
     asked = []
     paged.panels["assistant"].ask = lambda q: asked.append(q)
-    paged.panels["map"].ask.click()
-    qapp.processEvents()
+    try:
+        paged.panels["map"].ask.click()
+        qapp.processEvents()
+    finally:
+        del paged.panels["assistant"].ask        # the stub must not outlive this test
     assert asked == [WHERE_QUESTION]
     assert host.stack.currentWidget().objectName() == "page_assistant"
 
@@ -2768,7 +2772,9 @@ def test_analyses_run_only_when_the_reviewer_ticks_the_box(qapp, review):
 
     panel = AssistantPanel(review)
     try:
-        assert list(panel.extra_tools()) == ["explain_event"]
+        # `other_windows` may be there too: it depends on what this machine has cached.
+        assert "explain_event" in panel.extra_tools()
+        assert not {"detect_hfo", "compare_window"} & set(panel.extra_tools())
         panel.analyses.setChecked(True)
         tools = panel.extra_tools()
         assert "detect_hfo" in tools and "estimate_soz_probability" not in tools
@@ -2918,3 +2924,141 @@ def test_the_contacts_page_fetches_the_template_on_a_worker(paged, tmp_path):
     finally:
         page.fetch_button.setText(was_text)
         page.fetch_button.setEnabled(was_enabled)
+
+
+# --------------------------------------------------------------------------
+# The Average and Threshold panels
+# --------------------------------------------------------------------------
+
+def test_the_average_panel_follows_the_chosen_channel(built, review):
+    from onset_review import average
+
+    panel = built.panels["average"]
+    channels = [name for name, _n in average.channels_with_events(review)]
+    assert panel.channel.count() == len(channels)
+    assert not panel.canvas.isHidden() or panel.channel.count() == 0
+    chosen = channels[-1]
+    picked = []
+    panel.channelPicked.connect(picked.append)
+    built.panels["findings"].channelPicked.emit(chosen)
+    assert panel.channel.currentData() == chosen
+    assert chosen in panel.headline.text() and "averaged" in panel.headline.text()
+    assert picked == [chosen]
+    # The same channel again is a no-op, which is what ends the round trip.
+    built.panels["findings"].channelPicked.emit(chosen)
+    assert picked == [chosen]
+    # A channel with nothing to average is not followed.
+    panel.highlight("NOT-A-CHANNEL")
+    assert panel.channel.currentData() == chosen
+    assert panel.average() is panel.average(chosen)
+
+
+def test_the_threshold_panel_runs_on_request_and_tells_the_assistant(built, review):
+    from onset_review import sensitivity
+
+    panel = built.panels["sensitivity"]
+    assert panel.canvas.isHidden() and "Not run yet" in panel.status.text()
+    assistant = built.panels["assistant"]
+    assert "threshold_sensitivity" not in assistant.extra_tools()
+    assert assistant.extra_briefing("Does AR1-AR2 survive a stricter threshold?") == []
+    got = []
+    panel.computed.connect(got.append)
+    try:
+        panel.run(background=False)
+        assert len(got) == 1 and got[0].available
+        assert not panel.canvas.isHidden() and "Re-run in" in panel.status.text()
+        assert "the window's own" in panel.headline.text()
+        assert review.sensitivity is got[0]
+        # Computed once, the assistant gets it for free and is briefed with it.
+        tools = assistant.extra_tools()
+        assert "threshold_sensitivity" in tools and "free" in tools["threshold_sensitivity"].description
+        assert tools["threshold_sensitivity"].handler(None) == sensitivity.as_dict(got[0])
+        assert assistant.extra_briefing("Does AR1-AR2 survive a stricter threshold?") == [
+            ("threshold_sensitivity", {})]
+        assert assistant.extra_briefing("Which channel is busiest?") == []
+    finally:
+        review.sensitivity = None
+        panel.result = None
+
+
+def test_the_threshold_tool_is_offered_only_with_consent_until_it_has_run(review):
+    from onset_review.assistant_tools import sensitivity_tools
+
+    review.sensitivity = None
+    assert sensitivity_tools(review, allow_run=False) == {}
+    tools = sensitivity_tools(review, allow_run=True)
+    assert "a few seconds" in tools["threshold_sensitivity"].description
+    try:
+        out = tools["threshold_sensitivity"].handler(None)
+        assert out["available"] and review.sensitivity is not None
+    finally:
+        review.sensitivity = None
+
+
+# --------------------------------------------------------------------------
+# The findings draft on the Report page, and questions across windows
+# --------------------------------------------------------------------------
+
+def test_the_assistant_drafts_the_findings_and_the_report_page_takes_it_up(paged, review):
+    from onset_review.assistant import DRAFT_QUESTION
+
+    page = paged.pages
+    assistant = paged.panels["assistant"]
+    read = review.read
+    before = (read.draft, read.draft_by, read.draft_at)
+    taken = []
+    assistant.drafted.connect(lambda text, by: taken.append((text, by)))
+    try:
+        read.set_draft("", "")
+        page.findings_edit.blockSignals(True)
+        page.findings_edit.setPlainText("")
+        page.findings_edit.blockSignals(False)
+        assert page.draft_findings(), assistant.transcript.toPlainText()[-600:]
+        assert len(taken) == 1 and taken[0][1].startswith("assistant (")
+        assert read.draft == taken[0][0] and read.draft_is_assistants
+        assert page.findings_edit.toPlainText() == read.draft
+        assert "Drafted by the assistant" in page.findings_status.text()
+        assert DRAFT_QUESTION[:30] in assistant.transcript.toPlainText()
+        assert "Drafted by the assistant" in page.report_view.toPlainText()
+        # The reader edits: it is theirs now, in the box, the read and the report.
+        page.findings_edit.setPlainText(read.draft + " I confirmed this on the trace.")
+        assert not read.draft_is_assistants and read.draft.endswith("on the trace.")
+        assert "Written by" in page.findings_status.text()
+        assert "Drafted by" not in page.report_view.toPlainText()
+    finally:
+        read.draft, read.draft_by, read.draft_at = before
+
+
+def test_the_assistant_is_offered_the_other_windows_only_when_there_are_some(
+        qapp, review, recording, monkeypatch):
+    from onset_review import windows
+    from onset_review.assistant import AssistantPanel
+    from onset_review.assistant_tools import window_tools
+    from tests.test_review_core import _other_window_fixture
+
+    windows._CACHE.clear()
+    monkeypatch.setattr(windows, "_cache_dir", lambda: None)
+    lister, loader, loads = _other_window_fixture(review, recording)
+    assert window_tools(review, lister=lambda _c=None: None) == {}
+    tools = window_tools(review, allow_run=False, lister=lister)
+    assert list(tools) == ["other_windows"]
+    listed = tools["other_windows"].handler(None)
+    assert len(listed["other_windows"]) == 1 and "allows analyses" in listed["note"]
+    tools = window_tools(review, allow_run=True, lister=lister, loader=loader)
+    assert "compare_window" in tools
+    other = listed["other_windows"][0]
+    out = tools["compare_window"].handler(None, t_start=other["t_start"], t_stop=other["t_stop"])
+    assert out["leader_this_window"] == review.leader.get("leader") and loads
+    assert "leading_channels" in out and out["cached"] is False
+    with pytest.raises(Exception, match="no cached window"):
+        tools["compare_window"].handler(None, t_start=1.0, t_stop=2.0)
+    # The panel briefs the model with the listing for a question across windows.
+    panel = AssistantPanel(review)
+    try:
+        monkeypatch.setattr(windows, "other_windows",
+                            lambda session, cache_dir=None, lister=None: [other])
+        assert panel.extra_briefing("Did the leader change between the two minutes?") == [
+            ("other_windows", {})]
+        assert panel.extra_briefing("Which channel is busiest?") == []
+    finally:
+        panel.deleteLater()

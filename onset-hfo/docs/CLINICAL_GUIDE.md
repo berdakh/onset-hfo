@@ -294,6 +294,37 @@ line to choose that channel; *Leading five* shows the ranking's leaders
 alone. The spectrum is of the signal as the detectors saw it, high-passed,
 notched and re-referenced, so a notch you widened shows as a wider hole.
 
+### Average event — what this channel's events average to
+
+![The average event](images/onset-review-average.png)
+
+A tab beside *Spectrum*: every accepted event on one channel, cut from the
+signal, aligned at the peak of its band-passed trace and averaged, in the
+same three rows as *This event* — the mean wideband and band-passed traces
+with their spread across events, and the mean of each event's own
+time-frequency picture. One event is a judgement; fifty are a morphology. A
+channel of oscillations averages to a spindle with an island under it; a
+channel of sharp transients and the filter's ringing averages to a spike with
+a column under it, and the two can carry the same rate. The headline reads
+the mean by the same rule the single-event view applies — *island*, *column*
+or *unclear* — and says how many events went into it. The box follows the
+channel chosen anywhere; choosing one here chooses it everywhere.
+
+### Threshold — does the ranking survive a stricter detector?
+
+![The threshold re-test](images/onset-review-threshold.png)
+
+A rate is a count above a threshold, and the threshold is a choice. The tab
+beside *Average* re-runs the ranking detector at 1.25×, 1.5× and 2× the
+threshold this window used, on the same prepared signal, and plots the
+leading channels' rates against it. It waits for the button because it costs
+a few seconds. The sentence under the plot says who led at each threshold,
+who was tied with them, and up to what multiple the window's leader still
+led: a leader that holds to twice the threshold is robust to the choice; one
+that drops out at 1.25× is a threshold choice, not a channel property. This
+is the re-test the research ladder applies to every leader, on the window in
+front of you. Nothing on the other pages changes.
+
 ### Recording your read
 
 Everything above this line is an algorithm's opinion. This part is yours, and
@@ -351,6 +382,23 @@ verdicts no longer match an event. A partial read is labelled as one, and a
 **confirmed rate** is quoted for a contact only when every one of its ranked
 events carries a verdict — anywhere else it would be a confirmed count divided
 by the whole window, which would understate a contact you had not finished.
+
+### The findings paragraph — yours, or the assistant's, and the report says which
+
+![The Report page](images/onset-review-report.png)
+
+On the Report page, beside the preview, is a box for the findings paragraph:
+the three to six sentences a report opens with. Write it yourself, or press
+**Draft it with the assistant**. The draft goes through the assistant's whole
+loop — the usual queries, the number check, the citation check — so a draft
+with a number no query returned is refused like any answer, and the refusal
+is on the Assistant page. A draft that passes lands in the box and in the
+report under **Findings**, marked *Drafted by the assistant (model) on date …
+not edited by the reader*. The moment you edit it, it is yours: the marking
+becomes *Written by you*, under your reader name. A reader signing a report
+has to know which sentences a model wrote, so the attribution is part of the
+document and not of the screen. The paragraph is saved with your verdicts
+and comes back with them.
 
 ### Patient — who this recording belongs to
 
@@ -590,13 +638,28 @@ question never silently re-runs the detectors.
 **It explains the event you have selected.** With an event picked anywhere,
 *Explain this event* (or any question with "this event" in it) hands the
 model the measurements of that event's own picture — its cycles, how far its
-power stands above the background at that moment, and the panel's reading of
-it, *island*, *column* or *unclear* — and the answer is about that event and
+power stands above the bands either side at that moment, and the panel's reading
+of it, *island*, *column* or *unclear* — and the answer is about that event and
 no other. The reading is the software's, written under the picture; the
 model puts it into words.
 
 **It remembers the conversation.** A follow-up ("and the one below it?") is
 answered with the last few exchanges in view. *New conversation* forgets them.
+
+**It knows what the window has already computed.** Once the Threshold tab has
+run, a question about thresholds ("does AR1-AR2 survive a stricter
+threshold?") is answered from that re-test at no cost, and the model is
+briefed with it before it is asked. Before the tab has run, the same tool is
+offered only with *Let it run analyses* ticked, because it costs seconds.
+
+**It can look at the other minutes.** When other windows of the same
+recording are on this machine, "is there an earlier minute?" lists them, and
+with analyses allowed, "did the leader change between the two minutes?"
+analyses the other window with this window's settings — same band, detector,
+threshold and preprocessing, so the two are comparable — and compares the
+leaders and tied sets. That takes seconds to half a minute the first time and
+is free after; the answer says, as the tool does, that a leader changing
+between minutes is the usual case and the tied sets are what to compare.
 
 ### Preprocessing — change what is done to the signal
 

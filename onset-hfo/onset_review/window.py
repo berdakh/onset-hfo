@@ -37,6 +37,7 @@ from qtpy.QtWidgets import (
 
 from onset_review import adjudication, report, theme
 from onset_review.assistant import AssistantPanel
+from onset_review.averageview import AveragePanel
 from onset_review.brainview import BrainPanel
 from onset_review.controls import AMPLITUDE_STEP, TraceControls
 from onset_review.dataquality import QualityPanel
@@ -51,6 +52,7 @@ from onset_review.panels import (
 )
 from onset_review.patient import PatientPanel
 from onset_review.preprocessing import PreprocessPanel
+from onset_review.sensitivityview import SensitivityPanel
 from onset_review.session import BAND_COLOURS, ReviewSession, annotations_for
 from onset_review.spectrumview import SpectrumPanel
 
@@ -101,10 +103,11 @@ DEFAULT_SCALING = 50e-6
 #: layout.
 LAYOUTS = {
     "Screening": ("Look for the activity",
-                  ("trends", "controls", "findings", "events", "brain", "map", "spectrum"),
+                  ("trends", "controls", "findings", "events", "brain", "map", "spectrum",
+                   "sensitivity"),
                   "brain"),
     "Reading": ("Judge it event by event",
-                ("controls", "findings", "events", "detail", "assistant"),
+                ("controls", "findings", "events", "detail", "average", "assistant"),
                 "detail"),
     "Reporting": ("Check what was done and against what",
                   ("findings", "quality", "preprocess", "provenance",
@@ -464,6 +467,8 @@ def build_panels(figure, session: ReviewSession) -> dict:
                                electrodes=session.electrodes),
         "detail": EventDetailPanel(session),
         "spectrum": SpectrumPanel(session),
+        "average": AveragePanel(session),
+        "sensitivity": SensitivityPanel(session),
         "assistant": AssistantPanel(session),
         "preprocess": PreprocessPanel(session),
         "quality": QualityPanel(session),
@@ -551,6 +556,10 @@ def decorate(figure, session: ReviewSession, show_expert: bool = False,
                     "time-frequency — is it an oscillation or filter ringing?")
     spectral = dock("spectrum", "Spectrum", Qt.RightDockWidgetArea, panels["spectrum"],
                     "Each channel's power spectrum: noisy, busy, or mains")
+    averaged = dock("average", "Average event", Qt.RightDockWidgetArea, panels["average"],
+                    "A channel's events aligned and averaged: oscillations or transients?")
+    stricter = dock("sensitivity", "Threshold", Qt.RightDockWidgetArea, panels["sensitivity"],
+                    "Does the ranking survive a stricter threshold?")
     # Agreement and provenance are reference rather than working views, so they
     # share a tab stack and start behind the panels a reviewer uses minute to
     # minute.
@@ -588,6 +597,8 @@ def decorate(figure, session: ReviewSession, show_expert: bool = False,
                "Data quality — which contacts and which seconds were "
                "analysed, which were only flagged, and why")
     host.tabifyDockWidget(close_up, spectral)
+    host.tabifyDockWidget(close_up, averaged)
+    host.tabifyDockWidget(close_up, stricter)
     host.tabifyDockWidget(close_up, who)
     host.tabifyDockWidget(who, brain)
     host.tabifyDockWidget(brain, chart)
@@ -807,6 +818,14 @@ def _wire(figure, host, panels: dict, session: ReviewSession,
     for key in ("findings", "brain", "map"):
         panels[key].channelPicked.connect(panels["spectrum"].highlight)
     panels["spectrum"].channelPicked.connect(lambda channel: select(channel))
+    # The average follows the chosen channel wherever it is chosen, and a
+    # channel chosen in its own box is chosen everywhere: `highlight` is a
+    # no-op on the channel already shown, which is what ends the round trip.
+    for key in ("findings", "brain", "map", "spectrum"):
+        panels[key].channelPicked.connect(panels["average"].highlight)
+    panels["events"].eventPicked.connect(
+        lambda _t, channel: panels["average"].highlight(channel))
+    panels["average"].channelPicked.connect(lambda channel: select(channel))
     panels["events"].eventPicked.connect(
         lambda _t, channel: panels["spectrum"].highlight(channel))
     panels["events"].eventPicked.connect(lambda _t, channel: panels["map"].highlight(channel))

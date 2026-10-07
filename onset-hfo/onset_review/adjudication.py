@@ -236,6 +236,13 @@ class Adjudication:
     #: Free text about the window as a whole, which is the thing a reader
     #: actually wants to write at the end of a read.
     note: str = ""
+    #: The findings paragraph of the report: drafted by the assistant from
+    #: the analysis, or written or edited by the reader. `draft_by` says
+    #: which, and the report prints it, because a paragraph a model wrote
+    #: and a paragraph a person signed are different documents.
+    draft: str = ""
+    draft_by: str = ""
+    draft_at: str = ""
 
     # -- recording a verdict ----------------------------------------------
     def judge_event(self, key: str, verdict: str, reader: str = "",
@@ -265,6 +272,17 @@ class Adjudication:
         if who and not self.reader:
             self.reader = who
         return judged
+
+    def set_draft(self, text: str, by: str) -> None:
+        """Record the findings paragraph and who it is by: the assistant (named
+        with its model) or the reader. Empty text clears it."""
+        self.draft = str(text or "").strip()
+        self.draft_by = str(by or "") if self.draft else ""
+        self.draft_at = now() if self.draft else ""
+
+    @property
+    def draft_is_assistants(self) -> bool:
+        return bool(self.draft) and self.draft_by.lower().startswith("assistant")
 
     def clear_event(self, key: str) -> None:
         """Take a verdict back. The *reader* may do this; software may not."""
@@ -350,6 +368,9 @@ class Adjudication:
             "window": self.window,
             "reader": self.reader,
             "note": self.note,
+            "draft": self.draft,
+            "draft_by": self.draft_by,
+            "draft_at": self.draft_at,
             # Orphans are written back among the events they came from: under
             # their own original keys, so that re-running the settings they
             # were given under finds them again.
@@ -366,6 +387,9 @@ class Adjudication:
             window=str(data.get("window", "")),
             reader=str(data.get("reader", "")),
             note=str(data.get("note", "")),
+            draft=str(data.get("draft", "")),
+            draft_by=str(data.get("draft_by", "")),
+            draft_at=str(data.get("draft_at", "")),
             events={str(key): Judgement.from_json(value)
                     for key, value in (data.get("events") or {}).items()},
             channels={str(key): Judgement.from_json(value)

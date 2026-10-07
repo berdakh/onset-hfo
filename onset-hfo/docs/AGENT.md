@@ -90,10 +90,18 @@ consent to them ([`onset_review/assistant_tools.py`](../onset_review/assistant_t
 
 | Tool | Returns | Offered when |
 |---|---|---|
-| `explain_event` | the measurements of the selected event's own picture: cycles, in-band power against the background at that moment, and the detail panel's reading (*island*, *column*, *unclear*) with its reasons | an event is selected and the question is about it |
+| `explain_event` | the measurements of the selected event's own picture: cycles, how far its spectrum peaks inside the band at that moment, and the detail panel's reading (*island*, *column*, *unclear*) with its reasons | an event is selected and the question is about it |
 | `run_analysis` | one of six analyses from the pipeline's own registry — detect HFOs with other settings, detect spikes, spectral power, compare the detectors, propagation lead, channel QC — with its run id and how long it took | the reviewer has ticked *Let it run analyses on this window*; the briefing names each one with its cost in seconds, and the transcript says when one ran |
 
-Both are the exception to the rule below, and are bounded the same way as
+| `threshold_sensitivity` | the window's leading channels re-tested at 1.25×, 1.5× and 2× the detection threshold, who leads at each, and up to what multiple the window's leader holds | free once the Threshold panel has run (the panel keeps its result on the session); otherwise only with analyses allowed, since it re-runs the detector |
+| `other_windows` | the other cached windows of the same recording, with their bounds and whether each has been analysed | there is at least one |
+| `compare_window` | another window analysed with this window's settings, and its leaders and tied set against this window's | analyses allowed; seconds to half a minute the first time, cached in memory and beside the settings after |
+
+The assistant can also be asked, from the Report page, to **draft the findings
+paragraph**: the same loop and guards, and the paragraph goes into the report
+marked as the assistant's, with the model named, until the reader edits it.
+
+All of these are the exception to the rule below, and are bounded the same way as
 the rest: fixed to this window's recording, no file written, no setting
 changed in the window, every number they return checked like any other.
 

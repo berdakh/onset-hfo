@@ -330,8 +330,22 @@ def _run(worker) -> None:
 
 
 
+#: What the assistant is asked when the Report page asks for a draft. The
+#: briefing already carries the leaders, their evidence and the detectors'
+#: disagreements, so the question names the shape of the paragraph and
+#: nothing the model could not have been given.
+DRAFT_QUESTION = ("Draft the findings paragraph of this window's report in three to six "
+                  "sentences: which channels led and at what rate, whether they are tied "
+                  "with others, whether the two detectors agreed, and what limits the "
+                  "finding. State only numbers from the evidence, as measurements.")
+
+
 class AssistantPanel(QWidget):
     """Ask about this window; get an answer that cites it, or a refusal."""
+
+    #: A findings paragraph the model drafted, with who drafted it, for the
+    #: Report page to take up. Emitted only for a verified, unrefused answer.
+    drafted = Signal(str, str)
 
     #: (channel, time in archive seconds) when a citation is clicked.
     evidencePicked = Signal(str, float)
@@ -371,6 +385,7 @@ class AssistantPanel(QWidget):
                                  "can refer back: \u201cand the second one?\u201d")
         self.new_chat.clicked.connect(self.new_conversation)
         self._history: list[tuple[str, str]] = []
+        self._drafting = False
         self._event_key: str = ""
 
         top = QHBoxLayout()
@@ -548,6 +563,24 @@ class AssistantPanel(QWidget):
         return True
 
     # -- asking ------------------------------------------------------------
+    def draft_findings(self) -> bool:
+        """Ask for the findings paragraph and hand it on as a draft.
+
+        The same loop, the same guards: a draft with a number no query
+        returned is refused like any answer, and the refusal is shown here.
+        True when a draft was produced.
+        """
+        self._drafting = True
+        try:
+            self.ask(DRAFT_QUESTION)
+        finally:
+            self._drafting = False
+        answer = getattr(self._worker, "answer", None) if self._worker is not None else None
+        if answer is None or answer.refused or not str(answer.text).strip():
+            return False
+        self.drafted.emit(str(answer.text).strip(), f"assistant ({answer.backend})")
+        return True
+
     def ask(self, question: str | None = None) -> None:
         text = (question if isinstance(question, str) and question
                 else self.question.text()).strip()
@@ -589,9 +622,17 @@ class AssistantPanel(QWidget):
 
     # -- what the window adds to the tool set --------------------------------
     def extra_tools(self) -> dict:
-        from onset_review.assistant_tools import analysis_tools, explain_tools
+        from onset_review.assistant_tools import (
+            analysis_tools,
+            explain_tools,
+            sensitivity_tools,
+            window_tools,
+        )
 
         tools = explain_tools(self._session)
+        tools.update(sensitivity_tools(self._session,
+                                       allow_run=self.analyses.isChecked()))
+        tools.update(window_tools(self._session, allow_run=self.analyses.isChecked()))
         if self.analyses.isChecked():
             tools.update(analysis_tools(self._session))
         return tools
@@ -599,20 +640,32 @@ class AssistantPanel(QWidget):
     _EVENT_WORDS = ("this event", "selected event", "explain", "real", "ringing",
                     "artifact", "artefact", "why was", "why is")
 
+    _THRESHOLD_WORDS = ("threshold", "stricter", "survive", "robust", "how sure")
+    _WINDOW_WORDS = ("other window", "windows", "minute", "earlier", "later", "between",
+                     "another", "the first", "the second", "same in", "change between")
+
     def extra_briefing(self, question: str) -> list:
-        """The selected event's reading, fetched for a question about it."""
-        if not self._event_key:
-            return []
+        """What the window already knows that the question is about: the
+        selected event's reading, the threshold re-test when it has run."""
         lowered = question.lower()
-        if not any(word in lowered for word in self._EVENT_WORDS):
-            return []
-        parts = str(self._event_key).split("|")
-        if len(parts) < 2:
-            return []
-        try:
-            return [("explain_event", {"channel": parts[0], "start": float(parts[1])})]
-        except ValueError:
-            return []
+        out: list = []
+        if (getattr(self._session, "sensitivity", None) is not None
+                and any(word in lowered for word in self._THRESHOLD_WORDS)):
+            out.append(("threshold_sensitivity", {}))
+        if any(word in lowered for word in self._WINDOW_WORDS):
+            from onset_review import windows
+
+            if windows.other_windows(self._session):
+                out.append(("other_windows", {}))
+        if self._event_key and any(word in lowered for word in self._EVENT_WORDS):
+            parts = str(self._event_key).split("|")
+            if len(parts) >= 2:
+                try:
+                    out.append(("explain_event",
+                                {"channel": parts[0], "start": float(parts[1])}))
+                except ValueError:
+                    pass
+        return out
 
     def note_event(self, key: str) -> None:
         """The event list's selection, so "this event" means something."""

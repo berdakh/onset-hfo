@@ -48,7 +48,8 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-__all__ = ["Snapshot", "snapshot", "PAD_S", "N_FREQS", "find_event", "read_event"]
+__all__ = ["Snapshot", "snapshot", "PAD_S", "N_FREQS", "find_event", "read_event",
+           "read_contrast", "band_contrast"]
 
 #: Seconds of signal shown on each side of the event. Half a second is enough
 #: to see what led into it -- a discharge, a step, a movement artifact -- and
@@ -187,8 +188,8 @@ def read_event(snap: Snapshot) -> dict:
 
     An oscillation is an island: energy confined to a band of frequencies and
     lasting several cycles. Filter ringing is a column: a sharp transient is
-    broadband, so at the moment of the event there is as much energy outside
-    the band as inside it. The contrast between the two, in dB, at the
+    broadband, so at the moment of the event its spectrum runs through the
+    band without a peak. The prominence of the in-band peak, in dB, at the
     event's own moment and against the surrounding signal, is what the
     bottom picture shows; this reads it off and says which.
     """
@@ -202,38 +203,76 @@ def read_event(snap: Snapshot) -> dict:
     contrast = None
     if snap.available and snap.power_db.size and snap.freqs.size:
         during = (snap.times >= snap.onset) & (snap.times <= snap.offset)
-        if during.any():
-            lo, hi = snap.band
-            inside = (snap.freqs >= lo) & (snap.freqs <= hi)
-            outside = (snap.freqs < 0.8 * lo) | (snap.freqs > 1.25 * hi)
-            if inside.any() and outside.any():
-                moment = snap.power_db[:, during]
-                contrast = float(np.nanmean(moment[inside]) - np.nanmean(moment[outside]))
+        contrast = band_contrast(snap.power_db, snap.freqs, during, snap.band)
     out["band_contrast_db"] = round(contrast, 1) if contrast is not None else None
-    if contrast is None or out["cycles"] is None:
-        reading, why = "unclear", "the time-frequency picture could not be computed here"
-    elif contrast >= 3.0 and cycles >= 3.0:
-        reading = "island"
-        why = (f"energy at the event's moment is {contrast:.1f} dB higher inside "
-               f"{lo:.0f}–{hi:.0f} Hz than outside it, over {cycles:.1f} cycles: confined "
-               "in frequency and sustained, which is what an oscillation looks like")
-    elif contrast < 1.5:
-        reading = "column"
-        why = (f"energy at the event's moment is only {contrast:.1f} dB higher inside the "
-               "band than outside it: broadband, which is what a sharp transient and the "
-               "filter's ringing look like, whatever the band-passed trace shows")
-    elif cycles < 3.0:
-        reading = "unclear"
-        why = (f"confined in frequency ({contrast:.1f} dB) but only {cycles:.1f} cycles long; "
-               "too short to call an oscillation on this picture")
-    else:
-        reading = "unclear"
-        why = (f"{contrast:.1f} dB more energy inside the band than outside over "
-               f"{cycles:.1f} cycles: between an island and a column; open it on the trace")
+    reading, why = read_contrast(contrast, None if out["cycles"] is None else cycles, snap.band)
     out["reading"] = reading
     out["why"] = why
     out["notes"] = list(snap.notes)
     return out
+
+
+def band_contrast(power_db: np.ndarray, freqs: np.ndarray, during: np.ndarray,
+                  band: tuple) -> float | None:
+    """How far the in-band peak of the event's own spectrum stands above the
+    troughs either side of it, in dB: the peak's prominence.
+
+    The spectrum at the event's moment is averaged over the event, its
+    highest point inside the band found, and the lowest points on either
+    side of that peak -- down to half an octave below the band, up to an
+    octave above it or as far as the picture goes -- taken; the contrast is
+    the peak over the higher of the two troughs. An oscillation makes a peak
+    in the band; a sharp transient's energy runs through the band without
+    one, however much of it there is. Prominence rather than a mean over the
+    band, because a ripple at 90 Hz is not made less of a ripple by the
+    band running to 250 Hz, and rather than a comparison with everything
+    below the band, because the discharge a ripple rides on puts its energy
+    at 5-40 Hz and is part of the finding, not evidence against it.
+    """
+    if not power_db.size or not freqs.size or not during.any():
+        return None
+    lo, hi = (float(band[0]), float(band[1])) if band else (0.0, 0.0)
+    if not (0 < lo < hi):
+        return None
+    moment = np.nanmean(power_db[:, during], axis=1)
+    inside = np.flatnonzero((freqs >= lo) & (freqs <= hi))
+    if inside.size == 0:
+        return None
+    peak = inside[int(np.nanargmax(moment[inside]))]
+    left = np.flatnonzero((freqs >= 0.5 * lo) & (np.arange(freqs.size) < peak))
+    right = np.flatnonzero((freqs <= 2.0 * hi) & (np.arange(freqs.size) > peak))
+    troughs = [float(np.nanmin(moment[side])) for side in (left, right) if side.size]
+    if not troughs:
+        return None
+    return float(moment[peak] - max(troughs))
+
+
+def read_contrast(contrast: float | None, cycles: float | None, band: tuple) -> tuple[str, str]:
+    """The reading -- island, column or unclear -- from the band contrast in
+    dB and the length in cycles, in the words the panel uses. Shared with the
+    average-event view so one event and the mean of fifty are read by the
+    same rule."""
+    lo, hi = (float(band[0]), float(band[1])) if band else (0.0, 0.0)
+    if contrast is None or cycles is None:
+        return "unclear", "the time-frequency picture could not be computed here"
+    if contrast >= 3.0 and cycles >= 3.0:
+        return "island", (
+            f"at the event's moment the spectrum peaks inside {lo:.0f}–{hi:.0f} Hz, "
+            f"{contrast:.1f} dB above the troughs either side, over {cycles:.1f} cycles: "
+            "confined in frequency and sustained, which is what an oscillation looks like")
+    if contrast < 1.5:
+        return "column", (
+            f"at the event's moment the spectrum has no real peak inside the band, only "
+            f"{contrast:.1f} dB above the troughs either side: broadband, which is what a "
+            "sharp transient and the filter's ringing look like, whatever the band-passed "
+            "trace shows")
+    if cycles < 3.0:
+        return "unclear", (
+            f"confined in frequency ({contrast:.1f} dB) but only {cycles:.1f} cycles long; "
+            "too short to call an oscillation on this picture")
+    return "unclear", (
+        f"an in-band peak only {contrast:.1f} dB above the troughs either side over "
+        f"{cycles:.1f} cycles: between an island and a column; open it on the trace")
 
 
 def _kind(event) -> str:

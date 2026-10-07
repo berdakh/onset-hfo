@@ -154,6 +154,8 @@ def review_markdown(session: ReviewSession, reviewer: str | None = None,
             f"single busiest channel, is what the data supports.", "",
         ]
 
+    out += _findings_section(session)
+
     out += ["## Per-channel findings", "",
             f"{summary['accepted']} of {summary['detected']} candidate events "
             f"survived artifact rejection; {summary['spikes']} interictal "
@@ -268,6 +270,28 @@ def _as_html(text: str, session: ReviewSession) -> str:
         "h1{font-size:1.6rem}h2{font-size:1.2rem;margin-top:2rem;"
         "border-bottom:1px solid #e0e0e0;padding-bottom:.2rem}"
         "</style></head><body>\n" + body + "\n</body></html>\n")
+
+
+def _findings_section(session: ReviewSession) -> list[str]:
+    """The findings paragraph, when there is one, with who wrote it.
+
+    An assistant's draft is printed as an assistant's draft -- named, dated,
+    and marked as not yet edited -- until the reader edits it, after which it
+    is the reader's. The attribution is part of the document, not a UI
+    nicety: a reader signing a report has to know which sentences a model
+    wrote.
+    """
+    read = getattr(session, "read", None)
+    if read is None or not getattr(read, "draft", ""):
+        return []
+    when = f" on {read.draft_at[:10]}" if read.draft_at else ""
+    if read.draft_is_assistants:
+        who = (f"_Drafted by the {read.draft_by}{when} from the analysis above. Every "
+               "number in it was checked against a query over this analysis; the "
+               "wording is the model's and has not been edited by the reader._")
+    else:
+        who = f"_Written by {read.draft_by or 'the reader'}{when}._"
+    return ["## Findings", "", read.draft.strip(), "", who, ""]
 
 
 def _read_section(session: ReviewSession) -> list[str]:
