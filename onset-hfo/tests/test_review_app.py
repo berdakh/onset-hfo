@@ -3276,3 +3276,203 @@ def test_the_chat_page_is_in_the_sidebar_with_or_without_a_recording(paged, qapp
         assert bare.stack.currentWidget().objectName() == "page_chat"
     finally:
         bare.close()
+
+
+# The design pass: one quiet disclaimer line, one-word pages with what they are
+# for on hover, hints behind "?" buttons, the filter design folded away, a
+# passed quality check as one line, and a Chat page that opens with something
+# to try.
+
+def test_the_disclaimer_is_one_line_until_read_more(paged):
+    from onset_review.pages import DISCLAIMER, DISCLAIMER_LINE
+
+    banner = paged.pages.banner
+    assert banner.text().startswith(DISCLAIMER_LINE) and "Read more" in banner.text()
+    assert "Every number cites" not in banner.text()
+    paged.pages.toggle_disclaimer()
+    assert DISCLAIMER in banner.text() and "Less" in banner.text()
+    paged.pages.toggle_disclaimer()
+    assert banner.text().startswith(DISCLAIMER_LINE)
+    assert DISCLAIMER.startswith(DISCLAIMER_LINE.split(".")[0]), \
+        "the line is the site's words, not a paraphrase"
+
+
+def test_the_sidebar_names_each_page_in_one_word_and_says_what_it_is_for(paged):
+    from onset_review.pages import HOW_TO_READ, PAGES
+
+    nav = paged.pages.nav
+    items = {nav.item(i).data(Qt.UserRole): nav.item(i) for i in range(nav.count())
+             if nav.item(i).data(Qt.UserRole)}
+    for key, label in PAGES:
+        assert items[key].text() == label and " " not in label, label
+        assert "desktop" not in items[key].text()
+    assert items["quality"].text() == "Signal"
+    what = dict(HOW_TO_READ)
+    for key in ("recording", "quality", "report"):
+        assert items[key].toolTip().lower().startswith(what[key][:12].lower())
+
+
+def test_the_hints_are_behind_help_buttons_not_written_across_the_bars(built):
+    from qtpy.QtWidgets import QLabel, QToolButton
+
+    for key in ("trends", "controls"):
+        panel = built.panels[key]
+        labels = [w.text() for w in panel.findChildren(QLabel)]
+        assert not any("Click a cell" in t or "MNE keys" in t for t in labels)
+        helps = [b for b in panel.findChildren(QToolButton) if b.text() == "?"]
+        assert len(helps) == 1 and helps[0].toolTip(), key
+    assert "Click a cell" in built.panels["trends"].plot.toolTip()
+
+
+def test_the_filter_design_is_folded_away_until_asked_for(built):
+    panel = built.panels["preprocess"]
+    assert panel.design_rows.isHidden() and not panel.design_toggle.isChecked()
+    assert panel.method.parent() is panel.design_rows
+    assert not panel.design.isHidden(), "what MNE builds stays in view"
+    panel.design_toggle.setChecked(True)
+    assert not panel.design_rows.isHidden()
+    panel.design_toggle.setChecked(False)
+    assert panel.design_rows.isHidden()
+    # Folded or not, the controls keep working.
+    panel.method.setCurrentIndex(panel.method.findData("iir"))
+    assert "Butterworth" in panel.design.text()
+    panel.method.setCurrentIndex(panel.method.findData("fir"))
+
+
+def test_a_passed_quality_check_is_one_quiet_line_and_a_failed_one_a_box(qapp, review, faulted):
+    from onset_review.dataquality import QualityPanel
+
+    passed = QualityPanel(review)
+    failed = QualityPanel(faulted)
+    try:
+        assert "background" not in passed.summary.styleSheet()
+        assert passed.tokens.good in passed.summary.styleSheet()
+        assert "background" in failed.summary.styleSheet()
+    finally:
+        passed.deleteLater()
+        failed.deleteLater()
+
+
+def test_the_chat_page_opens_with_something_to_try(qapp, monkeypatch):
+    from qtpy.QtCore import QUrl
+
+    from onset_review import chatview
+    from onset_review.assistant_config import AssistantDefaults
+
+    monkeypatch.setattr(chatview, "load_defaults", lambda: AssistantDefaults())
+    waiting = chatview.ChatPanel()
+    try:
+        text = waiting.transcript.toPlainText()
+        assert "No model is loaded" in text and chatview.EXAMPLES[0] not in text
+    finally:
+        waiting.deleteLater()
+
+    talker = _Talker()
+    monkeypatch.setattr(chatview, "load_defaults",
+                        lambda: AssistantDefaults(kind="ollama", model="qwen2.5:3b-instruct",
+                                                  base_url="http://127.0.0.1:11434/v1"))
+    monkeypatch.setattr(chatview, "make_backend", lambda *a, **k: talker)
+    panel = chatview.ChatPanel()
+    try:
+        text = panel.transcript.toPlainText()
+        assert all(example in text for example in chatview.EXAMPLES)
+        panel._example_picked(QUrl("example:1"))
+        assert panel.question.text() == chatview.EXAMPLES[1]
+        panel.ask()
+        text = panel.transcript.toPlainText()
+        assert chatview.EXAMPLES[0] not in text, "the welcome goes with the first message"
+        assert "Reply to: " + chatview.EXAMPLES[1] in text
+        panel.new_conversation()
+        assert all(example in panel.transcript.toPlainText() for example in chatview.EXAMPLES)
+    finally:
+        panel.deleteLater()
+
+
+# The Apple pass: a source list with glyphs, a toolbar that names the page and
+# carries its buttons, panels on cards, and colour spent on the exceptions.
+
+def test_every_sidebar_entry_has_a_drawn_glyph(qapp):
+    from onset_review import glyphs, theme
+    from onset_review.pages import CHAT_PAGE, PAGES
+    from onset_review.studies import STUDIES
+
+    keys = [k for k, _ in PAGES] + [k for k, _, _ in STUDIES] + [CHAT_PAGE[0]]
+    assert set(keys) <= set(glyphs.NAMES), "a page without a glyph gets a dot"
+    for key in keys:
+        pixmap = glyphs.glyph(key, theme.LIGHT.text_muted)
+        image = pixmap.toImage()
+        assert not image.isNull() and image.width() == 32, "drawn at twice the size"
+        painted = sum(1 for x in range(0, image.width(), 2) for y in range(0, image.height(), 2)
+                      if image.pixelColor(x, y).alpha() > 0)
+        assert painted > 8, f"the {key} glyph is blank"
+    assert not glyphs.icon("home", theme.DARK).isNull()
+    assert not glyphs.glyph("no such glyph", "#000000").isNull()
+
+
+def test_the_sidebar_shows_glyphs_and_the_toolbar_names_the_page(paged):
+    pages = paged.pages
+    nav = pages.nav
+    for i in range(nav.count()):
+        item = nav.item(i)
+        if item.data(Qt.UserRole):
+            assert not item.icon().isNull(), item.text()
+    pages.show_page("recording")
+    assert pages.title.text() == "Recording"
+    assert "sub-01" in pages.where.text() or pages.session.request.subject in pages.where.text()
+    pages.show_page("report")
+    assert pages.title.text() == "Report"
+    pages.show_page("quality")
+    assert pages.title.text() == "Signal"
+    assert pages._toolbar.isAncestorOf(pages.where) and pages._toolbar.isAncestorOf(pages.reader)
+
+
+def test_page_actions_live_in_the_toolbar_and_follow_the_page(paged):
+    pages = paged.pages
+    assert pages._toolbar.isAncestorOf(pages.pop_button)
+    assert pages._toolbar.isAncestorOf(pages.export_button)
+    pages.show_page("recording")
+    assert not pages.pop_button.isHidden() and pages.export_button.isHidden()
+    pages.show_page("report")
+    assert pages.pop_button.isHidden() and not pages.export_button.isHidden()
+    pages.show_page("home")
+    assert pages.pop_button.isHidden() and pages.export_button.isHidden()
+
+
+def test_panels_sit_on_cards_and_a_card_page_answers_for_its_body(paged, qapp):
+    from qtpy.QtWidgets import QFrame
+
+    pages = paged.pages
+    pages.show_page("detectors")
+    page = pages.stack.currentWidget()
+    assert page.objectName() == "page_detectors"
+    assert page.view is page.body.view, "the study page's view, through the card"
+    assert callable(page.refresh)
+    with pytest.raises(AttributeError):
+        page.no_such_thing      # noqa: B018 - the point is the raise
+    cards = [f for f in pages.findChildren(QFrame) if f.objectName() == "onset_card"]
+    assert len(cards) >= 10, "every page puts its panels on cards"
+    for key in ("assistant", "chat"):
+        pages.show_page(key)
+        assert any(c.isAncestorOf(pages.panels[key]) for c in cards), key
+
+
+def test_colour_is_spent_on_the_exceptions(paged, qapp, faulted):
+    from onset_review.dataquality import QualityPanel
+
+    # A clear leader is plain text; only the tied case gets a box.
+    leader = paged.pages.leader
+    if paged.session.leader.get("distinguishable"):
+        assert "background:transparent" in leader.styleSheet()
+    else:
+        assert "background:" in leader.styleSheet()
+    panel = QualityPanel(faulted)
+    try:
+        strip = panel.strip.text()
+        chips = panel.chips()
+        good = [c for c in chips if c["kind"] == "analysed"]
+        bad = [c for c in chips if c["kind"] == "set_aside"]
+        assert good and bad, "the faulted recording has both kinds"
+        assert panel.tokens.good not in strip, "a passing contact is a neutral chip"
+        assert panel.tokens.surface_alt in strip and panel.tokens.bad in strip
+    finally:
+        panel.deleteLater()

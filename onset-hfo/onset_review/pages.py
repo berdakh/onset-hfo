@@ -12,15 +12,17 @@ makes for the docked window too, and the whole point of this module is that
 the same widgets, wired the same way, can be laid out either as docks or as
 pages. A reviewer who prefers the docks gets them back from the View menu.
 
-Two desktop-only pages sit in the first group (Contacts, Quality) because they
+The first group needs a recording and is disabled until one is open; three of
+its pages (Contacts, Map, Signal) have no counterpart on the site because they
 need a running analysis. The six study pages of the site follow, read-only,
 built from the committed tables by `onset_review.studies`; they need no
-recording, so they are open even before one is loaded.
+recording, so they are open even before one is loaded. Each sidebar entry is
+one word, and its tooltip is the line Home prints about the page.
 """
 
 from __future__ import annotations
 
-from qtpy.QtCore import QByteArray, QEvent, Qt, Signal
+from qtpy.QtCore import QByteArray, QEvent, QSize, Qt, Signal
 from qtpy.QtGui import QKeySequence
 from qtpy.QtWidgets import (
     QCheckBox,
@@ -53,7 +55,7 @@ PAGES = (
     ("recording", "Recording"),
     ("contacts", "Contacts"),
     ("map", "Map"),
-    ("quality", "Quality"),
+    ("quality", "Signal"),
     ("report", "Report"),
     ("assistant", "Assistant"),
 )
@@ -64,9 +66,6 @@ PAGES = (
 STUDY_PAGES = ("Detectors", "Outcome", "Patients", "Data", "Architecture",
                "Research")
 
-#: Desktop-only pages, marked as such in the sidebar.
-DESKTOP_ONLY = {"contacts", "map", "quality"}
-
 #: The site's disclaimer, word for word (`app/panels.py`). A test pins the
 #: two copies to each other; it is duplicated rather than imported because the
 #: wheel does not ship the Streamlit app.
@@ -75,6 +74,10 @@ DISCLAIMER = ("Research prototype — not a medical device. "
               "outcomes — and nothing here is validated for clinical use. "
               "Every number cites the window it came from. There is no "
               "recommendation anywhere in this product; the clinician decides.")
+
+#: The one line of it that is always showing; the rest opens on a click.
+DISCLAIMER_LINE = ("Research prototype — not a medical device. Nothing here is "
+                   "validated for clinical use; the clinician decides.")
 
 #: The site's front door, trimmed to what applies on the desktop.
 WHAT_THIS_IS = (
@@ -98,8 +101,8 @@ HOW_TO_READ = (
     ("contacts", "where the contacts are, ranked, relative to the resection"),
     ("map", "the same contacts flat, coloured by rate with a colour scale: the "
             "figure a paper prints, and the one the assistant can describe"),
-    ("quality", "which contacts and seconds were analysed, and what was done "
-                "to the signal first"),
+    ("quality", "the signal before any detector sees it: which contacts and "
+                "seconds were analysed, and what was done to it first"),
     ("report", "the structured, cited report: findings, your read, data "
                "quality, limitations"),
     ("assistant", "ask about a channel or the evidence; try asking what to "
@@ -113,6 +116,23 @@ CHAT_PAGE = ("chat", "Chat")
 
 SIDEBAR_WIDTH = 190
 COLUMN_WIDTH = 320
+
+
+class _CardPage(QWidget):
+    """One widget on one card, answering for that widget's attributes."""
+
+    def __init__(self, body: QWidget, parent=None):
+        super().__init__(parent)
+        self.body = body
+        box = QVBoxLayout(self)
+        box.setContentsMargins(0, 0, 0, 0)
+        box.addWidget(theme.card_frame(body))
+
+    def __getattr__(self, name: str):
+        body = self.__dict__.get("body")
+        if body is None or name.startswith("_"):
+            raise AttributeError(name)
+        return getattr(body, name)
 
 
 class PageWindow(QMainWindow):
@@ -150,20 +170,40 @@ class PageWindow(QMainWindow):
         self.stack = QStackedWidget()
         self.stack.setObjectName("onset_stack")
 
-        self.banner = QLabel(DISCLAIMER)
+        # One quiet line rather than a box: the site's words, the first of
+        # them always showing and the rest a click away. A banner that takes
+        # two lines of every page is read once and then looked past, which is
+        # the opposite of what a disclaimer is for.
+        self.banner = QLabel()
         self.banner.setObjectName("onset_banner")
         self.banner.setWordWrap(True)
-        self.banner.setStyleSheet(theme.card("warn"))
+        self.banner.setStyleSheet(
+            f"color:{theme.current().warn};font-size:9pt;padding:2px 0 0 0;")
+        self.banner.setOpenExternalLinks(False)
+        self.banner.linkActivated.connect(lambda _link: self.toggle_disclaimer())
+        self._disclaimer_open = False
+        self._say_disclaimer()
 
+        #: Per-page actions shown at the toolbar's right while that page is
+        #: up: the trace's window button, the report's export.
+        self._page_actions: dict[str, list[QWidget]] = {}
         self._build_sidebar()
+        self._build_toolbar()
         self._build_pages()
 
         right = QWidget()
         column = QVBoxLayout(right)
-        column.setContentsMargins(theme.SPACING, theme.SPACING, theme.SPACING, 0)
-        column.setSpacing(theme.SPACING)
-        column.addWidget(self.banner)
-        column.addWidget(self.stack, 1)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(0)
+        column.addWidget(self._toolbar)
+        content = QWidget()
+        inner = QVBoxLayout(content)
+        inner.setContentsMargins(theme.PAGE_MARGIN, theme.SPACING, theme.PAGE_MARGIN,
+                                 theme.CARD_GAP)
+        inner.setSpacing(theme.SPACING)
+        inner.addWidget(self.banner)
+        inner.addWidget(self.stack, 1)
+        column.addWidget(content, 1)
 
         body = self._split("main", Qt.Horizontal, [self._sidebar, right],
                            [SIDEBAR_WIDTH, 1400], stretch=(0, 1))
@@ -190,20 +230,61 @@ class PageWindow(QMainWindow):
     def loaded(self) -> bool:
         return self.session is not None
 
-    def _build_sidebar(self) -> None:
+    def _build_toolbar(self) -> None:
+        """The strip above the page: the page's name on the left, the
+        recording in the middle, the page's actions and the reader on the
+        right. Where a Mac window puts the document's name and its buttons;
+        the sidebar is left to navigation."""
+        tokens = theme.current()
+        self.title = QLabel("")
+        self.title.setObjectName("onset_page_title")
+        self.title.setStyleSheet(f"color:{tokens.text};font-size:13pt;font-weight:600;"
+                                 "background:transparent;border:none;")
         if self.loaded:
             request = self.session.request
-            self.where = QLabel(f"<b>{request.subject}</b><br>"
+            self.where = QLabel(f"<b>{request.subject}</b> · "
                                 f"{request.t_start:g}–{request.t_stop:g} s · "
                                 f"{request.band_label()}")
         else:
             self.where = QLabel("No recording open")
         self.where.setObjectName("onset_where")
-        self.where.setWordWrap(True)
+        self.where.setAlignment(Qt.AlignCenter)
+        self.where.setStyleSheet(f"color:{tokens.text};background:transparent;border:none;")
         self.reader = QLabel("No reader named")
         self.reader.setObjectName("onset_sidebar_reader")
-        self.reader.setWordWrap(True)
-        self.reader.setStyleSheet(f"color:{theme.current().text_muted};font-size:9pt;")
+        self.reader.setStyleSheet(f"color:{tokens.text_muted};font-size:9pt;"
+                                  "background:transparent;border:none;")
+
+        self._toolbar = QWidget()
+        self._toolbar.setObjectName("onset_toolbar")
+        self._toolbar.setAttribute(Qt.WA_StyledBackground, True)
+        row = QHBoxLayout(self._toolbar)
+        row.setContentsMargins(theme.PAGE_MARGIN, theme.SPACING, theme.PAGE_MARGIN,
+                               theme.SPACING)
+        row.setSpacing(theme.SPACING)
+        row.addWidget(self.title, 1)
+        row.addWidget(self.where, 2)
+        tail = QHBoxLayout()
+        tail.setContentsMargins(0, 0, 0, 0)
+        tail.setSpacing(theme.SPACING)
+        tail.addStretch(1)
+        self._actions_box = tail
+        tail.addWidget(self.reader)
+        row.addLayout(tail, 1)
+
+    def _register_action(self, key: str, widget: QWidget) -> None:
+        """Put `widget` in the toolbar, shown while page `key` is up."""
+        widget.setVisible(False)
+        index = self._actions_box.count() - 1      # before the reader
+        self._actions_box.insertWidget(index, widget)
+        self._page_actions.setdefault(key, []).append(widget)
+
+    def _build_sidebar(self) -> None:
+        from onset_review import glyphs
+
+        tokens = theme.current()
+        self._labels: dict[str, str] = {}
+        self.nav.setIconSize(QSize(16, 16))
 
         def heading(text: str) -> None:
             item = QListWidgetItem(text.upper())
@@ -215,12 +296,16 @@ class PageWindow(QMainWindow):
             item.setForeground(Qt.gray)
             self.nav.addItem(item)
 
+        # What each page is for, as its tooltip: the sidebar is the table of
+        # contents, and a reader who hovers gets the line Home prints.
+        what = dict(HOW_TO_READ)
         heading("This recording")
         for key, label in PAGES:
-            item = QListWidgetItem(label + ("   desktop" if key in DESKTOP_ONLY else ""))
+            item = QListWidgetItem(glyphs.icon(key, tokens), label)
             item.setData(Qt.UserRole, key)
-            item.setToolTip("Only on the desktop: needs a running analysis"
-                            if key in DESKTOP_ONLY else "")
+            self._labels[key] = label
+            about = what.get(key, "")
+            item.setToolTip(about[0].upper() + about[1:] if about else "")
             if key != "home" and not self.loaded:
                 item.setFlags(Qt.NoItemFlags)
                 item.setToolTip("Open a recording first: Home, or File → Open")
@@ -231,14 +316,16 @@ class PageWindow(QMainWindow):
         from onset_review.studies import STUDIES
 
         for key, label, what in STUDIES:
-            item = QListWidgetItem(label)
+            item = QListWidgetItem(glyphs.icon(key, tokens), label)
             item.setData(Qt.UserRole, key)
             item.setToolTip(what)
+            self._labels[key] = label
             self.nav.addItem(item)
             self._items[key] = item
         heading("The model")
-        item = QListWidgetItem(CHAT_PAGE[1])
+        item = QListWidgetItem(glyphs.icon(CHAT_PAGE[0], tokens), CHAT_PAGE[1])
         item.setData(Qt.UserRole, CHAT_PAGE[0])
+        self._labels[CHAT_PAGE[0]] = CHAT_PAGE[1]
         item.setToolTip("The local model on its own: not connected to this recording, "
                         "nothing checked")
         self.nav.addItem(item)
@@ -246,15 +333,12 @@ class PageWindow(QMainWindow):
 
         sidebar = QWidget()
         sidebar.setObjectName("onset_sidebar")
+        sidebar.setAttribute(Qt.WA_StyledBackground, True)
         sidebar.setMinimumWidth(140)
         sidebar.setMaximumWidth(420)
         box = QVBoxLayout(sidebar)
-        box.setContentsMargins(theme.SPACING, theme.SPACING, 0, theme.SPACING)
+        box.setContentsMargins(theme.SPACING, theme.SPACING + 4, 0, theme.SPACING)
         box.setSpacing(4)
-        box.addWidget(theme.section_label("Recording"))
-        box.addWidget(self.where)
-        box.addWidget(theme.section_label("Reader"))
-        box.addWidget(self.reader)
         box.addWidget(self.nav, 1)
         self._sidebar = sidebar
 
@@ -262,10 +346,27 @@ class PageWindow(QMainWindow):
         key = current.data(Qt.UserRole) if current is not None else None
         if key and key in self._pages:
             self.stack.setCurrentWidget(self._pages[key])
+            self.title.setText(self._labels.get(key, ""))
+            for page, widgets in self._page_actions.items():
+                for widget in widgets:
+                    widget.setVisible(page == key)
             refresh = getattr(self._pages[key], "refresh", None)
             if callable(refresh):
                 refresh()
             self.pageChanged.emit(key)
+
+    # -- the disclaimer -----------------------------------------------------
+    def toggle_disclaimer(self) -> None:
+        self._disclaimer_open = not self._disclaimer_open
+        self._say_disclaimer()
+
+    def _say_disclaimer(self) -> None:
+        if self._disclaimer_open:
+            self.banner.setText(f"{DISCLAIMER} <a href='less' style='color:"
+                                f"{theme.current().accent};'>Less</a>")
+        else:
+            self.banner.setText(f"{DISCLAIMER_LINE} <a href='more' style='color:"
+                                f"{theme.current().accent};'>Read more</a>")
 
     # -- the pages --------------------------------------------------------
     def _build_pages(self) -> None:
@@ -286,10 +387,11 @@ class PageWindow(QMainWindow):
         from onset_review.studypages import StudyPage
 
         for key, _label, _what in STUDIES:
-            page = StudyPage(key, cached=self._cached)
-            page.setObjectName(f"page_{key}")
+            study = StudyPage(key, cached=self._cached)
             if self._on_open_cached is not None:
-                page.openRequested.connect(self._on_open_cached)
+                study.openRequested.connect(self._on_open_cached)
+            page = self._on_card(study)
+            page.setObjectName(f"page_{key}")
             self._pages[key] = page
             self.stack.addWidget(page)
         # The chat needs no recording: the window's panel when there is one,
@@ -299,10 +401,7 @@ class PageWindow(QMainWindow):
             from onset_review.chatview import ChatPanel
 
             chat = ChatPanel()
-        page = QWidget()
-        box = QVBoxLayout(page)
-        box.setContentsMargins(0, 0, 0, 0)
-        box.addWidget(chat)
+        page = self._on_card(chat)
         page.setObjectName(f"page_{CHAT_PAGE[0]}")
         self._pages[CHAT_PAGE[0]] = page
         self.stack.addWidget(page)
@@ -310,6 +409,7 @@ class PageWindow(QMainWindow):
     def _home_page(self) -> QWidget:
         page = QWidget()
         box = QVBoxLayout(page)
+        box.setContentsMargins(0, 0, 0, 0)
         box.setSpacing(theme.SPACING)
         title = QLabel("<h2>Onset Review</h2>")
         box.addWidget(title)
@@ -361,14 +461,17 @@ class PageWindow(QMainWindow):
                              "the study pages below are open now")
         box.addWidget(guide)
 
-        box.addWidget(theme.section_label("Windows on this machine"))
+        shelf = QWidget()
+        shelf_box = QVBoxLayout(shelf)
+        shelf_box.setContentsMargins(0, 0, 0, 0)
+        shelf_box.setSpacing(theme.SPACING)
         self.cached_table = QTableView()
         self.cached_table.setObjectName("onset_cached")
         self.cached_table.setSelectionBehavior(QTableView.SelectRows)
         self.cached_table.setSelectionMode(QTableView.SingleSelection)
         self.cached_table.verticalHeader().setVisible(False)
         self.cached_table.doubleClicked.connect(lambda _index: self._open_selected())
-        box.addWidget(self.cached_table, 1)
+        shelf_box.addWidget(self.cached_table, 1)
         buttons = QHBoxLayout()
         self.open_button = QPushButton("Open the selected window")
         self.open_button.setObjectName("onset_open_cached")
@@ -381,11 +484,12 @@ class PageWindow(QMainWindow):
             self.import_button.clicked.connect(lambda _=False: self._on_import())
         buttons.addWidget(self.import_button)
         buttons.addStretch(1)
-        box.addLayout(buttons)
-        box.addWidget(theme.muted(
+        shelf_box.addLayout(buttons)
+        shelf_box.addWidget(theme.muted(
             "Windows are fetched once and kept. To add another minute of a "
             "patient, from a terminal:  onset-hfo fetch --subject sub-02 "
             "--t-start 0 --t-stop 60"))
+        box.addWidget(theme.card_frame(shelf, "Windows on this machine"), 1)
         page.refresh = self._refresh_cached      # type: ignore[attr-defined]
         self._refresh_cached()
         return page
@@ -429,14 +533,21 @@ class PageWindow(QMainWindow):
         box = QVBoxLayout(left)
         box.setContentsMargins(0, 0, 0, 0)
         box.setSpacing(4)
-        # The site's first question, answered in the site's colours.
+        # The site's first question. Answered in plain text when there is a
+        # clear answer; the tinted box is kept for the case that needs care,
+        # a leader that cannot be told from its neighbours.
         self.leader = QLabel(self.session.caveat())
         self.leader.setObjectName("onset_leader")
         self.leader.setWordWrap(True)
-        self.leader.setStyleSheet(theme.card(
-            "info" if self.session.leader.get("distinguishable") else "bad"))
-        box.addWidget(QLabel("<b>Does any channel actually stand out?</b>"))
-        box.addWidget(self.leader)
+        self.leader.setStyleSheet(
+            f"color:{theme.current().text};background:transparent;border:none;"
+            if self.session.leader.get("distinguishable") else theme.card("bad"))
+        head = QWidget()
+        head_box = QVBoxLayout(head)
+        head_box.setContentsMargins(0, 0, 0, 0)
+        head_box.setSpacing(4)
+        head_box.addWidget(theme.section_label("Does any channel actually stand out?"))
+        head_box.addWidget(self.leader)
 
         self.trend_toggle = QToolButton()
         self.trend_toggle.setText("Trend — rate per channel over time")
@@ -446,23 +557,20 @@ class PageWindow(QMainWindow):
         self.trend_toggle.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.trend_toggle.setAutoRaise(True)
         self.trend_toggle.toggled.connect(self._toggle_trend)
-        self.pop_button = QToolButton()
+        self.pop_button = QPushButton()
         self.pop_button.setObjectName("onset_pop_trace")
         self.pop_button.setText("Open the trace in a new window")
         self.pop_button.setToolTip("Give MNE's browser a window of its own — on a "
                                    "second monitor, or just bigger. Everything "
                                    "here keeps driving it. Ctrl+Shift+T.")
-        self.pop_button.setAutoRaise(True)
         self.pop_button.clicked.connect(lambda _=False: self.toggle_trace_window())
-        strip = QHBoxLayout()
-        strip.setContentsMargins(0, 0, 0, 0)
-        strip.addWidget(self.trend_toggle)
-        strip.addStretch(1)
-        strip.addWidget(self.pop_button)
-        box.addLayout(strip)
+        self._register_action("recording", self.pop_button)
+        head_box.addWidget(self.trend_toggle)
+        head_box.addWidget(self.panels["trends"], 1)
         self.panels["trends"].setMinimumHeight(90)
-        lower = QWidget()
-        under = QVBoxLayout(lower)
+        upper = theme.card_frame(head)
+        lower_body = QWidget()
+        under = QVBoxLayout(lower_body)
         under.setContentsMargins(0, 0, 0, 0)
         under.setSpacing(4)
         under.addWidget(self.panels["controls"])
@@ -486,8 +594,9 @@ class PageWindow(QMainWindow):
         self.figure.setParent(self._trace_slot)
         slot.addWidget(self.figure, 1)
         under.addWidget(self._trace_slot, 1)
+        lower = theme.card_frame(lower_body)
         box.addWidget(self._split("recording_v", Qt.Vertical,
-                                  [self.panels["trends"], lower], [200, 700],
+                                  [upper, lower], [250, 700],
                                   stretch=(0, 1)), 1)
 
         self.side = QTabWidget()
@@ -514,8 +623,10 @@ class PageWindow(QMainWindow):
                                    "average to an oscillation or to a transient?")
         self.side.setTabToolTip(5, "The leading channels re-tested at stricter thresholds "
                                    "— does the ranking survive?")
-        outer.addWidget(self._split("recording", Qt.Horizontal, [left, self.side],
-                                    [1000, max(COLUMN_WIDTH + 150, self.side.minimumWidth())],
+        side_card = theme.card_frame(self.side)
+        side_card.setMinimumWidth(self.side.minimumWidth() + 2 * theme.SPACING + 2)
+        outer.addWidget(self._split("recording", Qt.Horizontal, [left, side_card],
+                                    [1000, max(COLUMN_WIDTH + 150, side_card.minimumWidth())],
                                     stretch=(1, 0)), 1)
         return page
 
@@ -585,6 +696,10 @@ class PageWindow(QMainWindow):
     def _toggle_trend(self, on: bool) -> None:
         self.panels["trends"].setVisible(bool(on))
         self.trend_toggle.setArrowType(Qt.DownArrow if on else Qt.RightArrow)
+        splitter = self.splitter("recording_v")
+        if splitter is not None and not on:
+            upper = splitter.widget(0)
+            splitter.setSizes([upper.sizeHint().height(), max(300, sum(splitter.sizes()))])
 
     def _contacts_page(self) -> QWidget:
         page = QWidget()
@@ -632,7 +747,8 @@ class PageWindow(QMainWindow):
         self._say_template_state()
         box.addStretch(1)
         row.addWidget(self._split("contacts", Qt.Horizontal,
-                                  [self.panels["brain"], column],
+                                  [theme.card_frame(self.panels["brain"]),
+                                   theme.card_frame(column)],
                                   [1100, COLUMN_WIDTH], stretch=(1, 0)), 1)
         return page
 
@@ -719,7 +835,8 @@ class PageWindow(QMainWindow):
             "Contacts page and this map becomes this patient's head."))
         box.addStretch(1)
         row.addWidget(self._split("map", Qt.Horizontal,
-                                  [self.panels["map"], column],
+                                  [theme.card_frame(self.panels["map"]),
+                                   theme.card_frame(column)],
                                   [1100, COLUMN_WIDTH], stretch=(1, 0)), 1)
         self.panels["map"].askRequested.connect(self._ask_about_map)
         return page
@@ -737,10 +854,8 @@ class PageWindow(QMainWindow):
         box.setSpacing(theme.SPACING)
         split = self._split(
             "quality_h", Qt.Horizontal,
-            [self._titled("Data quality — which contacts and which seconds were "
-                          "analysed", self.panels["quality"]),
-             self._titled("Preprocessing — what is done to the signal before any "
-                          "detector sees it", self.panels["preprocess"])],
+            [self._titled("Data quality", self.panels["quality"]),
+             self._titled("Preprocessing", self.panels["preprocess"])],
             [700, 700])
         under = QTabWidget()
         under.setObjectName("onset_quality_under")
@@ -749,7 +864,8 @@ class PageWindow(QMainWindow):
         under.setTabToolTip(0, "How this was produced, step by step")
         under.setTabToolTip(1, "What ICA found, scored, for you to choose from; "
                                "nothing is removed until you choose")
-        box.addWidget(self._split("quality_v", Qt.Vertical, [split, under], [540, 360]), 1)
+        box.addWidget(self._split("quality_v", Qt.Vertical,
+                                  [split, theme.card_frame(under)], [540, 360]), 1)
         return page
 
     def _report_page(self) -> QWidget:
@@ -760,6 +876,7 @@ class PageWindow(QMainWindow):
         self.report_view = QTextBrowser()
         self.report_view.setObjectName("onset_report")
         self.report_view.setOpenExternalLinks(False)
+        self.report_view.setFrameShape(QFrame.NoFrame)
         preview = self._titled("The review as it will be exported", self.report_view)
 
         column = QWidget()
@@ -790,7 +907,7 @@ class PageWindow(QMainWindow):
         self.draft_button.clicked.connect(lambda _=False: self.draft_findings())
         box.addWidget(self.draft_button)
         self._say_findings_state()
-        box.addWidget(theme.section_label("Agreement with the archive's annotators"))
+        box.addWidget(theme.section_label("Agreement with the annotators"))
         box.addWidget(self.panels["agreement"], 1)
         self.appendix = QCheckBox("Show the appendix (every measurement)")
         self.appendix.setObjectName("onset_report_appendix")
@@ -804,11 +921,13 @@ class PageWindow(QMainWindow):
         self.export_button.setEnabled(self._on_export is not None)
         if self._on_export is not None:
             self.export_button.clicked.connect(lambda _=False: self._on_export())
-        box.addWidget(self.export_button)
-        box.addWidget(theme.muted("Markdown or a web page. Your verdicts and notes "
-                                  "go in under your name; name yourself under "
-                                  "Read first."))
-        row.addWidget(self._split("report", Qt.Horizontal, [preview, column],
+        self.export_button.setToolTip("Markdown or a web page. Your verdicts and "
+                                      "notes go in under your name; name yourself "
+                                      "under Read first.")
+        self._register_action("report", self.export_button)
+        box.addStretch(1)
+        row.addWidget(self._split("report", Qt.Horizontal,
+                                  [preview, theme.card_frame(column)],
                                   [1100, COLUMN_WIDTH], stretch=(1, 0)), 1)
         page.refresh = self.refresh_report      # type: ignore[attr-defined]
         assistant = self.panels.get("assistant")
@@ -892,11 +1011,7 @@ class PageWindow(QMainWindow):
             self.report_view.setPlainText(f"The report could not be rendered: {error}")
 
     def _assistant_page(self) -> QWidget:
-        page = QWidget()
-        box = QVBoxLayout(page)
-        box.setContentsMargins(0, 0, 0, 0)
-        box.addWidget(self.panels["assistant"])
-        return page
+        return self._on_card(self.panels["assistant"])
 
     # -- regions a mouse can drag ------------------------------------------
     def _split(self, name: str, orientation, widgets: list, sizes: list[int],
@@ -1009,13 +1124,14 @@ class PageWindow(QMainWindow):
 
     @staticmethod
     def _titled(title: str, widget: QWidget) -> QWidget:
-        holder = QWidget()
-        box = QVBoxLayout(holder)
-        box.setContentsMargins(0, 0, 0, 0)
-        box.setSpacing(2)
-        box.addWidget(theme.section_label(title))
-        box.addWidget(widget, 1)
-        return holder
+        return theme.card_frame(widget, title)
+
+    @staticmethod
+    def _on_card(widget: QWidget) -> QWidget:
+        """A page that is one card: the card, with the page's margins. The
+        page answers for its body (`page.view`, `page.refresh`), so nothing
+        that held the body has to know it was put on a card."""
+        return _CardPage(widget)
 
     # -- the public surface ----------------------------------------------
     def page_keys(self) -> list[str]:

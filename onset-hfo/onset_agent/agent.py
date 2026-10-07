@@ -626,8 +626,10 @@ class OnsetAgent:
 
     def _about_the_evidence(self, prose: str) -> bool:
         """Whether a prose reply names a channel of this analysis or states a
-        number. The check a JSON answer gets by construction."""
-        if re.search(r"\d", prose):
+        number. The check a JSON answer gets by construction. A number is a
+        number standing on its own: a digit inside a word ("tok123", a
+        random-weight model's whole vocabulary) is not one."""
+        if knowledge.numbers_in(prose):
             return True
         try:
             known = {str(c).upper() for c in self.store.channels()}

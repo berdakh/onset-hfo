@@ -25,7 +25,6 @@ from qtpy.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
-    QSizePolicy,
     QSpinBox,
     QToolButton,
     QWidget,
@@ -200,15 +199,14 @@ class TraceControls(QWidget):
         layout.addWidget(home)
         layout.addStretch(1)
 
-        # The hint is the widest thing in the bar and the least important, so
-        # it is told not to contribute to the minimum width: on a 1366-wide
-        # laptop it would otherwise set the floor for the whole window and push
-        # the trace off the screen. It shortens instead of clipping the row.
-        hint = QLabel("The trace also takes the usual MNE keys; press ? on it.")
-        hint.setStyleSheet(f"color:{theme.current().text_muted};font-size:9pt;")
-        hint.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
-        hint.setMinimumWidth(0)
-        layout.addWidget(hint)
+        # The keys, behind a "?" rather than written across the bar: a
+        # sentence there was the widest thing in the row and the least
+        # important, and on a 1366-wide laptop it set the floor for the
+        # whole window.
+        layout.addWidget(theme.help_button(
+            "Amplitude: the trace's scale. Window: seconds on screen. Channels: "
+            "rows on screen. At: where the window starts. The trace also takes "
+            "the usual MNE keys; press ? on it."))
 
         self.seconds.valueChanged.connect(self._set_seconds)
         self.channels.valueChanged.connect(self._set_channels)

@@ -1227,8 +1227,8 @@ def _set_reader_status(host: QMainWindow, session: ReviewSession) -> None:
             else f"Read by {read.reader or 'nobody named'} — "
                  f"{counts['judged']} judged")
     label.setText(text)
-    # The page layout also says it in the sidebar, where the reader's name
-    # sits above the pages rather than at the foot of the window.
+    # The page layout also says it in its toolbar, where the reader's name
+    # sits beside the recording rather than at the foot of the window.
     sidebar = getattr(host, "set_reader", None)
     if callable(sidebar):
         sidebar(text)

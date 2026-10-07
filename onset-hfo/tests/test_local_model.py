@@ -47,9 +47,13 @@ CHAT_TEMPLATE = (
 @pytest.fixture(scope="module")
 def tiny_model(tmp_path_factory) -> str:
     """A real Qwen2 checkpoint on disk, with random weights."""
+    import torch
     from tokenizers import Tokenizer, decoders, models, pre_tokenizers
     from transformers import PreTrainedTokenizerFast, Qwen2Config, Qwen2ForCausalLM
 
+    # Seeded: the weights are random, and an unseeded draw now and then
+    # produced a model that happened to pass the prose check.
+    torch.manual_seed(0)
     out = tmp_path_factory.mktemp("tiny_qwen")
     words = ["<|endoftext|>", "<|im_start|>", "<|im_end|>", "system", "user",
              "assistant", "tool", "name", "arguments", "top_channels"]

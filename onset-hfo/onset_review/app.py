@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -670,7 +671,13 @@ def _screenshot(app, parts, path: Path) -> int:
     """
     from qtpy.QtCore import QThread
 
-    parts.host.resize(1680, 980)
+    # The documentation size, or the one asked for: ONSET_SCREENSHOT_SIZE=1366x768
+    # renders the laptop the clinic actually has.
+    width, height = 1680, 980
+    asked = os.environ.get("ONSET_SCREENSHOT_SIZE", "")
+    if re.fullmatch(r"\d{3,4}x\d{3,4}", asked):
+        width, height = (int(part) for part in asked.split("x"))
+    parts.host.resize(width, height)
     for _ in range(12):      # let the trace's own load thread settle
         app.processEvents()
         QThread.msleep(60)
