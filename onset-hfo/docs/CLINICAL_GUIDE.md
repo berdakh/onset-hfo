@@ -227,6 +227,8 @@ hits a sharp transient, which is the classic way HFO detectors fool themselves.
 
 ### This event — the picture the judgement is made on
 
+*(The tab is labelled **Event**.)*
+
 Select an event anywhere and this panel shows it three ways on one time axis:
 a row in the Events list, a cell in the Trend, or a click on the trace itself
 at the event's place on its channel. The Trend and the trace pick the nearest
@@ -730,8 +732,11 @@ evidence. The panels you have dragged into place stay where you put them.
 
 A tab beside Provenance on the Quality page, empty until *Fit ICA* is on and
 applied. Then one row per component: its share of the variance, MNE's muscle
-score and, when the recording has an ECG lead, its ECG score, how much of its
-power lies above 40 Hz, and the three contacts it loads on most. Select a row
+score where the recording carries electrode positions (without them MNE's
+score has nothing spatial to work with, so it is not run and the panel says
+so; the share above 40 Hz is the guide instead), its ECG score when the
+recording has an ECG lead, how much of its power lies above 40 Hz, and the
+three contacts it loads on most. Select a row
 to see its time course, its spectrum and its loadings. Tick the ones to
 remove and press **Remove ticked and re-analyse**: the choice goes through
 the Preprocessing panel's Apply like any other setting, so the steps and the

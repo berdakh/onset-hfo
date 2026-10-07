@@ -169,7 +169,10 @@ class ComponentsPanel(QWidget):
         rec = self._record
         parts = [f"ICA ({rec['method']}, {rec['n_components']} components, seed {rec['seed']}) "
                  f"fitted on {len(rec.get('channels') or [])} channels."]
-        if rec.get("suggested_muscle"):
+        if not rec.get("muscle_scored", bool(rec.get("muscle_scores"))):
+            parts.append("<b>Not scored for muscle</b>: MNE's score needs electrode positions "
+                         "and this recording carries none; the share above 40 Hz is the guide.")
+        elif rec.get("suggested_muscle"):
             parts.append("MNE's muscle scorer suggests "
                          + ", ".join(str(i) for i in rec["suggested_muscle"]) + ".")
         else:
@@ -187,7 +190,7 @@ class ComponentsPanel(QWidget):
                      "is split on it for HFO work. Look at a component's time course and "
                      "spectrum before removing it, and at what the removal does to the "
                      "ranking after.")
-        parts.extend(rec.get("notes") or [])
+        parts.extend(n for n in (rec.get("notes") or []) if not n.startswith("Not scored for muscle"))
         self.caption.setText(" ".join(parts))
         self.caption.setStyleSheet(card("warn"))
         self.status.setText("Tick components, then remove and re-analyse.")

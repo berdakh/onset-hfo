@@ -324,6 +324,12 @@ def _regress_out(raw, picks: list[str], artifact: list[str]) -> np.ndarray:
     return betas.T
 
 
+def _has_positions(raw) -> bool:
+    """Whether every channel carries a finite, non-zero position."""
+    locs = np.array([ch["loc"][:3] for ch in raw.info["chs"]], dtype=float)
+    return bool(locs.size) and bool(np.isfinite(locs).all()) and bool(np.any(locs != 0))
+
+
 def _ica_ecg_channel(rec: Recording) -> str | None:
     """An ECG lead in the recording, by type or by name, if it has one."""
     raw = rec.raw
@@ -362,11 +368,21 @@ def _fit_ica(raw, cfg: PreprocessConfig, rec: Recording, steps: list[str]) -> di
         loadings = np.asarray(ica.get_components(), dtype=float)       # (channels, components)
         variance = np.asarray(ica.pca_explained_variance_, dtype=float)
         share = (variance[:fitted] / variance.sum()).tolist() if variance.sum() > 0 else []
-        try:
-            muscle_idx, muscle_scores = ica.find_bads_muscle(raw, verbose="ERROR")
-        except Exception as error:      # noqa: BLE001 - said, not raised
-            muscle_idx, muscle_scores = [], []
-            notes.append(f"MNE's muscle scoring did not run here ({type(error).__name__}).")
+        # MNE's muscle score has a spatial term that needs electrode positions;
+        # without them every component scores 0, which would read as "clean"
+        # when it means "not scored". So it is not run, and the record says so.
+        muscle_idx, muscle_scores = [], []
+        muscle_scored = False
+        if _has_positions(raw):
+            try:
+                muscle_idx, muscle_scores = ica.find_bads_muscle(raw, verbose="ERROR")
+                muscle_scored = True
+            except Exception as error:      # noqa: BLE001 - said, not raised
+                notes.append(f"MNE's muscle scoring did not run here ({type(error).__name__}).")
+        else:
+            notes.append("Not scored for muscle: MNE's muscle score needs electrode positions "
+                         "and this recording carries none. The share of power above 40 Hz "
+                         "is the guide instead.")
         ecg_name = _ica_ecg_channel(rec)
         ecg_idx, ecg_scores = [], []
         if ecg_name is not None:
@@ -401,7 +417,8 @@ def _fit_ica(raw, cfg: PreprocessConfig, rec: Recording, steps: list[str]) -> di
     steps.append(
         f"ICA ({cfg.ica_method}, {fitted} components, seed {seed}) on {n_channels} channels: "
         + (f"MNE suggests muscle {', '.join(str(i) for i in muscle_idx)}" if len(muscle_idx)
-           else "MNE suggests no muscle component")
+           else ("MNE suggests no muscle component" if muscle_scored
+                 else "not scored for muscle (no electrode positions)"))
         + (f"; ECG {', '.join(str(i) for i in ecg_idx)}" if len(ecg_idx)
            else ("; no ECG component" if ecg_name else "; no ECG lead to score against"))
         + (f"; removed {', '.join(str(i) for i in exclude)} (the reviewer's choice)"
@@ -412,6 +429,7 @@ def _fit_ica(raw, cfg: PreprocessConfig, rec: Recording, steps: list[str]) -> di
         "channels": list(raw.ch_names), "sfreq": float(raw.info["sfreq"]),
         "sources": sources.astype(np.float32), "loadings": loadings,
         "variance_share": share, "hf_share": hf_share,
+        "muscle_scored": muscle_scored,
         "muscle_scores": [float(v) for v in np.asarray(muscle_scores).reshape(-1)],
         "ecg_scores": [float(v) for v in np.asarray(ecg_scores).reshape(-1)],
         "suggested_muscle": [int(i) for i in muscle_idx],
