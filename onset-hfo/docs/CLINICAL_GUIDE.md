@@ -591,12 +591,15 @@ it *What can you do?* and it tells you, also without a model.
 
 ![An answer, with the work under it](images/onset-review-assistant-answer.png)
 
-**You see the work.** While a question runs, the lines under it say which
-data the model was given (`Retrieved for the model top_channels: AR1-AR2
-22.0/min, …`), what it asked for, what it wrote, and what the checks made of
-it — including, on a refusal, the sentence the model actually wrote and the
-check it failed. A wait is a visible process, and a refusal has a visible
-cause.
+**You see the work.** Each exchange is a card: the question, the answer, and
+a chip that says what the answer is — **Checked** against this analysis,
+**From the documents**, **Not checked**, or **Refused**. While a question
+runs, the lines under it say which data the model was given (`Retrieved for
+the model top_channels: AR1-AR2 22.0/min, …`), what it asked for, what it
+wrote, and what the checks made of it; when the answer lands they fold under
+*How it got there*, one click away — including, on a refusal, the sentence
+the model actually wrote and the check it failed. A wait is a visible
+process, and a refusal has a visible cause.
 
 **The citations are the point.** Each one is a link to a channel and a time, so
 an answer leads to the signal it was measured on. When the model names a

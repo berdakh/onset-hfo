@@ -22,6 +22,8 @@ one word, and its tooltip is the line Home prints about the page.
 
 from __future__ import annotations
 
+import html
+
 from qtpy.QtCore import QByteArray, QEvent, QSize, Qt, Signal
 from qtpy.QtGui import QKeySequence
 from qtpy.QtWidgets import (
@@ -37,10 +39,11 @@ from qtpy.QtWidgets import (
     QShortcut,
     QSplitter,
     QStackedWidget,
-    QTableView,
     QTabWidget,
     QTextBrowser,
     QToolButton,
+    QTreeWidget,
+    QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -118,6 +121,51 @@ SIDEBAR_WIDTH = 190
 COLUMN_WIDTH = 320
 
 
+def _cell(row: dict, key: str, fmt: str = "{}") -> str:
+    """A cached-window field as the tree shows it; blank where there is none."""
+    value = row.get(key)
+    if value is None or str(value) in ("", "nan", "None"):
+        return ""
+    try:
+        return fmt.format(value)
+    except (ValueError, TypeError):
+        return str(value)
+
+
+def _recent_file():
+    from onset_review.assistant_config import config_path
+
+    return config_path().with_name("recent.json")
+
+
+def remember_recent(request) -> None:
+    """Note the window just opened, so the next launch can offer to continue
+    with it. Subject and seconds only; nothing from the recording."""
+    import json
+
+    try:
+        path = _recent_file()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"subject": str(request.subject),
+                                    "t_start": float(request.t_start),
+                                    "t_stop": float(request.t_stop)}) + "\n",
+                        encoding="utf-8")
+    except (OSError, TypeError, ValueError, AttributeError):
+        pass
+
+
+def recent_window() -> dict | None:
+    """The window noted by `remember_recent`, or None."""
+    import json
+
+    try:
+        payload = json.loads(_recent_file().read_text(encoding="utf-8"))
+        return {"subject": str(payload["subject"]), "t_start": float(payload["t_start"]),
+                "t_stop": float(payload["t_stop"])}
+    except (OSError, ValueError, TypeError, KeyError):
+        return None
+
+
 class _CardPage(QWidget):
     """One widget on one card, answering for that widget's attributes."""
 
@@ -157,6 +205,8 @@ class PageWindow(QMainWindow):
         self._on_import = on_import
         self._on_place_contacts = on_place_contacts
         self._on_export = on_export
+        if self.loaded:
+            remember_recent(self.session.request)
         self._pages: dict[str, QWidget] = {}
         self._items: dict[str, QListWidgetItem] = {}
         #: name -> (splitter, default sizes). Every region boundary a mouse
@@ -413,11 +463,14 @@ class PageWindow(QMainWindow):
         box.setSpacing(theme.SPACING)
         title = QLabel("<h2>Onset Review</h2>")
         box.addWidget(title)
-        for text in (WHAT_THIS_IS, WHAT_IT_IS_NOT):
-            label = QLabel(text)
-            label.setWordWrap(True)
-            box.addWidget(label)
+        lead = QLabel(WHAT_THIS_IS)
+        lead.setWordWrap(True)
+        box.addWidget(lead)
+        caveat = theme.muted(WHAT_IT_IS_NOT, size=10)
+        caveat.setTextFormat(Qt.RichText)
+        box.addWidget(caveat)
 
+        self.continue_button = None
         if self.loaded:
             summary = self.session.summary()
             numbers = QHBoxLayout()
@@ -440,42 +493,36 @@ class PageWindow(QMainWindow):
             opener = QLabel("<b>Nothing is open yet.</b> Pick a window below and "
                             "press Open, or use <b>File → Open a recording…</b> to "
                             "choose the band and the detectors as well, or "
-                            "<b>File → Open a file…</b> for a recording of your own.")
+                            "<b>File → Open a file…</b> for a recording of your own. "
+                            "<b>Help → How to read the pages</b> says what each page is for.")
             opener.setObjectName("onset_nothing_open")
             opener.setWordWrap(True)
             opener.setStyleSheet(theme.card("info"))
             box.addWidget(opener)
-
-        box.addWidget(theme.section_label("How to read the pages"))
-        guide = QLabel("<ol>" + "".join(
-            f"<li><a href='page:{key}'><b>{label}</b></a> — {what}</li>"
-            for (key, label), (_key, what) in zip(list(PAGES[1:]) + [CHAT_PAGE], HOW_TO_READ,
-                                               strict=True))
-            + "</ol>")
-        guide.setWordWrap(True)
-        guide.setOpenExternalLinks(False)
-        guide.linkActivated.connect(
-            lambda link: self.show_page(link.split(":", 1)[1]))
-        if not self.loaded:
-            guide.setToolTip("These pages open once a recording is loaded; "
-                             "the study pages below are open now")
-        box.addWidget(guide)
+            box.addWidget(self._continue_card())
 
         shelf = QWidget()
         shelf_box = QVBoxLayout(shelf)
         shelf_box.setContentsMargins(0, 0, 0, 0)
         shelf_box.setSpacing(theme.SPACING)
-        self.cached_table = QTableView()
-        self.cached_table.setObjectName("onset_cached")
-        self.cached_table.setSelectionBehavior(QTableView.SelectRows)
-        self.cached_table.setSelectionMode(QTableView.SingleSelection)
-        self.cached_table.verticalHeader().setVisible(False)
-        self.cached_table.doubleClicked.connect(lambda _index: self._open_selected())
-        shelf_box.addWidget(self.cached_table, 1)
+        # The windows on disk, grouped by patient: a reader looks for a
+        # patient first and a minute of them second.
+        self.cached_tree = QTreeWidget()
+        self.cached_tree.setObjectName("onset_cached")
+        self.cached_tree.setHeaderLabels(["Patient · window", "Dataset", "Run", "Sampling",
+                                          "Channels"])
+        self.cached_tree.setRootIsDecorated(True)
+        self.cached_tree.setAlternatingRowColors(False)
+        self.cached_tree.setSelectionMode(QTreeWidget.SingleSelection)
+        self.cached_tree.setUniformRowHeights(True)
+        self.cached_tree.setFrameShape(QFrame.NoFrame)
+        self.cached_tree.itemDoubleClicked.connect(lambda _item, _col: self._open_selected())
+        self.cached_tree.itemSelectionChanged.connect(self._selection_changed)
+        shelf_box.addWidget(self.cached_tree, 1)
         buttons = QHBoxLayout()
         self.open_button = QPushButton("Open the selected window")
         self.open_button.setObjectName("onset_open_cached")
-        self.open_button.setEnabled(self._on_open_cached is not None)
+        self.open_button.setEnabled(False)
         self.open_button.clicked.connect(self._open_selected)
         buttons.addWidget(self.open_button)
         self.import_button = QPushButton("Open a file…")
@@ -494,10 +541,52 @@ class PageWindow(QMainWindow):
         self._refresh_cached()
         return page
 
-    def _refresh_cached(self) -> None:
-        import pandas as pd
+    def _continue_card(self) -> QWidget:
+        """The window opened last time, one click away; an empty widget when
+        there is none or it is no longer on disk."""
+        holder = QWidget()
+        holder.setObjectName("onset_continue_holder")
+        box = QVBoxLayout(holder)
+        box.setContentsMargins(0, 0, 0, 0)
+        recent = recent_window()
+        row = self._cached_row(recent) if recent else None
+        if row is None:
+            holder.setVisible(False)
+            return holder
+        body = QWidget()
+        inner = QHBoxLayout(body)
+        inner.setContentsMargins(0, 0, 0, 0)
+        inner.setSpacing(theme.SPACING)
+        what = QLabel(f"<b>{html.escape(str(row['subject']))}</b> · "
+                      f"{float(row['t_start']):g}–{float(row['t_stop']):g} s · "
+                      f"{html.escape(str(row.get('dataset', '')))}")
+        what.setObjectName("onset_continue_what")
+        inner.addWidget(what, 1)
+        self.continue_button = QPushButton("Continue")
+        self.continue_button.setObjectName("onset_continue")
+        self.continue_button.setProperty("primary", True)
+        self.continue_button.setEnabled(self._on_open_cached is not None)
+        self.continue_button.clicked.connect(
+            lambda _=False, row=row: self._on_open_cached and self._on_open_cached(row))
+        inner.addWidget(self.continue_button)
+        box.addWidget(theme.card_frame(body, "Continue where you left off"))
+        return holder
 
-        from onset_review.panels import DataFrameModel
+    def _cached_row(self, wanted: dict) -> dict | None:
+        frame = self._cached_frame if hasattr(self, "_cached_frame") else None
+        if frame is None:
+            frame = self._load_cached()
+        if frame is None or len(frame) == 0:
+            return None
+        for row in frame.to_dict("records"):
+            if (str(row.get("subject")) == wanted["subject"]
+                    and abs(float(row.get("t_start", -1)) - wanted["t_start"]) < 1e-6
+                    and abs(float(row.get("t_stop", -1)) - wanted["t_stop"]) < 1e-6):
+                return row
+        return None
+
+    def _load_cached(self):
+        import pandas as pd
 
         frame = None
         if self._cached is not None:
@@ -507,20 +596,69 @@ class PageWindow(QMainWindow):
                 frame = None
         if frame is None or len(frame) == 0:
             frame = pd.DataFrame(columns=["subject", "t_start", "t_stop", "dataset"])
-        columns = [c for c in ("subject", "t_start", "t_stop", "dataset", "run",
-                               "sfreq", "n_channels") if c in frame.columns]
         self._cached_frame = frame
-        self.cached_table.setModel(DataFrameModel(frame[columns].reset_index(drop=True)))
-        self.cached_table.resizeColumnsToContents()
+        return frame
+
+    def _refresh_cached(self) -> None:
+        frame = self._load_cached()
+        self.cached_tree.clear()
+        self._window_items: list[QTreeWidgetItem] = []
+        groups: dict[str, QTreeWidgetItem] = {}
+        rows = frame.sort_values([c for c in ("subject", "t_start") if c in frame.columns]) \
+            if len(frame) else frame
+        for row in rows.to_dict("records"):
+            subject = str(row.get("subject", ""))
+            group = groups.get(subject)
+            if group is None:
+                group = QTreeWidgetItem([subject])
+                group.setFlags(group.flags() & ~Qt.ItemIsSelectable)
+                font = group.font(0)
+                font.setBold(True)
+                group.setFont(0, font)
+                self.cached_tree.addTopLevelItem(group)
+                groups[subject] = group
+
+            item = QTreeWidgetItem([
+                f"{float(row.get('t_start', 0)):g}–{float(row.get('t_stop', 0)):g} s",
+                _cell(row, "dataset"), _cell(row, "run"),
+                _cell(row, "sfreq", "{:g} Hz"), _cell(row, "n_channels", "{:g}")])
+            item.setData(0, Qt.UserRole, row)
+            group.addChild(item)
+            self._window_items.append(item)
+        for group in groups.values():
+            group.setText(0, f"{group.text(0)}  ·  {group.childCount()} "
+                             f"window{'s' if group.childCount() != 1 else ''}")
+        self.cached_tree.expandAll()
+        for column in range(self.cached_tree.columnCount()):
+            self.cached_tree.resizeColumnToContents(column)
+        self._selection_changed()
+
+    def windows_listed(self) -> int:
+        """How many windows the tree lists, across every patient."""
+        return len(getattr(self, "_window_items", []))
+
+    def select_window(self, index: int) -> None:
+        """Select the `index`-th window in the tree, in patient order."""
+        items = getattr(self, "_window_items", [])
+        if 0 <= index < len(items):
+            self.cached_tree.setCurrentItem(items[index])
+            items[index].setSelected(True)
+
+    def _selected_row(self) -> dict | None:
+        for item in self.cached_tree.selectedItems():
+            row = item.data(0, Qt.UserRole)
+            if isinstance(row, dict):
+                return row
+        return None
+
+    def _selection_changed(self) -> None:
+        self.open_button.setEnabled(self._on_open_cached is not None
+                                    and self._selected_row() is not None)
 
     def _open_selected(self) -> None:
-        if self._on_open_cached is None:
+        row = self._selected_row()
+        if self._on_open_cached is None or row is None:
             return
-        rows = self.cached_table.selectionModel().selectedRows() \
-            if self.cached_table.selectionModel() else []
-        if not rows:
-            return
-        row = self._cached_frame.iloc[rows[0].row()].to_dict()
         self._on_open_cached(row)
 
     def _recording_page(self) -> QWidget:

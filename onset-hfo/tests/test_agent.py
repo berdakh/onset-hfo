@@ -752,3 +752,22 @@ def test_prose_that_names_nothing_from_the_evidence_is_not_an_answer(store):
 
     answer = OnsetAgent(store, Namer()).ask("Which channel had the highest ripple rate?")
     assert not answer.refused and leader in answer.text
+
+
+def test_a_question_that_names_its_subject_is_routed_by_itself_mid_conversation(store):
+    """"What is an HFO?" after a data question is a background question, not
+    a follow-up; "and the second one?" is a follow-up and stays on the data
+    path. The old rule followed the conversation blindly."""
+    from onset_agent import knowledge
+
+    assert knowledge.follows_up("And the second one?")
+    assert knowledge.follows_up("Tell me about it")
+    assert knowledge.follows_up("What about that one?")
+    assert not knowledge.follows_up("What is an HFO?")
+    assert not knowledge.follows_up("Define a ripple.")
+    history = [("Which channels have the highest ripple rate?", "AR1-AR2.")]
+    definition = OnsetAgent(store, ScriptedBackend()).ask("What is an HFO?", history=history)
+    assert definition.mode == "background" and not definition.refused
+    assert any(entry.get("type") == "routed" for entry in definition.trace)
+    follow = OnsetAgent(store, ScriptedBackend()).ask("And the second one?", history=history)
+    assert follow.mode == "data"

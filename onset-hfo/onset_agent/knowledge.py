@@ -26,8 +26,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 __all__ = ["Section", "docs_dir", "load_sections", "split_document", "retrieve",
-           "title_match", "kind_of", "looks_medical", "numbers_in", "plain", "glossary",
-           "DOCUMENTS"]
+           "title_match", "kind_of", "follows_up", "looks_medical", "numbers_in", "plain",
+           "glossary", "DOCUMENTS"]
 
 #: The documents searched, in the order they are listed as sources. Not the
 #: install page or the agent's own page: a question about installing is not
@@ -324,6 +324,19 @@ _MEDICAL = re.compile(
     r"\b(patient|treat|therap|surg|medic|drug|dose|dosage|prognos|diagnos|symptom|"
     r"should (i|we|one)|my (son|daughter|mother|father|wife|husband|child)|cure|remission|"
     r"prescri)", re.IGNORECASE)
+
+
+_FOLLOW_UP = re.compile(
+    r"\b(it|its|that|this|them|those|these|one|ones|same|again|also|too|there)\b|"
+    r"^\s*(and|or|but|so|then|what about|how about)\b", re.IGNORECASE)
+
+
+def follows_up(question: str) -> bool:
+    """Whether a question leans on the one before it -- "and the second
+    one?", "tell me about it" -- and so belongs on the path the conversation
+    is on. A question that names its subject ("What is an HFO?") stands on
+    its own, whatever came before."""
+    return bool(_FOLLOW_UP.search(question or ""))
 
 
 def kind_of(question: str) -> str:

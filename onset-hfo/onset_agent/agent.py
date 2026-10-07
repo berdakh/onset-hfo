@@ -476,9 +476,14 @@ class OnsetAgent:
             return AgentAnswer(question=question, text=scope.reason, refused=True,
                                reason="out of scope (checked before the model ran)",
                                trace=trace, backend=self.backend.name)
-        # A follow-up stays on the path its conversation is on, and a question
-        # the window briefs specifically is about the window.
-        kind = knowledge.kind_of(history[-1][0] if history else question)
+        # A follow-up stays on the path its conversation is on; a question
+        # that names its own subject goes where it belongs, whatever came
+        # before; and a question the window briefs specifically is about the
+        # window.
+        if history and knowledge.follows_up(question):
+            kind = knowledge.kind_of(history[-1][0])
+        else:
+            kind = knowledge.kind_of(question)
         if kind != "data" and not extra_briefing:
             note({"type": "routed", "kind": kind})
             return self._ask_background(question, kind, note, trace)

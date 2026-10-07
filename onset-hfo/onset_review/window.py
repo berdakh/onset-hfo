@@ -769,6 +769,7 @@ def decorate_start(*, cached=None, on_open_cached=None, on_import=None,
             "Home page, or File → Open a recording… for the full choice of "
             "band and detectors, or File → Open a file… for a recording of "
             "your own."))
+    help_menu.addAction("How to read the pages", lambda: _how_to_read(host))
     host.statusBar().showMessage("Open a recording to begin.")
     return host
 
@@ -1148,8 +1149,24 @@ def _menus(figure, host: QMainWindow, panels: dict, docks: dict,
 
     help_menu = menubar.addMenu("&Help")
     help_menu.addAction("What am I looking at?", lambda: _about(host, session))
+    help_menu.addAction("How to read the pages", lambda: _how_to_read(host))
     help_menu.addAction("Keyboard shortcuts (MNE trace)",
                         lambda: _shortcuts(figure, host))
+
+
+def how_to_read_text() -> str:
+    """What each page is for, one line each, from the page window's own list."""
+    from onset_review.pages import CHAT_PAGE, HOW_TO_READ, PAGES
+
+    labels = dict(PAGES)
+    labels[CHAT_PAGE[0]] = CHAT_PAGE[1]
+    return "<ol>" + "".join(
+        f"<li><b>{labels.get(key, key)}</b> — {what}</li>" for key, what in HOW_TO_READ
+    ) + "</ol>"
+
+
+def _how_to_read(host) -> None:
+    QMessageBox.information(host, "How to read the pages", how_to_read_text())
 
 
 def apply_layout(docks: dict, name: str) -> bool:
