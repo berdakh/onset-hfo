@@ -26,8 +26,12 @@ cp "${WHEEL}" "${STAGE}/"
 cp packaging/install-ubuntu.sh "${STAGE}/install.sh"
 cp packaging/onset-review.desktop packaging/onset-review.svg "${STAGE}/"
 cp README.md LICENSE "${STAGE}/"
+# The guides, and the documents the assistant answers background questions
+# from and the study pages draw their glossary tooltips from: install.sh
+# copies docs/ next to the environment, and the reviewer looks there.
 mkdir -p "${STAGE}/docs"
-cp docs/INSTALL.md docs/CLINICAL_GUIDE.md docs/AGENT.md docs/LIMITATIONS.md "${STAGE}/docs/"
+cp docs/INSTALL.md docs/CLINICAL_GUIDE.md docs/AGENT.md docs/LIMITATIONS.md \
+   docs/GLOSSARY.md docs/METHODS.md docs/EVALUATION.md "${STAGE}/docs/"
 # The study pages: the site's loaders, the committed tables they read, and
 # the two figures the Outcome page shows. install.sh copies site/ next to the
 # environment and the reviewer finds it there (onset_review.studies.site_root).
