@@ -136,7 +136,55 @@ _SEIZURE = re.compile(r"seizure|ictal|before|during|change over time", re.IGNORE
 #: schemas on the first call, so the model can ask for the run at once.
 _ANALYSIS = re.compile(r"stricter|threshold|surviv|robust|spectral|oscillat|noisy|carpet|"
                        r"\blead|propagat|earlier|earliest|re-?run|again at|compare the "
-                       r"detectors|line.length|quality check|which detector", re.IGNORECASE)
+                       r"detectors|line.length|quality check|which detector|"
+                       r"\bminutes?\b|other window|another window|between the", re.IGNORECASE)
+
+#: Which of the window's tools a question is about. On the first call only
+#: these schemas go with it (plus a small core), because every schema is
+#: tokens a CPU model reads before it writes, and nineteen of them were
+#: three thousand tokens for a question that needed one. From the second
+#: step on, every tool is offered.
+_RELEVANT = (
+    (re.compile(r"stricter|threshold|surviv|robust|how sure|again at|re-?run", re.IGNORECASE),
+     ("threshold_sensitivity", "detect_hfo")),
+    (re.compile(r"\bminutes?\b|other window|another window|earlier|later|between the|"
+                r"other stretch", re.IGNORECASE),
+     ("other_windows", "compare_window")),
+    (re.compile(r"spectral|spectrum|noisy|carpet|oscillat|busy|flat", re.IGNORECASE),
+     ("spectral_power", "channel_qc")),
+    (re.compile(r"\blead|propagat|first in time|earliest", re.IGNORECASE),
+     ("propagation_lead",)),
+    (re.compile(r"compare the detectors|which detector|line.length|agree", re.IGNORECASE),
+     ("compare_detectors",)),
+    (re.compile(r"spike|discharge", re.IGNORECASE), ("detect_spikes",)),
+    (re.compile(r"quality|artifact|artefact|flagged|excluded|set aside", re.IGNORECASE),
+     ("channel_qc",)),
+    (re.compile(r"this event|selected event|explain|ringing|\breal\b", re.IGNORECASE),
+     ("explain_event",)),
+)
+_CORE_TOOLS = ("top_channels", "channel_summary", "get_evidence")
+
+
+def relevant_tools(question: str, tools: dict) -> dict:
+    """The subset of `tools` worth offering on the first call for `question`:
+    the core three plus whatever the wording is about. Everything, when the
+    wording is about nothing in particular."""
+    wanted: list[str] = []
+    matched = False
+    for pattern, names in _RELEVANT:
+        if pattern.search(question):
+            matched = True
+            wanted.extend(n for n in names if n in tools and n not in wanted)
+    if not matched:
+        return dict(tools)
+    # Matched, but the tool it is about is not on offer (analyses not
+    # allowed, say): the core alone, since the briefing already answers. A
+    # caller's tool this table does not know is always offered: nothing here
+    # can judge what it is about.
+    known = {n for _p, names in _RELEVANT for n in names}
+    strangers = {name for name in tools if name not in TOOLS and name not in known}
+    keep = set(_CORE_TOOLS) | set(wanted) | strangers
+    return {name: tool for name, tool in tools.items() if name in keep}
 _WHERE = re.compile(r"\bwhere\b|\bside\b|\bleft\b|\bright\b|hemisphere|\bshaft|electrode|"
                     r"region|lobe|\bmap\b|spatial|neighbou?r|adjacen|spread|cluster|"
                     r"location|locali[sz]", re.IGNORECASE)
@@ -482,9 +530,11 @@ class OnsetAgent:
             offer_tools = not self.brief or step > 0 or tools_at_once
             if self.brief and offer_tools and "Call one of" not in messages[0]["content"]:
                 messages[0] = {"role": "system", "content": self._system(tools_offered=True)}
+            offered = (relevant_tools(question, self.tools) if (offer_tools and step == 0)
+                       else self.tools)
             try:
                 message = self.backend.chat(messages,
-                                            tool_schemas(self.tools) if offer_tools else [])
+                                            tool_schemas(offered) if offer_tools else [])
             except Interrupted:
                 return stopped(step)
             if message.tool_calls:

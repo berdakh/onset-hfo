@@ -2759,7 +2759,9 @@ def test_explain_event_reads_the_selected_events_own_picture(review):
     out = tool.handler(None, channel=event.channel, start=float(event.start))
     assert out["channel"] == event.channel and out["reading"] in ("island", "column", "unclear")
     assert out["why"] and out["cycles"] is not None and "band_contrast_db" in out
-    assert out == detail.read_event(detail.snapshot(review, event))
+    assert out["start_s"] == round(float(event.start), 3)
+    without_time = {k: v for k, v in out.items() if k not in ("start_s", "stop_s")}
+    assert without_time == detail.read_event(detail.snapshot(review, event))
     assert nearest_event(review, event.channel, float(event.start) + 10.0) is None
     from onset_agent.tools import ToolError
 
@@ -2778,7 +2780,7 @@ def test_analyses_run_only_when_the_reviewer_ticks_the_box(qapp, review):
         panel.analyses.setChecked(True)
         tools = panel.extra_tools()
         assert "detect_hfo" in tools and "estimate_soz_probability" not in tools
-        assert "Runs on a copy" in tools["detect_hfo"].description
+        assert "On a copy of this window" in tools["detect_hfo"].description
         out = tools["detect_hfo"].handler(None, threshold_sd=4.0, k=3)
         assert out["threshold_sd"] == 4.0 and out["run_id"].startswith("hfo")
         assert "runtime_s" in out and len(out["channels"]) <= 3

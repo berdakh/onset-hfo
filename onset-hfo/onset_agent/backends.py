@@ -321,6 +321,11 @@ class OllamaBackend(OpenAICompatBackend):
         if base_url is None:
             from onset_agent.hardware import ollama_url
             base_url = ollama_url().rstrip("/") + "/v1"
+        # Ollama's OpenAI-compatible endpoint lives under /v1; a server address
+        # typed without it (http://host:11434) would 404 on every question.
+        base_url = base_url.rstrip("/")
+        if not base_url.endswith("/v1"):
+            base_url += "/v1"
         super().__init__(model=model, base_url=base_url, **kwargs)
 
 
