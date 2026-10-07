@@ -710,11 +710,14 @@ class PageWindow(QMainWindow):
              self._titled("Preprocessing — what is done to the signal before any "
                           "detector sees it", self.panels["preprocess"])],
             [700, 700])
-        box.addWidget(self._split(
-            "quality_v", Qt.Vertical,
-            [split, self._titled("Provenance — how this was produced, step by step",
-                                 self.panels["provenance"])],
-            [540, 360]), 1)
+        under = QTabWidget()
+        under.setObjectName("onset_quality_under")
+        under.addTab(self.panels["provenance"], "Provenance")
+        under.addTab(self.panels["components"], "Components (ICA, experimental)")
+        under.setTabToolTip(0, "How this was produced, step by step")
+        under.setTabToolTip(1, "What ICA found, scored, for you to choose from; "
+                               "nothing is removed until you choose")
+        box.addWidget(self._split("quality_v", Qt.Vertical, [split, under], [540, 360]), 1)
         return page
 
     def _report_page(self) -> QWidget:

@@ -129,3 +129,103 @@ def test_describe_names_the_design_the_reference_and_the_annotators(recording):
     assert "Check data quality" in joined
     _, quiet = describe(PreprocessConfig(), band, sfreq)
     assert not any("rings" in w or "muscle" in w for w in quiet)
+
+
+# --------------------------------------------------------------------------
+# Phase 3: reference regression and ICA, experimental
+# --------------------------------------------------------------------------
+
+def _with_ecg(recording):
+    """The synthetic recording with an ECG lead mixed into every contact at a
+    known weight, and the lead itself as a channel of type ecg."""
+    import dataclasses
+
+    import mne
+
+    raw = recording.raw.copy()
+    sfreq = raw.info["sfreq"]
+    t = raw.times
+    ecg = 50e-6 * np.sin(2 * np.pi * 1.2 * t) * (1 + 0.3 * np.sin(2 * np.pi * 0.2 * t))
+    data = raw.get_data()
+    weights = np.linspace(0.2, 1.0, data.shape[0])
+    data = data + weights[:, None] * ecg[None, :]
+    info = mne.create_info(raw.ch_names + ["ECG"], sfreq,
+                           ch_types=["seeg"] * len(raw.ch_names) + ["ecg"], verbose="ERROR")
+    mixed = mne.io.RawArray(np.vstack([data, ecg[None, :]]), info, verbose="ERROR")
+    return dataclasses.replace(recording, raw=mixed), ecg
+
+
+def test_regressing_an_ecg_lead_removes_what_it_put_in(recording):
+    import mne
+
+    from onset_hfo.preprocess import prepare
+
+    mixed, ecg = _with_ecg(recording)
+    plain = prepare(mixed, PreprocessConfig(bipolar=False, reference="none"), verbose=False)
+    regressed = prepare(mixed, PreprocessConfig(bipolar=False, reference="none",
+                                                regress_channels=("ECG",)), verbose=False)
+    assert "ECG" not in regressed.ch_names and regressed.ch_names == plain.ch_names
+    lead = mne.filter.filter_data(ecg[None, :], mixed.raw.info["sfreq"], 1.0, None,
+                                  verbose="ERROR")[0]
+    before = np.mean([abs(np.corrcoef(plain.data[i], lead)[0, 1])
+                      for i in range(plain.data.shape[0])])
+    after = np.mean([abs(np.corrcoef(regressed.data[i], lead)[0, 1])
+                     for i in range(regressed.data.shape[0])])
+    assert before > 0.3 and after < before / 5
+    assert any("regressed ECG out of" in step and "not analysed" in step
+               for step in regressed.steps)
+    assert any("kept ECG to regress out" in step for step in regressed.steps)
+    with pytest.raises(ValueError, match="no channel NOPE"):
+        prepare(mixed, PreprocessConfig(regress_channels=("NOPE",)), verbose=False)
+
+
+def test_ica_is_fitted_scored_and_applied_only_as_chosen(recording):
+    import dataclasses
+
+    from onset_hfo.preprocess import prepare
+
+    mixed, _ecg = _with_ecg(recording)
+    cfg = PreprocessConfig(ica=True, ica_n_components=6)
+    fitted = prepare(mixed, cfg, verbose=False)
+    record = fitted.ica
+    assert record is not None and record["n_components"] == 6
+    assert record["sources"].shape[0] == 6 and record["loadings"].shape[1] == 6
+    assert len(record["muscle_scores"]) == 6 and len(record["hf_share"]) == 6
+    assert record["ecg_channel"] == "ECG" and record["excluded"] == []
+    assert abs(sum(record["variance_share"]) - 1.0) < 0.5
+    assert any("ICA (fastica, 6 components" in s and "nothing removed" in s
+               and "experimental" in s for s in fitted.steps)
+    # The same seed finds the same components.
+    again = prepare(mixed, cfg, verbose=False)
+    assert np.allclose(again.ica["sources"][:2], record["sources"][:2])
+    assert np.allclose(again.data, fitted.data), "nothing removed means nothing changed"
+    # Removing a component changes the data; an index that does not exist is said, not applied.
+    removed = prepare(mixed, dataclasses.replace(cfg, ica_exclude=(0, 99)), verbose=False)
+    assert removed.ica["excluded"] == [0]
+    assert not np.allclose(removed.data, fitted.data)
+    assert any("99" in note and "ignored" in note for note in removed.ica["notes"])
+    assert any("removed 0 (the reviewer's choice)" in s for s in removed.steps)
+    # Off by default, and absent from the record when off.
+    assert prepare(mixed, PreprocessConfig(), verbose=False).ica is None
+
+
+def test_ica_settings_are_checked_and_described():
+    from onset_hfo.preprocess import ICA_METHODS, _check, describe, ica_methods_available
+
+    assert "fastica" in ica_methods_available() and set(ica_methods_available()) <= set(ICA_METHODS)
+    with pytest.raises(ValueError, match="ica_method"):
+        _check(PreprocessConfig(ica=True, ica_method="magic"), 2000.0)
+    with pytest.raises(ValueError, match="at least 1"):
+        _check(PreprocessConfig(ica=True, ica_n_components=0), 2000.0)
+    with pytest.raises(ValueError, match="non-negative"):
+        _check(PreprocessConfig(ica=True, ica_exclude=(-1,)), 2000.0)
+    _check(PreprocessConfig(ica=False, ica_method="magic"), 2000.0)   # off: not checked
+    text, warnings = describe(PreprocessConfig(ica=True, ica_exclude=(2, 5),
+                                               regress_channels=("ECG",)), (80, 250), 2000.0)
+    assert "regress ECG out of every brain channel" in text
+    assert "fit ICA (fastica, up to 20 components) and remove component(s) 2, 5" in text
+    assert any("experimental" in w and "Nothing is removed until you choose" in w
+               for w in warnings)
+    assert any("least squares" in w for w in warnings)
+    text, _ = describe(PreprocessConfig(ica=True, ica_n_components=8), (80, 250), 2000.0)
+    assert "8 components), removing nothing until you choose" in text

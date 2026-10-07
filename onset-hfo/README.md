@@ -441,6 +441,7 @@ onset_review/         the desktop reviewer (Qt), installable on Ubuntu
   sensitivityview.py  that re-test, on request, with its verdict
   windows.py          the other cached windows of a recording, analysed and compared
   preprocessing.py    the MNE filter/reference/resample chain, mouse-driven
+  icaview.py          what ICA found, scored, for the reviewer to choose from; removes nothing by itself
   dataquality.py      which contacts and seconds were analysed, and which only flagged
   record.py           what the archive records about a patient, and what it does not
   patient.py          that record, drawn

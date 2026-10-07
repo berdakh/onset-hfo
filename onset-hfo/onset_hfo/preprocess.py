@@ -31,7 +31,7 @@ import numpy as np
 from onset_hfo.config import BANDS, PreprocessConfig
 from onset_hfo.datasets import Recording
 
-__all__ = ["Prepared", "prepare", "bipolar_pairs", "describe", "effective_reference",
+__all__ = ["Prepared", "prepare", "ICA_METHODS", "ica_methods_available", "bipolar_pairs", "describe", "effective_reference",
            "filter_description", "learn_ptp_threshold", "REFERENCES"]
 
 #: The reference schemes by name, with the sentence each gets in the steps.
@@ -69,6 +69,10 @@ class Prepared:
     #: None (every channel), "t_start", "t_stop" (file seconds), "reason"}``.
     #: The data-quality stage sets them aside; nothing here deletes them.
     annotations: list[dict] = field(default_factory=list)
+    #: The ICA stage's record when it ran: the method, the components, their
+    #: sources and loadings for the panel, MNE's scores, what was suggested
+    #: and what the reviewer removed. ``None`` when the stage is off.
+    ica: dict | None = None
 
     @property
     def duration(self) -> float:
@@ -127,6 +131,18 @@ def bipolar_pairs(ch_names: list[str], exclude: set[str] | None = None) -> list[
                 if a not in exclude and b not in exclude:
                     pairs.append((a, b))
     return pairs
+
+
+#: ICA solvers offered. Picard is listed only when its package is installed.
+ICA_METHODS = ("fastica", "infomax", "picard")
+
+
+def ica_methods_available() -> tuple[str, ...]:
+    try:
+        import picard  # noqa: F401
+    except ImportError:
+        return tuple(m for m in ICA_METHODS if m != "picard")
+    return ICA_METHODS
 
 
 def effective_reference(cfg: PreprocessConfig) -> str:
@@ -286,6 +302,138 @@ def _annotate(raw, cfg: PreprocessConfig, t_offset: float, steps: list[str]) -> 
     return found
 
 
+def _regress_out(raw, picks: list[str], artifact: list[str]) -> np.ndarray:
+    """Ordinary least squares of each picked channel on the artifact channels,
+    the residual written back: the arithmetic of MNE's ``regress_artifact``.
+
+    Done here rather than through MNE's function because that one refuses
+    intracranial channels unless an average-reference projector has been
+    added to the recording, which this pipeline has no business doing. The
+    fit is on the filtered signal, means removed, so a DC offset on the
+    lead is not regressed into every channel. Returns the coefficients,
+    shaped (picked channels, artifact channels).
+    """
+    data = raw.get_data(picks=picks)
+    lead = raw.get_data(picks=artifact)
+    design = (lead - lead.mean(axis=1, keepdims=True)).T          # (times, artifacts)
+    target = (data - data.mean(axis=1, keepdims=True)).T          # (times, channels)
+    betas, _res, _rank, _sv = np.linalg.lstsq(design, target, rcond=None)
+    cleaned = (target - design @ betas).T + data.mean(axis=1, keepdims=True)
+    index = [raw.ch_names.index(name) for name in picks]
+    raw._data[index, :] = cleaned
+    return betas.T
+
+
+def _ica_ecg_channel(rec: Recording) -> str | None:
+    """An ECG lead in the recording, by type or by name, if it has one."""
+    raw = rec.raw
+    for name, kind in zip(raw.ch_names, raw.get_channel_types(), strict=False):
+        if kind == "ecg" or name.upper().startswith(("ECG", "EKG")):
+            return name
+    return None
+
+
+def _fit_ica(raw, cfg: PreprocessConfig, rec: Recording, steps: list[str]) -> dict:
+    """Fit MNE's ICA on the filtered monopolar brain channels, score the
+    components the way MNE does for muscle and ECG, apply only the reviewer's
+    chosen exclusions, and return the record the Components panel reads.
+
+    The sources and loadings are kept in the record so the panel can draw a
+    component without the fitted object, which is not serialisable.
+    """
+    import inspect
+
+    from mne.preprocessing import ICA
+
+    n_channels = len(raw.ch_names)
+    wanted = (int(cfg.ica_n_components) if cfg.ica_n_components
+              else min(20, n_channels - 1))
+    n_components = max(1, min(wanted, n_channels - 1))
+    seed = int(cfg.ica_seed)
+    kwargs = ({"rng": seed} if "rng" in inspect.signature(ICA.__init__).parameters
+              else {"random_state": seed})
+    ica = ICA(n_components=n_components, method=cfg.ica_method, max_iter="auto", **kwargs)
+    notes: list[str] = []
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        ica.fit(raw, verbose="ERROR")
+        fitted = int(ica.n_components_)
+        sources = ica.get_sources(raw).get_data()
+        loadings = np.asarray(ica.get_components(), dtype=float)       # (channels, components)
+        variance = np.asarray(ica.pca_explained_variance_, dtype=float)
+        share = (variance[:fitted] / variance.sum()).tolist() if variance.sum() > 0 else []
+        try:
+            muscle_idx, muscle_scores = ica.find_bads_muscle(raw, verbose="ERROR")
+        except Exception as error:      # noqa: BLE001 - said, not raised
+            muscle_idx, muscle_scores = [], []
+            notes.append(f"MNE's muscle scoring did not run here ({type(error).__name__}).")
+        ecg_name = _ica_ecg_channel(rec)
+        ecg_idx, ecg_scores = [], []
+        if ecg_name is not None:
+            try:
+                probe = raw.copy()
+                lead = rec.raw.copy().pick([ecg_name])
+                if abs(lead.info["sfreq"] - probe.info["sfreq"]) > 1e-9:
+                    lead.resample(probe.info["sfreq"], verbose="ERROR")
+                lead.crop(tmax=probe.times[-1], verbose="ERROR")
+                probe.add_channels([lead], force_update_info=True)
+                ecg_idx, ecg_scores = ica.find_bads_ecg(probe, ch_name=ecg_name,
+                                                        method="correlation",
+                                                        threshold="auto", verbose="ERROR")
+            except Exception as error:      # noqa: BLE001 - said, not raised
+                notes.append(f"ECG scoring against {ecg_name} did not run "
+                             f"({type(error).__name__}).")
+        else:
+            notes.append("No ECG lead in this recording, so no component is scored for ECG.")
+    # The reviewer's choice, and only that, is applied.
+    exclude = sorted({int(i) for i in cfg.ica_exclude if 0 <= int(i) < fitted})
+    ignored = sorted({int(i) for i in cfg.ica_exclude} - set(exclude))
+    if ignored:
+        notes.append(f"Component index(es) {', '.join(str(i) for i in ignored)} do not exist "
+                     f"in this fit of {fitted} and were ignored.")
+    if exclude:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            ica.apply(raw, exclude=exclude, verbose="ERROR")
+    # A spectral share per component: the fraction of its power above 40 Hz,
+    # for the panel's table, beside MNE's scores. A guide to the eye only.
+    hf_share = _high_frequency_share(sources, float(raw.info["sfreq"]))
+    steps.append(
+        f"ICA ({cfg.ica_method}, {fitted} components, seed {seed}) on {n_channels} channels: "
+        + (f"MNE suggests muscle {', '.join(str(i) for i in muscle_idx)}" if len(muscle_idx)
+           else "MNE suggests no muscle component")
+        + (f"; ECG {', '.join(str(i) for i in ecg_idx)}" if len(ecg_idx)
+           else ("; no ECG component" if ecg_name else "; no ECG lead to score against"))
+        + (f"; removed {', '.join(str(i) for i in exclude)} (the reviewer's choice)"
+           if exclude else "; nothing removed")
+        + ". ICA can remove real HFO energy with the artefact; experimental.")
+    return {
+        "method": cfg.ica_method, "n_components": fitted, "seed": seed,
+        "channels": list(raw.ch_names), "sfreq": float(raw.info["sfreq"]),
+        "sources": sources.astype(np.float32), "loadings": loadings,
+        "variance_share": share, "hf_share": hf_share,
+        "muscle_scores": [float(v) for v in np.asarray(muscle_scores).reshape(-1)],
+        "ecg_scores": [float(v) for v in np.asarray(ecg_scores).reshape(-1)],
+        "suggested_muscle": [int(i) for i in muscle_idx],
+        "suggested_ecg": [int(i) for i in ecg_idx],
+        "ecg_channel": ecg_name, "excluded": exclude, "notes": notes,
+    }
+
+
+def _high_frequency_share(sources: np.ndarray, sfreq: float, above_hz: float = 40.0) -> list[float]:
+    if sources.size == 0:
+        return []
+    n = int(min(sources.shape[1], 4096))
+    spectrum = np.abs(np.fft.rfft(sources[:, :n] - sources[:, :n].mean(axis=1, keepdims=True),
+                                  axis=1)) ** 2
+    freqs = np.fft.rfftfreq(n, d=1.0 / sfreq)
+    total = spectrum[:, freqs > 0.5].sum(axis=1)
+    high = spectrum[:, freqs >= above_hz].sum(axis=1)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        share = np.where(total > 0, high / total, 0.0)
+    return [float(v) for v in share]
+
+
 def _check(cfg: PreprocessConfig, sfreq: float) -> None:
     """Refuse settings that would produce numbers rather than a measurement.
 
@@ -335,6 +483,15 @@ def _check(cfg: PreprocessConfig, sfreq: float) -> None:
     if cfg.annotate_amplitude and cfg.amplitude_ptp_uv is not None \
             and float(cfg.amplitude_ptp_uv) <= 0:
         raise ValueError("amplitude_ptp_uv must be positive")
+    if cfg.ica:
+        if cfg.ica_method not in ICA_METHODS:
+            raise ValueError(f"ica_method must be one of {ICA_METHODS}, not {cfg.ica_method!r}")
+        if cfg.ica_method not in ica_methods_available():
+            raise ValueError(f"the {cfg.ica_method} solver is not installed on this machine")
+        if cfg.ica_n_components is not None and int(cfg.ica_n_components) < 1:
+            raise ValueError("ica_n_components must be at least 1")
+        if any(int(i) < 0 for i in cfg.ica_exclude):
+            raise ValueError("ica_exclude indices must be non-negative")
 
 def describe(cfg: PreprocessConfig, band: tuple[float, float],
              sfreq: float) -> tuple[str, list[str]]:
@@ -377,6 +534,14 @@ def describe(cfg: PreprocessConfig, band: tuple[float, float],
                      + (f"{float(cfg.amplitude_ptp_uv):g} µV peak-to-peak"
                         if cfg.amplitude_ptp_uv is not None
                         else "a peak-to-peak ceiling learned per contact"))
+    if cfg.regress_channels:
+        lines.append(f"regress {', '.join(cfg.regress_channels)} out of every brain channel")
+    if cfg.ica:
+        how = (f"{int(cfg.ica_n_components)} components" if cfg.ica_n_components
+               else "up to 20 components")
+        lines.append(f"fit ICA ({cfg.ica_method}, {how})"
+                     + (f" and remove component(s) {', '.join(str(i) for i in cfg.ica_exclude)}"
+                        if cfg.ica_exclude else ", removing nothing until you choose"))
     if cfg.drop_bads:
         lines.append("drop channels the dataset flagged bad")
     if cfg.exclude:
@@ -448,6 +613,17 @@ def describe(cfg: PreprocessConfig, band: tuple[float, float],
                         "discontinuity instead; use this knowing what it removes.")
     if (cfg.annotate_muscle or cfg.annotate_amplitude):
         warnings.append("Marked seconds take effect only with 'Check data quality' on.")
+    if cfg.regress_channels:
+        warnings.append("Regression removes whatever part of each brain channel follows "
+                        "the named channel, by least squares; a brain channel that "
+                        "genuinely shares a rhythm with it loses that rhythm too.")
+    if cfg.ica:
+        warnings.append("ICA is experimental here: it can take real HFO energy out with "
+                        "the artefact, and the literature is split on using it for HFO "
+                        "work. Nothing is removed until you choose components on the "
+                        "Components panel, and the report names what was removed.")
+        if cfg.ica_method not in ica_methods_available():
+            warnings.append(f"The {cfg.ica_method} solver is not installed; choose another.")
     return "; ".join(lines) + ".", warnings
 
 def prepare(rec: Recording, cfg: PreprocessConfig | None = None, verbose: bool = True) -> Prepared:
@@ -468,9 +644,18 @@ def prepare(rec: Recording, cfg: PreprocessConfig | None = None, verbose: bool =
     dropped_type = [n for n in raw.ch_names if n not in keep]
     if not keep:
         raise ValueError("No intracranial data channels found in this recording")
-    raw.pick(keep)
-    steps.append(f"kept {len(keep)} intracranial channels; dropped {len(dropped_type)} "
-                 f"non-brain channels (DC/trigger/ECG/misc)")
+    # Channels to regress out ride along through the filters, so they are
+    # compared with the brain channels on equal terms, and leave before the
+    # montage. A name the recording does not carry is refused, not skipped.
+    regress = list(dict.fromkeys(cfg.regress_channels))
+    missing = [c for c in regress if c not in raw.ch_names]
+    if missing:
+        raise ValueError(f"no channel {', '.join(missing)} in this recording to regress out")
+    regress = [c for c in regress if c not in keep]
+    raw.pick(keep + regress)
+    steps.append(f"kept {len(keep)} intracranial channels; dropped "
+                 f"{len(dropped_type) - len(regress)} non-brain channels (DC/trigger/ECG/misc)"
+                 + (f"; kept {', '.join(regress)} to regress out" if regress else ""))
 
     bads = [b for b in rec.bads if b in raw.ch_names]
     if cfg.drop_bads and bads:
@@ -499,15 +684,15 @@ def prepare(rec: Recording, cfg: PreprocessConfig | None = None, verbose: bool =
             if cfg.filter_method == "iir":
                 raw.filter(l_freq=cfg.highpass or None, h_freq=cfg.lowpass,
                            method="iir", iir_params=_iir_params(cfg), phase="zero",
-                           verbose="ERROR")
+                           picks="all", verbose="ERROR")
             else:
                 extra = {}
                 if cfg.transition_bandwidth:
                     extra = {"l_trans_bandwidth": float(cfg.transition_bandwidth),
                              "h_trans_bandwidth": float(cfg.transition_bandwidth)}
                 raw.filter(l_freq=cfg.highpass or None, h_freq=cfg.lowpass,
-                           fir_design="firwin", phase=cfg.filter_phase, verbose="ERROR",
-                           **extra)
+                           fir_design="firwin", phase=cfg.filter_phase, picks="all",
+                           verbose="ERROR", **extra)
             if cfg.highpass:
                 steps.append(f"high-pass {cfg.highpass:g} Hz ({design})")
             if cfg.lowpass:
@@ -521,7 +706,8 @@ def prepare(rec: Recording, cfg: PreprocessConfig | None = None, verbose: bool =
                      else ([line_freq] if line_freq < 0.9 * nyq else []))
             if freqs:
                 raw.notch_filter(freqs=freqs, notch_widths=cfg.notch_width,
-                                 fir_design="firwin", phase="zero", verbose="ERROR")
+                                 fir_design="firwin", phase="zero", picks="all",
+                                 verbose="ERROR")
                 harmonics = " + harmonics" if cfg.notch_harmonics else " (fundamental only)"
                 steps.append(f"notch {line_freq:g} Hz ({source}){harmonics} "
                              f"({', '.join(f'{f:g}' for f in freqs)} Hz, "
@@ -536,7 +722,20 @@ def prepare(rec: Recording, cfg: PreprocessConfig | None = None, verbose: bool =
         steps.append(f"resampled {before:g} Hz -> {target:g} Hz"
                      + (" (upsampled; adds no information)" if target > before else ""))
 
-    # 3b. artifact annotation, on the filtered monopolar signal ------------
+    # 3a. regression of a reference or ECG channel ------------------------
+    if regress:
+        brain = [c for c in raw.ch_names if c not in regress]
+        betas = _regress_out(raw, brain, regress)
+        raw.drop_channels(regress)
+        strength = np.abs(betas)
+        steps.append(f"regressed {', '.join(regress)} out of {len(brain)} channels by least "
+                     f"squares (largest coefficient {strength.max():.2f}, median "
+                     f"{np.median(strength):.2f}); the regressed channel(s) not analysed")
+
+    # 3b. ICA, experimental: fitted and shown; applied only as chosen ------
+    ica_record = _fit_ica(raw, cfg, rec, steps) if cfg.ica else None
+
+    # 3c. artifact annotation, on the filtered monopolar signal ------------
     annotations = (_annotate(raw, cfg, float(rec.t_offset), steps)
                    if (cfg.annotate_muscle or cfg.annotate_amplitude) else [])
 
@@ -602,7 +801,8 @@ def prepare(rec: Recording, cfg: PreprocessConfig | None = None, verbose: bool =
     prepared = Prepared(data=np.ascontiguousarray(data, dtype=np.float64), ch_names=names,
                         sfreq=float(raw.info["sfreq"]), t_offset=rec.t_offset, montage=montage,
                         line_freq=float(line_freq),
-                        pairs=pairs, steps=steps, recording=rec, annotations=annotations)
+                        pairs=pairs, steps=steps, recording=rec, annotations=annotations,
+                        ica=ica_record)
     if verbose:
         print(f"[onset-hfo] preprocessed: {prepared.n_channels} {montage} channels, "
               f"{prepared.duration:.1f} s @ {prepared.sfreq:g} Hz")

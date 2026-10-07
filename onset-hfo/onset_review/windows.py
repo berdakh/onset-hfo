@@ -43,7 +43,7 @@ def window_key(request) -> str:
         "detectors": list(request.detectors), "band": request.band,
         "threshold_sd": request.threshold_sd, "with_spikes": request.with_spikes,
         "check_quality": request.check_quality, "keep": list(request.keep_channels),
-        "preprocess": request.preprocess_label,
+        "preprocess": request.preprocess_label(),
     }
     digest = hashlib.sha256(json.dumps(settings, sort_keys=True, default=str)
                             .encode()).hexdigest()[:10]

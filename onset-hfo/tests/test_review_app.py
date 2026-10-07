@@ -71,7 +71,7 @@ def test_every_panel_is_docked(built):
     assert set(built.docks) == {"trends", "controls", "findings", "events",
                                 "detail", "spectrum", "average", "sensitivity", "brain", "map",
                                 "agreement", "provenance", "assistant", "preprocess", "patient",
-                                "quality"}
+                                "quality", "components"}
     assert all(dock.widget() is not None for dock in built.docks.values())
 
 
@@ -3062,3 +3062,73 @@ def test_the_assistant_is_offered_the_other_windows_only_when_there_are_some(
         assert panel.extra_briefing("Which channel is busiest?") == []
     finally:
         panel.deleteLater()
+
+
+# --------------------------------------------------------------------------
+# Phase 3: the Components panel and the experimental controls
+# --------------------------------------------------------------------------
+
+def test_the_components_panel_says_ica_is_off_until_it_runs(built):
+    panel = built.panels["components"]
+    assert not panel.available and panel.table.isHidden()
+    assert "ICA is off" in panel.caption.text() and not panel.remove_button.isEnabled()
+    assert "components" in built.docks
+
+
+def test_the_components_panel_lists_scores_and_hands_the_choice_to_apply(qapp, recording):
+    from onset_hfo.config import PreprocessConfig
+    from onset_review.icaview import ComponentsPanel
+    from onset_review.preprocessing import PreprocessPanel
+    from onset_review.session import ReviewRequest, session_from_recording
+
+    request = ReviewRequest(t_start=0.0, t_stop=float(recording.duration),
+                            preprocess=PreprocessConfig(ica=True, ica_n_components=5))
+    session = session_from_recording(recording, request)
+    assert session.ica is not None and session.ica["n_components"] == 5
+    assert any("ICA (fastica, 5 components" in step for step in session.steps)
+    assert "ICA (nothing removed)" in request.preprocess_label()
+
+    panel = ComponentsPanel(session)
+    try:
+        assert panel.available and panel.table.rowCount() == 5
+        assert "Nothing removed" in panel.caption.text()
+        assert panel.table.item(0, 1).text().startswith("0")
+        assert panel.table.item(0, 2).text().endswith("%")
+        assert panel.ticked() == ()
+        panel.table.item(1, 0).setCheckState(Qt.Checked)
+        panel.table.item(3, 0).setCheckState(Qt.Checked)
+        assert panel.ticked() == (1, 3)
+        asked = []
+        panel.removeRequested.connect(asked.append)
+        panel.remove_button.click()
+        assert asked == [(1, 3)]
+        panel.draw(2)
+    finally:
+        panel.deleteLater()
+
+    prep = PreprocessPanel(session)
+    try:
+        assert prep.ica.isChecked() and prep.config().ica and prep.config().ica_exclude == ()
+        prep.set_ica_exclude((3, 1))
+        assert prep.config().ica_exclude == (1, 3)
+        assert "Components to remove: 1, 3" in prep.ica_removed.text()
+        prep.ica.setChecked(False)
+        assert prep.config().ica_exclude == () and not prep.config().ica
+        # Nothing to regress out of the synthetic recording, and the panel says so.
+        assert prep.regress.count() == 0 and prep.config().regress_channels == ()
+    finally:
+        prep.deleteLater()
+
+
+def test_a_removed_component_is_a_preprocessing_choice_in_the_report(qapp, recording):
+    from onset_hfo.config import PreprocessConfig
+    from onset_review import report
+    from onset_review.session import ReviewRequest, session_from_recording
+
+    request = ReviewRequest(t_start=0.0, t_stop=float(recording.duration),
+                            preprocess=PreprocessConfig(ica=True, ica_n_components=4,
+                                                        ica_exclude=(0,)))
+    session = session_from_recording(recording, request)
+    assert session.ica["excluded"] == [0]
+    text = report.review_markdown(session)
+    assert "removed 0 (the reviewer's choice)" in text and "experimental" in text
