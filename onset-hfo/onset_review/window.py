@@ -42,6 +42,7 @@ from onset_review.brainview import BrainPanel
 from onset_review.controls import AMPLITUDE_STEP, TraceControls
 from onset_review.dataquality import QualityPanel
 from onset_review.eventview import EventDetailPanel
+from onset_review.icaview import ComponentsPanel
 from onset_review.mapview import ContactMapPanel
 from onset_review.panels import (
     AgreementPanel,
@@ -110,7 +111,7 @@ LAYOUTS = {
                 ("controls", "findings", "events", "detail", "average", "assistant"),
                 "detail"),
     "Reporting": ("Check what was done and against what",
-                  ("findings", "quality", "preprocess", "provenance",
+                  ("findings", "quality", "preprocess", "components", "provenance",
                    "agreement", "patient"),
                   "quality"),
 }
@@ -471,6 +472,7 @@ def build_panels(figure, session: ReviewSession) -> dict:
         "sensitivity": SensitivityPanel(session),
         "assistant": AssistantPanel(session),
         "preprocess": PreprocessPanel(session),
+        "components": ComponentsPanel(session),
         "quality": QualityPanel(session),
         "agreement": AgreementPanel(session),
         "provenance": ProvenancePanel(session),
@@ -592,6 +594,9 @@ def decorate(figure, session: ReviewSession, show_expert: bool = False,
     # And beside it, the stage that decides what the preprocessed signal is
     # fit for. The two belong together: one says what was done to the signal,
     # the other says which of it was worth analysing.
+    parts_dock = dock("components", "Components", Qt.RightDockWidgetArea,
+                      panels["components"],
+                      "What ICA found, scored, for you to choose from (experimental)")
     fit = dock("quality", "Quality", Qt.RightDockWidgetArea,
                panels["quality"],
                "Data quality — which contacts and which seconds were "
@@ -606,6 +611,7 @@ def decorate(figure, session: ReviewSession, show_expert: bool = False,
     host.tabifyDockWidget(accord, prov)
     host.tabifyDockWidget(prov, prep)
     host.tabifyDockWidget(prep, fit)
+    host.tabifyDockWidget(prep, parts_dock)
     host.tabifyDockWidget(fit, helper)
     # The detail view opens in front: the first thing a reviewer does with a
     # detection is look at it.
@@ -662,6 +668,13 @@ def _finish(figure, session: ReviewSession, panels: dict, display: _Display,
     land on the channel they belong to."""
     if on_quality is not None:
         panels["quality"].applied.connect(on_quality)
+
+        def on_remove(indices) -> None:
+            panels["preprocess"].ica.setChecked(True)
+            panels["preprocess"].set_ica_exclude(indices)
+            panels["preprocess"]._apply()
+
+        panels["components"].removeRequested.connect(on_remove)
     else:
         panels["quality"].apply.setEnabled(False)
         panels["quality"].apply.setToolTip(

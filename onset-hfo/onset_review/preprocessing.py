@@ -48,7 +48,12 @@ from qtpy.QtWidgets import (
 )
 
 from onset_hfo.config import PreprocessConfig
-from onset_hfo.preprocess import describe, effective_reference, filter_description
+from onset_hfo.preprocess import (
+    describe,
+    effective_reference,
+    filter_description,
+    ica_methods_available,
+)
 from onset_review.theme import card, current, muted, scrolled
 
 #: Re-exported: the sentence and the warnings a reviewer reads under these
@@ -204,6 +209,56 @@ class PreprocessPanel(QWidget):
             "there with their reason; the detectors never see them. Nothing is "
             "repaired or deleted.", current()))
 
+        # -- regression and ICA, experimental --------------------------------
+        self.regress = QListWidget()
+        self.regress.setObjectName("onset_regress_channels")
+        self.regress.setSelectionMode(QListWidget.NoSelection)
+        self.regress.setMaximumHeight(70)
+        self.regress.setToolTip(
+            "Tick a channel to regress its signal out of every brain channel before "
+            "the montage by least squares: an ECG lead, a reference or a "
+            "ground channel the export carries. The channel itself is not analysed.")
+        regressing = set(start.regress_channels)
+        for name in _regressable(session):
+            item = QListWidgetItem(name)
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            item.setCheckState(Qt.Checked if name in regressing else Qt.Unchecked)
+            self.regress.addItem(item)
+        self.ica = QCheckBox("Fit ICA (experimental)")
+        self.ica.setObjectName("onset_ica")
+        self.ica.setChecked(bool(start.ica))
+        self.ica.setToolTip(
+            "Fits MNE's ICA on the filtered channels and shows the components on "
+            "the Components panel, scored for muscle and ECG. Removes nothing until "
+            "you choose components there. Seconds to tens of seconds.")
+        self.ica_method = QComboBox()
+        for name in ica_methods_available():
+            self.ica_method.addItem(name, name)
+        index = self.ica_method.findData(start.ica_method)
+        self.ica_method.setCurrentIndex(index if index >= 0 else 0)
+        self.ica_components = QSpinBox()
+        self.ica_components.setRange(0, 200)
+        self.ica_components.setSpecialValueText("up to 20")
+        self.ica_components.setValue(int(start.ica_n_components or 0))
+        self.ica_components.setToolTip("Components to fit; 'up to 20' lets the stage choose")
+        self._ica_exclude: tuple[int, ...] = tuple(int(i) for i in start.ica_exclude)
+        self.ica_removed = muted("", current())
+        self.ica_removed.setObjectName("onset_ica_removed")
+        experimental = QGroupBox("Regression and ICA (experimental)")
+        experimental_form = QFormLayout(experimental)
+        experimental_form.addRow("Regress out", self.regress)
+        if not self.regress.count():
+            experimental_form.addRow("", muted(
+                "This recording carries no reference or ECG channel to regress out.",
+                current()))
+        experimental_form.addRow(self.ica, self.ica_method)
+        experimental_form.addRow("Components", self.ica_components)
+        experimental_form.addRow("", self.ica_removed)
+        experimental_form.addRow("", muted(
+            "ICA can take real HFO energy out with the artefact. Nothing is removed "
+            "until you choose components on the Components panel; the report names "
+            "what was removed.", current()))
+
         # -- rate ----------------------------------------------------------
         self.resample = _combo(RESAMPLE_CHOICES, start.resample)
         self.resample.setToolTip(
@@ -260,7 +315,7 @@ class PreprocessPanel(QWidget):
         column = QVBoxLayout(body)
         column.setContentsMargins(4, 4, 4, 4)
         column.setSpacing(6)
-        for group in (filters, reference, artifacts, rate, channels):
+        for group in (filters, reference, artifacts, experimental, rate, channels):
             column.addWidget(group)
         column.addWidget(self.summary)
         column.addWidget(self.warnings)
@@ -319,7 +374,21 @@ class PreprocessPanel(QWidget):
             muscle_z=float(self.muscle_z.value()),
             annotate_amplitude=self.amplitude.isChecked(),
             amplitude_ptp_uv=float(self.ptp.value()) or None,
+            regress_channels=tuple(self._regressing()),
+            ica=self.ica.isChecked(),
+            ica_method=str(self.ica_method.currentData() or "fastica"),
+            ica_n_components=int(self.ica_components.value()) or None,
+            ica_exclude=tuple(self._ica_exclude) if self.ica.isChecked() else (),
         )
+
+    def _regressing(self) -> list[str]:
+        return [self.regress.item(i).text() for i in range(self.regress.count())
+                if self.regress.item(i).checkState() == Qt.Checked]
+
+    def set_ica_exclude(self, indices) -> None:
+        """The Components panel's choice, carried into the next Apply."""
+        self._ica_exclude = tuple(sorted({int(i) for i in indices}))
+        self.refresh()
 
     def _checked(self) -> list[str]:
         return [self.channels.item(i).text()
@@ -337,6 +406,13 @@ class PreprocessPanel(QWidget):
         self.transition.setEnabled(not is_iir)
         self.muscle_z.setEnabled(cfg.annotate_muscle)
         self.ptp.setEnabled(cfg.annotate_amplitude)
+        self.ica_method.setEnabled(cfg.ica)
+        self.ica_components.setEnabled(cfg.ica)
+        self.ica_removed.setText(
+            ("Components to remove: " + ", ".join(str(i) for i in self._ica_exclude)
+             + " (chosen on the Components panel)") if cfg.ica and self._ica_exclude
+            else ("No component removed; choose on the Components panel after Apply."
+                  if cfg.ica else ""))
         self.design.setText("MNE builds: " + filter_description(cfg, self._sfreq))
         self.warnings.setText("\n".join("• " + w for w in warnings))
         self.warnings.setVisible(bool(warnings))
@@ -379,13 +455,29 @@ class PreprocessPanel(QWidget):
         blocking = [w for w in warnings if "would still run" in w
                     or "passes nothing" in w or "Nyquist" in w
                     or "cannot carry" in w or "below 0 Hz" in w
-                    or "must be FIR or IIR" in w]
+                    or "must be FIR or IIR" in w or "solver is not installed" in w]
         if blocking:
             self.warnings.setText("\n".join("• " + w for w in blocking)
                                   + "\n\nFix this before applying.")
             self.warnings.setVisible(True)
             return
         self.applied.emit(cfg)
+
+
+def _regressable(session) -> list[str]:
+    """The recording's channels that are not brain channels: what there is
+    to regress out. An ECG lead, a reference, a ground; never a contact."""
+    from onset_hfo.preprocess import _is_brain_channel
+
+    raw = getattr(getattr(session, "recording", None), "raw", None)
+    if raw is None:
+        return []
+    out = []
+    for name, kind in zip(raw.ch_names, raw.get_channel_types(), strict=False):
+        if not _is_brain_channel(name, kind) and not name.upper().startswith(
+                ("DC", "TRIG", "STIM", "EVENT", "MARK")):
+            out.append(name)
+    return out
 
 
 def _contacts(session) -> list[str]:

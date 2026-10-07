@@ -593,6 +593,30 @@ class PreprocessConfig:
     annotate_muscle: bool = False
     #: The z-score above which a second is marked muscle.
     muscle_z: float = 4.0
+    #: Channels whose signal is regressed out of every brain channel before
+    #: the montage (least squares, the arithmetic of MNE's
+    #: ``regress_artifact``): an ECG lead, or a reference
+    #: or ground channel a clinical export carries. Named from the recording;
+    #: a name it does not carry is refused. The regressed channel itself is
+    #: never analysed.
+    regress_channels: tuple[str, ...] = ()
+    #: ICA, as an experimental stage. Off by default, and nothing is removed
+    #: when it is on until ``ica_exclude`` names components: ICA can take real
+    #: HFO energy out with the artefact, the literature is split on using it
+    #: for HFO work, and a stage that removed components by itself would be
+    #: cleaning the finding. The fitted components, with MNE's muscle and
+    #: ECG scores, are shown for the reviewer to choose from.
+    ica: bool = False
+    #: Components to fit; ``None`` fits ``min(20, channels - 1)``.
+    ica_n_components: int | None = None
+    #: ``"fastica"`` (the default), ``"infomax"`` or ``"picard"`` where installed.
+    ica_method: str = "fastica"
+    #: The component indices the reviewer chose to remove. Recorded in the
+    #: steps and the report with the reviewer's name on the choice.
+    ica_exclude: tuple[int, ...] = ()
+    #: The random seed the decomposition starts from, so a re-run with the
+    #: same settings finds the same components in the same order.
+    ica_seed: int = 97
     #: Mark seconds whose peak-to-peak amplitude exceeds a ceiling, per
     #: contact (MNE's ``annotate_amplitude``). Off by default for the reason
     #: :class:`QualityConfig` documents: amplitude cannot tell a discharge

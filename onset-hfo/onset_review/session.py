@@ -218,6 +218,11 @@ class ReviewRequest:
                      else "no re-referencing")
         if cfg.exclude:
             parts.append(f"{len(cfg.exclude)} channel(s) excluded by the reviewer")
+        if cfg.regress_channels:
+            parts.append(f"{', '.join(cfg.regress_channels)} regressed out")
+        if cfg.ica:
+            parts.append("ICA" + (f" (components {', '.join(str(i) for i in cfg.ica_exclude)} "
+                                  "removed)" if cfg.ica_exclude else " (nothing removed)"))
         return ", ".join(parts) if parts else "none"
 
     def band_label(self) -> str:
@@ -310,6 +315,9 @@ class ReviewSession:
     #: session built before spans existed carries.
     span_start: float = 0.0
     span_stop: float = 0.0
+    #: The ICA stage's record when it ran (see `onset_hfo.preprocess`), for
+    #: the Components panel. None when the stage is off.
+    ica: dict | None = None
 
     @property
     def span(self) -> tuple[float, float]:
@@ -744,6 +752,18 @@ def streamed_session(request: ReviewRequest, cache_dir: Path | None = None,
             progress(fraction, message)
 
     cfg = request.pipeline_config()
+    # ICA is fitted on a whole stretch of signal; a span this long is analysed
+    # chunk by chunk, and a decomposition fitted per chunk would remove
+    # different things from each. So it is left off here and the notes say so.
+    ica_note: list[str] = []
+    if cfg.preprocess.ica:
+        import dataclasses as _dc
+
+        cfg = _dc.replace(cfg, preprocess=_dc.replace(cfg.preprocess, ica=False,
+                                                       ica_exclude=()))
+        ica_note = ["ICA was not applied: a span this long is analysed chunk by chunk, "
+                    "and a decomposition fitted per chunk would remove different things "
+                    "from each. Analyse a minute at a time to use it."]
     span_start, span_stop = request.span()
     source = source_for(request, cache_dir)
 
@@ -819,7 +839,7 @@ def streamed_session(request: ReviewRequest, cache_dir: Path | None = None,
         electrodes=_electrodes_for(record),
         quality=analysis.quality, segments=analysis.segments,
         clean_seconds=dict(clean or {}), steps=list(analysis.steps),
-        notes=notes, citation=str(getattr(record, "citation", "")),
+        notes=notes + ica_note, citation=str(getattr(record, "citation", "")),
         sfreq=float(prep.sfreq), t_offset=float(prep.t_offset),
         montage=prep.montage, recording=record,
         span_start=float(span_start), span_stop=float(span_stop))
@@ -960,7 +980,7 @@ def session_from_recording(record: Recording, request: ReviewRequest,
                   if cfg.check_quality else [])),
         citation=str(getattr(record, "citation", "")),
         sfreq=float(prep.sfreq), t_offset=float(prep.t_offset),
-        montage=prep.montage, recording=record,
+        montage=prep.montage, recording=record, ica=getattr(prep, "ica", None),
     )
     # A coordinate file the reviewer supplied outranks whatever the archive
     # shipped, which for every dataset here is nothing. Applied after the

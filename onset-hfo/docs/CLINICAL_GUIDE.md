@@ -682,6 +682,8 @@ mouse on them.
 | **Re-referencing** | bipolar, per-shaft average, median, common average, or none | see below |
 | **Muscle** | marks seconds of broadband muscle activity (MNE's `annotate_muscle_zscore`) | the marked seconds are set aside on every contact, and the Quality page says *annotated: muscle* for them. A low threshold sets aside a lot of a busy recording |
 | **Amplitude** | marks seconds whose peak-to-peak amplitude exceeds a ceiling, per contact (MNE's `annotate_amplitude`) | the ceiling can be typed in microvolts or *learned from the data*, the way autoreject's global threshold is: the value that best separates the recording's own seconds from its outliers under cross-validation. Large discharges exceed it too, and are set aside with the artefacts; look at what was marked before trusting the rate |
+| **Regress out** | the signal of an ECG lead, a reference or a ground channel the export carries, regressed out of every brain channel by least squares before the montage | the channel itself is never analysed. Regression removes whatever part of each contact follows the lead; a contact that genuinely shares a rhythm with it loses that rhythm too. Offered only when the recording carries such a channel |
+| **Fit ICA (experimental)** | MNE's ICA on the filtered channels; the components appear on the **Components** tab under Provenance, scored for muscle and ECG | **removes nothing by itself.** ICA can take real HFO energy out with the artefact and the literature is split on using it for HFO work. You choose components there; the report names what was removed |
 | **Sampling rate** | downsample | 1000 Hz cannot carry the fast-ripple band at all |
 | **Channels** | tick a contact to exclude it | exclusion happens *before* the bipolar montage, so removing one contact removes both pairs it was part of |
 
@@ -721,6 +723,28 @@ Three things make this safe to play with:
 screen depends on these settings: the rates, the intervals, the tied set, the
 trend, the 3D layout, the agreement with the annotators, the assistant's
 evidence. The panels you have dragged into place stay where you put them.
+
+### Components — what ICA found, for you to choose from
+
+![The Components tab](images/onset-review-components.png)
+
+A tab beside Provenance on the Quality page, empty until *Fit ICA* is on and
+applied. Then one row per component: its share of the variance, MNE's muscle
+score and, when the recording has an ECG lead, its ECG score, how much of its
+power lies above 40 Hz, and the three contacts it loads on most. Select a row
+to see its time course, its spectrum and its loadings. Tick the ones to
+remove and press **Remove ticked and re-analyse**: the choice goes through
+the Preprocessing panel's Apply like any other setting, so the steps and the
+report say *removed 2, 5 (the reviewer's choice)*, with the same seed, so a
+re-run finds the same components in the same order.
+
+Why it is experimental, and why it removes nothing on its own: a component
+that carries muscle also carries whatever ripples were on the contacts it
+loads on, and removing it removes them. MNE's scores are a guide, not a
+verdict. Look at the time course and the spectrum before removing anything,
+and at what the removal did to the ranking afterwards; the Threshold tab is
+a fair place to check. On a span long enough to be analysed chunk by chunk,
+ICA is left off and the dataset notes say so.
 
 ### Data quality — which contacts and which seconds were analysed
 
