@@ -308,6 +308,18 @@ QT_DEBUG_PLUGINS=1 onset-review 2>&1 | grep -i "cannot load"
 echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
 ```
 
+**`ImportError: The sklearn package is required to use method='fastica'`**
+on Apply — an install from before 0.3.3 did not bring scikit-learn, which
+MNE's FastICA solver is built on. Either re-run the installer from the
+checkout, which now installs it, or add it to the app's environment:
+
+```bash
+~/.local/share/onset-review/venv/bin/pip install scikit-learn
+```
+
+Until then the Preprocessing panel offers only the `infomax` solver, which
+needs nothing extra.
+
 **"No recordings are cached yet"** — nothing has been fetched. See
 [**Getting a recording**](#getting-a-recording).
 

@@ -236,6 +236,26 @@ def test_ica_settings_are_checked_and_described():
     assert "8 components), removing nothing until you choose" in text
 
 
+def test_a_solver_whose_package_is_missing_is_not_offered_and_is_named_when_asked_for(
+        monkeypatch):
+    """Seen on a fresh install: the panel offered fastica, scikit-learn was not
+    there, and Apply failed in the window with scikit-learn's ImportError.
+    The list now says what runs here, the default follows it, and asking for
+    an absent solver names the package."""
+    from onset_hfo import preprocess
+    from onset_hfo.preprocess import _check, default_ica_method, ica_methods_available
+
+    monkeypatch.setattr(preprocess, "_importable", lambda module: module == "mne")
+    assert ica_methods_available() == ("infomax",)
+    assert default_ica_method() == "infomax"
+    with pytest.raises(ValueError, match="scikit-learn"):
+        _check(PreprocessConfig(ica=True, ica_method="fastica"), 2000.0)
+    _check(PreprocessConfig(ica=True, ica_method="infomax"), 2000.0)
+    monkeypatch.setattr(preprocess, "_importable", lambda module: True)
+    assert ica_methods_available() == ("fastica", "infomax", "picard")
+    assert default_ica_method() == "fastica"
+
+
 def test_ica_scores_muscle_only_with_electrode_positions(recording):
     import dataclasses
 
