@@ -994,7 +994,7 @@ python scripts/run_robustness_ablation.py \
 
 ## 7. Test suite
 
-`pytest -q` — 620 tests, entirely offline. They cover the
+`pytest -q` — about 1,180 tests, entirely offline. They cover the
 primitives (robust scale, sliding features, threshold segmentation, bipolar
 pairing), the detectors (hot channels found, events are oscillations, a flat
 channel yields nothing, thresholds behave monotonically, reruns are
