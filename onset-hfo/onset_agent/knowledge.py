@@ -25,8 +25,9 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-__all__ = ["Section", "docs_dir", "load_sections", "retrieve", "title_match", "kind_of",
-           "looks_medical", "numbers_in", "plain", "DOCUMENTS"]
+__all__ = ["Section", "docs_dir", "load_sections", "split_document", "retrieve",
+           "title_match", "kind_of", "looks_medical", "numbers_in", "plain", "glossary",
+           "DOCUMENTS"]
 
 #: The documents searched, in the order they are listed as sources. Not the
 #: install page or the agent's own page: a question about installing is not
@@ -151,6 +152,40 @@ def load_sections(root: Path | None = None, documents: tuple = DOCUMENTS) -> lis
             continue
         sections.extend(_split_document(name, _strip_markup(path.read_text(encoding="utf-8"))))
     return sections
+
+
+def split_document(name: str, text: str) -> list[Section]:
+    """A document's sections, for a text that is not one of the shipped
+    documents: a study page built in the window, say."""
+    return _split_document(name, text)
+
+
+#: Glossary entries that are code names rather than terms a page uses.
+_NOT_TERMS = {"glossary", "recording", "prepared", "event", "evidence_id", "resultstore",
+              "scripted backend", "hot contact", "channel", "contact"}
+
+
+def glossary(sections: list[Section] | None = None) -> dict[str, str]:
+    """{term: one-sentence definition} from the shipped glossary, the term
+    being the entry's name before any bracketed expansion, for a tooltip on
+    the term where it appears on a page. "Channel" and "Contact" are left
+    out: on these pages they are not jargon, they are the furniture."""
+    out: dict[str, str] = {}
+    for section in sections if sections is not None else load_sections():
+        if section.doc != "GLOSSARY":
+            continue
+        title = section.title.strip()
+        term = re.split(r"\s*[(/]", title, maxsplit=1)[0].strip().strip('"')
+        if len(term) < 3 or term.lower() in _NOT_TERMS:
+            continue
+        definition = plain(section.text).strip()
+        if definition.lower().startswith(title.lower()):
+            definition = definition[len(title):].lstrip(" —-:")
+        out[term] = definition[:320]
+        inside = re.search(r"\(([^)]+)\)", title)
+        if inside and len(inside.group(1)) >= 3 and " " not in inside.group(1).strip():
+            out.setdefault(inside.group(1).strip(), out[term])
+    return out
 
 
 def _split_document(name: str, text: str) -> list[Section]:

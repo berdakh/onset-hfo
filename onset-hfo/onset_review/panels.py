@@ -422,13 +422,16 @@ class FindingsPanel(QWidget):
                                     "prominence, spikes, the annotators' counts")
         self.all_columns.toggled.connect(lambda on: self.set_compact(not on))
         bar.addWidget(QLabel("This contact:"))
+        segments = QHBoxLayout()
         for verdict, text, tip in self.CHANNEL_KEYS:
             button = _compact(QPushButton(text))
             button.setToolTip(tip)
             button.clicked.connect(
                 lambda _=False, verdict=verdict: self.judge_channel(verdict))
-            bar.addWidget(button)
+            segments.addWidget(button)
             self.buttons[verdict] = button
+        theme.segmented(list(self.buttons.values()), segments)
+        bar.addLayout(segments)
         self.undo = _compact(QPushButton("Clear"))
         self.undo.setToolTip("Take this verdict back")
         self.undo.clicked.connect(lambda _=False: self.judge_channel(""))
@@ -495,6 +498,16 @@ class FindingsPanel(QWidget):
             return ""
         return str(self.model.row_value(rows[0].row(), "channel") or "")
 
+    def _reflect(self) -> None:
+        """The segmented control shows the selected contact's verdict: the
+        one segment filled, or none when there is no verdict yet."""
+        channel = self.selected_channel()
+        verdict = self._session.read.channel_verdict(channel) if channel else ""
+        for name, button in self.buttons.items():
+            button.blockSignals(True)
+            button.setChecked(name == verdict)
+            button.blockSignals(False)
+
     def judge_channel(self, verdict: str) -> str:
         """Record `verdict` on the selected contact; "" takes it back."""
         channel = self.selected_channel()
@@ -509,6 +522,7 @@ class FindingsPanel(QWidget):
             read.clear_channel(channel)
         self.channelJudged.emit(channel, verdict)
         self.refresh(keep=channel)
+        self._reflect()
         return channel
 
     def _columns(self) -> list[str]:
@@ -536,6 +550,7 @@ class FindingsPanel(QWidget):
             self.select_channel(keep)
 
     def _emit(self) -> None:
+        self._reflect()
         rows = self.view.selectionModel().selectedRows()
         if not rows:
             return
@@ -646,14 +661,17 @@ class EventsPanel(QWidget):
         verdicts = QHBoxLayout()
         verdicts.setSpacing(4)
         verdicts.addWidget(QLabel("This event:"))
+        segments = QHBoxLayout()
         for verdict, text, key, tip in self.KEYS:
             button = _compact(QPushButton(text))
             button.setToolTip(tip)
             button.clicked.connect(
                 lambda _=False, verdict=verdict: self.judge(verdict))
-            verdicts.addWidget(button)
+            segments.addWidget(button)
             self.buttons[verdict] = button
             self._bind(key, lambda verdict=verdict: self.judge(verdict))
+        theme.segmented(list(self.buttons.values()), segments)
+        verdicts.addLayout(segments)
         self.undo = _compact(QPushButton("Clear"))
         self.undo.setToolTip("Take this verdict back (Backspace)")
         self.undo.clicked.connect(lambda _=False: self.judge(""))
@@ -733,6 +751,15 @@ class EventsPanel(QWidget):
             return ""
         return str(self.model.row_value(rows[0].row(), "key") or "")
 
+    def _reflect(self) -> None:
+        """The segmented control shows the selected event's verdict."""
+        key = self.selected_key()
+        verdict = self._session.read.verdict_of(key) if key else ""
+        for name, button in self.buttons.items():
+            button.blockSignals(True)
+            button.setChecked(name == verdict)
+            button.blockSignals(False)
+
     def judge(self, verdict: str, advance: bool = True) -> str:
         """Record `verdict` on the selected event; "" takes it back.
 
@@ -756,6 +783,7 @@ class EventsPanel(QWidget):
         self.refilter(keep_row=row)
         if advance:
             self.step(+1)
+        self._reflect()
         return key
 
     def _write_note(self) -> None:
@@ -829,6 +857,7 @@ class EventsPanel(QWidget):
         self.progress.setText(f"{done} of {total} judged" if total else "")
 
     def _emit(self) -> None:
+        self._reflect()
         rows = self.view.selectionModel().selectedRows()
         if not rows:
             return

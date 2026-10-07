@@ -159,7 +159,7 @@ carries the page's own buttons and the reader's name. Panels sit on cards.
 | **Home** | what this is and is not, the numbers of this window, the windows cached on this machine (double-click one to open it), *Open a file…* |
 | **Recording** | *Does any channel actually stand out?*, the trend strip, the trace, and a side column with the ranking, the events, the selected event close up and, on tabs beside it, every channel's spectrum, a channel's events averaged, and the leaders re-tested at stricter thresholds. *Open the trace in a new window*, in the toolbar (`Ctrl+Shift+T`), lifts MNE's browser into a window of its own, for a second monitor; closing that window puts it back |
 | **Contacts** | the 3D view, the patient record, where the coordinates came from, and the button that fetches MNE's `fsaverage` template brain (a few hundred megabytes, once) for the 3D view to draw under measured coordinates |
-| **Signal** | data quality and preprocessing side by side — filter design, reference, muscle and amplitude marking, reference regression and an experimental ICA among them — provenance and the ICA components under them; *Apply* re-runs the analysis and every page follows |
+| **Signal** | data quality and preprocessing side by side, the preprocessing as groups of settings rows — filter design, reference, muscle and amplitude marking, reference regression and an experimental ICA among them — provenance and the ICA components under them; *Apply* re-runs the analysis and every page follows |
 | **Report** | the review as it will be exported, the findings paragraph (yours, or drafted by the assistant and marked as such), agreement with the archive's annotators, *Export review…* in the toolbar |
 | **Assistant** | the assistant, a *Stop* button for a model taking too long, *New conversation*, the tick that lets it run the pipeline's analyses, and the box that gets a local Qwen onto this machine. A refusal says what the model wrote and which check it failed |
 | **Chat** | under *The model*: the same local model on its own, not connected to the recording and checked by nothing, with a line at the top that says so. There before a recording is opened |
@@ -175,9 +175,21 @@ Under the first group sit the six **study pages** of the results site —
 Detectors, Outcome, Patients, Data, Architecture, Research — built in the
 window from the same committed tables the site reads (`data/`), through the
 site's own loaders. They need no recording, so they are open before anything is
-loaded. Band, metric and patient are combo boxes above the text, and the
+loaded. Each opens with **What this page shows**: two or three plain sentences
+and up to four numbers, computed from the same tables as the page, for someone
+who reads nothing else on it. The text sits in a reading column; tables longer
+than ten rows are folded until *Show every table* is ticked; a glossary term
+on the page carries its definition as a tooltip. Under the text, **Ask about
+this page** puts a question to the local model with that page as its only
+material — every number in the answer must be on the page or the answer is
+marked refused — and answers from the page itself when no model is loaded.
+Band, metric and patient are combo boxes above the text, and the
 Patients page can open a patient's cached window on the Recording page, which
-is the one link the site cannot make. They read the checkout, or the release
+is the one link the site cannot make.
+
+![A study page](images/onset-review-study.png)
+
+They read the checkout, or the release
 bundle's `site/` folder, which `install.sh` copies next to the environment; on
 an install with neither the pages say so and point at the
 [results site](https://berdakh.github.io/onset-hfo/).

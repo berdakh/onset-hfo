@@ -357,7 +357,9 @@ event. The letters work while the events list has focus; **Read → …**
 unjudged event** (`Ctrl+J`) skips what you have already done.
 
 **Judging a contact.** In **Findings**, *Count it*, *Ignore it* or *Cannot
-tell*. "Ignore it" does not delete anything or change a rate — the number stays
+tell*: one segmented control, the verdict already given shown filled, and
+*Clear* beside it to take it back. The event verdicts are the same shape.
+"Ignore it" does not delete anything or change a rate — the number stays
 on screen and your verdict goes in the report beside it. Nothing in this
 software removes a measurement because a person disagreed with it; it records
 that they did.

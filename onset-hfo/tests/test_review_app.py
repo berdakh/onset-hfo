@@ -3327,7 +3327,7 @@ def test_the_hints_are_behind_help_buttons_not_written_across_the_bars(built):
 def test_the_filter_design_is_folded_away_until_asked_for(built):
     panel = built.panels["preprocess"]
     assert panel.design_rows.isHidden() and not panel.design_toggle.isChecked()
-    assert panel.method.parent() is panel.design_rows
+    assert panel.design_rows.isAncestorOf(panel.method)
     assert not panel.design.isHidden(), "what MNE builds stays in view"
     panel.design_toggle.setChecked(True)
     assert not panel.design_rows.isHidden()
@@ -3476,3 +3476,143 @@ def test_colour_is_spent_on_the_exceptions(paged, qapp, faulted):
         assert panel.tokens.surface_alt in strip and panel.tokens.bad in strip
     finally:
         panel.deleteLater()
+
+
+# Apple steps 3 and 4: settings rows on the Signal page, segmented controls
+# for the side column's views and the reader's verdicts.
+
+def test_the_preprocessing_panel_is_settings_rows_in_groups(built):
+    from qtpy.QtWidgets import QFrame
+
+    panel = built.panels["preprocess"]
+    groups = [f for f in panel.findChildren(QFrame) if f.objectName() == "onset_group"]
+    assert len(groups) == 6, "filtering, reference, artifacts, experimental, rate, channels"
+    lines = [f for f in panel.findChildren(QFrame) if f.objectName() == "onset_group_line"]
+    assert len(lines) >= 12, "a hairline between rows"
+    # The radios sit in rows of their own and are still exclusive.
+    panel.average.setChecked(True)
+    assert not panel.bipolar.isChecked()
+    assert panel.config().average_reference and not panel.config().bipolar
+    panel.bipolar.setChecked(True)
+    assert not panel.average.isChecked()
+
+
+def test_the_verdict_rows_are_segmented_controls_that_show_the_verdict(judging, review):
+    findings = judging.panels["findings"]
+    events = judging.panels["events"]
+    for panel in (findings, events):
+        places = [b.property("segment") for b in panel.buttons.values()]
+        assert places == ["first", "middle", "last"]
+        assert all(b.objectName() == "onset_segment" and b.isCheckable()
+                   for b in panel.buttons.values())
+        assert not panel.undo.isCheckable(), "Clear is an action, not a state"
+
+    findings.view.selectRow(0)
+    assert not any(b.isChecked() for b in findings.buttons.values()), "no verdict yet"
+    channel = findings.judge_channel("ignore")
+    assert channel and findings.buttons["ignore"].isChecked()
+    assert not findings.buttons["accept"].isChecked()
+    findings.judge_channel("")
+    assert not any(b.isChecked() for b in findings.buttons.values())
+
+    events.view.selectRow(0)
+    key = events.selected_key()
+    events.judge("agree", advance=False)
+    assert events.buttons["agree"].isChecked() and events.selected_key() == key
+    events.step(+1)
+    assert not any(b.isChecked() for b in events.buttons.values()), \
+        "the next event has no verdict, so no segment is filled"
+    events.step(-1)
+    assert events.buttons["agree"].isChecked()
+    events.judge("", advance=False)
+    assert not any(b.isChecked() for b in events.buttons.values())
+
+
+# The study pages for a newcomer: a key message card, a reading column with
+# glossary tooltips and folded tables, and a box that asks about the page.
+
+def test_a_study_page_opens_with_its_key_message_and_tiles(paged):
+    from onset_review import studies
+
+    pages = paged.pages
+    pages.show_page("outcome")
+    page = pages.stack.currentWidget()
+    message = studies.key_message("outcome")
+    assert page.lead.text() == message["lead"]
+    tiles = [w for w in page.key_card.findChildren(qt.QLabel) if w.objectName() == "onset_tile"]
+    assert len(tiles) == len(message["tiles"])
+    assert "0.71" in tiles[0].text()
+    assert page.key_card.isAncestorOf(page.lead)
+
+
+def test_a_study_page_folds_long_tables_and_marks_glossary_terms(paged):
+    pages = paged.pages
+    pages.show_page("detectors")
+    page = pages.stack.currentWidget()
+    page.combos["band"].setCurrentIndex(page.combos["band"].findData("ripple"))
+    assert not page.show_tables.isChecked()
+    text = page.view.toPlainText()
+    assert text.count("is folded") >= 2 and "Every column" in text
+    assert "1.750" not in text, "the sweep's rows wait behind the tick"
+    page.show_tables.setChecked(True)
+    assert "1.750" in page.view.toPlainText()
+    page.show_tables.setChecked(False)
+    # A glossary term on the page carries its definition.
+    document = page.view.document()
+    cursor = document.find("HFO")
+    assert not cursor.isNull()
+    tip = ""
+    while not cursor.isNull() and not tip:
+        tip = cursor.charFormat().toolTip()
+        cursor = document.find("HFO", cursor)
+    assert "oscillation" in tip.lower()
+    assert page.view.document().defaultFont().pointSizeF() >= 11.0
+    assert page.text.startswith("# Detectors"), "the whole page, tables and all, is kept"
+
+
+def test_the_ask_box_answers_from_the_page_without_a_model(paged, monkeypatch):
+    from onset_review import studies, studypages
+    from onset_review.assistant_config import AssistantDefaults
+
+    monkeypatch.setattr(studypages, "load_defaults", lambda: AssistantDefaults())
+    pages = paged.pages
+    pages.show_page("patients")
+    page = pages.stack.currentWidget()
+    answer = page.ask.ask("Summarise this page")
+    assert answer is not None and not answer.refused
+    assert page.ask.answer.isVisible() or not page.ask.answer.isHidden()
+    lead = studies.key_message("patients", band="fast_ripple", scope="reviewed")["lead"]
+    assert answer.text == lead
+    assert "Checked against this page" in page.ask.verdict.text()
+    chips = [b for b in page.ask.findChildren(qt.QPushButton) if b.property("suggested")]
+    assert len(chips) == 3
+    page.ask.question.clear()
+    assert page.ask.ask() is None, "an empty box asks nothing"
+
+
+def test_the_ask_box_shows_a_refusal_as_one(paged, monkeypatch):
+    from onset_review import studypages
+    from onset_review.assistant_config import AssistantDefaults
+
+    class Liar:
+        is_language_model = True
+        name = "fake:liar"
+
+        def chat(self, messages, tools):
+            from onset_agent.backends import AssistantMessage
+
+            return AssistantMessage(content="There were 7777 patients.")
+
+        def abort(self):
+            pass
+
+    monkeypatch.setattr(studypages, "load_defaults",
+                        lambda: AssistantDefaults(kind="ollama", model="x",
+                                                  base_url="http://127.0.0.1:1/v1"))
+    monkeypatch.setattr(studypages, "make_backend", lambda *a, **k: Liar())
+    pages = paged.pages
+    pages.show_page("data")
+    page = pages.stack.currentWidget()
+    answer = page.ask.ask("How many patients?")
+    assert answer.refused and "7777" in answer.reason
+    assert page.ask.verdict.text().startswith("Refused")
