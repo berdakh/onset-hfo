@@ -3526,3 +3526,93 @@ def test_the_verdict_rows_are_segmented_controls_that_show_the_verdict(judging, 
     assert events.buttons["agree"].isChecked()
     events.judge("", advance=False)
     assert not any(b.isChecked() for b in events.buttons.values())
+
+
+# The study pages for a newcomer: a key message card, a reading column with
+# glossary tooltips and folded tables, and a box that asks about the page.
+
+def test_a_study_page_opens_with_its_key_message_and_tiles(paged):
+    from onset_review import studies
+
+    pages = paged.pages
+    pages.show_page("outcome")
+    page = pages.stack.currentWidget()
+    message = studies.key_message("outcome")
+    assert page.lead.text() == message["lead"]
+    tiles = [w for w in page.key_card.findChildren(qt.QLabel) if w.objectName() == "onset_tile"]
+    assert len(tiles) == len(message["tiles"])
+    assert "0.71" in tiles[0].text()
+    assert page.key_card.isAncestorOf(page.lead)
+
+
+def test_a_study_page_folds_long_tables_and_marks_glossary_terms(paged):
+    pages = paged.pages
+    pages.show_page("detectors")
+    page = pages.stack.currentWidget()
+    page.combos["band"].setCurrentIndex(page.combos["band"].findData("ripple"))
+    assert not page.show_tables.isChecked()
+    text = page.view.toPlainText()
+    assert text.count("is folded") >= 2 and "Every column" in text
+    assert "1.750" not in text, "the sweep's rows wait behind the tick"
+    page.show_tables.setChecked(True)
+    assert "1.750" in page.view.toPlainText()
+    page.show_tables.setChecked(False)
+    # A glossary term on the page carries its definition.
+    document = page.view.document()
+    cursor = document.find("HFO")
+    assert not cursor.isNull()
+    tip = ""
+    while not cursor.isNull() and not tip:
+        tip = cursor.charFormat().toolTip()
+        cursor = document.find("HFO", cursor)
+    assert "oscillation" in tip.lower()
+    assert page.view.document().defaultFont().pointSizeF() >= 11.0
+    assert page.text.startswith("# Detectors"), "the whole page, tables and all, is kept"
+
+
+def test_the_ask_box_answers_from_the_page_without_a_model(paged, monkeypatch):
+    from onset_review import studies, studypages
+    from onset_review.assistant_config import AssistantDefaults
+
+    monkeypatch.setattr(studypages, "load_defaults", lambda: AssistantDefaults())
+    pages = paged.pages
+    pages.show_page("patients")
+    page = pages.stack.currentWidget()
+    answer = page.ask.ask("Summarise this page")
+    assert answer is not None and not answer.refused
+    assert page.ask.answer.isVisible() or not page.ask.answer.isHidden()
+    lead = studies.key_message("patients", band="fast_ripple", scope="reviewed")["lead"]
+    assert answer.text == lead
+    assert "Checked against this page" in page.ask.verdict.text()
+    chips = [b for b in page.ask.findChildren(qt.QPushButton) if b.property("suggested")]
+    assert len(chips) == 3
+    page.ask.question.clear()
+    assert page.ask.ask() is None, "an empty box asks nothing"
+
+
+def test_the_ask_box_shows_a_refusal_as_one(paged, monkeypatch):
+    from onset_review import studypages
+    from onset_review.assistant_config import AssistantDefaults
+
+    class Liar:
+        is_language_model = True
+        name = "fake:liar"
+
+        def chat(self, messages, tools):
+            from onset_agent.backends import AssistantMessage
+
+            return AssistantMessage(content="There were 7777 patients.")
+
+        def abort(self):
+            pass
+
+    monkeypatch.setattr(studypages, "load_defaults",
+                        lambda: AssistantDefaults(kind="ollama", model="x",
+                                                  base_url="http://127.0.0.1:1/v1"))
+    monkeypatch.setattr(studypages, "make_backend", lambda *a, **k: Liar())
+    pages = paged.pages
+    pages.show_page("data")
+    page = pages.stack.currentWidget()
+    answer = page.ask.ask("How many patients?")
+    assert answer.refused and "7777" in answer.reason
+    assert page.ask.verdict.text().startswith("Refused")

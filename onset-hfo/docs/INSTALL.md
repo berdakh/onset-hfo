@@ -175,9 +175,21 @@ Under the first group sit the six **study pages** of the results site —
 Detectors, Outcome, Patients, Data, Architecture, Research — built in the
 window from the same committed tables the site reads (`data/`), through the
 site's own loaders. They need no recording, so they are open before anything is
-loaded. Band, metric and patient are combo boxes above the text, and the
+loaded. Each opens with **What this page shows**: two or three plain sentences
+and up to four numbers, computed from the same tables as the page, for someone
+who reads nothing else on it. The text sits in a reading column; tables longer
+than ten rows are folded until *Show every table* is ticked; a glossary term
+on the page carries its definition as a tooltip. Under the text, **Ask about
+this page** puts a question to the local model with that page as its only
+material — every number in the answer must be on the page or the answer is
+marked refused — and answers from the page itself when no model is loaded.
+Band, metric and patient are combo boxes above the text, and the
 Patients page can open a patient's cached window on the Recording page, which
-is the one link the site cannot make. They read the checkout, or the release
+is the one link the site cannot make.
+
+![A study page](images/onset-review-study.png)
+
+They read the checkout, or the release
 bundle's `site/` folder, which `install.sh` copies next to the environment; on
 an install with neither the pages say so and point at the
 [results site](https://berdakh.github.io/onset-hfo/).

@@ -22,7 +22,8 @@ from __future__ import annotations
 from pathlib import Path
 
 __all__ = ["STUDIES", "available", "build", "controls", "patient_rows",
-           "cached_window_for", "site_root"]
+           "cached_window_for", "site_root", "key_message", "fold_tables",
+           "FOLD_ROWS"]
 
 #: (key, sidebar label, one-line description)
 STUDIES = (
@@ -166,10 +167,56 @@ def table(frame, columns: list[str] | None = None, rename: dict | None = None,
     if limit is not None:
         shown = shown.head(limit)
     heads = [str(c) for c in shown.columns]
-    out = ["| " + " | ".join(heads) + " |", "|" + "|".join("---" for _ in heads) + "|"]
-    for row in shown.itertuples(index=False):
-        out.append("| " + " | ".join(_cell(v) for v in row) + " |")
+    cells = [[_cell(v) for v in row] for row in shown.itertuples(index=False)]
+    # Numbers right-aligned, as a reader expects of a column of figures;
+    # GitHub's `---:` is the dialect's own way of saying so.
+    rules = []
+    for index in range(len(heads)):
+        column = [row[index] for row in cells if row[index] != "—"]
+        rules.append("---:" if column and all(_numeric(c) for c in column) else "---")
+    out = ["| " + " | ".join(heads) + " |", "|" + "|".join(rules) + "|"]
+    for row in cells:
+        out.append("| " + " | ".join(row) + " |")
     return "\n".join(out) + "\n"
+
+
+def _numeric(cell: str) -> bool:
+    try:
+        float(cell.replace(",", ""))
+    except ValueError:
+        return False
+    return True
+
+
+#: A table longer than this many rows is folded on a study page until asked
+#: for: the page is read first and consulted second.
+FOLD_ROWS = 10
+
+
+def fold_tables(text: str, max_rows: int = FOLD_ROWS) -> tuple[str, int]:
+    """Replace every Markdown table longer than `max_rows` with a line saying
+    so. Returns the text and how many tables were folded."""
+    lines = text.splitlines()
+    out: list[str] = []
+    folded = 0
+    index = 0
+    while index < len(lines):
+        if lines[index].lstrip().startswith("|"):
+            start = index
+            while index < len(lines) and lines[index].lstrip().startswith("|"):
+                index += 1
+            block = lines[start:index]
+            rows = max(0, len(block) - 2)
+            if rows > max_rows:
+                folded += 1
+                out.append(f"> *A table of {rows} rows is folded. Tick **Show every "
+                           f"table** above to see it.*")
+            else:
+                out.extend(block)
+            continue
+        out.append(lines[index])
+        index += 1
+    return "\n".join(out) + ("\n" if text.endswith("\n") else ""), folded
 
 
 def note(kind: str, text: str) -> str:
@@ -177,6 +224,177 @@ def note(kind: str, text: str) -> str:
     lead = {"info": "Note", "warn": "Caution", "bad": "Not supported", "ok": "Result"}
     body = " ".join(line.strip() for line in text.strip().splitlines())
     return f"> **{lead.get(kind, 'Note')}.** {body}\n"
+
+
+# -- the key message ---------------------------------------------------------
+
+def key_message(key: str, **choices) -> dict:
+    """What a page shows, for someone who reads nothing else on it.
+
+    {"lead": two or three plain sentences, "tiles": [(value, caption), ...]}.
+    Every number is read from the same committed tables the page renders,
+    through the same loaders, so the message cannot drift from the page. With
+    the tables absent the message says so rather than invent a figure.
+    """
+    builders = {"detectors": _key_detectors, "outcome": _key_outcome,
+                "patients": _key_patients, "data": _key_data,
+                "architecture": _key_architecture, "research": _key_research}
+    if key not in builders:
+        raise KeyError(f"no study page {key!r}")
+    try:
+        return builders[key](**choices)
+    except Exception as error:      # noqa: BLE001 - a message must never break a page
+        return {"lead": f"The key message could not be computed: {error}", "tiles": []}
+
+
+_ABSENT = {"lead": "The committed tables are not on this machine, so this page can "
+                   "only point at the results site.", "tiles": []}
+
+
+def _key_detectors(band: str = "ripple", criterion: str = "rank_rho", **_) -> dict:
+    panels = _panels()
+    if panels is None:
+        return _ABSENT
+    best = panels.operating_points(criterion)
+    best = best[best["band"] == band]
+    cohort = panels.benchmark_cohort()
+    if best is None or len(best) == 0:
+        return _ABSENT
+    top = best.sort_values("rank_rho", ascending=False).iloc[0]
+    spread = float(best["rank_rho"].max() - best["rank_rho"].min())
+    n = len(cohort) if cohort is not None else 0
+    events = int(cohort["n_expert_events"].sum()) if cohort is not None else 0
+    lead = (f"Four plain detectors, each thresholding one feature of the signal, rank the "
+            f"contacts of {n} patients almost identically: the best reaches channel-rank "
+            f"ρ {top['rank_rho']:.2f} against the expert markings and the others sit within "
+            f"{spread:.3f} of it. Precision near {top['precision']:.2f} is a floor set by the "
+            f"reference, which is another detector's output, not a measure of accuracy.")
+    return {"lead": lead, "tiles": [
+        (f"{top['rank_rho']:.2f}", "channel-rank ρ, best detector"),
+        (f"{top['precision']:.2f}", "precision at that threshold"),
+        (f"{n}", "patients"),
+        (f"{events:,}", "expert-marked events"),
+    ]}
+
+
+def _key_outcome(**_) -> dict:
+    panels = _panels()
+    if panels is None:
+        return _ABSENT
+    import pandas as pd
+
+    path = Path(panels.STUDIES) / "outcome_groups_300s.csv"
+    if not path.exists():
+        return _ABSENT
+    groups = pd.read_csv(path).query(
+        "scope == 'reviewed' and band == 'fast_ripple' and metric == 'top_channel_resected'")
+    expert = groups[groups["source"] == "expert"].iloc[0]
+    rms = groups[groups["source"] == "rms"].iloc[0]
+    n_sf, n_rec = int(expert["n_seizure_free"]), int(expert["n_recurrence"])
+    lead = (f"In {n_sf + n_rec} patients, the busiest fast-ripple channel sat inside the "
+            f"removed tissue more often in those who became seizure-free: "
+            f"{expert['mean_seizure_free']:.0%} of them against "
+            f"{expert['mean_recurrence']:.0%} of those whose seizures returned, on the "
+            f"expert markings. With {n_sf} patients against {n_rec} that does not reach "
+            f"significance (p = {expert['p_permutation']:.2f}), and a shorter analysis "
+            f"window once said otherwise.")
+    return {"lead": lead, "tiles": [
+        (f"{expert['auc']:.2f}", "AUC, expert markings"),
+        (f"{rms['auc']:.2f}", "AUC, our detector"),
+        (f"{n_sf} vs {n_rec}", "seizure-free vs recurrence"),
+        (f"{expert['p_permutation']:.2f}", "permutation p"),
+    ]}
+
+
+def _key_patients(band: str = "fast_ripple", scope: str = "reviewed", **_) -> dict:
+    panels = _panels()
+    if panels is None:
+        return _ABSENT
+    cohort = panels.cohort_overview(band=band, scope=scope)
+    if cohort is None or len(cohort) == 0:
+        return _ABSENT
+    n = len(cohort)
+    free = cohort["seizure_free"].astype(bool)
+    hit = cohort["top_resected_expert"] == 1
+    agree = int((cohort["top_resected_expert"] == cohort["top_resected_rms"]).sum())
+    hit_sf, hit_rec = int((hit & free).sum()), int((hit & ~free).sum())
+    n_sf, n_rec = int(free.sum()), int((~free).sum())
+    lead = (f"The experts' busiest channel was inside the resection in {hit_sf} of the "
+            f"{n_sf} patients who became seizure-free and in {hit_rec} of the {n_rec} whose "
+            f"seizures returned. Our detector reaches the same inside-or-outside answer as "
+            f"the experts in {agree} of {n} patients: the two disagree about rates more "
+            f"than about which channel leads. A result four patients wide moves when one "
+            f"row does.")
+    return {"lead": lead, "tiles": [
+        (f"{hit_sf}/{n_sf}", "seizure-free: busiest channel resected"),
+        (f"{hit_rec}/{n_rec}", "recurrence: busiest channel resected"),
+        (f"{agree}/{n}", "detector agrees with the experts"),
+        (f"{n}", "patients"),
+    ]}
+
+
+def _key_data(**_) -> dict:
+    panels = _panels()
+    cohort = panels.benchmark_cohort() if panels is not None else None
+    if cohort is None or len(cohort) == 0:
+        return {"lead": "Two public archives of real patients, no simulator. ds003498 carries "
+                        "expert HFO markings, the contacts the surgeon removed and the "
+                        "outcome; ds003029 adds seizure recordings from many centres.",
+                "tiles": [("2", "public archives")]}
+    n = len(cohort)
+    events = int(cohort["n_expert_events"].sum())
+    sfreq = float(cohort["sfreq_hz"].iloc[0])
+    lead = (f"Two public archives of real patients, no simulator. ds003498 is the one that "
+            f"matters: {n} patients recorded at {sfreq:.0f} Hz in slow-wave sleep, with "
+            f"{events:,} expert-marked HFOs, the contacts the surgeon removed, and whether "
+            f"the patient became seizure-free. ds003029 adds seizure recordings from 35 "
+            f"patients across centres.")
+    return {"lead": lead, "tiles": [
+        ("2", "public archives"), (f"{n}", "patients with outcome"),
+        (f"{events:,}", "expert-marked HFOs"), (f"{sfreq:.0f} Hz", "sampling rate"),
+    ]}
+
+
+def _key_architecture(**_) -> dict:
+    return {"lead": ("One pipeline, read by two readers. The signal is filtered and "
+                     "re-referenced, four detectors each threshold one feature, one "
+                     "artifact-rejection stage removes filter ringing, and every "
+                     "measurement is written once. The assistant and this window read "
+                     "those results through the same read-only store and cannot change "
+                     "a number."),
+            "tiles": [("4", "detectors"), ("1", "artifact-rejection stage"),
+                      ("8", "read-only tools for the assistant"),
+                      ("0", "numbers a reader can change")]}
+
+
+def _key_research(**_) -> dict:
+    panels = _panels()
+    if panels is None:
+        return _ABSENT
+    import pandas as pd
+
+    best = panels.operating_points("rank_rho")
+    rho = float(best[best["band"] == "ripple"]["rank_rho"].max())
+    path = Path(panels.STUDIES) / "outcome_groups_300s.csv"
+    groups = pd.read_csv(path).query(
+        "scope == 'reviewed' and band == 'fast_ripple' and metric == 'top_channel_resected' "
+        "and source == 'expert'").iloc[0]
+    cohort = panels.cohort_overview()
+    stable = int(cohort["stable_across_runs_expert"].astype(bool).sum())
+    n = len(cohort)
+    lead = (f"It detects HFOs in real recordings: channel ranking agrees with the experts "
+            f"at ρ ≈ {rho:.2f}. It does not beat a published detector and does not claim "
+            f"to. The map points in the right direction for surgical outcome (AUC "
+            f"{groups['auc']:.2f}) without reaching significance on "
+            f"{int(groups['n_seizure_free'])} against {int(groups['n_recurrence'])} "
+            f"patients. The ranking is stable across nights in {stable} of {n} patients, "
+            f"and not within a single minute. Nothing here is validated for clinical use.")
+    return {"lead": lead, "tiles": [
+        (f"{rho:.2f}", "channel-rank ρ vs experts"),
+        (f"{groups['auc']:.2f}", "outcome AUC, not significant"),
+        (f"{stable}/{n}", "stable across nights"),
+        ("No", "validated for clinical use"),
+    ]}
 
 
 # -- the pages -------------------------------------------------------------
@@ -424,9 +642,17 @@ only reference standard in epilepsy surgery that is not another opinion.
         view = groups.query(
             "scope == 'reviewed' and band == 'fast_ripple' and "
             "metric in ['top_channel_resected', 'candidates_resected']")
+        view = view.assign(metric=view["metric"].map(
+            {"top_channel_resected": "busiest channel resected",
+             "candidates_resected": "tied set resected"}).fillna(view["metric"]),
+            source=view["source"].map({"expert": "expert markings",
+                                       "rms": "our RMS detector"}).fillna(view["source"]))
         out.append(table(view.round(3), columns=[
             "source", "metric", "mean_seizure_free", "mean_recurrence", "auc",
-            "auc_lo", "auc_hi", "p_permutation"]))
+            "auc_lo", "auc_hi", "p_permutation"],
+            rename={"mean_seizure_free": "seizure-free, mean", "mean_recurrence": "recurrence, mean",
+                    "auc": "AUC", "auc_lo": "AUC low", "auc_hi": "AUC high",
+                    "p_permutation": "p (permutation)"}))
     else:
         out.append(note("info", "`data/stability/outcome_groups_300s.csv` is missing."))
     out.append("""

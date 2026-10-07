@@ -35,7 +35,7 @@
 cd onset-hfo
 python -m venv .venv && . .venv/bin/activate
 pip install -e ".[dev]"
-pytest -q          # about 1,210 tests, offline and enforced
+pytest -q          # about 1,230 tests, offline and enforced
 # sklearn and openpyxl come with [dev]; ".[ml]" is the same set without pytest
 ruff check .
 ```
