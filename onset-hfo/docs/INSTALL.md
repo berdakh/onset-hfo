@@ -156,12 +156,12 @@ carries the page's own buttons and the reader's name. Panels sit on cards.
 
 | page | what is on it |
 |---|---|
-| **Home** | what this is and is not, the numbers of this window, the windows cached on this machine (double-click one to open it), *Open a file…* |
+| **Home** | what this is and is not; before anything is open, *Continue where you left off* with the window opened last time; the windows cached on this machine grouped by patient (double-click one to open it), *Open a file…*. What each page is for is under **Help → How to read the pages** |
 | **Recording** | *Does any channel actually stand out?*, the trend strip, the trace, and a side column with the ranking, the events, the selected event close up and, on tabs beside it, every channel's spectrum, a channel's events averaged, and the leaders re-tested at stricter thresholds. *Open the trace in a new window*, in the toolbar (`Ctrl+Shift+T`), lifts MNE's browser into a window of its own, for a second monitor; closing that window puts it back |
 | **Contacts** | the 3D view, the patient record, where the coordinates came from, and the button that fetches MNE's `fsaverage` template brain (a few hundred megabytes, once) for the 3D view to draw under measured coordinates |
 | **Signal** | data quality and preprocessing side by side, the preprocessing as groups of settings rows — filter design, reference, muscle and amplitude marking, reference regression and an experimental ICA among them — provenance and the ICA components under them; *Apply* re-runs the analysis and every page follows |
 | **Report** | the review as it will be exported, the findings paragraph (yours, or drafted by the assistant and marked as such), agreement with the archive's annotators, *Export review…* in the toolbar |
-| **Assistant** | the assistant, a *Stop* button for a model taking too long, *New conversation*, the tick that lets it run the pipeline's analyses, and the box that gets a local Qwen onto this machine. A refusal says what the model wrote and which check it failed |
+| **Assistant** | the assistant, one card per exchange with a chip saying what the answer is (Checked, From the documents, Not checked, Refused) and the trace folded under it; a *Stop* button for a model taking too long, *New conversation*, the tick that lets it run the pipeline's analyses, and the box that gets a local Qwen onto this machine. A refusal says what the model wrote and which check it failed |
 | **Chat** | under *The model*: the same local model on its own, not connected to the recording and checked by nothing, with a line at the top that says so. There before a recording is opened |
 
 `Alt+1` to `Alt+9` switch pages, so do the entries at the top of **View**.
@@ -307,6 +307,18 @@ QT_DEBUG_PLUGINS=1 onset-review 2>&1 | grep -i "cannot load"
 ```bash
 echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
 ```
+
+**`ImportError: The sklearn package is required to use method='fastica'`**
+on Apply — an install from before 0.3.3 did not bring scikit-learn, which
+MNE's FastICA solver is built on. Either re-run the installer from the
+checkout, which now installs it, or add it to the app's environment:
+
+```bash
+~/.local/share/onset-review/venv/bin/pip install scikit-learn
+```
+
+Until then the Preprocessing panel offers only the `infomax` solver, which
+needs nothing extra.
 
 **"No recordings are cached yet"** — nothing has been fetched. See
 [**Getting a recording**](#getting-a-recording).

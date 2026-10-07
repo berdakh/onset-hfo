@@ -59,11 +59,16 @@ ml = ["scikit-learn>=1.3"]
 #
 # Matplotlib is not listed: it is already a core dependency, and the 3D view's
 # `backend_qtagg` needs only the Qt bindings this extra brings.
+#
+# scikit-learn is here because MNE's ``fastica`` ICA solver -- the one the
+# Preprocessing panel offers first -- is scikit-learn's FastICA; without it
+# the panel's Apply failed with an ImportError in the window.
 review = [
     "PySide6-Essentials>=6.6",
     "mne-qt-browser>=0.6",
     "pyqtgraph>=0.13",
     "qtpy>=2.4",
+    "scikit-learn>=1.3",
 ]
 
 [project.scripts]

@@ -609,7 +609,9 @@ class PreprocessConfig:
     ica: bool = False
     #: Components to fit; ``None`` fits ``min(20, channels - 1)``.
     ica_n_components: int | None = None
-    #: ``"fastica"`` (the default), ``"infomax"`` or ``"picard"`` where installed.
+    #: ``"fastica"`` (the default, scikit-learn's), ``"infomax"`` (MNE's own,
+    #: needs nothing extra) or ``"picard"`` where its package is installed.
+    #: The panel offers only the solvers that run on the machine.
     ica_method: str = "fastica"
     #: The component indices the reviewer chose to remove. Recorded in the
     #: steps and the report with the reviewer's name on the choice.

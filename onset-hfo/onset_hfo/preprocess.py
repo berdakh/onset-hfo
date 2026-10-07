@@ -31,7 +31,7 @@ import numpy as np
 from onset_hfo.config import BANDS, PreprocessConfig
 from onset_hfo.datasets import Recording
 
-__all__ = ["Prepared", "prepare", "ICA_METHODS", "ica_methods_available", "bipolar_pairs", "describe", "effective_reference",
+__all__ = ["Prepared", "prepare", "ICA_METHODS", "ica_methods_available", "default_ica_method", "bipolar_pairs", "describe", "effective_reference",
            "filter_description", "learn_ptp_threshold", "REFERENCES"]
 
 #: The reference schemes by name, with the sentence each gets in the steps.
@@ -133,16 +133,32 @@ def bipolar_pairs(ch_names: list[str], exclude: set[str] | None = None) -> list[
     return pairs
 
 
-#: ICA solvers offered. Picard is listed only when its package is installed.
+#: ICA solvers MNE can run. Infomax is MNE's own; FastICA is scikit-learn's
+#: and Picard is the `python-picard` package, so each of those is listed only
+#: when its package imports.
 ICA_METHODS = ("fastica", "infomax", "picard")
+SOLVER_PACKAGES = {"fastica": "scikit-learn", "picard": "python-picard"}
+
+
+def _importable(module: str) -> bool:
+    try:
+        __import__(module)
+    except ImportError:
+        return False
+    return True
 
 
 def ica_methods_available() -> tuple[str, ...]:
-    try:
-        import picard  # noqa: F401
-    except ImportError:
-        return tuple(m for m in ICA_METHODS if m != "picard")
-    return ICA_METHODS
+    """The solvers that will run on this machine, in `ICA_METHODS` order."""
+    have = {"fastica": _importable("sklearn"), "infomax": True, "picard": _importable("picard")}
+    return tuple(m for m in ICA_METHODS if have[m])
+
+
+def default_ica_method() -> str:
+    """The first solver that runs here: ``fastica`` with scikit-learn
+    installed, else ``infomax``, which needs nothing beyond MNE."""
+    available = ica_methods_available()
+    return "fastica" if "fastica" in available else available[0]
 
 
 def effective_reference(cfg: PreprocessConfig) -> str:
@@ -505,7 +521,11 @@ def _check(cfg: PreprocessConfig, sfreq: float) -> None:
         if cfg.ica_method not in ICA_METHODS:
             raise ValueError(f"ica_method must be one of {ICA_METHODS}, not {cfg.ica_method!r}")
         if cfg.ica_method not in ica_methods_available():
-            raise ValueError(f"the {cfg.ica_method} solver is not installed on this machine")
+            package = SOLVER_PACKAGES.get(cfg.ica_method, cfg.ica_method)
+            raise ValueError(
+                f"the {cfg.ica_method} ICA solver needs the {package} package, which is not "
+                f"installed on this machine; install it (pip install {package}) or choose "
+                f"{' or '.join(ica_methods_available())}")
         if cfg.ica_n_components is not None and int(cfg.ica_n_components) < 1:
             raise ValueError("ica_n_components must be at least 1")
         if any(int(i) < 0 for i in cfg.ica_exclude):

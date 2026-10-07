@@ -1356,10 +1356,16 @@ def test_the_assistant_keeps_the_window_painting_while_it_works(qapp, review):
     panel = assistant.AssistantPanel(review)
     try:
         painted = []
+        # Read the transcript from inside the nested loop, while the worker
+        # runs: the card says "Thinking…" then, and the answer afterwards.
+        from qtpy.QtCore import QTimer
+
+        QTimer.singleShot(0, lambda: painted.append(panel.transcript.toPlainText()))
         panel.ask("Which channels have the highest ripple rate?")
         qapp.processEvents()
-        painted.append(panel.transcript.toPlainText())
-        assert "Thinking" in painted[0]
+        assert painted and "Thinking" in painted[0]
+        assert "Thinking" not in panel.transcript.current.chip.text(), \
+            "the chip says what the answer is once it has landed"
         assert panel.isEnabled()          # re-enabled when the answer landed
     finally:
         panel.deleteLater()
@@ -2238,9 +2244,11 @@ def test_a_citation_reveals_the_recording_page(paged, review):
 def test_home_lists_the_windows_on_disk_and_opens_one(paged):
     pages = paged.pages
     pages.show_page("home")
-    model = pages.cached_table.model()
-    assert model is not None and model.rowCount() == 1
-    pages.cached_table.selectRow(0)
+    assert pages.windows_listed() == 1
+    assert pages.cached_tree.topLevelItemCount() == 1, "one patient, one group"
+    assert not pages.open_button.isEnabled(), "nothing selected yet"
+    pages.select_window(0)
+    assert pages.open_button.isEnabled()
     pages.open_button.click()
     assert paged.calls["opened"] and paged.calls["opened"][-1]["subject"] == "sub-01"
     pages.import_button.click()
@@ -2381,7 +2389,7 @@ def test_the_application_opens_on_home_with_nothing_loaded(qapp):
         menu["Open a file…"].trigger()
         assert calls["chosen"] == 1 and calls["imported"] == 1
 
-        host.cached_table.selectRow(0)
+        host.select_window(0)
         host.open_button.click()
         assert calls["opened"][-1]["subject"] == "sub-03"
     finally:
@@ -3637,3 +3645,125 @@ def test_the_detectors_and_outcome_pages_show_their_figures(paged):
         for name in re.findall(r'src="(onset-figure-[^"]+)"', html):
             image = page.view.document().resource(QTextDocument.ImageResource, QUrl(name))
             assert image is not None and not image.isNull(), f"{key}: {name} did not resolve"
+
+
+# Home as a start screen, and the assistant's transcript as cards.
+
+def test_home_groups_the_windows_by_patient_and_offers_to_continue(qapp, review, tmp_path,
+                                                                   monkeypatch):
+    import pandas as pd
+
+    from onset_review import pages, window
+
+    monkeypatch.setenv("ONSET_REVIEW_CONFIG_DIR", str(tmp_path))
+    frame = pd.DataFrame([
+        {"subject": "sub-03", "t_start": 0.0, "t_stop": 60.0, "dataset": "ds003498",
+         "run": "01", "sfreq": 2000.0, "n_channels": 40},
+        {"subject": "sub-01", "t_start": 60.0, "t_stop": 120.0, "dataset": "ds003498",
+         "run": "01", "sfreq": 2000.0, "n_channels": 50},
+        {"subject": "sub-01", "t_start": 0.0, "t_stop": 60.0, "dataset": "ds003498",
+         "run": "01", "sfreq": 2000.0, "n_channels": 50}])
+    opened = []
+    # Nothing remembered yet: no Continue card.
+    host = window.decorate_start(cached=lambda: frame, on_open_cached=opened.append)
+    try:
+        assert host.cached_tree.topLevelItemCount() == 2, "two patients, two groups"
+        groups = [host.cached_tree.topLevelItem(i).text(0) for i in range(2)]
+        assert groups[0].startswith("sub-01") and "2 windows" in groups[0]
+        assert groups[1].startswith("sub-03") and "1 window" in groups[1]
+        assert host.windows_listed() == 3
+        assert host.continue_button is None
+        assert not host.findChild(qt.QWidget, "onset_continue_holder").isVisibleTo(host)
+        host.select_window(1)
+        host.open_button.click()
+        assert opened[-1]["subject"] == "sub-01" and opened[-1]["t_start"] == 60.0
+    finally:
+        host.close()
+
+    # A loaded window remembers itself; the next start offers it.
+    pages.remember_recent(review.request)
+    recent = pages.recent_window()
+    assert recent == {"subject": review.request.subject,
+                      "t_start": float(review.request.t_start),
+                      "t_stop": float(review.request.t_stop)}
+    frame.loc[len(frame)] = {"subject": review.request.subject,
+                             "t_start": review.request.t_start,
+                             "t_stop": review.request.t_stop, "dataset": "synthetic",
+                             "run": "01", "sfreq": 2000.0, "n_channels": 8}
+    host = window.decorate_start(cached=lambda: frame, on_open_cached=opened.append)
+    try:
+        assert host.continue_button is not None
+        assert review.request.subject in host.findChild(qt.QLabel, "onset_continue_what").text()
+        host.continue_button.click()
+        assert opened[-1]["subject"] == review.request.subject
+        assert opened[-1]["t_start"] == float(review.request.t_start)
+    finally:
+        host.close()
+    # A remembered window no longer on disk is not offered.
+    host = window.decorate_start(cached=lambda: frame.iloc[:1], on_open_cached=opened.append)
+    try:
+        assert host.continue_button is None
+    finally:
+        host.close()
+
+
+def test_how_to_read_the_pages_is_in_help_not_on_home(paged):
+    from onset_review import window
+    from onset_review.pages import HOW_TO_READ
+
+    for host in (paged.host, window.decorate_start(cached=lambda: None)):
+        try:
+            actions = _actions(_menu(host, "Help"))
+            assert "How to read the pages" in actions
+        finally:
+            if host is not paged.host:
+                host.close()
+    text = window.how_to_read_text()
+    assert "<b>Signal</b>" in text and "<b>Chat</b>" in text
+    assert all(what in text for _key, what in HOW_TO_READ)
+    paged.pages.show_page("home")
+    labels = [w.text() for w in paged.pages.stack.currentWidget().findChildren(qt.QLabel)]
+    assert not any("How to read the pages" in t for t in labels)
+
+
+def test_the_assistant_transcript_is_cards_with_chips_and_a_folded_trace(qapp, review):
+    from onset_review import assistant
+    from onset_review.transcript import ExchangeCard
+
+    panel = assistant.AssistantPanel(review)
+    try:
+        assert panel.transcript.findChild(qt.QLabel, "onset_welcome") is not None
+        assert "Ask about this window" in panel.transcript.toPlainText()
+        panel.ask("Which channels have the highest ripple rate?")
+        cards = panel.transcript.cards()
+        assert len(cards) == 1 and isinstance(cards[0], ExchangeCard)
+        card = cards[0]
+        assert panel.transcript.findChild(qt.QLabel, "onset_welcome") is None, \
+            "the welcome goes with the first exchange"
+        assert card.chip.text() == "Checked" and card.kind == "checked"
+        assert "quer" in card.meta.text() and "the model asked for" in card.meta.text()
+        assert card.toggle.isVisibleTo(panel) and not card.toggle.isChecked(), \
+            "the trace folds once the answer lands"
+        assert card.steps.isHidden()
+        card.toggle.setChecked(True)
+        assert not card.steps.isHidden() and "top_channels" in card.steps.text()
+        assert "steps)" in card.toggle.text() or "step)" in card.toggle.text()
+
+        panel.ask("Which channels should I resect?")
+        refused = panel.transcript.cards()[-1]
+        assert refused.chip.text() == "Refused" and refused.kind == "refused"
+        assert "Refused." in refused.answer.text()
+
+        panel.ask("What can you do?")
+        about = panel.transcript.cards()[-1]
+        assert about.chip.text() == "No model needed" and about.kind == "note"
+        assert not about.toggle.isVisibleTo(panel), "nothing to trace: no model ran"
+
+        panel.new_conversation()
+        assert "forgotten" in panel.transcript.toPlainText()
+        panel.ask("Show me the evidence for the busiest channel")
+        cited = panel.transcript.cards()[-1]
+        assert cited.kind == "checked" and "cites:" in cited.answer.text()
+        assert 'href="evidence:' in panel.transcript.toHtml(), "citations stay clickable"
+    finally:
+        panel.deleteLater()

@@ -49,6 +49,7 @@ from qtpy.QtWidgets import (
 
 from onset_hfo.config import PreprocessConfig
 from onset_hfo.preprocess import (
+    default_ica_method,
     describe,
     effective_reference,
     filter_description,
@@ -406,7 +407,7 @@ class PreprocessPanel(QWidget):
             amplitude_ptp_uv=float(self.ptp.value()) or None,
             regress_channels=tuple(self._regressing()),
             ica=self.ica.isChecked(),
-            ica_method=str(self.ica_method.currentData() or "fastica"),
+            ica_method=str(self.ica_method.currentData() or default_ica_method()),
             ica_n_components=int(self.ica_components.value()) or None,
             ica_exclude=tuple(self._ica_exclude) if self.ica.isChecked() else (),
         )

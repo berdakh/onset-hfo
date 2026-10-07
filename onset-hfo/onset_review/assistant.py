@@ -399,14 +399,13 @@ class AssistantPanel(QWidget):
         top.addStretch(1)
         top.addWidget(self.new_chat)
 
-        self.transcript = QTextBrowser()
-        self.transcript.setOpenLinks(False)
-        self.transcript.setOpenExternalLinks(False)
+        from onset_review.transcript import Transcript
+
+        self.transcript = Transcript()
         self.transcript.anchorClicked.connect(self._citation_clicked)
         font = self.transcript.font()
         font.setPointSizeF(TEXT_PT)
         self.transcript.setFont(font)
-        self.transcript.document().setDefaultFont(font)
 
         self.question = QLineEdit()
         self.question.setPlaceholderText(
@@ -481,18 +480,17 @@ class AssistantPanel(QWidget):
         self.backend.currentIndexChanged.connect(self._backend_changed)
         self._apply_defaults()
         self._backend_changed()
-        self._say_system(
-            "Ask about <b>this window</b>. Every answer is checked against the "
-            "analysis on screen: a number no query returned is refused rather "
-            "than shown. Citations are links — click one to take the trace "
-            "there. While a question runs, the lines below it say which data "
-            "the model was given, what it asked for, what it wrote, and what "
-            "the checks made of it. Ask <i>What can you do?</i> to start."
-            "<br><br>Pick a model above. <i>No model</i> runs the whole loop "
-            "deterministically, with nothing generative in it, which is how the "
-            "guards are tested. For a Qwen on this machine, use the box above: "
-            "it lists the sizes that fit, opens on the one that answers in "
-            "reasonable time on this hardware, and downloads it.")
+        self.transcript.welcome(
+            f"<div style='font-size:{TEXT_PT + 1}pt;color:{theme.current().text};'>"
+            "Ask about this window.</div>"
+            "<div style='margin-top:4px;'>Every answer is checked against the analysis on "
+            "screen: a number no query returned is refused rather than shown, and every "
+            "citation is a link to the trace. Each answer carries a chip that says what it "
+            "is — <b>Checked</b>, <b>From the documents</b>, <b>Not checked</b> or "
+            "<b>Refused</b> — and <i>How it got there</i> under it opens the trace.</div>"
+            "<div style='margin-top:8px;'>Pick a model above. <i>No model</i> runs the whole "
+            "loop deterministically, which is how the guards are tested; the box above gets "
+            "a Qwen onto this machine. Ask <i>What can you do?</i> to start.</div>")
 
     # -- plumbing ----------------------------------------------------------
     def showEvent(self, event):      # noqa: N802  (Qt's spelling)
@@ -595,7 +593,6 @@ class AssistantPanel(QWidget):
         if not self._ensure_store():
             return
 
-        self._say_system("Thinking…")
         self._worker = _AskWorker(self._store, text,
                                   str(self.backend.currentData() or "scripted"),
                                   self.model.text().strip(),
@@ -734,63 +731,62 @@ class AssistantPanel(QWidget):
 
     # -- transcript --------------------------------------------------------
     def _append(self, body: str) -> None:
-        self.transcript.append(body)
-        bar = self.transcript.verticalScrollBar()
-        bar.setValue(bar.maximum())
+        self.transcript.add_note(body)
 
     def _say_system(self, body: str) -> None:
-        self._append(f"<div style='color:{theme.current().text_muted};font-size:{SMALL_PT}pt;"
-                     f"margin:6px 0;'>{body}</div>")
+        self._append(body)
 
     def _say_step(self, body: str) -> None:
-        self._append(f"<div style='color:{theme.current().text_muted};font-size:{SMALL_PT}pt;"
-                     f"margin:1px 0 1px 14px;'>· {body}</div>")
+        card = self.transcript.current
+        if card is not None and card.kind == "thinking":
+            card.add_step(body)
+        else:
+            self._append(f"· {body}")
 
     def _say_user(self, text: str) -> None:
-        self._append(f"<div style='margin:10px 0 2px;'><b>{html.escape(text)}</b>"
-                     f"</div>")
+        self.transcript.start_exchange(text)
+
+    def _card(self, answer):
+        card = self.transcript.current
+        if card is None or card.kind != "thinking":
+            card = self.transcript.start_exchange(str(getattr(answer, "question", "") or ""))
+        return card
 
     def _say_answer(self, answer) -> None:
+        """The answer onto its card, with the chip that says what it is."""
         if answer is None:
             self._say_system("No answer came back.")
             return
+        card = self._card(answer)
         if answer.refused:
             why = "".join(f"<li>{line}</li>" for line in explain_refusal(answer))
-            self._append(
-                f"<div style='margin:2px 0 6px;padding:6px;"
-                f"background:{theme.current().bad_surface};"
-                f"border-left:3px solid {theme.current().bad};'>"
-                f"<b>Refused.</b> {_paragraphs(answer.text)}"
-                f"<div style='color:{theme.current().text_muted};font-size:{SMALL_PT}pt;"
-                f"margin-top:3px;'>{html.escape(answer.reason)}</div>"
-                + (f"<ul style='font-size:{SMALL_PT}pt;margin:4px 0 0 0;'>{why}</ul>" if why else "")
-                + "</div>")
+            card.finish("refused",
+                        f"<b>Refused.</b> {_paragraphs(answer.text)}"
+                        f"<div style='color:{theme.current().text_muted};font-size:{SMALL_PT}pt;"
+                        f"margin-top:3px;'>{html.escape(answer.reason)}</div>"
+                        + (f"<ul style='font-size:{SMALL_PT}pt;margin:4px 0 0 0;'>{why}</ul>"
+                           if why else ""),
+                        html.escape(answer.backend))
             return
 
         mode = getattr(answer, "mode", "data")
         if mode == "general":
-            self._append(
-                f"<div style='margin:2px 0 6px;padding:6px;"
-                f"background:{theme.current().warn_surface};"
-                f"border-left:3px solid {theme.current().warn};'>"
-                f"<b>Not checked.</b> This is the model's own knowledge, not this analysis "
-                f"and not the project's documents; nothing here vouches for it."
-                f"<div style='margin-top:4px;'>{_paragraphs(answer.text)}</div>"
-                f"<div style='color:{theme.current().text_muted};font-size:{SMALL_PT}pt;"
-                f"margin-top:3px;'>{html.escape(answer.backend)} · unchecked</div></div>")
+            card.finish("unchecked",
+                        "<b>Not checked.</b> This is the model's own knowledge, not this "
+                        "analysis and not the project's documents; nothing here vouches for it."
+                        f"<div style='margin-top:4px;'>{_paragraphs(answer.text)}</div>",
+                        f"{html.escape(answer.backend)} · unchecked")
             return
-        parts = [f"<div style='margin:2px 0 4px;'>{_paragraphs(answer.text)}</div>"]
         if mode == "background":
             self._sources = list(getattr(answer, "sources", []) or [])
-            links = [f"<a href='doc:{i}'>{html.escape(label)}</a>"
+            links = [f'<a href="doc:{i}">{html.escape(label)}</a>'
                      for i, (label, _text) in enumerate(self._sources)]
-            parts.append(f"<div style='font-size:{SMALL_PT}pt;margin-bottom:2px;'>"
-                         "from the documents: " + " · ".join(links) + "</div>")
-            parts.append(f"<div style='color:{theme.current().text_muted};font-size:{SMALL_PT}pt;'>"
-                         f"{html.escape(answer.backend)} · numbers checked against the cited "
-                         "sections</div>")
-            self._append("".join(parts))
+            card.finish("documents", _paragraphs(answer.text),
+                        "from the documents: " + " · ".join(links)
+                        + f" · {html.escape(answer.backend)} · numbers checked against the "
+                          "cited sections")
             return
+        body = _paragraphs(answer.text)
         if answer.evidence_ids:
             links = []
             for evidence_id in answer.evidence_ids:
@@ -798,20 +794,24 @@ class AssistantPanel(QWidget):
                 label = (f"{parsed[0]} @ {parsed[1]:.2f} s" if parsed
                          else evidence_id)
                 links.append(
-                    f"<a href='evidence:{html.escape(evidence_id)}'>"
+                    f'<a href="evidence:{html.escape(evidence_id)}">'
                     f"{html.escape(label)}</a>")
             attached = getattr(answer, "attached_citations", None) or []
             how = (" (attached from the retrieved evidence for the channels named)"
                    if attached and set(attached) >= set(answer.evidence_ids) else "")
-            parts.append(f"<div style='font-size:{SMALL_PT}pt;margin-bottom:2px;'>"
-                         "cites: " + " · ".join(links) + how + "</div>")
+            body += (f"<div style='font-size:{SMALL_PT}pt;margin-top:4px;'>"
+                     "cites: " + " · ".join(links) + how + "</div>")
+        trace = getattr(answer, "trace", None) or []
+        if any(entry.get("type") == "about" for entry in trace):
+            card.finish("note", body, html.escape(answer.backend))
+            return
         looked = len(getattr(answer, "looked_at", None) or [])
         tools = ", ".join(answer.tools_called) or "none"
-        flag = "" if answer.verified else " · <b>unverified</b>"
-        parts.append(f"<div style='color:{theme.current().text_muted};font-size:{SMALL_PT}pt;'>"
-                     f"{html.escape(answer.backend)} · {looked} quer{'y' if looked == 1 else 'ies'} "
-                     f"run · the model asked for: {html.escape(tools)}{flag}</div>")
-        self._append("".join(parts))
+        kind = "checked" if answer.verified else "unverified"
+        card.finish(kind, body,
+                    f"{html.escape(answer.backend)} · {looked} quer{'y' if looked == 1 else 'ies'} "
+                    f"run · the model asked for: {html.escape(tools)}"
+                    + ("" if answer.verified else " · <b>unverified</b>"))
 
     def _citation_clicked(self, url) -> None:
         """Turn a clicked citation into a place on the trace.
@@ -837,7 +837,7 @@ class AssistantPanel(QWidget):
 
     def _show_source(self, index: str) -> None:
         """The cited document section, in a window of its own."""
-        from qtpy.QtWidgets import QDialog, QTextBrowser, QVBoxLayout
+        from qtpy.QtWidgets import QDialog, QVBoxLayout
 
         from onset_review.studypages import set_markdown
 
