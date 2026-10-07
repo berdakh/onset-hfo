@@ -32,8 +32,8 @@ from dataclasses import dataclass
 from qtpy.QtGui import QFont, QFontDatabase
 
 __all__ = ["Palette", "LIGHT", "DARK", "apply_theme", "current", "qt_palette",
-           "section_label", "plain_buttons", "scrolled", "help_button",
-           "card", "muted", "SPACING", "RADIUS", "FONT_STACK"]
+           "section_label", "plain_buttons", "scrolled", "help_button", "card_frame",
+           "card", "muted", "SPACING", "RADIUS", "FONT_STACK", "PAGE_MARGIN"]
 
 #: The spacing grid, in pixels. Everything is a multiple of four; most things
 #: are a multiple of eight. A layout that picks its margins ad hoc reads as
@@ -41,6 +41,10 @@ __all__ = ["Palette", "LIGHT", "DARK", "apply_theme", "current", "qt_palette",
 SPACING = 8
 #: Corner radius for cards, inputs and buttons.
 RADIUS = 8
+#: The margin round a page's content, and between its cards: the room an
+#: Apple window leaves round a card on its grey background.
+PAGE_MARGIN = 20
+CARD_GAP = 12
 
 #: Preferred UI faces, best first. Inter is the closest freely-available face
 #: to the one this is modelled on and is packaged on most distributions; the
@@ -58,6 +62,7 @@ class Palette:
     name: str
     window: str          #: the application background
     surface: str         #: cards and panels that sit on it
+    sidebar: str         #: the source list's own, slightly deeper surface
     surface_alt: str     #: table headers, hovered rows
     text: str
     text_muted: str
@@ -81,7 +86,7 @@ class Palette:
 
 LIGHT = Palette(
     name="light",
-    window="#F5F5F7", surface="#FFFFFF", surface_alt="#F0F0F3",
+    window="#F5F5F7", surface="#FFFFFF", sidebar="#EBEBEF", surface_alt="#F0F0F3",
     text="#1D1D1F", text_muted="#6E6E73", separator="#D8D8DE",
     accent="#0B6BCB", accent_text="#FFFFFF",
     good="#1D7A33", warn="#8A5300", bad="#B3261E",
@@ -91,7 +96,7 @@ LIGHT = Palette(
 
 DARK = Palette(
     name="dark",
-    window="#1C1C1E", surface="#2C2C2E", surface_alt="#3A3A3C",
+    window="#1C1C1E", surface="#2C2C2E", sidebar="#232325", surface_alt="#3A3A3C",
     text="#F2F2F7", text_muted="#A1A1A6", separator="#48484A",
     accent="#4C9AFF", accent_text="#0B1220",
     good="#4ED16B", warn="#FFB84D", bad="#FF6B5E",
@@ -230,7 +235,18 @@ def stylesheet(p: Palette) -> str:
     QTabBar::tab:selected {{ background: {p.surface}; color: {p.text}; }}
     QTabBar::tab:hover:!selected {{ color: {p.text}; }}
 
-    /* The page sidebar: rows a finger can hit, the current one in the accent. */
+    /* The page sidebar: a source list on its own surface, rows a finger can
+       hit, the current one on an accent pill. */
+    QWidget#onset_sidebar {{
+        background: {p.sidebar}; border-right: 1px solid {p.separator};
+    }}
+    QWidget#onset_toolbar {{
+        background: {p.surface}; border-bottom: 1px solid {p.separator};
+    }}
+    QFrame#onset_card {{
+        background: {p.surface}; border: 1px solid {p.separator};
+        border-radius: {RADIUS + 2}px;
+    }}
     QListWidget#onset_pages {{ background: transparent; border: none; outline: 0; }}
     QListWidget#onset_pages::item {{
         padding: 3px {SPACING}px; border-radius: {RADIUS - 3}px;
@@ -262,7 +278,7 @@ def stylesheet(p: Palette) -> str:
     }}
     QGroupBox::title {{
         subcontrol-origin: margin; left: 0px; padding: 0 0 {SPACING // 2}px 0;
-        color: {p.text_muted}; font-size: 9pt; font-weight: 600;
+        color: {p.text}; font-size: 10pt; font-weight: 600;
     }}
 
     QPushButton {{
@@ -332,15 +348,43 @@ def stylesheet(p: Palette) -> str:
 # -- the few building blocks panels share ---------------------------------
 
 def section_label(text: str, palette: Palette | None = None):
-    """A small, quiet heading. Type carries the hierarchy; no rule under it."""
+    """A heading inside a card or column: semibold, the text colour, title
+    case as given. Type carries the hierarchy; no rule under it. (The small
+    grey capitals are kept for the sidebar's group names, where Apple keeps
+    them too.)"""
     from qtpy.QtWidgets import QLabel
 
     p = palette or current()
-    label = QLabel(text.upper())
+    label = QLabel(text)
     label.setStyleSheet(
-        f"color:{p.text_muted};font-size:8pt;font-weight:700;"
-        f"letter-spacing:0.08em;padding:{SPACING}px 0 2px 0;")
+        f"color:{p.text};font-size:11pt;font-weight:600;"
+        f"padding:{SPACING // 2}px 0 2px 0;background:transparent;border:none;")
     return label
+
+
+def card_frame(widget, title: str | None = None, padding: int | None = None,
+               palette: Palette | None = None):
+    """Put `widget` on a card: a white surface with a hairline and rounded
+    corners on the window's grey, with an optional heading inside.
+
+    One function so every panel sits the same way. The panel keeps its own
+    margins; the card adds `padding` round it (the grid's spacing unless
+    told otherwise), and the page adds the gap between cards.
+    """
+    from qtpy.QtWidgets import QFrame, QVBoxLayout
+
+    frame = QFrame()
+    frame.setObjectName("onset_card")
+    frame.setFrameShape(QFrame.NoFrame)
+    pad = SPACING if padding is None else padding
+    box = QVBoxLayout(frame)
+    box.setContentsMargins(pad, pad, pad, pad)
+    box.setSpacing(SPACING // 2)
+    if title:
+        box.addWidget(section_label(title, palette))
+    box.addWidget(widget, 1)
+    frame.body = widget      # type: ignore[attr-defined]
+    return frame
 
 
 def muted(text: str, palette: Palette | None = None, size: int = 9):

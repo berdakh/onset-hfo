@@ -344,6 +344,7 @@ class PreprocessPanel(QWidget):
         self.warnings.setStyleSheet(card("bad"))
 
         self.apply = QPushButton("Apply and re-analyse")
+        self.apply.setProperty("primary", True)
         self.apply.setToolTip(
             "Re-runs this window from the signal up. Everything on screen "
             "changes, because every number depends on these settings.")

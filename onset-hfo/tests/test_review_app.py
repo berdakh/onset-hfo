@@ -3386,3 +3386,93 @@ def test_the_chat_page_opens_with_something_to_try(qapp, monkeypatch):
         assert all(example in panel.transcript.toPlainText() for example in chatview.EXAMPLES)
     finally:
         panel.deleteLater()
+
+
+# The Apple pass: a source list with glyphs, a toolbar that names the page and
+# carries its buttons, panels on cards, and colour spent on the exceptions.
+
+def test_every_sidebar_entry_has_a_drawn_glyph(qapp):
+    from onset_review import glyphs, theme
+    from onset_review.pages import CHAT_PAGE, PAGES
+    from onset_review.studies import STUDIES
+
+    keys = [k for k, _ in PAGES] + [k for k, _, _ in STUDIES] + [CHAT_PAGE[0]]
+    assert set(keys) <= set(glyphs.NAMES), "a page without a glyph gets a dot"
+    for key in keys:
+        pixmap = glyphs.glyph(key, theme.LIGHT.text_muted)
+        image = pixmap.toImage()
+        assert not image.isNull() and image.width() == 32, "drawn at twice the size"
+        painted = sum(1 for x in range(0, image.width(), 2) for y in range(0, image.height(), 2)
+                      if image.pixelColor(x, y).alpha() > 0)
+        assert painted > 8, f"the {key} glyph is blank"
+    assert not glyphs.icon("home", theme.DARK).isNull()
+    assert not glyphs.glyph("no such glyph", "#000000").isNull()
+
+
+def test_the_sidebar_shows_glyphs_and_the_toolbar_names_the_page(paged):
+    pages = paged.pages
+    nav = pages.nav
+    for i in range(nav.count()):
+        item = nav.item(i)
+        if item.data(Qt.UserRole):
+            assert not item.icon().isNull(), item.text()
+    pages.show_page("recording")
+    assert pages.title.text() == "Recording"
+    assert "sub-01" in pages.where.text() or pages.session.request.subject in pages.where.text()
+    pages.show_page("report")
+    assert pages.title.text() == "Report"
+    pages.show_page("quality")
+    assert pages.title.text() == "Signal"
+    assert pages._toolbar.isAncestorOf(pages.where) and pages._toolbar.isAncestorOf(pages.reader)
+
+
+def test_page_actions_live_in_the_toolbar_and_follow_the_page(paged):
+    pages = paged.pages
+    assert pages._toolbar.isAncestorOf(pages.pop_button)
+    assert pages._toolbar.isAncestorOf(pages.export_button)
+    pages.show_page("recording")
+    assert not pages.pop_button.isHidden() and pages.export_button.isHidden()
+    pages.show_page("report")
+    assert pages.pop_button.isHidden() and not pages.export_button.isHidden()
+    pages.show_page("home")
+    assert pages.pop_button.isHidden() and pages.export_button.isHidden()
+
+
+def test_panels_sit_on_cards_and_a_card_page_answers_for_its_body(paged, qapp):
+    from qtpy.QtWidgets import QFrame
+
+    pages = paged.pages
+    pages.show_page("detectors")
+    page = pages.stack.currentWidget()
+    assert page.objectName() == "page_detectors"
+    assert page.view is page.body.view, "the study page's view, through the card"
+    assert callable(page.refresh)
+    with pytest.raises(AttributeError):
+        page.no_such_thing      # noqa: B018 - the point is the raise
+    cards = [f for f in pages.findChildren(QFrame) if f.objectName() == "onset_card"]
+    assert len(cards) >= 10, "every page puts its panels on cards"
+    for key in ("assistant", "chat"):
+        pages.show_page(key)
+        assert any(c.isAncestorOf(pages.panels[key]) for c in cards), key
+
+
+def test_colour_is_spent_on_the_exceptions(paged, qapp, faulted):
+    from onset_review.dataquality import QualityPanel
+
+    # A clear leader is plain text; only the tied case gets a box.
+    leader = paged.pages.leader
+    if paged.session.leader.get("distinguishable"):
+        assert "background:transparent" in leader.styleSheet()
+    else:
+        assert "background:" in leader.styleSheet()
+    panel = QualityPanel(faulted)
+    try:
+        strip = panel.strip.text()
+        chips = panel.chips()
+        good = [c for c in chips if c["kind"] == "analysed"]
+        bad = [c for c in chips if c["kind"] == "set_aside"]
+        assert good and bad, "the faulted recording has both kinds"
+        assert panel.tokens.good not in strip, "a passing contact is a neutral chip"
+        assert panel.tokens.surface_alt in strip and panel.tokens.bad in strip
+    finally:
+        panel.deleteLater()

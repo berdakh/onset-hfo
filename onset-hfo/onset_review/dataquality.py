@@ -266,17 +266,23 @@ class QualityPanel(QWidget):
             self.strip.setText("")
             self.legend.setText("")
             return
-        colours = {"bad": self.tokens.bad, "warn": self.tokens.warn,
-                   "accent": self.tokens.accent, "good": self.tokens.good}
+        # Colour is spent on the exceptions. A contact that passed is a
+        # neutral chip; forty green chips said nothing forty times and made
+        # the one red one harder to find.
+        colours = {"bad": (self.tokens.bad, self.tokens.accent_text),
+                   "warn": (self.tokens.warn, self.tokens.accent_text),
+                   "accent": (self.tokens.accent, self.tokens.accent_text),
+                   "good": (self.tokens.surface_alt, self.tokens.text)}
         kinds = {kind: (label, token) for kind, label, token in compact.QUALITY_KINDS}
         parts = []
         for chip in chips:
             label, token = kinds[chip["kind"]]
             reason = REASONS.get(chip["reason"], chip["reason"]) if chip["reason"] else label
+            back, fore = colours[token]
             parts.append(
                 f"<a href='{chip['channel']}' title='{label}: {reason}' "
                 f"style='text-decoration:none;color:{self.tokens.text};'>"
-                f"<span style='background:{colours[token]};color:{self.tokens.accent_text};"
+                f"<span style='background:{back};color:{fore};"
                 f"border-radius:3px;padding:1px 5px;font-size:8pt;'>&nbsp;{chip['channel']}"
                 f"&nbsp;</span></a>")
         self.strip.setText(" ".join(parts))

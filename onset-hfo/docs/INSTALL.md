@@ -149,16 +149,18 @@ is not a conservative analysis, it is a meaningless one.
 
 The window has the shape of the results site: a sidebar on the left, one page
 at a time on the right, and the same disclaimer on every page: one line, the
-whole of it a click on *Read more* away. Hover a page in the sidebar for what
-it is for.
+whole of it a click on *Read more* away. The sidebar is a source list, a
+glyph beside each page; hover one for what it is for. Above the page a
+toolbar names it, says which recording is open (subject, window, band), and
+carries the page's own buttons and the reader's name. Panels sit on cards.
 
 | page | what is on it |
 |---|---|
 | **Home** | what this is and is not, the numbers of this window, the windows cached on this machine (double-click one to open it), *Open a file…* |
-| **Recording** | *Does any channel actually stand out?*, the trend strip, the trace, and a side column with the ranking, the events, the selected event close up and, on tabs beside it, every channel's spectrum, a channel's events averaged, and the leaders re-tested at stricter thresholds. *Open the trace in a new window* (`Ctrl+Shift+T`) lifts MNE's browser into a window of its own, for a second monitor; closing that window puts it back |
+| **Recording** | *Does any channel actually stand out?*, the trend strip, the trace, and a side column with the ranking, the events, the selected event close up and, on tabs beside it, every channel's spectrum, a channel's events averaged, and the leaders re-tested at stricter thresholds. *Open the trace in a new window*, in the toolbar (`Ctrl+Shift+T`), lifts MNE's browser into a window of its own, for a second monitor; closing that window puts it back |
 | **Contacts** | the 3D view, the patient record, where the coordinates came from, and the button that fetches MNE's `fsaverage` template brain (a few hundred megabytes, once) for the 3D view to draw under measured coordinates |
 | **Signal** | data quality and preprocessing side by side — filter design, reference, muscle and amplitude marking, reference regression and an experimental ICA among them — provenance and the ICA components under them; *Apply* re-runs the analysis and every page follows |
-| **Report** | the review as it will be exported, the findings paragraph (yours, or drafted by the assistant and marked as such), agreement with the archive's annotators, *Export review…* |
+| **Report** | the review as it will be exported, the findings paragraph (yours, or drafted by the assistant and marked as such), agreement with the archive's annotators, *Export review…* in the toolbar |
 | **Assistant** | the assistant, a *Stop* button for a model taking too long, *New conversation*, the tick that lets it run the pipeline's analyses, and the box that gets a local Qwen onto this machine. A refusal says what the model wrote and which check it failed |
 | **Chat** | under *The model*: the same local model on its own, not connected to the recording and checked by nothing, with a line at the top that says so. There before a recording is opened |
 
