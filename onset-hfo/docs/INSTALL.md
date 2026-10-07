@@ -177,9 +177,12 @@ window from the same committed tables the site reads (`data/`), through the
 site's own loaders. They need no recording, so they are open before anything is
 loaded. Each opens with **What this page shows**: two or three plain sentences
 and up to four numbers, computed from the same tables as the page, for someone
-who reads nothing else on it. The text sits in a reading column; tables longer
-than ten rows are folded until *Show every table* is ticked; a glossary term
-on the page carries its definition as a tooltip. Under the text, **Ask about
+who reads nothing else on it. Detectors draws the threshold sweep as one line
+per detector with the chosen operating point marked, and Outcome draws every
+patient as a dot by outcome, both from the tables beside them. The text sits
+in a reading column; tables longer than ten rows are folded until *Show every
+table* is ticked; a glossary term on the page carries its definition as a
+tooltip. Under the text, **Ask about
 this page** puts a question to the local model with that page as its only
 material — every number in the answer must be on the page or the answer is
 marked refused — and answers from the page itself when no model is loaded.

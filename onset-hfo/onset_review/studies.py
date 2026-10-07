@@ -219,6 +219,33 @@ def fold_tables(text: str, max_rows: int = FOLD_ROWS) -> tuple[str, int]:
     return "\n".join(out) + ("\n" if text.endswith("\n") else ""), folded
 
 
+def figure_dir() -> Path:
+    """Where the pages' own figures are written: the user's cache, or the
+    temporary directory where there is none."""
+    import os
+    import tempfile
+
+    root = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache")
+    for candidate in (root / "onset-review" / "figures",
+                      Path(tempfile.gettempdir()) / "onset-review-figures"):
+        try:
+            candidate.mkdir(parents=True, exist_ok=True)
+            return candidate
+        except OSError:
+            continue
+    return Path(tempfile.gettempdir())
+
+
+def chart(name: str, draw, alt: str) -> str:
+    """A figure drawn by `draw(path)` as a Markdown image line, or nothing:
+    a page must build whether or not a figure can be drawn here."""
+    try:
+        path = draw(figure_dir() / f"{name}.png")
+    except Exception:       # noqa: BLE001 - a figure is a bonus, never a failure
+        return ""
+    return f"![{alt}]({Path(path).as_posix()})\n"
+
+
 def note(kind: str, text: str) -> str:
     """A callout: `info`, `warn`, `bad` or `ok`, as a blockquote with a lead."""
     lead = {"info": "Note", "warn": "Caution", "bad": "Not supported", "ok": "Result"}
@@ -502,6 +529,12 @@ denominator every recall figure below is a fraction of.
 """)
 
     out.append(f"## The sweep, as committed — {BANDS.get(band, band)}, {METRICS.get(metric, metric)}\n")
+    from onset_review import studycharts
+
+    best_points = panels.operating_points(criterion)
+    out.append(chart(f"sweep-{band}-{metric}-{criterion}",
+                     lambda path: studycharts.sweep_chart(frame, band, metric, best_points, path),
+                     "The threshold sweep, one line per detector"))
     part = frame[frame["band"] == band]
     pivot = part.pivot(index="threshold_sd", columns="detector", values=metric).reset_index()
     out.append(table(pivot.rename(columns={"threshold_sd": "threshold (SD)"})))
@@ -639,6 +672,17 @@ This one compares it to **what happened to the patient after surgery** — the
 only reference standard in epilepsy surgery that is not another opinion.
 """, "## Was the busiest fast-ripple channel inside the resection?\n"]
     if len(groups):
+        from onset_review import studycharts
+
+        cohort = panels.cohort_overview()
+        view_groups = groups.query("scope == 'reviewed' and band == 'fast_ripple'")
+        out.append(chart("outcome-patients",
+                         lambda path: studycharts.outcome_chart(cohort, view_groups, path),
+                         "Every patient: the share of the tied busiest channels inside "
+                         "the resection, by outcome"))
+        out.append("*Each dot is one patient; the bar is the group's mean. The AUC "
+                   "is how often a seizure-free patient sits to the right of a "
+                   "recurrence.*\n")
         view = groups.query(
             "scope == 'reviewed' and band == 'fast_ripple' and "
             "metric in ['top_channel_resected', 'candidates_resected']")
