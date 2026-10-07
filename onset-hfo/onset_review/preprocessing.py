@@ -30,11 +30,10 @@ from __future__ import annotations
 
 from qtpy.QtCore import Qt, Signal
 from qtpy.QtWidgets import (
+    QButtonGroup,
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
-    QFormLayout,
-    QGroupBox,
     QHBoxLayout,
     QLabel,
     QListWidget,
@@ -55,7 +54,7 @@ from onset_hfo.preprocess import (
     filter_description,
     ica_methods_available,
 )
-from onset_review.theme import SPACING, card, current, muted, scrolled
+from onset_review.theme import SettingsGroup, card, current, muted, scrolled
 
 #: Re-exported: the sentence and the warnings a reviewer reads under these
 #: controls are computed in `onset_hfo.preprocess`, beside the refusals they
@@ -77,16 +76,6 @@ MAINS_CHOICES = [("From the dataset", None), ("50 Hz", 50.0), ("60 Hz", 60.0)]
 #: Inputs stop growing past this: "1.0 Hz" in a box half the screen wide
 #: reads as a text field waiting for a sentence.
 FIELD_WIDTH = 260
-
-
-def _form(host) -> QFormLayout:
-    """A form whose fields keep their own width rather than the panel's."""
-    form = QFormLayout(host)
-    form.setFieldGrowthPolicy(QFormLayout.FieldsStayAtSizeHint)
-    form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-    form.setHorizontalSpacing(SPACING + 4)
-    form.setVerticalSpacing(SPACING // 2 + 2)
-    return form
 
 
 class PreprocessPanel(QWidget):
@@ -157,13 +146,11 @@ class PreprocessPanel(QWidget):
         self.design.setWordWrap(True)
         self.design.setStyleSheet(f"color:{current().text_muted};font-size:9pt;")
 
-        filters = QGroupBox("Filtering")
-        form = _form(filters)
-        form.addRow("High-pass", self.highpass)
-        form.addRow("Low-pass", self.lowpass)
-        form.addRow(self.notch, self.mains)
-        form.addRow("", self.harmonics)
-        form.addRow("Notch width", self.notch_width)
+        filters = SettingsGroup("Filtering")
+        filters.add_row("High-pass", self.highpass)
+        filters.add_row("Low-pass", self.lowpass)
+        filters.add_row(self.notch, self.mains)
+        filters.add_row(self.harmonics, self.notch_width)
         # The design is behind a disclosure: four rows almost nobody changes,
         # at the same weight as the two everybody reads, made the panel a
         # sheet. The line saying what MNE builds stays out, because that is
@@ -179,18 +166,17 @@ class PreprocessPanel(QWidget):
         self.design_toggle.setToolTip("FIR or IIR, the order, the phase and the "
                                       "transition band. Open when the ringing "
                                       "at a sharp discharge is the question.")
-        self.design_rows = QWidget()
-        design_form = _form(self.design_rows)
-        design_form.setContentsMargins(0, 0, 0, 0)
-        design_form.addRow("Design", self.method)
-        design_form.addRow("IIR order", self.iir_order)
-        design_form.addRow("Phase", self.phase)
-        design_form.addRow("Transition", self.transition)
+        design_group = SettingsGroup(flat=True)
+        design_group.add_row("Design", self.method)
+        design_group.add_row("IIR order", self.iir_order)
+        design_group.add_row("Phase", self.phase)
+        design_group.add_row("Transition", self.transition)
+        self.design_rows = design_group.widget
         self.design_rows.setVisible(False)
         self.design_toggle.toggled.connect(self._toggle_design)
-        form.addRow(self.design_toggle)
-        form.addRow(self.design_rows)
-        form.addRow("", self.design)
+        filters.add_row(self.design_toggle)
+        filters.add_wide(self.design_rows)
+        filters.add_wide(self.design)
 
         # -- reference -----------------------------------------------------
         self.bipolar = QRadioButton("Bipolar — each contact minus its neighbour")
@@ -215,10 +201,14 @@ class PreprocessPanel(QWidget):
                                    "none": self.monopolar}
         self._reference_buttons[effective_reference(start)].setChecked(True)
 
-        reference = QGroupBox("Re-referencing")
-        inner = QVBoxLayout(reference)
+        # Each radio sits in a row of its own, so Qt's parent-based
+        # exclusivity no longer applies; a button group keeps them exclusive.
+        reference = SettingsGroup("Re-referencing")
+        self._reference_group = QButtonGroup(self)
+        self._reference_group.setExclusive(True)
         for button in (self.bipolar, self.shaft, self.median, self.average, self.monopolar):
-            inner.addWidget(button)
+            self._reference_group.addButton(button)
+            reference.add_row(button)
 
         # -- artifact annotation ---------------------------------------------
         self.muscle = QCheckBox("Mark muscle and movement bursts")
@@ -242,11 +232,10 @@ class PreprocessPanel(QWidget):
                          "threshold. Nothing is interpolated.")
         self.ptp.setSpecialValueText("learn from the data")
 
-        artifacts = QGroupBox("Artifact annotation")
-        artifact_form = _form(artifacts)
-        artifact_form.addRow(self.muscle, self.muscle_z)
-        artifact_form.addRow(self.amplitude, self.ptp)
-        artifact_form.addRow("", muted(
+        artifacts = SettingsGroup("Artifact annotation")
+        artifacts.add_row(self.muscle, self.muscle_z)
+        artifacts.add_row(self.amplitude, self.ptp)
+        artifacts.add_wide(muted(
             "Marked seconds are set aside by the data-quality stage and shown "
             "there with their reason; the detectors never see them. Nothing is "
             "repaired or deleted.", current()))
@@ -286,17 +275,18 @@ class PreprocessPanel(QWidget):
         self._ica_exclude: tuple[int, ...] = tuple(int(i) for i in start.ica_exclude)
         self.ica_removed = muted("", current())
         self.ica_removed.setObjectName("onset_ica_removed")
-        experimental = QGroupBox("Regression and ICA (experimental)")
-        experimental_form = _form(experimental)
-        experimental_form.addRow("Regress out", self.regress)
-        if not self.regress.count():
-            experimental_form.addRow("", muted(
+        experimental = SettingsGroup("Regression and ICA (experimental)")
+        if self.regress.count():
+            experimental.add_row("Regress out", self.regress, stretch=True)
+        else:
+            self.regress.setVisible(False)
+            experimental.add_wide(muted(
                 "This recording carries no reference or ECG channel to regress out.",
                 current()))
-        experimental_form.addRow(self.ica, self.ica_method)
-        experimental_form.addRow("Components", self.ica_components)
-        experimental_form.addRow("", self.ica_removed)
-        experimental_form.addRow("", muted(
+        experimental.add_row(self.ica, self.ica_method)
+        experimental.add_row("Components", self.ica_components)
+        experimental.add_wide(self.ica_removed)
+        experimental.add_wide(muted(
             "ICA can take real HFO energy out with the artefact. Nothing is removed "
             "until you choose components on the Components panel; the report names "
             "what was removed.", current()))
@@ -306,9 +296,8 @@ class PreprocessPanel(QWidget):
         self.resample.setToolTip(
             "Downsampling is the fastest way to make an HFO analysis "
             "meaningless: 1000 Hz cannot carry the fast-ripple band at all.")
-        rate = QGroupBox("Sampling rate")
-        rate_form = _form(rate)
-        rate_form.addRow(f"Recorded at {self._sfreq:g} Hz", self.resample)
+        rate = SettingsGroup("Sampling rate")
+        rate.add_row(f"Recorded at {self._sfreq:g} Hz", self.resample)
 
         # -- channels ------------------------------------------------------
         self.drop_bads = QCheckBox("Drop channels the dataset flagged bad")
@@ -327,11 +316,9 @@ class PreprocessPanel(QWidget):
             item.setCheckState(Qt.Checked if name in excluded else Qt.Unchecked)
             self.channels.addItem(item)
 
-        channels = QGroupBox("Channels")
-        channel_box = QVBoxLayout(channels)
-        channel_box.addWidget(self.drop_bads)
-        channel_box.addWidget(QLabel("Exclude:"))
-        channel_box.addWidget(self.channels)
+        channels = SettingsGroup("Channels")
+        channels.add_row(self.drop_bads)
+        channels.add_row("Exclude", self.channels, stretch=True)
 
         # -- summary and buttons -------------------------------------------
         self.summary = QLabel()
@@ -359,7 +346,7 @@ class PreprocessPanel(QWidget):
         column.setContentsMargins(4, 4, 4, 4)
         column.setSpacing(6)
         for group in (filters, reference, artifacts, experimental, rate, channels):
-            column.addWidget(group)
+            column.addWidget(group.widget)
         column.addWidget(self.summary)
         column.addWidget(self.warnings)
         column.addLayout(buttons)

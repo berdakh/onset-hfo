@@ -33,7 +33,8 @@ from qtpy.QtGui import QFont, QFontDatabase
 
 __all__ = ["Palette", "LIGHT", "DARK", "apply_theme", "current", "qt_palette",
            "section_label", "plain_buttons", "scrolled", "help_button", "card_frame",
-           "card", "muted", "SPACING", "RADIUS", "FONT_STACK", "PAGE_MARGIN"]
+           "SettingsGroup", "segmented", "card", "muted", "SPACING", "RADIUS",
+           "FONT_STACK", "PAGE_MARGIN"]
 
 #: The spacing grid, in pixels. Everything is a multiple of four; most things
 #: are a multiple of eight. A layout that picks its margins ad hoc reads as
@@ -235,6 +236,54 @@ def stylesheet(p: Palette) -> str:
     QTabBar::tab:selected {{ background: {p.surface}; color: {p.text}; }}
     QTabBar::tab:hover:!selected {{ color: {p.text}; }}
 
+    /* Views inside a tab widget: a segmented control, one grey track with
+       the chosen segment lifted out of it in white. Dock tabs, which belong
+       to the main window, keep the plain style above. */
+    QTabWidget::pane {{ border: none; top: {SPACING // 2}px; }}
+    QTabWidget > QTabBar::tab {{
+        background: {p.surface_alt}; color: {p.text_muted};
+        padding: 3px {SPACING + 4}px; margin: 0; border: 1px solid transparent;
+        border-radius: 0;
+    }}
+    QTabWidget > QTabBar::tab:first {{
+        border-top-left-radius: {RADIUS - 1}px; border-bottom-left-radius: {RADIUS - 1}px;
+    }}
+    QTabWidget > QTabBar::tab:last {{
+        border-top-right-radius: {RADIUS - 1}px; border-bottom-right-radius: {RADIUS - 1}px;
+    }}
+    QTabWidget > QTabBar::tab:only-one {{ border-radius: {RADIUS - 1}px; }}
+    QTabWidget > QTabBar::tab:selected {{
+        background: {p.surface}; color: {p.text}; font-weight: 600;
+        border: 1px solid {p.separator}; border-radius: {RADIUS - 2}px;
+    }}
+
+    /* A segmented control made of buttons: joined, the chosen one filled. */
+    QPushButton#onset_segment {{
+        border-radius: 0; margin: 0; padding: 2px {SPACING + 2}px;
+        border: 1px solid {p.separator}; background: {p.surface};
+    }}
+    QPushButton#onset_segment[segment="first"] {{
+        border-top-left-radius: {RADIUS - 1}px; border-bottom-left-radius: {RADIUS - 1}px;
+    }}
+    QPushButton#onset_segment[segment="last"] {{
+        border-top-right-radius: {RADIUS - 1}px; border-bottom-right-radius: {RADIUS - 1}px;
+    }}
+    QPushButton#onset_segment[segment="middle"], QPushButton#onset_segment[segment="last"] {{
+        border-left: none;
+    }}
+    QPushButton#onset_segment:checked {{
+        background: {p.accent}; color: {p.accent_text}; border-color: {p.accent};
+    }}
+    QPushButton#onset_segment:hover:!checked {{ background: {p.surface_alt}; }}
+
+    /* Settings groups: rows of label and control with hairlines between,
+       in a rounded box, the way System Settings lays a sheet out. */
+    QFrame#onset_group {{
+        background: {p.surface}; border: 1px solid {p.separator};
+        border-radius: {RADIUS}px;
+    }}
+    QFrame#onset_group_line {{ background: {p.separator}; border: none; }}
+
     /* The page sidebar: a source list on its own surface, rows a finger can
        hit, the current one on an accent pill. */
     QWidget#onset_sidebar {{
@@ -416,6 +465,106 @@ def help_button(text: str, palette: Palette | None = None):
         f"border-radius:10px;font-size:9pt;font-weight:700;padding:0;}}"
         f"QToolButton:hover{{color:{p.text};background:{p.surface_alt};}}")
     return button
+
+
+class SettingsGroup:
+    """A System Settings sheet: a titled, rounded box of rows, each row a
+    label (or a checkbox) on the left and its control on the right, with a
+    hairline between rows. `widget` is what goes in a layout.
+
+    Built as a helper rather than a `QWidget` subclass so the row-building
+    stays importable without Qt instantiated at import time; the frame it
+    makes is an ordinary `QFrame#onset_group`.
+    """
+
+    def __init__(self, title: str | None = None, flat: bool = False,
+                 palette: Palette | None = None):
+        from qtpy.QtWidgets import QFrame, QLabel, QVBoxLayout, QWidget
+
+        self._p = palette or current()
+        self.widget = QWidget()
+        outer = QVBoxLayout(self.widget)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(SPACING // 2)
+        self.title = None
+        if title:
+            self.title = QLabel(title)
+            self.title.setStyleSheet(
+                f"color:{self._p.text};font-size:10pt;font-weight:600;"
+                f"padding:{SPACING // 2}px 0 0 2px;background:transparent;border:none;")
+            outer.addWidget(self.title)
+        self.frame = QFrame()
+        self.frame.setObjectName("" if flat else "onset_group")
+        self.frame.setFrameShape(QFrame.NoFrame)
+        self._rows = QVBoxLayout(self.frame)
+        pad = 0 if flat else SPACING
+        self._rows.setContentsMargins(pad, 2 if flat else SPACING // 2, pad, 2 if flat else SPACING // 2)
+        self._rows.setSpacing(0)
+        outer.addWidget(self.frame)
+        self._count = 0
+
+    def _line(self) -> None:
+        from qtpy.QtWidgets import QFrame
+
+        if self._count:
+            line = QFrame()
+            line.setObjectName("onset_group_line")
+            line.setFixedHeight(1)
+            self._rows.addWidget(line)
+        self._count += 1
+
+    def add_row(self, label, control=None, *, stretch: bool = False):
+        """One row: `label` (text or a widget such as a checkbox) on the
+        left, `control` on the right. With `stretch` the control takes the
+        width instead of sitting at its size hint."""
+        from qtpy.QtWidgets import QHBoxLayout, QLabel, QWidget
+
+        self._line()
+        row = QWidget()
+        box = QHBoxLayout(row)
+        box.setContentsMargins(SPACING // 2, SPACING // 2 + 1, SPACING // 2, SPACING // 2 + 1)
+        box.setSpacing(SPACING + 4)
+        from qtpy.QtCore import Qt
+
+        left = QLabel(label) if isinstance(label, str) else label
+        if isinstance(left, QLabel):
+            left.setStyleSheet(f"color:{self._p.text};background:transparent;border:none;")
+        box.addWidget(left, 0 if (control is not None and stretch) else 1,
+                      Qt.AlignLeft | Qt.AlignVCenter)
+        if control is not None:
+            box.addWidget(control, 1 if stretch else 0)
+        self._rows.addWidget(row)
+        return row
+
+    def add_wide(self, widget):
+        """A row that is one widget across the width: a list, a note."""
+        from qtpy.QtWidgets import QHBoxLayout, QWidget
+
+        self._line()
+        row = QWidget()
+        box = QHBoxLayout(row)
+        box.setContentsMargins(SPACING // 2, SPACING // 2, SPACING // 2, SPACING // 2)
+        box.addWidget(widget, 1)
+        self._rows.addWidget(row)
+        return row
+
+
+def segmented(buttons, layout=None) -> None:
+    """Join `buttons` into one segmented control: no gaps, rounded ends, and
+    the checked one filled with the accent. The buttons are made checkable;
+    the caller keeps exactly one checked (or none, for "no verdict")."""
+    for index, button in enumerate(buttons):
+        button.setObjectName("onset_segment")
+        button.setCheckable(True)
+        place = ("first" if index == 0 else
+                 "last" if index == len(buttons) - 1 else "middle")
+        if len(buttons) == 1:
+            place = "first"
+        button.setProperty("segment", place)
+        button.style().unpolish(button)
+        button.style().polish(button)
+    if layout is not None:
+        layout.setSpacing(0)
 
 
 def card(kind: str = "info", palette: Palette | None = None) -> str:

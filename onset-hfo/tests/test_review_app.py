@@ -3327,7 +3327,7 @@ def test_the_hints_are_behind_help_buttons_not_written_across_the_bars(built):
 def test_the_filter_design_is_folded_away_until_asked_for(built):
     panel = built.panels["preprocess"]
     assert panel.design_rows.isHidden() and not panel.design_toggle.isChecked()
-    assert panel.method.parent() is panel.design_rows
+    assert panel.design_rows.isAncestorOf(panel.method)
     assert not panel.design.isHidden(), "what MNE builds stays in view"
     panel.design_toggle.setChecked(True)
     assert not panel.design_rows.isHidden()
@@ -3476,3 +3476,53 @@ def test_colour_is_spent_on_the_exceptions(paged, qapp, faulted):
         assert panel.tokens.surface_alt in strip and panel.tokens.bad in strip
     finally:
         panel.deleteLater()
+
+
+# Apple steps 3 and 4: settings rows on the Signal page, segmented controls
+# for the side column's views and the reader's verdicts.
+
+def test_the_preprocessing_panel_is_settings_rows_in_groups(built):
+    from qtpy.QtWidgets import QFrame
+
+    panel = built.panels["preprocess"]
+    groups = [f for f in panel.findChildren(QFrame) if f.objectName() == "onset_group"]
+    assert len(groups) == 6, "filtering, reference, artifacts, experimental, rate, channels"
+    lines = [f for f in panel.findChildren(QFrame) if f.objectName() == "onset_group_line"]
+    assert len(lines) >= 12, "a hairline between rows"
+    # The radios sit in rows of their own and are still exclusive.
+    panel.average.setChecked(True)
+    assert not panel.bipolar.isChecked()
+    assert panel.config().average_reference and not panel.config().bipolar
+    panel.bipolar.setChecked(True)
+    assert not panel.average.isChecked()
+
+
+def test_the_verdict_rows_are_segmented_controls_that_show_the_verdict(judging, review):
+    findings = judging.panels["findings"]
+    events = judging.panels["events"]
+    for panel in (findings, events):
+        places = [b.property("segment") for b in panel.buttons.values()]
+        assert places == ["first", "middle", "last"]
+        assert all(b.objectName() == "onset_segment" and b.isCheckable()
+                   for b in panel.buttons.values())
+        assert not panel.undo.isCheckable(), "Clear is an action, not a state"
+
+    findings.view.selectRow(0)
+    assert not any(b.isChecked() for b in findings.buttons.values()), "no verdict yet"
+    channel = findings.judge_channel("ignore")
+    assert channel and findings.buttons["ignore"].isChecked()
+    assert not findings.buttons["accept"].isChecked()
+    findings.judge_channel("")
+    assert not any(b.isChecked() for b in findings.buttons.values())
+
+    events.view.selectRow(0)
+    key = events.selected_key()
+    events.judge("agree", advance=False)
+    assert events.buttons["agree"].isChecked() and events.selected_key() == key
+    events.step(+1)
+    assert not any(b.isChecked() for b in events.buttons.values()), \
+        "the next event has no verdict, so no segment is filled"
+    events.step(-1)
+    assert events.buttons["agree"].isChecked()
+    events.judge("", advance=False)
+    assert not any(b.isChecked() for b in events.buttons.values())
