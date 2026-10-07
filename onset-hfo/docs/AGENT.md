@@ -438,6 +438,35 @@ whose failure mode is "confidently wrong rate" is not.
 speaks the same protocol so the loop can be tested offline. The CLI says so
 every time it runs, and so does this sentence.
 
+## Trying it with a real model
+
+The guards are tested through a protocol-faithful fake server, which proves
+the plumbing and not the model. The window's own tools (analyses by consent,
+the threshold re-test, the other windows, "explain this event", the findings
+draft) are what a small model is most likely to misuse, so there is a dry
+run that drives them through whatever model you point it at and reports what
+happened:
+
+```bash
+ollama serve                                   # in another terminal
+python scripts/assistant_dry_run.py --backend ollama --model qwen2.5:3b-instruct
+```
+
+It analyses one window (sub-01, 0–60 s by default), asks eight questions
+covering every tool and the one it must refuse, and prints per question the
+seconds taken, what the model asked for, whether the answer was refused and
+whether every number checked out. The transcript goes to
+`assistant-dry-run.json`; that file is what to send when something looks
+wrong. `--backend scripted` runs the same set without a model.
+
+**What a CPU model is handed.** A question about nothing in particular
+carries the briefing and no tool schemas (about 1,700 tokens). A question
+about an analysis carries, on its first call, only the schemas it is about
+plus three core ones (`relevant_tools` in `onset_agent/agent.py`), and every
+tool from the second step on; before that change a threshold question with
+analyses allowed carried all nineteen schemas, about 5,900 tokens, which on
+a CPU is minutes of reading before a word is written.
+
 ## Adding a tool
 
 1. Write a method on `ResultStore` that returns JSON-safe primitives.

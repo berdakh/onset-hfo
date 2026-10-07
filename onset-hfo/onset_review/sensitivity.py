@@ -173,7 +173,7 @@ def as_dict(sens: Sensitivity) -> dict:
         return {"available": False, "reason": sens.reason}
     rows = {}
     for channel in sens.channels:
-        rows[channel] = {f"{t:g}": (round(float(sens.rates.loc[channel, t]), 2)
+        rows[channel] = {f"{t:g}": (round(float(sens.rates.loc[channel, t]), 1)
                                     if channel in sens.rates.index else None)
                          for t in sens.thresholds}
     return {
@@ -185,8 +185,6 @@ def as_dict(sens: Sensitivity) -> dict:
         "leader_at_each_threshold": sens.leaders,
         "leader_stands_out_at_each_threshold": sens.stands_out,
         "window_leader_survives_to_factor": sens.survives_to(),
-        "note": ("Rates here are over the whole window, not the per-channel clean time the "
-                 "window's own table uses, so the base-threshold rate can differ slightly "
-                 "from the ranking's. A leader that holds to 2x is robust to the threshold; "
-                 "one that does not is a threshold choice, not a channel property."),
+        "note": ("Rates are over the whole window, so the first column can differ a little "
+                 "from the ranking. A leader that holds to 2x is robust to the threshold."),
     }

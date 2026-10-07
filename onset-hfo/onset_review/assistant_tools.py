@@ -72,8 +72,8 @@ def analysis_tools(session) -> dict[str, Tool]:
             return output
 
         tools[spec.name] = Tool(spec.name,
-                                f"{spec.description} Runs on a copy of this window's recording "
-                                f"({COST.get(spec.name, 'seconds')}).",
+                                f"{spec.description} On a copy of this window's recording; "
+                                f"{COST.get(spec.name, 'seconds')}.",
                                 spec.parameters, handler)
     return tools
 
@@ -98,15 +98,17 @@ def explain_tools(session) -> dict[str, Tool]:
         event = nearest_event(session, channel, start)
         if event is None:
             raise ToolError(f"no event on {channel} at {float(start):.3f} s in this window")
-        return detail.read_event(detail.snapshot(session, event))
+        out = detail.read_event(detail.snapshot(session, event))
+        out["start_s"] = round(float(event.start), 3)
+        out["stop_s"] = round(float(event.stop), 3)
+        return out
 
     return {"explain_event": Tool(
         "explain_event",
-        "Why the event at (channel, start seconds) reads as a real oscillation or as "
-        "filter ringing: its duration in cycles, peak frequency, how much more energy "
-        "it has inside the band than outside it at the same moment, and the reading "
-        "those give (island, column or unclear). Use for 'is this event real', 'why was "
-        "this marked', 'is this ringing'.",
+        "Why the event at (channel, start seconds) reads as an oscillation or as filter "
+        "ringing: cycles, peak frequency, the in-band peak's prominence at that moment, "
+        "and the reading (island, column, unclear). For 'is this event real', 'is this "
+        "ringing'.",
         {"type": "object",
          "properties": {"channel": {"type": "string"},
                         "start": {"type": "number",
@@ -142,10 +144,9 @@ def sensitivity_tools(session, allow_run: bool = False) -> dict[str, Tool]:
             else "re-runs the detector at four thresholds: a few seconds")
     return {"threshold_sensitivity": Tool(
         "threshold_sensitivity",
-        "The window's leading channels re-tested at 1.25x, 1.5x and 2x the detection "
-        "threshold: their rates at each, who leads at each, and up to what multiple "
-        f"the window's leader still leads ({cost}). Use for 'does this survive a "
-        "stricter threshold', 'is the ranking robust', 'how sure is the leader'.",
+        "The leading channels re-tested at 1.25x, 1.5x and 2x the detection threshold: "
+        f"rates at each, who leads at each, how far the leader holds ({cost}). For "
+        "'does this survive a stricter threshold', 'is the ranking robust'.",
         {"type": "object", "properties": {}, "additionalProperties": False},
         handler)}
 
@@ -174,10 +175,9 @@ def window_tools(session, allow_run: bool = False, cache_dir=None, lister=None,
 
     tools = {"other_windows": Tool(
         "other_windows",
-        "The other windows (stretches) of this same recording already on this machine, "
-        "with their start and stop in seconds and whether each has been analysed. Free. "
-        "Use before compare_window, and for 'is there an earlier/later minute', 'what "
-        "other windows exist'.",
+        "The other windows of this recording on this machine, with start and stop in "
+        "seconds and whether each is analysed. Free. For 'is there an earlier minute'; "
+        "call before compare_window.",
         {"type": "object", "properties": {}, "additionalProperties": False},
         list_handler)}
     if not allow_run:
@@ -197,11 +197,9 @@ def window_tools(session, allow_run: bool = False, cache_dir=None, lister=None,
 
     tools["compare_window"] = Tool(
         "compare_window",
-        "Analyse another cached window of this recording (t_start, t_stop seconds, from "
-        "other_windows) with this window's band, detector, threshold and preprocessing, "
-        "and compare the leaders and tied sets with this window's. Loads and analyses "
-        "the window: seconds to half a minute the first time, free after. Use for 'did "
-        "the leader change between minutes', 'is it the same in the other window'.",
+        "Analyse another window of this recording (t_start, t_stop from other_windows) "
+        "with this window's settings and compare leaders and tied sets. Seconds to half "
+        "a minute the first time, free after. For 'did the leader change between minutes'.",
         {"type": "object",
          "properties": {"t_start": {"type": "number"}, "t_stop": {"type": "number"}},
          "required": ["t_start", "t_stop"], "additionalProperties": False},

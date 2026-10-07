@@ -162,3 +162,12 @@ def test_abort_closes_the_connection_and_the_call_returns_interrupted():
     assert elapsed < 5, "it came back promptly, not on timeout"
     with pytest.raises(Interrupted):
         backend.chat([{"role": "user", "content": "again"}], [])
+
+
+def test_a_server_address_without_v1_still_reaches_the_chat_endpoint():
+    """A reviewer types http://host:11434 into the box; Ollama's OpenAI
+    endpoint is under /v1, and the backend adds it rather than 404ing."""
+    assert OllamaBackend(model="m", base_url="http://127.0.0.1:11434").base_url \
+        == "http://127.0.0.1:11434/v1"
+    assert OllamaBackend(model="m", base_url="http://127.0.0.1:11434/v1/").base_url \
+        == "http://127.0.0.1:11434/v1"

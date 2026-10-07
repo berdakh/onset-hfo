@@ -646,3 +646,72 @@ def test_a_named_briefing_query_runs_whatever_the_backend(store):
         "Tell me about it", extra_briefing=[("get_recording_metadata", {})])
     briefed = [e for e in answer.trace if e.get("briefing")]
     assert [e["tool"] for e in briefed] == ["get_recording_metadata"]
+
+
+# --------------------------------------------------------------------------
+# Only the relevant schemas on the first call
+# --------------------------------------------------------------------------
+
+def _named_tools(*names):
+    from onset_agent.tools import TOOLS, Tool
+
+    out = dict(TOOLS)
+    for name in names:
+        out[name] = Tool(name, f"{name} description", {"type": "object", "properties": {}},
+                         lambda _store, **_a: {"ok": True})
+    return out
+
+
+def test_the_first_call_offers_only_the_tools_the_question_is_about():
+    from onset_agent.agent import _CORE_TOOLS, relevant_tools
+
+    tools = _named_tools("threshold_sensitivity", "detect_hfo", "spectral_power",
+                         "other_windows", "compare_window", "explain_event", "channel_qc")
+    offered = relevant_tools("Does AR1-AR2 survive a stricter threshold?", tools)
+    assert set(offered) == set(_CORE_TOOLS) | {"threshold_sensitivity", "detect_hfo"}
+    offered = relevant_tools("Did the leader change between the two minutes?", tools)
+    assert {"other_windows", "compare_window"} <= set(offered)
+    assert "spectral_power" not in offered
+    assert set(relevant_tools("Is AHR6-AHR7 oscillating or just noisy?", tools)) \
+        == set(_CORE_TOOLS) | {"spectral_power", "channel_qc"}
+    # About nothing in particular: everything.
+    assert relevant_tools("Tell me about this recording.", tools) == tools
+    # About a tool that is not on offer: the core alone, the briefing answers.
+    fewer = _named_tools("explain_event")
+    assert set(relevant_tools("Does it survive a stricter threshold?", fewer)) == set(_CORE_TOOLS)
+
+
+def test_a_threshold_question_sends_a_short_schema_list_first_and_everything_after(store):
+    import json
+
+    from onset_agent.agent import OnsetAgent
+    from onset_agent.backends import AssistantMessage, Backend, ToolCall
+
+    class Recorder(Backend):
+        name = "recorder"
+        is_language_model = True
+
+        def __init__(self):
+            self.offered = []
+
+        def describe(self):
+            return "recorder"
+
+        def chat(self, messages, tools):
+            self.offered.append([t["function"]["name"] for t in (tools or [])])
+            if len(self.offered) == 1:
+                return AssistantMessage(tool_calls=[ToolCall("top_channels", {"k": 3}, "c1")])
+            return AssistantMessage(content=json.dumps(
+                {"answer": "Rates are measurements.", "evidence_ids": []}))
+
+    backend = Recorder()
+    tools = {k: v for k, v in _named_tools("threshold_sensitivity", "detect_hfo",
+                                           "spectral_power", "channel_qc").items()}
+    extra = {k: v for k, v in tools.items()
+             if k in ("threshold_sensitivity", "detect_hfo", "spectral_power", "channel_qc")}
+    OnsetAgent(store, backend=backend, extra_tools=extra).ask(
+        "Does the busiest channel survive a stricter threshold?")
+    assert len(backend.offered) >= 2
+    first, second = backend.offered[0], backend.offered[1]
+    assert "threshold_sensitivity" in first and "spectral_power" not in first
+    assert len(first) <= 5 and set(second) >= set(tools), "every tool from the second step on"
