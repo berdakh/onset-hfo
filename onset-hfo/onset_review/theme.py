@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from qtpy.QtGui import QFont, QFontDatabase
 
 __all__ = ["Palette", "LIGHT", "DARK", "apply_theme", "current", "qt_palette",
-           "section_label", "plain_buttons", "scrolled",
+           "section_label", "plain_buttons", "scrolled", "help_button",
            "card", "muted", "SPACING", "RADIUS", "FONT_STACK"]
 
 #: The spacing grid, in pixels. Everything is a multiple of four; most things
@@ -230,6 +230,17 @@ def stylesheet(p: Palette) -> str:
     QTabBar::tab:selected {{ background: {p.surface}; color: {p.text}; }}
     QTabBar::tab:hover:!selected {{ color: {p.text}; }}
 
+    /* The page sidebar: rows a finger can hit, the current one in the accent. */
+    QListWidget#onset_pages {{ background: transparent; border: none; outline: 0; }}
+    QListWidget#onset_pages::item {{
+        padding: 3px {SPACING}px; border-radius: {RADIUS - 3}px;
+        margin-right: {SPACING}px;
+    }}
+    QListWidget#onset_pages::item:selected {{
+        background: {p.accent}; color: {p.accent_text};
+    }}
+    QListWidget#onset_pages::item:hover:!selected {{ background: {p.surface_alt}; }}
+
     /* Tables: rules replaced by space. A grid is the most common way to make
        a clinical table hard to scan. */
     QTableView {{
@@ -341,6 +352,26 @@ def muted(text: str, palette: Palette | None = None, size: int = 9):
     label.setWordWrap(True)
     label.setStyleSheet(f"color:{p.text_muted};font-size:{size}pt;")
     return label
+
+
+def help_button(text: str, palette: Palette | None = None):
+    """A small "?" whose tooltip is `text`: the hint that used to be a grey
+    sentence beside a control, kept for whoever wants it and out of the way of
+    whoever has read it. One per panel at most; a row of them is a manual."""
+    from qtpy.QtWidgets import QToolButton
+
+    p = palette or current()
+    button = QToolButton()
+    button.setText("?")
+    button.setAutoRaise(True)
+    button.setToolTip(text)
+    button.setCursor(__import__("qtpy.QtCore", fromlist=["Qt"]).Qt.WhatsThisCursor)
+    button.setFixedSize(20, 20)
+    button.setStyleSheet(
+        f"QToolButton{{color:{p.text_muted};border:1px solid {p.separator};"
+        f"border-radius:10px;font-size:9pt;font-weight:700;padding:0;}}"
+        f"QToolButton:hover{{color:{p.text};background:{p.surface_alt};}}")
+    return button
 
 
 def card(kind: str = "info", palette: Palette | None = None) -> str:

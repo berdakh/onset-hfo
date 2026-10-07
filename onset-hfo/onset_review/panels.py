@@ -934,11 +934,12 @@ class TrendsPanel(QWidget):
         bar.addWidget(self.source)
         bar.addWidget(self.bin_s)
         bar.addStretch(1)
-        self.hint = QLabel("Click a cell to take the trace there.")
-        self.hint.setStyleSheet(f"color:{theme.current().text_muted};font-size:9pt;")
-        bar.addWidget(self.hint)
+        bar.addWidget(theme.help_button(
+            "Events per bin, one row per channel, busiest first. Click a cell "
+            "to take the trace there."))
 
         self.plot = pg.PlotWidget(background="w")
+        self.plot.setToolTip("Click a cell to take the trace there")
         self.plot.setLabel("bottom", "Time in window", units="s")
         self.plot.invertY(True)
         self.plot.setMouseEnabled(x=True, y=False)

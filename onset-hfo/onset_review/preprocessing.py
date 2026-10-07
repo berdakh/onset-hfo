@@ -43,6 +43,7 @@ from qtpy.QtWidgets import (
     QRadioButton,
     QSizePolicy,
     QSpinBox,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -54,7 +55,7 @@ from onset_hfo.preprocess import (
     filter_description,
     ica_methods_available,
 )
-from onset_review.theme import card, current, muted, scrolled
+from onset_review.theme import SPACING, card, current, muted, scrolled
 
 #: Re-exported: the sentence and the warnings a reviewer reads under these
 #: controls are computed in `onset_hfo.preprocess`, beside the refusals they
@@ -73,11 +74,30 @@ RESAMPLE_CHOICES = [("Leave as recorded", None), ("2000 Hz", 2000.0),
 MAINS_CHOICES = [("From the dataset", None), ("50 Hz", 50.0), ("60 Hz", 60.0)]
 
 
+#: Inputs stop growing past this: "1.0 Hz" in a box half the screen wide
+#: reads as a text field waiting for a sentence.
+FIELD_WIDTH = 260
+
+
+def _form(host) -> QFormLayout:
+    """A form whose fields keep their own width rather than the panel's."""
+    form = QFormLayout(host)
+    form.setFieldGrowthPolicy(QFormLayout.FieldsStayAtSizeHint)
+    form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+    form.setHorizontalSpacing(SPACING + 4)
+    form.setVerticalSpacing(SPACING // 2 + 2)
+    return form
+
+
 class PreprocessPanel(QWidget):
     """The MNE chain as controls, with what it will do written underneath."""
 
     #: Emitted on Apply, with the config to re-run the window under.
     applied = Signal(object)
+
+    def _toggle_design(self, on: bool) -> None:
+        self.design_rows.setVisible(bool(on))
+        self.design_toggle.setArrowType(Qt.DownArrow if on else Qt.RightArrow)
 
     def __init__(self, session, parent=None):
         super().__init__(parent)
@@ -138,16 +158,38 @@ class PreprocessPanel(QWidget):
         self.design.setStyleSheet(f"color:{current().text_muted};font-size:9pt;")
 
         filters = QGroupBox("Filtering")
-        form = QFormLayout(filters)
+        form = _form(filters)
         form.addRow("High-pass", self.highpass)
         form.addRow("Low-pass", self.lowpass)
         form.addRow(self.notch, self.mains)
         form.addRow("", self.harmonics)
         form.addRow("Notch width", self.notch_width)
-        form.addRow("Design", self.method)
-        form.addRow("IIR order", self.iir_order)
-        form.addRow("Phase", self.phase)
-        form.addRow("Transition", self.transition)
+        # The design is behind a disclosure: four rows almost nobody changes,
+        # at the same weight as the two everybody reads, made the panel a
+        # sheet. The line saying what MNE builds stays out, because that is
+        # the part a reader checks.
+        self.design_toggle = QToolButton()
+        self.design_toggle.setObjectName("onset_design_toggle")
+        self.design_toggle.setText("Filter design")
+        self.design_toggle.setCheckable(True)
+        self.design_toggle.setChecked(False)
+        self.design_toggle.setArrowType(Qt.RightArrow)
+        self.design_toggle.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.design_toggle.setAutoRaise(True)
+        self.design_toggle.setToolTip("FIR or IIR, the order, the phase and the "
+                                      "transition band. Open when the ringing "
+                                      "at a sharp discharge is the question.")
+        self.design_rows = QWidget()
+        design_form = _form(self.design_rows)
+        design_form.setContentsMargins(0, 0, 0, 0)
+        design_form.addRow("Design", self.method)
+        design_form.addRow("IIR order", self.iir_order)
+        design_form.addRow("Phase", self.phase)
+        design_form.addRow("Transition", self.transition)
+        self.design_rows.setVisible(False)
+        self.design_toggle.toggled.connect(self._toggle_design)
+        form.addRow(self.design_toggle)
+        form.addRow(self.design_rows)
         form.addRow("", self.design)
 
         # -- reference -----------------------------------------------------
@@ -201,7 +243,7 @@ class PreprocessPanel(QWidget):
         self.ptp.setSpecialValueText("learn from the data")
 
         artifacts = QGroupBox("Artifact annotation")
-        artifact_form = QFormLayout(artifacts)
+        artifact_form = _form(artifacts)
         artifact_form.addRow(self.muscle, self.muscle_z)
         artifact_form.addRow(self.amplitude, self.ptp)
         artifact_form.addRow("", muted(
@@ -245,7 +287,7 @@ class PreprocessPanel(QWidget):
         self.ica_removed = muted("", current())
         self.ica_removed.setObjectName("onset_ica_removed")
         experimental = QGroupBox("Regression and ICA (experimental)")
-        experimental_form = QFormLayout(experimental)
+        experimental_form = _form(experimental)
         experimental_form.addRow("Regress out", self.regress)
         if not self.regress.count():
             experimental_form.addRow("", muted(
@@ -265,7 +307,7 @@ class PreprocessPanel(QWidget):
             "Downsampling is the fastest way to make an HFO analysis "
             "meaningless: 1000 Hz cannot carry the fast-ripple band at all.")
         rate = QGroupBox("Sampling rate")
-        rate_form = QFormLayout(rate)
+        rate_form = _form(rate)
         rate_form.addRow(f"Recorded at {self._sfreq:g} Hz", self.resample)
 
         # -- channels ------------------------------------------------------
@@ -507,6 +549,7 @@ def _spin(low: float, high: float, step: float, suffix: str, value: float,
     box.setSuffix(suffix)
     box.setValue(value)
     box.setToolTip(tooltip)
+    box.setMaximumWidth(FIELD_WIDTH)
     return box
 
 

@@ -124,7 +124,7 @@ class QualityPanel(QWidget):
 
         self.summary = QLabel(self._summary_text())
         self.summary.setWordWrap(True)
-        self.summary.setStyleSheet(card(self._summary_kind(), self.tokens))
+        self.summary.setStyleSheet(self._summary_style())
         column.addWidget(self.summary)
 
         column.addWidget(section_label("Contacts", self.tokens))
@@ -223,6 +223,10 @@ class QualityPanel(QWidget):
         buttons.addWidget(self.reset)
         buttons.addWidget(self.apply)
         column.addLayout(buttons)
+        # With the table folded, the spare height goes here rather than into
+        # gaps between the lines above: an expanding spacer takes it before
+        # any label does, and the table, when shown, still takes it all.
+        column.addStretch(0)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -332,7 +336,7 @@ class QualityPanel(QWidget):
         self.table.resizeColumnsToContents()
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.summary.setText(self._summary_text())
-        self.summary.setStyleSheet(card(self._summary_kind(), self.tokens))
+        self.summary.setStyleSheet(self._summary_style())
         self._draw_strip()
         # Refill the button state too. Rewriting the rows does not change the
         # selection when the row count is the same, so `itemSelectionChanged`
@@ -349,6 +353,16 @@ class QualityPanel(QWidget):
                     "be in the ranking.")
         return quality_summary(session.quality, session.segments,
                                kept=tuple(getattr(self, "_kept", ()) or ()))
+
+    def _summary_style(self) -> str:
+        """A box only when there is something in it to act on. "All passed"
+        is one quiet line; a box the size of a paragraph saying nothing is
+        wrong reads as if something were."""
+        kind = self._summary_kind()
+        if kind == "info":
+            return (f"color:{self.tokens.good};font-size:9pt;"
+                    f"padding:2px 0 {SPACING}px 0;")
+        return card(kind, self.tokens)
 
     def _summary_kind(self) -> str:
         session = self._session

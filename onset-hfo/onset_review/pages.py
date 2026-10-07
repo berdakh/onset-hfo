@@ -12,10 +12,12 @@ makes for the docked window too, and the whole point of this module is that
 the same widgets, wired the same way, can be laid out either as docks or as
 pages. A reviewer who prefers the docks gets them back from the View menu.
 
-Two desktop-only pages sit in the first group (Contacts, Quality) because they
+The first group needs a recording and is disabled until one is open; three of
+its pages (Contacts, Map, Signal) have no counterpart on the site because they
 need a running analysis. The six study pages of the site follow, read-only,
 built from the committed tables by `onset_review.studies`; they need no
-recording, so they are open even before one is loaded.
+recording, so they are open even before one is loaded. Each sidebar entry is
+one word, and its tooltip is the line Home prints about the page.
 """
 
 from __future__ import annotations
@@ -53,7 +55,7 @@ PAGES = (
     ("recording", "Recording"),
     ("contacts", "Contacts"),
     ("map", "Map"),
-    ("quality", "Quality"),
+    ("quality", "Signal"),
     ("report", "Report"),
     ("assistant", "Assistant"),
 )
@@ -64,9 +66,6 @@ PAGES = (
 STUDY_PAGES = ("Detectors", "Outcome", "Patients", "Data", "Architecture",
                "Research")
 
-#: Desktop-only pages, marked as such in the sidebar.
-DESKTOP_ONLY = {"contacts", "map", "quality"}
-
 #: The site's disclaimer, word for word (`app/panels.py`). A test pins the
 #: two copies to each other; it is duplicated rather than imported because the
 #: wheel does not ship the Streamlit app.
@@ -75,6 +74,10 @@ DISCLAIMER = ("Research prototype — not a medical device. "
               "outcomes — and nothing here is validated for clinical use. "
               "Every number cites the window it came from. There is no "
               "recommendation anywhere in this product; the clinician decides.")
+
+#: The one line of it that is always showing; the rest opens on a click.
+DISCLAIMER_LINE = ("Research prototype — not a medical device. Nothing here is "
+                   "validated for clinical use; the clinician decides.")
 
 #: The site's front door, trimmed to what applies on the desktop.
 WHAT_THIS_IS = (
@@ -98,8 +101,8 @@ HOW_TO_READ = (
     ("contacts", "where the contacts are, ranked, relative to the resection"),
     ("map", "the same contacts flat, coloured by rate with a colour scale: the "
             "figure a paper prints, and the one the assistant can describe"),
-    ("quality", "which contacts and seconds were analysed, and what was done "
-                "to the signal first"),
+    ("quality", "the signal before any detector sees it: which contacts and "
+                "seconds were analysed, and what was done to it first"),
     ("report", "the structured, cited report: findings, your read, data "
                "quality, limitations"),
     ("assistant", "ask about a channel or the evidence; try asking what to "
@@ -150,10 +153,19 @@ class PageWindow(QMainWindow):
         self.stack = QStackedWidget()
         self.stack.setObjectName("onset_stack")
 
-        self.banner = QLabel(DISCLAIMER)
+        # One quiet line rather than a box: the site's words, the first of
+        # them always showing and the rest a click away. A banner that takes
+        # two lines of every page is read once and then looked past, which is
+        # the opposite of what a disclaimer is for.
+        self.banner = QLabel()
         self.banner.setObjectName("onset_banner")
         self.banner.setWordWrap(True)
-        self.banner.setStyleSheet(theme.card("warn"))
+        self.banner.setStyleSheet(
+            f"color:{theme.current().warn};font-size:9pt;padding:2px 0 0 0;")
+        self.banner.setOpenExternalLinks(False)
+        self.banner.linkActivated.connect(lambda _link: self.toggle_disclaimer())
+        self._disclaimer_open = False
+        self._say_disclaimer()
 
         self._build_sidebar()
         self._build_pages()
@@ -215,12 +227,15 @@ class PageWindow(QMainWindow):
             item.setForeground(Qt.gray)
             self.nav.addItem(item)
 
+        # What each page is for, as its tooltip: the sidebar is the table of
+        # contents, and a reader who hovers gets the line Home prints.
+        what = dict(HOW_TO_READ)
         heading("This recording")
         for key, label in PAGES:
-            item = QListWidgetItem(label + ("   desktop" if key in DESKTOP_ONLY else ""))
+            item = QListWidgetItem(label)
             item.setData(Qt.UserRole, key)
-            item.setToolTip("Only on the desktop: needs a running analysis"
-                            if key in DESKTOP_ONLY else "")
+            about = what.get(key, "")
+            item.setToolTip(about[0].upper() + about[1:] if about else "")
             if key != "home" and not self.loaded:
                 item.setFlags(Qt.NoItemFlags)
                 item.setToolTip("Open a recording first: Home, or File → Open")
@@ -266,6 +281,19 @@ class PageWindow(QMainWindow):
             if callable(refresh):
                 refresh()
             self.pageChanged.emit(key)
+
+    # -- the disclaimer -----------------------------------------------------
+    def toggle_disclaimer(self) -> None:
+        self._disclaimer_open = not self._disclaimer_open
+        self._say_disclaimer()
+
+    def _say_disclaimer(self) -> None:
+        if self._disclaimer_open:
+            self.banner.setText(f"{DISCLAIMER} <a href='less' style='color:"
+                                f"{theme.current().accent};'>Less</a>")
+        else:
+            self.banner.setText(f"{DISCLAIMER_LINE} <a href='more' style='color:"
+                                f"{theme.current().accent};'>Read more</a>")
 
     # -- the pages --------------------------------------------------------
     def _build_pages(self) -> None:
@@ -435,7 +463,7 @@ class PageWindow(QMainWindow):
         self.leader.setWordWrap(True)
         self.leader.setStyleSheet(theme.card(
             "info" if self.session.leader.get("distinguishable") else "bad"))
-        box.addWidget(QLabel("<b>Does any channel actually stand out?</b>"))
+        box.addWidget(theme.section_label("Does any channel actually stand out?"))
         box.addWidget(self.leader)
 
         self.trend_toggle = QToolButton()
@@ -804,10 +832,10 @@ class PageWindow(QMainWindow):
         self.export_button.setEnabled(self._on_export is not None)
         if self._on_export is not None:
             self.export_button.clicked.connect(lambda _=False: self._on_export())
+        self.export_button.setToolTip("Markdown or a web page. Your verdicts and "
+                                      "notes go in under your name; name yourself "
+                                      "under Read first.")
         box.addWidget(self.export_button)
-        box.addWidget(theme.muted("Markdown or a web page. Your verdicts and notes "
-                                  "go in under your name; name yourself under "
-                                  "Read first."))
         row.addWidget(self._split("report", Qt.Horizontal, [preview, column],
                                   [1100, COLUMN_WIDTH], stretch=(1, 0)), 1)
         page.refresh = self.refresh_report      # type: ignore[attr-defined]

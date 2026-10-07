@@ -36,19 +36,22 @@ from onset_agent.prompts import CHAT_PROMPT
 from onset_review import theme
 from onset_review.assistant import ANSWER_TIMEOUT, SMALL_PT, TEXT_PT, _paragraphs, _run
 from onset_review.assistant_config import load_defaults
-from onset_review.theme import card, muted
+from onset_review.theme import muted
 
 __all__ = ["ChatPanel", "BANNER", "CHAT_TOKENS"]
 
-BANNER = ("<b>General chat with the local model.</b> Not connected to this recording or "
-          "analysis: the model sees nothing of the patient unless you type it. Nothing here "
-          "is checked; it can be wrong, including about medicine. For questions about this "
-          "window, use the Assistant page, where every number is checked.")
+BANNER = ("<b>General chat with the local model.</b> Not connected to this recording: "
+          "it sees nothing of the patient unless you type it. Nothing here is checked; it "
+          "can be wrong, including about medicine. For this window, use the Assistant page.")
 #: Longer than the evidence assistant's answers: nothing here has to be
 #: checked, and a general question may want a paragraph.
 CHAT_TOKENS = 700
 #: Turns kept in the conversation.
 TURNS = 12
+#: What an empty page offers: a click on one puts it in the box.
+EXAMPLES = ("What is the difference between a ripple and a fast ripple?",
+            "Explain a bipolar montage to a medical student.",
+            "Summarise the evidence for HFOs as a biomarker, with the caveats.")
 
 
 class _ChatWorker(QThread):
@@ -98,7 +101,8 @@ class ChatPanel(QWidget):
         self.banner = QLabel(BANNER)
         self.banner.setObjectName("onset_chat_banner")
         self.banner.setWordWrap(True)
-        self.banner.setStyleSheet(card("warn"))
+        self.banner.setStyleSheet(
+            f"color:{tokens.warn};font-size:9pt;padding:2px 0 0 0;")
         self.banner.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Maximum)
         self.model_line = muted("")
         self.model_line.setObjectName("onset_chat_model")
@@ -108,6 +112,9 @@ class ChatPanel(QWidget):
         self.transcript.setObjectName("onset_chat_transcript")
         self.transcript.setOpenLinks(False)
         self.transcript.setStyleSheet(f"font-size:{TEXT_PT}pt;")
+        self.transcript.anchorClicked.connect(self._example_picked)
+        self._fresh = True
+        self._note = ""
 
         self.question = QLineEdit()
         self.question.setObjectName("onset_chat_question")
@@ -143,6 +150,7 @@ class ChatPanel(QWidget):
         box.addWidget(self.transcript, 1)
         box.addLayout(row)
         self.refresh_model()
+        self._welcome()
 
     # -- which model ----------------------------------------------------------
     def refresh_model(self) -> None:
@@ -152,17 +160,17 @@ class ChatPanel(QWidget):
         self._model = str(getattr(defaults, "model", "") or "")
         self._base_url = str(getattr(defaults, "base_url", "") or "")
         if self._kind == "scripted":
-            self.model_line.setText(
-                "No model is loaded. Choose one on the Assistant page (the box above its "
-                "transcript); this page talks to the same model.")
+            self.model_line.setText("No model is loaded — choose one on the Assistant page.")
             self.question.setEnabled(False)
             self.ask_button.setEnabled(False)
         else:
             self.model_line.setText(
-                f"Model: {self._model or 'the default on the server'} via {self._kind}, as "
-                "chosen on the Assistant page. Answers are the model's own.")
+                f"{self._model or 'the default on the server'} via {self._kind} · "
+                "the Assistant page's choice · answers are the model's own")
             self.question.setEnabled(True)
             self.ask_button.setEnabled(True)
+        if getattr(self, "_fresh", False):
+            self._welcome()
 
     @property
     def available(self) -> bool:
@@ -220,7 +228,40 @@ class ChatPanel(QWidget):
 
     def new_conversation(self) -> None:
         self._history = []
-        self._say_system("New conversation: earlier messages are forgotten.")
+        self._note = "New conversation: earlier messages are forgotten."
+        self._welcome()
+
+    # -- the empty page ---------------------------------------------------------
+    def _welcome(self) -> None:
+        """What an empty transcript shows: what the page is, and three things
+        to try. Gone with the first message."""
+        tokens = theme.current()
+        if self.available:
+            lead = "Ask the model anything."
+            tries = "".join(
+                f"<div style='margin:4px 0;'><a href='example:{i}' style='color:{tokens.accent};"
+                f"text-decoration:none;'>{html.escape(text)}</a></div>"
+                for i, text in enumerate(EXAMPLES))
+        else:
+            lead = "No model is loaded."
+            tries = ("<div style='margin:4px 0;'>Choose one on the <b>Assistant</b> page "
+                     "— the box above its transcript — and this page talks to it.</div>")
+        note = (f"<div style='font-size:{SMALL_PT}pt;margin-bottom:12px;'>"
+                f"{html.escape(self._note)}</div>" if self._note else "")
+        self.transcript.setHtml(
+            f"<div style='margin:48px 24px;color:{tokens.text_muted};'>{note}"
+            f"<div style='font-size:{TEXT_PT + 2}pt;color:{tokens.text};'>{lead}</div>"
+            f"<div style='margin:4px 0 12px;'>It cannot see this recording, and nothing "
+            f"it says is checked.</div>{tries}</div>")
+        self._fresh = True
+
+    def _example_picked(self, url) -> None:
+        link = url.toString() if hasattr(url, "toString") else str(url)
+        if link.startswith("example:"):
+            index = int(link.split(":", 1)[1])
+            if 0 <= index < len(EXAMPLES):
+                self.question.setText(EXAMPLES[index])
+                self.question.setFocus()
 
     # -- plumbing --------------------------------------------------------------
     def _set_busy(self, on: bool) -> None:
@@ -231,6 +272,12 @@ class ChatPanel(QWidget):
         self.clock.setText("thinking…" if on else "")
 
     def _append(self, body: str) -> None:
+        if self._fresh:
+            self.transcript.clear()
+            self._fresh = False
+            if self._note:
+                note, self._note = self._note, ""
+                self._say_system(html.escape(note))
         self.transcript.append(body)
         self.transcript.verticalScrollBar().setValue(
             self.transcript.verticalScrollBar().maximum())

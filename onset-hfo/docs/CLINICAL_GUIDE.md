@@ -63,7 +63,7 @@ dataset — what the original annotators marked on the same minute.
 There are eleven panels and the window does not show them all at once, because
 a screen with eleven docked panels on it is one you have to tidy before you can
 use it. By default they are arranged as **pages** — a sidebar on the left with
-Home, Recording, Contacts, Quality, Report and Assistant, then the six study
+Home, Recording, Contacts, Signal, Report and Assistant, then the six study
 pages of the results site (Detectors, Outcome, Patients, Data, Architecture,
 Research, read-only, from the committed tables), one page showing at a time,
 `Alt+1` to `Alt+9` to switch — the same shape as the project's results
@@ -283,7 +283,7 @@ agreeing or disagreeing with the software is something you do from evidence.
 A tab beside *This event*: every channel's power against frequency on a
 log-log plot, the band being analysed shaded, the mains lines dashed, the
 chosen channel drawn over the rest with its slope line. It is the picture that
-answers the question the Quality page's band-power flag only raises. A healthy
+answers the question the Signal page's band-power flag only raises. A healthy
 intracranial contact falls off steeply with frequency, a slope near −2; a
 noisy or poorly coupled one lays a flat carpet of high-frequency power, a
 slope near 0; a mains-contaminated one has a comb of peaks at the harmonics.
@@ -682,13 +682,14 @@ with none of the Assistant's machinery: no briefing, no tools, no number or
 citation check, no refusals. Ask it what you like.
 
 Three things keep it honest beside the rest of the window, and none of them
-is a restriction on you. A banner at the top says, permanently, that the
+is a restriction on you. A line at the top says, permanently, that the
 page is not connected to this recording and that nothing on it is checked,
 including about medicine. No patient data reaches it: the model sees nothing
 of the recording unless you type it. And nothing from it enters the report
 or your saved read. Until a model is chosen on the Assistant page the page
-says so and waits. What a 3B model knows about medicine is uneven; where the
-machine allows, the 7B the hardware chooser offers is the better companion.
+says so and waits; with one, an empty page offers three questions to try.
+What a 3B model knows about medicine is uneven; where the machine allows,
+the 7B the hardware chooser offers is the better companion.
 
 ### Preprocessing — change what is done to the signal
 
@@ -707,9 +708,9 @@ mouse on them.
 | **Low-pass** | off by default | an HFO band runs to 500 Hz. A low-pass below that removes the signal and leaves a rate |
 | **Notch** | mains and its harmonics | harmonics at 180 and 240 Hz sit *inside* the ripple band. Turn the notch off and they are detected as oscillations |
 | **Notch width** | 2 Hz by default | wide notches carve visible holes in the band you are measuring |
-| **Filter design** | FIR (MNE's default) or IIR Butterworth; zero-phase or causal; the transition band, or *auto* | the line under the controls says what MNE builds — "windowed FIR of 6,601 taps (3.3 s), zero phase" — because a filter's ringing is as long as that number says. A narrow transition band makes a long filter that rings hard round a sharp edge; a high-order IIR does the same |
+| **Filter design** | folded away under *Filter design*: FIR (MNE's default) or IIR Butterworth; zero-phase or causal; the transition band, or *auto* | the line under the controls says what MNE builds — "windowed FIR of 6,601 taps (3.3 s), zero phase" — because a filter's ringing is as long as that number says. A narrow transition band makes a long filter that rings hard round a sharp edge; a high-order IIR does the same |
 | **Re-referencing** | bipolar, per-shaft average, median, common average, or none | see below |
-| **Muscle** | marks seconds of broadband muscle activity (MNE's `annotate_muscle_zscore`) | the marked seconds are set aside on every contact, and the Quality page says *annotated: muscle* for them. A low threshold sets aside a lot of a busy recording |
+| **Muscle** | marks seconds of broadband muscle activity (MNE's `annotate_muscle_zscore`) | the marked seconds are set aside on every contact, and the Signal page says *annotated: muscle* for them. A low threshold sets aside a lot of a busy recording |
 | **Amplitude** | marks seconds whose peak-to-peak amplitude exceeds a ceiling, per contact (MNE's `annotate_amplitude`) | the ceiling can be typed in microvolts or *learned from the data*, the way autoreject's global threshold is: the value that best separates the recording's own seconds from its outliers under cross-validation. Large discharges exceed it too, and are set aside with the artefacts; look at what was marked before trusting the rate |
 | **Regress out** | the signal of an ECG lead, a reference or a ground channel the export carries, regressed out of every brain channel by least squares before the montage | the channel itself is never analysed. Regression removes whatever part of each contact follows the lead; a contact that genuinely shares a rhythm with it loses that rhythm too. Offered only when the recording carries such a channel |
 | **Fit ICA (experimental)** | MNE's ICA on the filtered channels; the components appear on the **Components** tab under Provenance, scored for muscle and ECG | **removes nothing by itself.** ICA can take real HFO energy out with the artefact and the literature is split on using it for HFO work. You choose components there; the report names what was removed |
@@ -730,7 +731,7 @@ report under its own name.
 **What is marked, not repaired.** The two annotation steps follow MNE's own
 rule for artefacts: they *mark* seconds, they do not clean them. A marked
 second is set aside the way a clipped one is — it leaves the analysed time, the
-rates are over the time that remains, and the Quality page shows it with its
+rates are over the time that remains, and the Signal page shows it with its
 reason — so a recording with a minute of chewing in it is rated on the other
 four, not on five with the chewing interpolated. Nothing here runs a repair.
 
@@ -757,7 +758,7 @@ evidence. The panels you have dragged into place stay where you put them.
 
 ![The Components tab](images/onset-review-components.png)
 
-A tab beside Provenance on the Quality page, empty until *Fit ICA* is on and
+A tab beside Provenance on the Signal page, empty until *Fit ICA* is on and
 applied. Then one row per component: its share of the variance, MNE's muscle
 score where the recording carries electrode positions (without them MNE's
 score has nothing spatial to work with, so it is not run and the panel says
@@ -780,7 +781,7 @@ ICA is left off and the dataset notes say so.
 
 ### Data quality — which contacts and which seconds were analysed
 
-*(The tab is labelled **Quality**.)*
+*(The page is labelled **Signal**; in the docked arrangement the panel is the **Quality** dock.)*
 
 The contacts are a strip of chips, the ones to look at first: red for set
 aside, amber for analysed but flagged, blue for one you reinstated, green

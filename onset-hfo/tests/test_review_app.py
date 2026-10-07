@@ -3276,3 +3276,113 @@ def test_the_chat_page_is_in_the_sidebar_with_or_without_a_recording(paged, qapp
         assert bare.stack.currentWidget().objectName() == "page_chat"
     finally:
         bare.close()
+
+
+# The design pass: one quiet disclaimer line, one-word pages with what they are
+# for on hover, hints behind "?" buttons, the filter design folded away, a
+# passed quality check as one line, and a Chat page that opens with something
+# to try.
+
+def test_the_disclaimer_is_one_line_until_read_more(paged):
+    from onset_review.pages import DISCLAIMER, DISCLAIMER_LINE
+
+    banner = paged.pages.banner
+    assert banner.text().startswith(DISCLAIMER_LINE) and "Read more" in banner.text()
+    assert "Every number cites" not in banner.text()
+    paged.pages.toggle_disclaimer()
+    assert DISCLAIMER in banner.text() and "Less" in banner.text()
+    paged.pages.toggle_disclaimer()
+    assert banner.text().startswith(DISCLAIMER_LINE)
+    assert DISCLAIMER.startswith(DISCLAIMER_LINE.split(".")[0]), \
+        "the line is the site's words, not a paraphrase"
+
+
+def test_the_sidebar_names_each_page_in_one_word_and_says_what_it_is_for(paged):
+    from onset_review.pages import HOW_TO_READ, PAGES
+
+    nav = paged.pages.nav
+    items = {nav.item(i).data(Qt.UserRole): nav.item(i) for i in range(nav.count())
+             if nav.item(i).data(Qt.UserRole)}
+    for key, label in PAGES:
+        assert items[key].text() == label and " " not in label, label
+        assert "desktop" not in items[key].text()
+    assert items["quality"].text() == "Signal"
+    what = dict(HOW_TO_READ)
+    for key in ("recording", "quality", "report"):
+        assert items[key].toolTip().lower().startswith(what[key][:12].lower())
+
+
+def test_the_hints_are_behind_help_buttons_not_written_across_the_bars(built):
+    from qtpy.QtWidgets import QLabel, QToolButton
+
+    for key in ("trends", "controls"):
+        panel = built.panels[key]
+        labels = [w.text() for w in panel.findChildren(QLabel)]
+        assert not any("Click a cell" in t or "MNE keys" in t for t in labels)
+        helps = [b for b in panel.findChildren(QToolButton) if b.text() == "?"]
+        assert len(helps) == 1 and helps[0].toolTip(), key
+    assert "Click a cell" in built.panels["trends"].plot.toolTip()
+
+
+def test_the_filter_design_is_folded_away_until_asked_for(built):
+    panel = built.panels["preprocess"]
+    assert panel.design_rows.isHidden() and not panel.design_toggle.isChecked()
+    assert panel.method.parent() is panel.design_rows
+    assert not panel.design.isHidden(), "what MNE builds stays in view"
+    panel.design_toggle.setChecked(True)
+    assert not panel.design_rows.isHidden()
+    panel.design_toggle.setChecked(False)
+    assert panel.design_rows.isHidden()
+    # Folded or not, the controls keep working.
+    panel.method.setCurrentIndex(panel.method.findData("iir"))
+    assert "Butterworth" in panel.design.text()
+    panel.method.setCurrentIndex(panel.method.findData("fir"))
+
+
+def test_a_passed_quality_check_is_one_quiet_line_and_a_failed_one_a_box(qapp, review, faulted):
+    from onset_review.dataquality import QualityPanel
+
+    passed = QualityPanel(review)
+    failed = QualityPanel(faulted)
+    try:
+        assert "background" not in passed.summary.styleSheet()
+        assert passed.tokens.good in passed.summary.styleSheet()
+        assert "background" in failed.summary.styleSheet()
+    finally:
+        passed.deleteLater()
+        failed.deleteLater()
+
+
+def test_the_chat_page_opens_with_something_to_try(qapp, monkeypatch):
+    from qtpy.QtCore import QUrl
+
+    from onset_review import chatview
+    from onset_review.assistant_config import AssistantDefaults
+
+    monkeypatch.setattr(chatview, "load_defaults", lambda: AssistantDefaults())
+    waiting = chatview.ChatPanel()
+    try:
+        text = waiting.transcript.toPlainText()
+        assert "No model is loaded" in text and chatview.EXAMPLES[0] not in text
+    finally:
+        waiting.deleteLater()
+
+    talker = _Talker()
+    monkeypatch.setattr(chatview, "load_defaults",
+                        lambda: AssistantDefaults(kind="ollama", model="qwen2.5:3b-instruct",
+                                                  base_url="http://127.0.0.1:11434/v1"))
+    monkeypatch.setattr(chatview, "make_backend", lambda *a, **k: talker)
+    panel = chatview.ChatPanel()
+    try:
+        text = panel.transcript.toPlainText()
+        assert all(example in text for example in chatview.EXAMPLES)
+        panel._example_picked(QUrl("example:1"))
+        assert panel.question.text() == chatview.EXAMPLES[1]
+        panel.ask()
+        text = panel.transcript.toPlainText()
+        assert chatview.EXAMPLES[0] not in text, "the welcome goes with the first message"
+        assert "Reply to: " + chatview.EXAMPLES[1] in text
+        panel.new_conversation()
+        assert all(example in panel.transcript.toPlainText() for example in chatview.EXAMPLES)
+    finally:
+        panel.deleteLater()
