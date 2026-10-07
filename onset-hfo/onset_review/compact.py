@@ -24,7 +24,7 @@ __all__ = ["COMPACT_COLUMNS", "FULL_COLUMNS", "rate_cell", "compact_findings",
 #: The columns each table shows in its compact form, in order. The label is
 #: what the header says; a name not in the frame is dropped by the model.
 COMPACT_COLUMNS = {
-    "findings": ["rank", "channel", "rate", "annotators", "my_read", "judged"],
+    "findings": ["rank", "channel", "rate", "annotators", "my_read"],
     # `key` is hidden in the view; it is how a selected row becomes the event
     # it stands for, so it travels with every column set.
     "events": ["verdict", "t_local", "channel", "kind", "frequency_hz", "duration_ms", "key"],

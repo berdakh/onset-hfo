@@ -175,11 +175,12 @@ barcode.
 
 Sorted by events per minute, busiest first. The columns that matter:
 
-Four columns to start with: the rank, the channel, the rate with its 95 %
-interval in one cell (*52 (39–67)*), and what the annotators marked on that
+Five columns to start with: the rank, the channel, the rate with its 95 %
+interval in one cell (*52 (39–67)*), what the annotators marked on that
 channel, or *not reviewed* where they never looked, which is a different
-thing from zero. *All columns* adds the counts, the intervals as numbers,
-mean frequency, duration, prominence and spike co-occurrence.
+thing from zero, and your own verdict on the contact. *All columns* adds the
+counts, the intervals as numbers, mean frequency, duration, prominence,
+spike co-occurrence and how many of the contact's events you have judged.
 
 | column | what it means |
 |---|---|
@@ -1091,7 +1092,7 @@ number that will actually be analysed.
   none, and it never announces itself.
 * **Label.** Goes on the report. Use a study code, not a patient name.
 
-![The window on an imported recording](images/onset-review-imported.png)
+![The window on an imported file: the test suite's synthetic EDF, six depth contacts with bursts planted on AR1, the EKG and DC channels confirmed as not intracranial and so nowhere in the ranking](images/onset-review-imported.png)
 
 ### What an imported file does not bring
 

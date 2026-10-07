@@ -24,6 +24,7 @@ from qtpy.QtWidgets import (
     QDoubleSpinBox,
     QHBoxLayout,
     QLabel,
+    QMenu,
     QPushButton,
     QSpinBox,
     QToolButton,
@@ -33,7 +34,21 @@ from qtpy.QtWidgets import (
 from onset_review import theme
 
 __all__ = ["TraceControls", "AMPLITUDE_STEP", "PAGE_MM", "as_microvolts",
-           "paper_speed"]
+           "paper_speed", "DUPLICATED_TOOLS"]
+
+#: What MNE's own toolbar offers that this row already does, by the text of
+#: the browser's actions. Stacked under this row, the browser's bar read as
+#: a second, unexplained set of the same controls; so while the trace is on
+#: the page that bar is hidden, and only what it alone offers -- annotation
+#: mode, the crosshair, the overview bar, MNE's settings and help -- is kept,
+#: behind one button at the end of this row. Projectors are left out too:
+#: intracranial recordings carry none.
+DUPLICATED_TOOLS = frozenset({
+    "Show fewer time points", "Show more time points",
+    "Show fewer channels", "Show more channels",
+    "Reduce amplitude", "Increase amplitude",
+    "Show projectors",
+})
 
 #: Width of a standard clinical EEG page, in millimetres. Ten seconds at
 #: 30 mm/s, which is the pairing every reader has in their hands. It is the
@@ -208,6 +223,19 @@ class TraceControls(QWidget):
             "rows on screen. At: where the window starts. The trace also takes "
             "the usual MNE keys; press ? on it."))
 
+        self.tools = QToolButton()
+        self.tools.setObjectName("onset_trace_tools")
+        self.tools.setText("Trace tools")
+        self.tools.setToolTip("What the browser's own toolbar adds to this row: "
+                              "annotation mode, the crosshair, the overview bar, "
+                              "MNE's settings and its help")
+        self.tools.setAutoRaise(True)
+        self.tools.setPopupMode(QToolButton.InstantPopup)
+        self.tools.setMenu(self._tools_menu())
+        self.tools.setVisible(not self.tools.menu().isEmpty())
+        layout.addWidget(self.tools)
+        self.show_browser_toolbar(False)
+
         self.seconds.valueChanged.connect(self._set_seconds)
         self.channels.valueChanged.connect(self._set_channels)
         self.position.valueChanged.connect(self._set_position)
@@ -217,6 +245,38 @@ class TraceControls(QWidget):
     @property
     def state(self):
         return getattr(self._figure, "mne", None)
+
+    @property
+    def browser_toolbar(self):
+        """MNE's own toolbar on the figure, or None off a real browser."""
+        return getattr(self.state, "toolbar", None)
+
+    def show_browser_toolbar(self, on: bool) -> None:
+        """Hidden while the trace sits under this row, shown when the trace
+        is in a window of its own, where this row is not."""
+        toolbar = self.browser_toolbar
+        if toolbar is not None:
+            toolbar.setVisible(bool(on))
+
+    def _tools_menu(self) -> QMenu:
+        """The browser's toolbar actions this row does not duplicate, in the
+        browser's order, with the overview-bar chooser as a submenu."""
+        menu = QMenu(self)
+        toolbar = self.browser_toolbar
+        if toolbar is None:
+            return menu
+        overview = getattr(self.state, "overview_menu", None)
+        for action in toolbar.actions():
+            if action.isSeparator() or action.text() in DUPLICATED_TOOLS:
+                continue
+            if not action.text():
+                # The overview-bar button: a widget on the toolbar, a menu here.
+                if overview is not None:
+                    overview.setTitle("Overview bar")
+                    menu.addMenu(overview)
+                continue
+            menu.addAction(action)
+        return menu
 
     def sync(self) -> None:
         """Pull every readout from the browser. Safe to call at any time.
