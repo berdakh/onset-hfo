@@ -562,6 +562,13 @@ class OnsetAgent:
             parsed = extract_json_object(content)
             if parsed is None:
                 prose = _as_prose(content)
+                # Prose that names no channel of this analysis and states no
+                # number is not an answer about the evidence, whatever it
+                # says: a model with nothing to say, or nothing in it, must
+                # not pass for one that answered.
+                if prose and not self._about_the_evidence(prose):
+                    note({"type": "prose_empty", "step": step, "content": prose[:400]})
+                    prose = ""
                 if not prose:
                     note({"type": "format_error", "step": step, "content": content[:400]})
                     if retries >= self.max_retries:
@@ -616,6 +623,17 @@ class OnsetAgent:
                   "see report.md."),
             refused=True, reason="verification failed", trace=trace,
             backend=self.backend.name, verified=False)
+
+    def _about_the_evidence(self, prose: str) -> bool:
+        """Whether a prose reply names a channel of this analysis or states a
+        number. The check a JSON answer gets by construction."""
+        if re.search(r"\d", prose):
+            return True
+        try:
+            known = {str(c).upper() for c in self.store.channels()}
+        except Exception:       # noqa: BLE001 - a store without channels has nothing to name
+            known = set()
+        return any(token.upper() in known for token in guard.CHANNEL_TOKEN.findall(prose))
 
     # -- background and general questions ----------------------------------
     _sections: list | None = None

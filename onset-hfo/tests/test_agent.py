@@ -715,3 +715,40 @@ def test_a_threshold_question_sends_a_short_schema_list_first_and_everything_aft
     first, second = backend.offered[0], backend.offered[1]
     assert "threshold_sensitivity" in first and "spectral_power" not in first
     assert len(first) <= 5 and set(second) >= set(tools), "every tool from the second step on"
+
+
+def test_prose_that_names_nothing_from_the_evidence_is_not_an_answer(store):
+    """A random-weight model's eight tokens of nothing, or a model that
+    answers a data question with a shrug, must not pass for an answer: the
+    reply has to name a channel of this analysis or state a number."""
+    from onset_agent.agent import OnsetAgent
+    from onset_agent.backends import AssistantMessage, Backend
+
+    class Mumbler(Backend):
+        name = "mumbler"
+        is_language_model = True
+
+        def describe(self):
+            return "mumbler"
+
+        def chat(self, messages, tools):
+            return AssistantMessage(content="the and of ripple ripple the")
+
+    answer = OnsetAgent(store, Mumbler(), max_steps=2).ask("Which channel had the highest ripple rate?")
+    assert answer.refused and "stand behind" in answer.text.lower()
+    assert any(e.get("type") == "prose_empty" for e in answer.trace)
+
+    leader = store.top_channels(k=1)[0]["channel"]
+
+    class Namer(Backend):
+        name = "namer"
+        is_language_model = True
+
+        def describe(self):
+            return "namer"
+
+        def chat(self, messages, tools):
+            return AssistantMessage(content=f"{leader} leads this window.")
+
+    answer = OnsetAgent(store, Namer()).ask("Which channel had the highest ripple rate?")
+    assert not answer.refused and leader in answer.text
