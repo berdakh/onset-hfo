@@ -12,6 +12,7 @@ that each control calls the browser method it claims to.
 from __future__ import annotations
 
 import dataclasses
+import re
 
 import numpy as np
 import pytest
@@ -1549,13 +1550,15 @@ def test_no_panel_hardcodes_a_colour():
     drawn as -- and they mean the same thing on either background. And
     `report.py` styles an exported HTML document that is read in a browser or
     printed, which should not inherit whatever theme the application happened
-    to be in when it was written.
+    to be in when it was written. `studycharts.py` is the same case: its two
+    figures are PNGs on a study page's white, drawn without Qt, in two hues
+    checked for colour-vision deficiency and contrast on that white.
     """
     import pathlib
     import re
 
     root = pathlib.Path(__file__).resolve().parent.parent / "onset_review"
-    allowed = {"theme.py", "session.py", "brainview.py", "report.py"}
+    allowed = {"theme.py", "session.py", "brainview.py", "report.py", "studycharts.py"}
     for path in sorted(root.glob("*.py")):
         if path.name in allowed:
             continue
@@ -3616,3 +3619,21 @@ def test_the_ask_box_shows_a_refusal_as_one(paged, monkeypatch):
     answer = page.ask.ask("How many patients?")
     assert answer.refused and "7777" in answer.reason
     assert page.ask.verdict.text().startswith("Refused")
+
+
+def test_the_detectors_and_outcome_pages_show_their_figures(paged):
+    pages = paged.pages
+    for key, alt in (("detectors", "threshold sweep"), ("outcome", "Every patient")):
+        pages.show_page(key)
+        page = pages.stack.currentWidget()
+        assert alt in page.text, f"the {key} page embeds its figure"
+        html = page.view.document().toHtml()
+        assert "onset-figure-" in html, f"the {key} figure is loaded into the document"
+        # And resolves: a resource added before the text was set was cleared
+        # with it, and the page showed a broken-image icon.
+        from qtpy.QtCore import QUrl
+        from qtpy.QtGui import QTextDocument
+
+        for name in re.findall(r'src="(onset-figure-[^"]+)"', html):
+            image = page.view.document().resource(QTextDocument.ImageResource, QUrl(name))
+            assert image is not None and not image.isNull(), f"{key}: {name} did not resolve"

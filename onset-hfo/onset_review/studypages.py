@@ -110,6 +110,7 @@ def set_markdown(browser: QTextBrowser, text: str) -> None:
     """
     document = browser.document()
     width = max(320, min(IMAGE_MAX_WIDTH, browser.viewport().width() - 40))
+    images: list[tuple[str, QImage]] = []
 
     def place(match):
         alt, path = match.group(1), match.group(2)
@@ -119,7 +120,7 @@ def set_markdown(browser: QTextBrowser, text: str) -> None:
         if image.width() > width:
             image = image.scaledToWidth(width, Qt.SmoothTransformation)
         name = f"onset-figure-{abs(hash(path))}"
-        document.addResource(QTextDocument.ImageResource, QUrl(name), image)
+        images.append((name, image))
         return f"![{alt}]({name})"
 
     text = _IMAGE.sub(place, text)
@@ -127,6 +128,12 @@ def set_markdown(browser: QTextBrowser, text: str) -> None:
         document.setMarkdown(text, QTextDocument.MarkdownDialectGitHub)
     except (AttributeError, TypeError):      # an older binding
         browser.setMarkdown(text)
+    # The resources go in after the text: setting the document's text clears
+    # what it cached, so a figure added before it was a broken-image icon.
+    for name, image in images:
+        document.addResource(QTextDocument.ImageResource, QUrl(name), image)
+    if images:
+        document.markContentsDirty(0, document.characterCount())
     style_tables(document)
 
 
