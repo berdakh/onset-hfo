@@ -39,6 +39,7 @@ from onset_review import adjudication, report, theme
 from onset_review.assistant import AssistantPanel
 from onset_review.averageview import AveragePanel
 from onset_review.brainview import BrainPanel
+from onset_review.chatview import ChatPanel
 from onset_review.controls import AMPLITUDE_STEP, TraceControls
 from onset_review.dataquality import QualityPanel
 from onset_review.eventview import EventDetailPanel
@@ -471,6 +472,7 @@ def build_panels(figure, session: ReviewSession) -> dict:
         "average": AveragePanel(session),
         "sensitivity": SensitivityPanel(session),
         "assistant": AssistantPanel(session),
+        "chat": ChatPanel(),
         "preprocess": PreprocessPanel(session),
         "components": ComponentsPanel(session),
         "quality": QualityPanel(session),
@@ -585,6 +587,8 @@ def decorate(figure, session: ReviewSession, show_expert: bool = False,
     helper = dock("assistant", "Assistant", Qt.RightDockWidgetArea,
                   panels["assistant"],
                   "Ask about this window; answers cite it or refuse")
+    talk = dock("chat", "Chat", Qt.RightDockWidgetArea, panels["chat"],
+                "The local model on its own: not connected to this recording, nothing checked")
     # Preprocessing sits with provenance rather than with the working views:
     # it is the other half of the same question. "How this was produced" says
     # what was done; the tab next to it is where a reviewer changes it.
@@ -613,6 +617,7 @@ def decorate(figure, session: ReviewSession, show_expert: bool = False,
     host.tabifyDockWidget(prep, fit)
     host.tabifyDockWidget(prep, parts_dock)
     host.tabifyDockWidget(fit, helper)
+    host.tabifyDockWidget(helper, talk)
     # The detail view opens in front: the first thing a reviewer does with a
     # detection is look at it.
     close_up.raise_()

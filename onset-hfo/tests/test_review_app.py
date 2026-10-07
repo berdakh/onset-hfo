@@ -71,7 +71,7 @@ def test_every_panel_is_docked(built):
     assert set(built.docks) == {"trends", "controls", "findings", "events",
                                 "detail", "spectrum", "average", "sensitivity", "brain", "map",
                                 "agreement", "provenance", "assistant", "preprocess", "patient",
-                                "quality", "components"}
+                                "quality", "components", "chat"}
     assert all(dock.widget() is not None for dock in built.docks.values())
 
 
@@ -2203,11 +2203,11 @@ def test_the_sidebar_lists_the_sites_pages_in_order(paged):
     enabled = [nav.item(i) for i in range(nav.count())
                if nav.item(i).flags() & Qt.ItemIsEnabled]
     assert [i.data(Qt.UserRole) for i in enabled] == \
-        [k for k, _ in PAGES] + [k for k, _, _ in STUDIES]
+        [k for k, _ in PAGES] + [k for k, _, _ in STUDIES] + ["chat"]
     labels = [nav.item(i).text() for i in range(nav.count())]
     for study in STUDY_PAGES:
         assert study in labels, "the study pages are listed, in the site's order"
-    assert paged.pages.page_keys() == [k for k, _ in PAGES] + [k for k, _, _ in STUDIES]
+    assert paged.pages.page_keys() == [k for k, _ in PAGES] + [k for k, _, _ in STUDIES] + ["chat"]
 
 
 def test_a_window_opens_on_home_and_switches_pages(paged):
@@ -3142,3 +3142,137 @@ def test_the_side_column_is_wide_enough_for_every_tab(paged):
     assert labels == ["Ranking", "Events", "Event", "Spectrum", "Average", "Threshold"]
     assert side.minimumWidth() >= side.tabBar().sizeHint().width()
     assert paged.pages.splitter("recording").sizes()[1] >= side.minimumWidth() or True
+
+
+# --------------------------------------------------------------------------
+# Background answers in the panel: sources to click, a banner for the unchecked
+# --------------------------------------------------------------------------
+
+def test_the_panel_shows_a_background_answers_sources_and_opens_one(qapp, review):
+    from onset_review.assistant import SUGGESTIONS, AssistantPanel
+
+    assert any(label == "What is an HFO?" for _q, label in SUGGESTIONS)
+    panel = AssistantPanel(review)
+    try:
+        panel.ask("What is an HFO?")
+        text = panel.transcript.toPlainText()
+        assert "from the documents: GLOSSARY" in text and "From GLOSSARY" in text
+        assert panel._sources and panel._sources[0][0].startswith("GLOSSARY")
+        assert len(panel._history) == 1, "a verified background answer is remembered"
+        panel._show_source("0")
+        dialog = panel._source_dialog
+        assert dialog.windowTitle().startswith("GLOSSARY") and dialog.isVisible()
+        dialog.close()
+        panel._show_source("99")        # nothing to show, nothing to raise
+    finally:
+        panel.deleteLater()
+
+
+def test_the_panel_labels_an_unchecked_general_answer(qapp, review):
+    from onset_agent.agent import AgentAnswer
+    from onset_review.assistant import AssistantPanel
+
+    panel = AssistantPanel(review)
+    try:
+        panel._say_answer(AgentAnswer(question="q", text="Hans Berger, in 1924.", mode="general",
+                                      backend="fake", verified=False,
+                                      reason="the model alone: not checked against anything"))
+        text = panel.transcript.toPlainText()
+        assert "Not checked." in text and "Hans Berger" in text and "unchecked" in text
+    finally:
+        panel.deleteLater()
+
+
+# --------------------------------------------------------------------------
+# The Chat page: the model alone, unconnected, labelled
+# --------------------------------------------------------------------------
+
+class _Talker:
+    """A language-model backend that echoes what it was given."""
+
+    name = "talker"
+    is_language_model = True
+
+    def __init__(self):
+        self.calls = []
+        self.aborted = False
+
+    def describe(self):
+        return "talker"
+
+    def abort(self):
+        self.aborted = True
+
+    def chat(self, messages, tools):
+        from onset_agent.backends import AssistantMessage
+
+        self.calls.append((messages, tools))
+        return AssistantMessage(content=f"Reply to: {messages[-1]['content']}")
+
+
+def test_the_chat_page_waits_for_a_model_and_says_so(qapp, monkeypatch):
+    from onset_review import chatview
+    from onset_review.assistant_config import AssistantDefaults
+
+    monkeypatch.setattr(chatview, "load_defaults", lambda: AssistantDefaults())
+    panel = chatview.ChatPanel()
+    try:
+        assert "Not connected to this recording" in panel.banner.text()
+        assert "including about medicine" in panel.banner.text()
+        assert not panel.available and not panel.question.isEnabled()
+        assert "No model is loaded" in panel.model_line.text()
+        panel.ask("Hello?")
+        assert "choose one on the Assistant page" in panel.transcript.toPlainText()
+        assert not hasattr(panel, "_session") and not hasattr(panel, "_store")
+    finally:
+        panel.deleteLater()
+
+
+def test_the_chat_page_talks_to_the_chosen_model_with_no_tools_and_no_data(qapp, monkeypatch):
+    from onset_agent.prompts import CHAT_PROMPT
+    from onset_review import chatview
+    from onset_review.assistant_config import AssistantDefaults
+
+    talker = _Talker()
+    monkeypatch.setattr(chatview, "load_defaults",
+                        lambda: AssistantDefaults(kind="ollama", model="qwen2.5:3b-instruct",
+                                                  base_url="http://127.0.0.1:11434/v1"))
+    monkeypatch.setattr(chatview, "make_backend", lambda *a, **k: talker)
+    panel = chatview.ChatPanel()
+    try:
+        assert panel.available and "qwen2.5:3b-instruct" in panel.model_line.text()
+        panel.ask("What is the capital of Peru?")
+        messages, tools = talker.calls[0]
+        assert tools == [] and messages[0]["content"] == CHAT_PROMPT
+        assert "no access to any patient" in messages[0]["content"]
+        assert [m["role"] for m in messages] == ["system", "user"]
+        text = panel.transcript.toPlainText()
+        assert "Reply to: What is the capital of Peru?" in text and "unchecked" in text
+        # The next turn carries the conversation; a new one forgets it.
+        panel.ask("And of Chile?")
+        roles = [m["role"] for m in talker.calls[1][0]]
+        assert roles == ["system", "user", "assistant", "user"]
+        panel.new_conversation()
+        panel.ask("Again?")
+        assert [m["role"] for m in talker.calls[2][0]] == ["system", "user"]
+        assert "forgotten" in panel.transcript.toPlainText()
+    finally:
+        panel.deleteLater()
+
+
+def test_the_chat_page_is_in_the_sidebar_with_or_without_a_recording(paged, qapp):
+    from onset_review import pages
+
+    host = paged.pages
+    assert "chat" in host.page_keys()
+    assert host.show_page("chat")
+    assert host.stack.currentWidget().objectName() == "page_chat"
+    labels = [host.nav.item(i).text() for i in range(host.nav.count())]
+    assert "THE MODEL" in labels and "Chat" in labels
+    # The start state, before any recording: the page is there too.
+    bare = pages.PageWindow()
+    try:
+        assert "chat" in bare.page_keys() and bare.show_page("chat")
+        assert bare.stack.currentWidget().objectName() == "page_chat"
+    finally:
+        bare.close()

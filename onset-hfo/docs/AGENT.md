@@ -438,6 +438,32 @@ whose failure mode is "confidently wrong rate" is not.
 speaks the same protocol so the loop can be tested offline. The CLI says so
 every time it runs, and so does this sentence.
 
+## Background questions: answered from the documents, not from memory
+
+"What is an HFO?" is not a question about the window, and the guards above
+have nothing to check it against. So the agent sorts every question first
+(`knowledge.kind_of`): anything that could be about the data (a channel
+name, a rate, "this window", a detector, a threshold, the past tense) takes
+the guarded path above. A question that reads as background ("what is",
+"why does", "how does", with none of those) is answered from the project's
+own documents: the glossary, the methods, the clinician's guide, the
+limitations and the evaluation, indexed into sections and searched by term
+overlap (`onset_agent/knowledge.py`, no embedding model). The best two or
+three sections go to the model with the instruction to answer from them
+alone and to say when they do not cover the question; the answer names the
+sections, the window links to them, and every number in it is checked
+against the passages the way a data answer's numbers are checked against
+queries. Without a model, the best section is shown verbatim.
+
+A question the documents do not cover is answered by the model alone and
+shown under a **Not checked** banner, in a different colour and without
+citations. A medical question that reaches that point is refused: nothing
+here can vouch for it. The scope refusals (treatment, diagnosis, another
+patient) run before any of this, as before.
+
+The installer copies `docs/` beside the study pages' `site/`, so an
+installed copy has the documents; a checkout reads its own.
+
 ## Trying it with a real model
 
 The guards are tested through a protocol-faithful fake server, which proves

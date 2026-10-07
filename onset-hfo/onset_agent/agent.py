@@ -62,7 +62,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from onset_agent import guard
+from onset_agent import guard, knowledge
 from onset_agent.backends import Backend, ScriptedBackend, extract_json_object
 from onset_agent.prompts import system_prompt, what_i_can_do
 from onset_agent.tools import TOOLS, ToolError, dispatch, tool_schemas
@@ -90,6 +90,13 @@ class AgentAnswer:
     trace: list[dict] = field(default_factory=list)
     backend: str = ""
     verified: bool = True
+    #: ``"data"`` (the guarded path over this analysis), ``"background"``
+    #: (answered from the project's documents) or ``"general"`` (the model
+    #: alone, unchecked).
+    mode: str = "data"
+    #: For a background answer: the document sections it was answered from,
+    #: as (label, text) pairs, so the window can show them.
+    sources: list[tuple[str, str]] = field(default_factory=list)
 
     @property
     def tools_called(self) -> list[str]:
@@ -469,6 +476,12 @@ class OnsetAgent:
             return AgentAnswer(question=question, text=scope.reason, refused=True,
                                reason="out of scope (checked before the model ran)",
                                trace=trace, backend=self.backend.name)
+        # A follow-up stays on the path its conversation is on, and a question
+        # the window briefs specifically is about the window.
+        kind = knowledge.kind_of(history[-1][0] if history else question)
+        if kind != "data" and not extra_briefing:
+            note({"type": "routed", "kind": kind})
+            return self._ask_background(question, kind, note, trace)
 
         messages = [{"role": "system", "content": self.system}]
         retrieved: list[str] = []
@@ -549,6 +562,13 @@ class OnsetAgent:
             parsed = extract_json_object(content)
             if parsed is None:
                 prose = _as_prose(content)
+                # Prose that names no channel of this analysis and states no
+                # number is not an answer about the evidence, whatever it
+                # says: a model with nothing to say, or nothing in it, must
+                # not pass for one that answered.
+                if prose and not self._about_the_evidence(prose):
+                    note({"type": "prose_empty", "step": step, "content": prose[:400]})
+                    prose = ""
                 if not prose:
                     note({"type": "format_error", "step": step, "content": content[:400]})
                     if retries >= self.max_retries:
@@ -603,6 +623,112 @@ class OnsetAgent:
                   "see report.md."),
             refused=True, reason="verification failed", trace=trace,
             backend=self.backend.name, verified=False)
+
+    def _about_the_evidence(self, prose: str) -> bool:
+        """Whether a prose reply names a channel of this analysis or states a
+        number. The check a JSON answer gets by construction."""
+        if re.search(r"\d", prose):
+            return True
+        try:
+            known = {str(c).upper() for c in self.store.channels()}
+        except Exception:       # noqa: BLE001 - a store without channels has nothing to name
+            known = set()
+        return any(token.upper() in known for token in guard.CHANNEL_TOKEN.findall(prose))
+
+    # -- background and general questions ----------------------------------
+    _sections: list | None = None
+
+    @classmethod
+    def sections(cls) -> list:
+        """The project's documents, indexed once per process."""
+        if cls._sections is None:
+            cls._sections = knowledge.load_sections()
+        return cls._sections
+
+    def _ask_background(self, question: str, kind: str, note, trace: list[dict]) -> AgentAnswer:
+        """Answer from the documents when they cover the question; from the
+        model alone, labelled, when they do not; refuse a medical question
+        that nothing here can vouch for."""
+        from onset_agent.backends import Interrupted, extract_json_object
+        from onset_agent.prompts import BACKGROUND_PROMPT, GENERAL_PROMPT
+
+        passages = knowledge.retrieve(question, self.sections()) if kind == "background" else []
+        if kind == "background" and not passages:
+            kind = "general"
+        note({"type": "retrieved", "sources": [p.label for p in passages]})
+        if kind == "general" and knowledge.looks_medical(question):
+            note({"type": "scope_check", "result": "refused"})
+            return AgentAnswer(question=question, refused=True, mode="general",
+                               text="That is a medical question, and nothing here can vouch for "
+                                    "an answer to it: not this analysis, and not the project's "
+                                    "documents. Ask the clinical team.",
+                               reason="a medical question outside the documents",
+                               trace=trace, backend=self.backend.name)
+        sources = [(p.label, p.text) for p in passages]
+        if not getattr(self.backend, "is_language_model", True):
+            # No model: the best passage is the answer, verbatim, and a
+            # question nothing covers is said to be one.
+            if passages:
+                top = passages[0]
+                shown = knowledge.plain(top.text)
+                text = (f"From {top.label}: {shown}" if knowledge.title_match(question, top)
+                        else f"The closest section in the documents is {top.label}; no model "
+                             f"is loaded to judge whether it answers the question. {shown}")
+                return AgentAnswer(question=question, mode="background", sources=sources,
+                                   text=text, reason="answered from the documents without a model",
+                                   trace=trace, backend=self.backend.name, verified=True)
+            return AgentAnswer(question=question, mode="general", refused=True,
+                               text="Nothing in this project's documents covers that, and no "
+                                    "model is loaded to answer it. Load a model to ask "
+                                    "general questions.",
+                               reason="not covered by the documents; no model",
+                               trace=trace, backend=self.backend.name, verified=False)
+        if passages:
+            body = "\n\n".join(f"[{p.label}]\n{p.text}" for p in passages)
+            messages = [{"role": "system", "content": BACKGROUND_PROMPT},
+                        {"role": "user", "content": f"Passages:\n\n{body}\n\nQuestion: {question}"}]
+        else:
+            messages = [{"role": "system", "content": GENERAL_PROMPT},
+                        {"role": "user", "content": question}]
+        try:
+            message = self.backend.chat(messages, [])
+        except Interrupted:
+            return AgentAnswer(question=question, text="Stopped before an answer was produced.",
+                               refused=True, reason="stopped by the reviewer", mode=kind,
+                               trace=trace, backend=self.backend.name, verified=False)
+        content = (message.content or "").strip()
+        parsed = extract_json_object(content)
+        if isinstance(parsed, dict):
+            if parsed.get("refusal"):
+                content = str(parsed["refusal"])
+            elif parsed.get("answer"):
+                content = str(parsed["answer"])
+        note({"type": "model", "step": 0, "asked_for": [], "content": content[:400]})
+        if not content:
+            return AgentAnswer(question=question, text="The model returned nothing.",
+                               refused=True, reason="empty answer", mode=kind,
+                               trace=trace, backend=self.backend.name, verified=False)
+        if kind == "background":
+            # The same discipline as a data answer: a number the passages
+            # do not state is a number the model made up.
+            stated = knowledge.numbers_in(" ".join(p.text for p in passages))
+            loose = sorted(n for n in knowledge.numbers_in(content)
+                           if not guard._is_traceable(n, stated))
+            if loose:
+                note({"type": "number_check", "result": "refused", "numbers": loose})
+                return AgentAnswer(question=question, refused=True, mode=kind, sources=sources,
+                                   text=content,
+                                   reason=("the answer states "
+                                           + ", ".join(f"{n:g}" for n in loose)
+                                           + ", which the cited documents do not"),
+                                   trace=trace, backend=self.backend.name, verified=False)
+            note({"type": "number_check", "result": "ok"})
+            return AgentAnswer(question=question, text=content, mode=kind, sources=sources,
+                               reason="answered from the documents", trace=trace,
+                               backend=self.backend.name, verified=True)
+        return AgentAnswer(question=question, text=content, mode="general",
+                           reason="the model alone: not checked against anything",
+                           trace=trace, backend=self.backend.name, verified=False)
 
     def ask_many(self, questions: list[str]) -> list[AgentAnswer]:
         return [self.ask(q) for q in questions]
