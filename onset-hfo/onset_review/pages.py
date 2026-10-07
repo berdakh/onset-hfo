@@ -104,7 +104,12 @@ HOW_TO_READ = (
                "quality, limitations"),
     ("assistant", "ask about a channel or the evidence; try asking what to "
                   "resect"),
+    ("chat", "the same local model on its own: not connected to this recording, "
+             "nothing checked, and the page says so"),
 )
+
+#: The page that needs no recording and belongs to no study: the model alone.
+CHAT_PAGE = ("chat", "Chat")
 
 SIDEBAR_WIDTH = 190
 COLUMN_WIDTH = 320
@@ -231,6 +236,13 @@ class PageWindow(QMainWindow):
             item.setToolTip(what)
             self.nav.addItem(item)
             self._items[key] = item
+        heading("The model")
+        item = QListWidgetItem(CHAT_PAGE[1])
+        item.setData(Qt.UserRole, CHAT_PAGE[0])
+        item.setToolTip("The local model on its own: not connected to this recording, "
+                        "nothing checked")
+        self.nav.addItem(item)
+        self._items[CHAT_PAGE[0]] = item
 
         sidebar = QWidget()
         sidebar.setObjectName("onset_sidebar")
@@ -280,6 +292,20 @@ class PageWindow(QMainWindow):
                 page.openRequested.connect(self._on_open_cached)
             self._pages[key] = page
             self.stack.addWidget(page)
+        # The chat needs no recording: the window's panel when there is one,
+        # its own otherwise, so the page is there before anything is opened.
+        chat = self.panels.get("chat")
+        if chat is None:
+            from onset_review.chatview import ChatPanel
+
+            chat = ChatPanel()
+        page = QWidget()
+        box = QVBoxLayout(page)
+        box.setContentsMargins(0, 0, 0, 0)
+        box.addWidget(chat)
+        page.setObjectName(f"page_{CHAT_PAGE[0]}")
+        self._pages[CHAT_PAGE[0]] = page
+        self.stack.addWidget(page)
 
     def _home_page(self) -> QWidget:
         page = QWidget()
@@ -323,7 +349,8 @@ class PageWindow(QMainWindow):
         box.addWidget(theme.section_label("How to read the pages"))
         guide = QLabel("<ol>" + "".join(
             f"<li><a href='page:{key}'><b>{label}</b></a> — {what}</li>"
-            for (key, label), (_key, what) in zip(PAGES[1:], HOW_TO_READ, strict=True))
+            for (key, label), (_key, what) in zip(list(PAGES[1:]) + [CHAT_PAGE], HOW_TO_READ,
+                                               strict=True))
             + "</ol>")
         guide.setWordWrap(True)
         guide.setOpenExternalLinks(False)
@@ -994,7 +1021,7 @@ class PageWindow(QMainWindow):
     def page_keys(self) -> list[str]:
         from onset_review.studies import STUDIES
 
-        return [key for key, _label in PAGES] + [key for key, _, _ in STUDIES]
+        return [key for key, _label in PAGES] + [key for key, _, _ in STUDIES] + [CHAT_PAGE[0]]
 
     def current_page(self) -> str:
         widget = self.stack.currentWidget()

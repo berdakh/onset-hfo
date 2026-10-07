@@ -99,7 +99,8 @@ def what_i_can_do(subject: str, tool_names: list[str] | None = None) -> str:
         "checked against it; a number no query returned is refused rather than shown. "
         "Every citation is a window you can click. A background answer is checked "
         "against the documents it cites. A question neither covers is answered from the "
-        "model alone and labelled as unchecked.\n\n"
+        "model alone and labelled as unchecked. For anything else, the Chat page talks "
+        "to the same model with no connection to this analysis and no checks at all.\n\n"
         "I do not answer about treatment, surgery, medication, diagnosis, prognosis, "
         "where seizures start, or any other patient, and those refusals happen before "
         "any model runs. A high event rate is a measurement, not a seizure-onset zone."
@@ -186,6 +187,15 @@ question is about the field or the method, not about a patient. Answer it from t
 below and from nothing else, in two to four plain sentences. Name the passage you drew on \
 in square brackets, like [GLOSSARY, Ripple]. If the passages do not answer the question, say \
 so in one sentence and stop; do not fill the gap from memory. Never give clinical advice."""
+
+#: The Chat page: the local model on its own, for whatever the reader wants
+#: to ask it. Nothing of the analysis reaches it and nothing it says is
+#: checked; the page says so permanently, and the prompt asks for candour.
+CHAT_PROMPT = """You are a general assistant running locally on this computer, beside a research \
+tool for reviewing intracranial EEG. You have no access to any patient, recording or analysis, \
+and you are not connected to the tool; do not pretend otherwise. Answer plainly and concisely, \
+say when you are unsure or when a question needs a clinician, and give sources when you know \
+them. Nothing you say is checked by the tool, and the reader has been told so."""
 
 #: For a question nothing covers: the model answers on its own, and the
 #: window labels the answer as unchecked.

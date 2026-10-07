@@ -448,6 +448,7 @@ onset_review/         the desktop reviewer (Qt), installable on Ubuntu
   theme.py            one palette, one type scale; no panel writes a colour
   assistant.py        the agent in a dock: cites this window, or refuses
   assistant_tools.py  what the window adds to it: explain this event, the threshold re-test, other windows, analyses by consent
+  chatview.py         the model on its own: unconnected to the recording, unchecked, and labelled so
   window.py           docks them onto MNE's own Qt trace browser
   launcher.py         the open dialog, and loading off the GUI thread
   importer.py         confirming what a file actually holds before it is analysed

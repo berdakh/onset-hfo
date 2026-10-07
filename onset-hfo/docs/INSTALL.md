@@ -158,6 +158,7 @@ at a time on the right, and the same disclaimer line on every page.
 | **Quality** | data quality and preprocessing side by side — filter design, reference, muscle and amplitude marking, reference regression and an experimental ICA among them — provenance and the ICA components under them; *Apply* re-runs the analysis and every page follows |
 | **Report** | the review as it will be exported, the findings paragraph (yours, or drafted by the assistant and marked as such), agreement with the archive's annotators, *Export review…* |
 | **Assistant** | the assistant, a *Stop* button for a model taking too long, *New conversation*, the tick that lets it run the pipeline's analyses, and the box that gets a local Qwen onto this machine. A refusal says what the model wrote and which check it failed |
+| **Chat** | under *The model*: the same local model on its own, not connected to the recording and checked by nothing, with a banner that says so. There before a recording is opened |
 
 `Alt+1` to `Alt+9` switch pages, so do the entries at the top of **View**.
 Every boundary between regions — the sidebar and the page, the trend strip
