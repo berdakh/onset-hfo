@@ -190,7 +190,12 @@ def test_ica_is_fitted_scored_and_applied_only_as_chosen(recording):
     record = fitted.ica
     assert record is not None and record["n_components"] == 6
     assert record["sources"].shape[0] == 6 and record["loadings"].shape[1] == 6
-    assert len(record["muscle_scores"]) == 6 and len(record["hf_share"]) == 6
+    # The synthetic recording carries no electrode positions, so MNE's muscle
+    # score is not run rather than reported as a row of zeros.
+    assert record["muscle_scored"] is False and record["muscle_scores"] == []
+    assert any("Not scored for muscle" in note for note in record["notes"])
+    assert any("not scored for muscle (no electrode positions)" in s for s in fitted.steps)
+    assert len(record["hf_share"]) == 6
     assert record["ecg_channel"] == "ECG" and record["excluded"] == []
     assert abs(sum(record["variance_share"]) - 1.0) < 0.5
     assert any("ICA (fastica, 6 components" in s and "nothing removed" in s
@@ -229,3 +234,25 @@ def test_ica_settings_are_checked_and_described():
     assert any("least squares" in w for w in warnings)
     text, _ = describe(PreprocessConfig(ica=True, ica_n_components=8), (80, 250), 2000.0)
     assert "8 components), removing nothing until you choose" in text
+
+
+def test_ica_scores_muscle_only_with_electrode_positions(recording):
+    import dataclasses
+
+    import mne
+
+    from onset_hfo.preprocess import _has_positions, prepare
+
+    assert not _has_positions(recording.raw)
+    raw = recording.raw.copy()
+    rng = np.random.default_rng(3)
+    positions = {name: rng.normal(scale=0.04, size=3) for name in raw.ch_names}
+    raw.set_montage(mne.channels.make_dig_montage(ch_pos=positions, coord_frame="head"),
+                    on_missing="ignore", verbose="ERROR")
+    assert _has_positions(raw)
+    placed = dataclasses.replace(recording, raw=raw)
+    record = prepare(placed, PreprocessConfig(ica=True, ica_n_components=4), verbose=False).ica
+    if record["muscle_scored"]:
+        assert len(record["muscle_scores"]) == 4
+    else:
+        assert any("did not run" in note for note in record["notes"])

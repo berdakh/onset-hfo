@@ -465,13 +465,17 @@ class PageWindow(QMainWindow):
 
         self.side = QTabWidget()
         self.side.setObjectName("onset_side")
-        self.side.setMinimumWidth(260)
         self.side.addTab(self.panels["findings"], "Ranking")
         self.side.addTab(self.panels["events"], "Events")
-        self.side.addTab(self.panels["detail"], "This event")
+        self.side.addTab(self.panels["detail"], "Event")
         self.side.addTab(self.panels["spectrum"], "Spectrum")
         self.side.addTab(self.panels["average"], "Average")
         self.side.addTab(self.panels["sensitivity"], "Threshold")
+        # Wide enough for every tab to show: six tabs in a 260 px column
+        # overflowed into scroll arrows, and a tab a reviewer cannot see is a
+        # view they do not have. The splitter honours this minimum.
+        self.side.tabBar().setExpanding(False)
+        self.side.setMinimumWidth(max(260, self.side.tabBar().sizeHint().width() + 12))
         self.side.setTabToolTip(0, "Channels ranked by rate — evidence, not a "
                                    "recommendation. Tinted rows are tied with "
                                    "the busiest.")
@@ -484,7 +488,8 @@ class PageWindow(QMainWindow):
         self.side.setTabToolTip(5, "The leading channels re-tested at stricter thresholds "
                                    "— does the ranking survive?")
         outer.addWidget(self._split("recording", Qt.Horizontal, [left, self.side],
-                                    [1000, COLUMN_WIDTH + 150], stretch=(1, 0)), 1)
+                                    [1000, max(COLUMN_WIDTH + 150, self.side.minimumWidth())],
+                                    stretch=(1, 0)), 1)
         return page
 
     # -- the trace in a window of its own ----------------------------------

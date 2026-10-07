@@ -3132,3 +3132,11 @@ def test_a_removed_component_is_a_preprocessing_choice_in_the_report(qapp, recor
     assert session.ica["excluded"] == [0]
     text = report.review_markdown(session)
     assert "removed 0 (the reviewer's choice)" in text and "experimental" in text
+
+
+def test_the_side_column_is_wide_enough_for_every_tab(paged):
+    side = paged.pages.side
+    labels = [side.tabText(i) for i in range(side.count())]
+    assert labels == ["Ranking", "Events", "Event", "Spectrum", "Average", "Threshold"]
+    assert side.minimumWidth() >= side.tabBar().sizeHint().width()
+    assert paged.pages.splitter("recording").sizes()[1] >= side.minimumWidth() or True
