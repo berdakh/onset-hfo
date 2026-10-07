@@ -274,6 +274,57 @@ for this reason, and `Prom dB` on every event is that criterion's number. This
 panel does not second-guess it; it shows you what it was computed from, so that
 agreeing or disagreeing with the software is something you do from evidence.
 
+### Spectrum — noisy, or busy?
+
+![The spectrum](images/onset-review-spectrum.png)
+
+A tab beside *This event*: every channel's power against frequency on a
+log-log plot, the band being analysed shaded, the mains lines dashed, the
+chosen channel drawn over the rest with its slope line. It is the picture that
+answers the question the Quality page's band-power flag only raises. A healthy
+intracranial contact falls off steeply with frequency, a slope near −2; a
+noisy or poorly coupled one lays a flat carpet of high-frequency power, a
+slope near 0; a mains-contaminated one has a comb of peaks at the harmonics.
+All three look alike in a rate table and nothing alike here.
+
+The headline says the numbers the picture shows — the aperiodic slope over
+4–80 Hz, the share of the contact's power in the band, the share within a
+hertz of the mains lines — and reads the slope as *steep* or *flat*. Click a
+line to choose that channel; *Leading five* shows the ranking's leaders
+alone. The spectrum is of the signal as the detectors saw it, high-passed,
+notched and re-referenced, so a notch you widened shows as a wider hole.
+
+### Average event — what this channel's events average to
+
+![The average event](images/onset-review-average.png)
+
+A tab beside *Spectrum*: every accepted event on one channel, cut from the
+signal, aligned at the peak of its band-passed trace and averaged, in the
+same three rows as *This event* — the mean wideband and band-passed traces
+with their spread across events, and the mean of each event's own
+time-frequency picture. One event is a judgement; fifty are a morphology. A
+channel of oscillations averages to a spindle with an island under it; a
+channel of sharp transients and the filter's ringing averages to a spike with
+a column under it, and the two can carry the same rate. The headline reads
+the mean by the same rule the single-event view applies — *island*, *column*
+or *unclear* — and says how many events went into it. The box follows the
+channel chosen anywhere; choosing one here chooses it everywhere.
+
+### Threshold — does the ranking survive a stricter detector?
+
+![The threshold re-test](images/onset-review-threshold.png)
+
+A rate is a count above a threshold, and the threshold is a choice. The tab
+beside *Average* re-runs the ranking detector at 1.25×, 1.5× and 2× the
+threshold this window used, on the same prepared signal, and plots the
+leading channels' rates against it. It waits for the button because it costs
+a few seconds. The sentence under the plot says who led at each threshold,
+who was tied with them, and up to what multiple the window's leader still
+led: a leader that holds to twice the threshold is robust to the choice; one
+that drops out at 1.25× is a threshold choice, not a channel property. This
+is the re-test the research ladder applies to every leader, on the window in
+front of you. Nothing on the other pages changes.
+
 ### Recording your read
 
 Everything above this line is an algorithm's opinion. This part is yours, and
@@ -331,6 +382,23 @@ verdicts no longer match an event. A partial read is labelled as one, and a
 **confirmed rate** is quoted for a contact only when every one of its ranked
 events carries a verdict — anywhere else it would be a confirmed count divided
 by the whole window, which would understate a contact you had not finished.
+
+### The findings paragraph — yours, or the assistant's, and the report says which
+
+![The Report page](images/onset-review-report.png)
+
+On the Report page, beside the preview, is a box for the findings paragraph:
+the three to six sentences a report opens with. Write it yourself, or press
+**Draft it with the assistant**. The draft goes through the assistant's whole
+loop — the usual queries, the number check, the citation check — so a draft
+with a number no query returned is refused like any answer, and the refusal
+is on the Assistant page. A draft that passes lands in the box and in the
+report under **Findings**, marked *Drafted by the assistant (model) on date …
+not edited by the reader*. The moment you edit it, it is yours: the marking
+becomes *Written by you*, under your reader name. A reader signing a report
+has to know which sentences a model wrote, so the attribution is part of the
+document and not of the screen. The paragraph is saved with your verdicts
+and comes back with them.
 
 ### Patient — who this recording belongs to
 
@@ -441,6 +509,18 @@ frame all look identical in a four-column file.
 **Nothing about a rate changes.** Coordinates move dots; they do not move
 events.
 
+**The template brain.** When the contacts are placed from a file, *Template
+brain* on the 3D view draws MNE's `fsaverage` cortex — the FreeSurfer average
+of forty brains, in MNI space — under them instead of the reference shape. It
+is drawn only under measured coordinates (a rendered cortex under a schematic
+layout would read as a registered implantation, which it is not), and only
+when the file's BIDS sidecar does not name a patient space: coordinates in a
+scanner's own frame on an average brain would be the wrong geometry, and the
+box says so when it is greyed out. Whenever the surface is drawn the caption
+says it is the template and not this patient. The surface is a few hundred
+megabytes, fetched once with the button on the Contacts page; until then
+the box says it is not on this machine.
+
 ### Detector vs expert
 
 This dataset's annotators marked HFOs channel by channel, so on these
@@ -546,6 +626,41 @@ The numbers it quotes are the numbers in the Findings table, by construction:
 it reads a pipeline result rebuilt from the same band, detectors and thresholds
 the window on screen was produced with.
 
+**It can run an analysis, if you let it.** Tick *Let it run analyses on this window* and the
+model is offered six more things to do: run a detector with different
+settings, count discharges, measure band power, compare the two detectors,
+ask which channel leads the others, and the channel-quality checks. Each is
+the pipeline's own code, reproducible by name and run id; each costs seconds
+to a minute, and the transcript says *Ran an analysis … (12 s)* when one
+runs. The box is off by default and forgotten with the session, so a
+question never silently re-runs the detectors.
+
+**It explains the event you have selected.** With an event picked anywhere,
+*Explain this event* (or any question with "this event" in it) hands the
+model the measurements of that event's own picture — its cycles, how far its
+power stands above the bands either side at that moment, and the panel's reading
+of it, *island*, *column* or *unclear* — and the answer is about that event and
+no other. The reading is the software's, written under the picture; the
+model puts it into words.
+
+**It remembers the conversation.** A follow-up ("and the one below it?") is
+answered with the last few exchanges in view. *New conversation* forgets them.
+
+**It knows what the window has already computed.** Once the Threshold tab has
+run, a question about thresholds ("does AR1-AR2 survive a stricter
+threshold?") is answered from that re-test at no cost, and the model is
+briefed with it before it is asked. Before the tab has run, the same tool is
+offered only with *Let it run analyses* ticked, because it costs seconds.
+
+**It can look at the other minutes.** When other windows of the same
+recording are on this machine, "is there an earlier minute?" lists them, and
+with analyses allowed, "did the leader change between the two minutes?"
+analyses the other window with this window's settings — same band, detector,
+threshold and preprocessing, so the two are comparable — and compares the
+leaders and tied sets. That takes seconds to half a minute the first time and
+is free after; the answer says, as the tool does, that a leader changing
+between minutes is the usual case and the tied sets are what to compare.
+
 ### Preprocessing — change what is done to the signal
 
 ![The preprocessing panel](images/onset-review-preprocessing.png)
@@ -563,7 +678,10 @@ mouse on them.
 | **Low-pass** | off by default | an HFO band runs to 500 Hz. A low-pass below that removes the signal and leaves a rate |
 | **Notch** | mains and its harmonics | harmonics at 180 and 240 Hz sit *inside* the ripple band. Turn the notch off and they are detected as oscillations |
 | **Notch width** | 2 Hz by default | wide notches carve visible holes in the band you are measuring |
-| **Re-referencing** | bipolar, common average, or none | see below |
+| **Filter design** | FIR (MNE's default) or IIR Butterworth; zero-phase or causal; the transition band, or *auto* | the line under the controls says what MNE builds — "windowed FIR of 6,601 taps (3.3 s), zero phase" — because a filter's ringing is as long as that number says. A narrow transition band makes a long filter that rings hard round a sharp edge; a high-order IIR does the same |
+| **Re-referencing** | bipolar, per-shaft average, median, common average, or none | see below |
+| **Muscle** | marks seconds of broadband muscle activity (MNE's `annotate_muscle_zscore`) | the marked seconds are set aside on every contact, and the Quality page says *annotated: muscle* for them. A low threshold sets aside a lot of a busy recording |
+| **Amplitude** | marks seconds whose peak-to-peak amplitude exceeds a ceiling, per contact (MNE's `annotate_amplitude`) | the ceiling can be typed in microvolts or *learned from the data*, the way autoreject's global threshold is: the value that best separates the recording's own seconds from its outliers under cross-validation. Large discharges exceed it too, and are set aside with the artefacts; look at what was marked before trusting the rate |
 | **Sampling rate** | downsample | 1000 Hz cannot carry the fast-ripple band at all |
 | **Channels** | tick a contact to exclude it | exclusion happens *before* the bipolar montage, so removing one contact removes both pairs it was part of |
 
@@ -571,7 +689,19 @@ mouse on them.
 common reference shares its noise with every channel and produces HFOs that
 appear everywhere at once. Common average is standard elsewhere in EEG and is
 offered for comparison, but it re-introduces exactly that shared noise — the
-step it writes into the report says so.
+step it writes into the report says so. Two others sit between: the
+**per-shaft average** subtracts each electrode's own mean, so what one shaft
+picks up in common (its own cable, its own amplifier bank) is removed without
+sharing another shaft's noise with it; the **median** is a common reference
+that one wild contact cannot drag along with it. Each is written into the
+report under its own name.
+
+**What is marked, not repaired.** The two annotation steps follow MNE's own
+rule for artefacts: they *mark* seconds, they do not clean them. A marked
+second is set aside the way a clipped one is — it leaves the analysed time, the
+rates are over the time that remains, and the Quality page shows it with its
+reason — so a recording with a minute of chewing in it is rated on the other
+four, not on five with the chewing interpolated. Nothing here runs a repair.
 
 Three things make this safe to play with:
 

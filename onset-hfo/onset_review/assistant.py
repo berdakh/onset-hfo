@@ -36,6 +36,7 @@ from pathlib import Path
 
 from qtpy.QtCore import QEventLoop, QThread, QTimer, Signal
 from qtpy.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QHBoxLayout,
     QLabel,
@@ -88,6 +89,7 @@ SUGGESTIONS = [
     ("Show me the evidence for the busiest channel", "Show evidence"),
     ("Does any channel actually stand out?", "Anything stand out?"),
     ("Where on the head is the activity, and on how many electrodes?", "Where is it?"),
+    ("Why does the selected event read as real, or not?", "Explain this event"),
     ("Which channels should I resect?", "Ask it to overstep"),
 ]
 
@@ -169,11 +171,15 @@ class _AskWorker(QThread):
     progress = Signal(dict)
 
     def __init__(self, store, question: str, kind: str, model: str,
-                 base_url: str, parent=None):
+                 base_url: str, parent=None, extra_tools=None, history=None,
+                 extra_briefing=None):
         super().__init__(parent)
         self._store = store
         self._question = question
         self._kind, self._model, self._base_url = kind, model, base_url
+        self._extra_tools = dict(extra_tools or {})
+        self._history = list(history or [])
+        self._extra_briefing = list(extra_briefing or [])
         self._backend = None
         self._stop = False
         self.answer = None
@@ -199,9 +205,11 @@ class _AskWorker(QThread):
                                              "timeout": ANSWER_TIMEOUT} if served else {}))
             if self._stop:
                 self._backend.abort()
-            self.answer = OnsetAgent(self._store, backend=self._backend).ask(
+            self.answer = OnsetAgent(self._store, backend=self._backend,
+                                     extra_tools=self._extra_tools).ask(
                 self._question, should_stop=lambda: self._stop,
-                on_event=self.progress.emit)
+                on_event=self.progress.emit, history=self._history,
+                extra_briefing=self._extra_briefing)
         except Exception as error:
             self.error = f"{type(error).__name__}: {error}"
 
@@ -219,7 +227,11 @@ def describe_step(entry: dict) -> str | None:
         if not entry.get("ok", True):
             return f"A query failed: <code>{call}</code> — {html.escape(str(entry.get('error') or ''))}"
         who = "Retrieved for the model" if entry.get("briefing") else "The model asked for"
-        return f"{who} <code>{call}</code>: {html.escape(str(entry.get('digest') or ''))}"
+        if entry.get("analysis"):
+            who = "<b>Ran an analysis</b> for the model" if not entry.get("briefing") \
+                else "<b>Ran</b> for the model"
+        took = f" ({entry['seconds']:.1f} s)" if entry.get("analysis") and entry.get("seconds") else ""
+        return f"{who} <code>{call}</code>{took}: {html.escape(str(entry.get('digest') or ''))}"
     if kind == "model":
         # A request for tools is said by the tool lines that follow; a
         # well-formed answer is shown as the answer. A failed one is quoted
@@ -318,8 +330,22 @@ def _run(worker) -> None:
 
 
 
+#: What the assistant is asked when the Report page asks for a draft. The
+#: briefing already carries the leaders, their evidence and the detectors'
+#: disagreements, so the question names the shape of the paragraph and
+#: nothing the model could not have been given.
+DRAFT_QUESTION = ("Draft the findings paragraph of this window's report in three to six "
+                  "sentences: which channels led and at what rate, whether they are tied "
+                  "with others, whether the two detectors agreed, and what limits the "
+                  "finding. State only numbers from the evidence, as measurements.")
+
+
 class AssistantPanel(QWidget):
     """Ask about this window; get an answer that cites it, or a refusal."""
+
+    #: A findings paragraph the model drafted, with who drafted it, for the
+    #: Report page to take up. Emitted only for a verified, unrefused answer.
+    drafted = Signal(str, str)
 
     #: (channel, time in archive seconds) when a citation is clicked.
     evidencePicked = Signal(str, float)
@@ -344,13 +370,32 @@ class AssistantPanel(QWidget):
         self.base_url = QLineEdit()
         self.base_url.setPlaceholderText("http://localhost:11434/v1")
         self.base_url.setMaximumWidth(210)
+        # Analyses by consent: each run costs seconds on a CPU and is announced
+        # with its cost in the lines under the question. Off until ticked.
+        self.analyses = QCheckBox("Let it run analyses on this window")
+        self.analyses.setObjectName("onset_assistant_analyses")
+        self.analyses.setToolTip(
+            "Re-run a detector at another threshold, take a contact's spectral "
+            "power, compare the detectors, time which channel leads. Each run is "
+            "announced with what it costs, works on a copy of the recording, and "
+            "changes nothing on screen.")
+        self.new_chat = QPushButton("New conversation")
+        self.new_chat.setObjectName("onset_assistant_new")
+        self.new_chat.setToolTip("Forget the questions so far. Until then, a question "
+                                 "can refer back: \u201cand the second one?\u201d")
+        self.new_chat.clicked.connect(self.new_conversation)
+        self._history: list[tuple[str, str]] = []
+        self._drafting = False
+        self._event_key: str = ""
 
         top = QHBoxLayout()
         top.addWidget(QLabel("Model"))
         top.addWidget(self.backend)
         top.addWidget(self.model)
         top.addWidget(self.base_url)
+        top.addWidget(self.analyses)
         top.addStretch(1)
+        top.addWidget(self.new_chat)
 
         self.transcript = QTextBrowser()
         self.transcript.setOpenLinks(False)
@@ -518,6 +563,24 @@ class AssistantPanel(QWidget):
         return True
 
     # -- asking ------------------------------------------------------------
+    def draft_findings(self) -> bool:
+        """Ask for the findings paragraph and hand it on as a draft.
+
+        The same loop, the same guards: a draft with a number no query
+        returned is refused like any answer, and the refusal is shown here.
+        True when a draft was produced.
+        """
+        self._drafting = True
+        try:
+            self.ask(DRAFT_QUESTION)
+        finally:
+            self._drafting = False
+        answer = getattr(self._worker, "answer", None) if self._worker is not None else None
+        if answer is None or answer.refused or not str(answer.text).strip():
+            return False
+        self.drafted.emit(str(answer.text).strip(), f"assistant ({answer.backend})")
+        return True
+
     def ask(self, question: str | None = None) -> None:
         text = (question if isinstance(question, str) and question
                 else self.question.text()).strip()
@@ -534,7 +597,10 @@ class AssistantPanel(QWidget):
         self._worker = _AskWorker(self._store, text,
                                   str(self.backend.currentData() or "scripted"),
                                   self.model.text().strip(),
-                                  self.base_url.text().strip())
+                                  self.base_url.text().strip(),
+                                  extra_tools=self.extra_tools(),
+                                  history=list(self._history),
+                                  extra_briefing=self.extra_briefing(text))
         self._worker.progress.connect(self._progress)
         self._set_busy(True)
         try:
@@ -549,6 +615,65 @@ class AssistantPanel(QWidget):
                 "<br>Switch to <i>No model</i> to use the deterministic backend.")
             return
         self._say_answer(self._worker.answer)
+        answer = self._worker.answer
+        if answer is not None and not answer.refused and answer.verified:
+            self._history.append((text, str(answer.text)))
+            self._history = self._history[-6:]
+
+    # -- what the window adds to the tool set --------------------------------
+    def extra_tools(self) -> dict:
+        from onset_review.assistant_tools import (
+            analysis_tools,
+            explain_tools,
+            sensitivity_tools,
+            window_tools,
+        )
+
+        tools = explain_tools(self._session)
+        tools.update(sensitivity_tools(self._session,
+                                       allow_run=self.analyses.isChecked()))
+        tools.update(window_tools(self._session, allow_run=self.analyses.isChecked()))
+        if self.analyses.isChecked():
+            tools.update(analysis_tools(self._session))
+        return tools
+
+    _EVENT_WORDS = ("this event", "selected event", "explain", "real", "ringing",
+                    "artifact", "artefact", "why was", "why is")
+
+    _THRESHOLD_WORDS = ("threshold", "stricter", "survive", "robust", "how sure")
+    _WINDOW_WORDS = ("other window", "windows", "minute", "earlier", "later", "between",
+                     "another", "the first", "the second", "same in", "change between")
+
+    def extra_briefing(self, question: str) -> list:
+        """What the window already knows that the question is about: the
+        selected event's reading, the threshold re-test when it has run."""
+        lowered = question.lower()
+        out: list = []
+        if (getattr(self._session, "sensitivity", None) is not None
+                and any(word in lowered for word in self._THRESHOLD_WORDS)):
+            out.append(("threshold_sensitivity", {}))
+        if any(word in lowered for word in self._WINDOW_WORDS):
+            from onset_review import windows
+
+            if windows.other_windows(self._session):
+                out.append(("other_windows", {}))
+        if self._event_key and any(word in lowered for word in self._EVENT_WORDS):
+            parts = str(self._event_key).split("|")
+            if len(parts) >= 2:
+                try:
+                    out.append(("explain_event",
+                                {"channel": parts[0], "start": float(parts[1])}))
+                except ValueError:
+                    pass
+        return out
+
+    def note_event(self, key: str) -> None:
+        """The event list's selection, so "this event" means something."""
+        self._event_key = str(key or "")
+
+    def new_conversation(self) -> None:
+        self._history = []
+        self._say_system("New conversation: earlier questions are forgotten.")
 
     def _about(self, text: str) -> bool:
         """"What can you do?" is answered here, at once, from a fixed text: it
@@ -588,7 +713,7 @@ class AssistantPanel(QWidget):
         import time
 
         for widget in (self.question, self.send, self.backend, self.model,
-                       self.base_url, self.setup):
+                       self.base_url, self.setup, self.analyses, self.new_chat):
             widget.setEnabled(not on)
         self.stop_button.setEnabled(on)
         if on:

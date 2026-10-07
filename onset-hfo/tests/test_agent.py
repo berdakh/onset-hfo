@@ -568,3 +568,81 @@ def test_the_briefed_first_call_is_small_and_cache_friendly(store):
     agent.ask("Which channels have the highest ripple rate?")
     plain = len(json.dumps(seen[0][0])) // 4
     assert plain < 1700, plain
+
+
+# -- tools the caller adds, memory, and named briefing queries ------------------
+
+
+def test_extra_tools_are_offered_at_once_for_a_question_that_needs_a_run(store):
+    """The window adds analysis tools; a question with "stricter threshold" in
+    it gets the schemas on the first call, so the model can ask for the run
+    without a round-trip; a plain question still gets none."""
+    from onset_agent.tools import Tool
+
+    calls = []
+
+    def echo(_store, threshold_sd: float = 3.0):
+        calls.append(threshold_sd)
+        return {"threshold_sd": threshold_sd, "rate_per_min": 7.0}
+
+    extra = {"rerun": Tool("rerun", "re-run the detector", {
+        "type": "object", "properties": {"threshold_sd": {"type": "number", "minimum": 1.0,
+                                                          "maximum": 12.0}},
+        "required": [], "additionalProperties": False}, echo)}
+    seen = []
+
+    class Spy(Backend):
+        name = "spy"
+
+        def chat(self, messages, tools):
+            seen.append([t["function"]["name"] for t in tools])
+            if len(seen) == 1:
+                return AssistantMessage(tool_calls=[ToolCall("rerun", {"threshold_sd": 5}, "c1")])
+            return AssistantMessage(content=json.dumps(
+                {"answer": "At 5 SD the rate is 7.0 events per minute.", "evidence_ids": []}))
+
+    agent = OnsetAgent(store, Spy(), extra_tools=extra)
+    assert "rerun" in agent.tools and "rerun" in agent._system(tools_offered=True)
+    answer = agent.ask("Does the leader survive a stricter threshold?")
+    assert not answer.refused and calls == [5.0], "the extra tool ran, with a validated number"
+    assert "rerun" in seen[0], "schemas on the first call for an analysis question"
+    ran = [e for e in answer.trace if e["type"] == "tool_call" and e["tool"] == "rerun"][0]
+    assert ran["analysis"] is True and "seconds" in ran
+    seen.clear()
+    OnsetAgent(store, Spy(), extra_tools=extra).ask("Which channels have the highest rate?")
+    assert seen[0] == [], "a plain question still reads the briefing first"
+
+
+def test_the_conversation_sits_between_the_briefing_and_the_question(store):
+    seen = []
+
+    class Spy(Backend):
+        name = "spy"
+
+        def chat(self, messages, tools):
+            seen.append(list(messages))
+            return AssistantMessage(content=json.dumps({"answer": "ok", "evidence_ids": []}))
+
+    OnsetAgent(store, Spy()).ask("And the second one?",
+                                 history=[("Which channel leads?", "AR1-AR2 leads.")])
+    roles = [m["role"] for m in seen[0]]
+    first_user = roles.index("user")
+    assert roles[first_user:first_user + 3] == ["user", "assistant", "user"]
+    assert seen[0][first_user]["content"] == "Which channel leads?"
+    assert seen[0][first_user + 1]["content"] == "AR1-AR2 leads."
+    assert seen[0][first_user + 2]["content"] == "And the second one?"
+    assert all(r in ("assistant", "tool") for r in roles[1:first_user]), "briefing before it"
+
+
+def test_the_scripted_policy_answers_the_latest_question_not_the_first(store):
+    answer = OnsetAgent(store, ScriptedBackend()).ask(
+        "What are the limitations?",
+        history=[("Which channels have the highest ripple rate?", "AR1-AR2.")])
+    assert answer.tools_called == ["report_section"]
+
+
+def test_a_named_briefing_query_runs_whatever_the_backend(store):
+    answer = OnsetAgent(store, ScriptedBackend()).ask(
+        "Tell me about it", extra_briefing=[("get_recording_metadata", {})])
+    briefed = [e for e in answer.trace if e.get("briefing")]
+    assert [e["tool"] for e in briefed] == ["get_recording_metadata"]

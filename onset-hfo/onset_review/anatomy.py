@@ -41,6 +41,7 @@ forgotten, and a column cannot.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -475,3 +476,157 @@ def brain_surface(n_theta: int = 48, n_phi: int = 32):
             faces.append([a, b, d])
             faces.append([a, d, c])
     return vertices, np.asarray(faces, dtype=int)
+
+
+
+# --------------------------------------------------------------------------
+# A real surface, when the contacts have real coordinates to sit on
+# --------------------------------------------------------------------------
+
+#: The FreeSurfer template MNE ships, and the surface of it drawn under
+#: contacts. Pial rather than inflated: a contact's position means something
+#: against the folded cortex and nothing against an inflated one.
+TEMPLATE_SUBJECT = "fsaverage"
+TEMPLATE_SURFACE = "pial"
+#: Vertex-clustering cell for the decimation, in millimetres. The template
+#: pial surface has 160,000 vertices a hemisphere; a 4 mm grid leaves a few
+#: thousand, which Matplotlib draws in a moment and which is all the
+#: resolution a contact map needs.
+TEMPLATE_CELL_MM = 4.0
+
+
+def template_dir(subjects_dir=None) -> Path | None:
+    """Where the template lives, if it has been fetched: the directory given,
+    MNE's configured subjects directory, or MNE's own data folder."""
+    import os
+
+    candidates = []
+    if subjects_dir:
+        candidates.append(Path(subjects_dir))
+    try:
+        import mne
+
+        configured = mne.get_config("SUBJECTS_DIR")
+        if configured:
+            candidates.append(Path(configured))
+    except Exception:       # noqa: BLE001
+        pass
+    candidates.append(Path(os.path.expanduser("~")) / "mne_data" / "MNE-fsaverage-data")
+    for root in candidates:
+        if (root / TEMPLATE_SUBJECT / "surf" / f"lh.{TEMPLATE_SURFACE}").exists():
+            return root
+    return None
+
+
+def fetch_template(verbose: bool = False) -> Path:
+    """Download MNE's fsaverage bundle (a few hundred megabytes, once) and
+    return its subjects directory. A network call; the window runs it on a
+    worker and says so."""
+    import mne
+
+    path = mne.datasets.fetch_fsaverage(verbose=verbose)
+    return Path(path).parent
+
+
+#: The three bytes that open a FreeSurfer triangle-format surface file.
+_TRIANGLE_MAGIC = b"\xff\xff\xfe"
+
+
+def read_surface(path) -> tuple[np.ndarray, np.ndarray]:
+    """Vertices (mm) and faces of a FreeSurfer surface file.
+
+    MNE's own reader when its optional ``nibabel`` is installed; otherwise
+    the file is read here, because the triangle format is three magic
+    bytes, two comment lines, two counts and two arrays, and a reviewer
+    whose installation lacks one optional package should still see the
+    template rather than an import error.
+    """
+    path = Path(path)
+    try:
+        import mne
+
+        vertices, faces = mne.read_surface(path, verbose="ERROR")
+        return np.asarray(vertices, dtype=float), np.asarray(faces, dtype=int)
+    except ImportError:
+        pass
+    with open(path, "rb") as handle:
+        if handle.read(3) != _TRIANGLE_MAGIC:
+            raise ValueError(f"{path} is not a FreeSurfer triangle surface")
+        handle.readline()                     # the creation stamp
+        handle.readline()                     # and the blank line after it
+        n_vertices, n_faces = (int(n) for n in np.fromfile(handle, ">i4", 2))
+        vertices = np.fromfile(handle, ">f4", n_vertices * 3).reshape(n_vertices, 3)
+        faces = np.fromfile(handle, ">i4", n_faces * 3).reshape(n_faces, 3)
+    return vertices.astype(float), faces.astype(int)
+
+
+def cluster_decimate(vertices: np.ndarray, faces: np.ndarray,
+                     cell: float) -> tuple[np.ndarray, np.ndarray]:
+    """Vertex clustering on a grid of `cell`: every vertex in a cell becomes
+    one at the cell's mean, faces are re-indexed, and faces that collapsed
+    are dropped. No dependency, keeps the surface closed enough to draw, and
+    takes a fraction of a second on a full hemisphere."""
+    vertices = np.asarray(vertices, dtype=float)
+    faces = np.asarray(faces, dtype=int)
+    if vertices.size == 0 or cell <= 0:
+        return vertices, faces
+    keys = np.floor(vertices / float(cell)).astype(np.int64)
+    _unique, index, inverse = np.unique(keys, axis=0, return_index=True, return_inverse=True)
+    inverse = np.asarray(inverse).reshape(-1)
+    merged = np.zeros((index.size, 3), dtype=float)
+    counts = np.zeros(index.size, dtype=float)
+    np.add.at(merged, inverse, vertices)
+    np.add.at(counts, inverse, 1.0)
+    merged /= np.maximum(counts, 1.0)[:, None]
+    new_faces = inverse[faces]
+    keep = ((new_faces[:, 0] != new_faces[:, 1]) & (new_faces[:, 1] != new_faces[:, 2])
+            & (new_faces[:, 0] != new_faces[:, 2]))
+    new_faces = np.unique(np.sort(new_faces[keep], axis=1), axis=0)
+    return merged, new_faces
+
+
+def template_surface(subjects_dir=None, cell_mm: float = TEMPLATE_CELL_MM,
+                     cache_dir=None) -> tuple[np.ndarray, np.ndarray]:
+    """Both hemispheres of the template's pial surface, decimated, in metres.
+
+    Read with ``mne.read_surface`` from the fetched template, decimated by
+    vertex clustering, and cached as one file next to the window's settings
+    so the next launch reads a few hundred kilobytes rather than the
+    surfaces. Raises ``FileNotFoundError`` with the way to fetch when the
+    template is not on this machine.
+    """
+    cache = None
+    if cache_dir is not None:
+        cache = Path(cache_dir) / f"template-{TEMPLATE_SUBJECT}-{TEMPLATE_SURFACE}-{cell_mm:g}mm.npz"
+        if cache.exists():
+            loaded = np.load(cache)
+            return loaded["vertices"], loaded["faces"]
+    root = template_dir(subjects_dir)
+    if root is None:
+        raise FileNotFoundError(
+            "The fsaverage template is not on this machine. Fetch it once with "
+            "mne.datasets.fetch_fsaverage() (a few hundred megabytes), or the button "
+            "on the Contacts page.")
+    offset = 0
+    all_vertices, all_faces = [], []
+    for hemi in ("lh", "rh"):
+        vertices, faces = read_surface(root / TEMPLATE_SUBJECT / "surf" / f"{hemi}.{TEMPLATE_SURFACE}")
+        vertices, faces = cluster_decimate(np.asarray(vertices, dtype=float), faces, cell_mm)
+        all_vertices.append(vertices)
+        all_faces.append(np.asarray(faces, dtype=int) + offset)
+        offset += vertices.shape[0]
+    vertices = np.vstack(all_vertices) / 1000.0          # millimetres -> metres
+    faces = np.vstack(all_faces)
+    if cache is not None:
+        try:
+            cache.parent.mkdir(parents=True, exist_ok=True)
+            np.savez_compressed(cache, vertices=vertices, faces=faces)
+        except OSError:
+            pass
+    return vertices, faces
+
+
+#: What sits under the template surface, every time it is drawn.
+TEMPLATE_CAPTION = (f"Drawn on the {TEMPLATE_SUBJECT} template cortex, not this patient's "
+                    "brain: the positions are the file's, the surface is an average. "
+                    "Only meaningful when the coordinates are in MNI or fsaverage space.")

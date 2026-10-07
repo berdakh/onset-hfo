@@ -109,13 +109,14 @@ def project(frame: pd.DataFrame, view: str = "Top") -> tuple[np.ndarray, np.ndar
     return xyz[:, h_axis] * h_sign, xyz[:, v_axis] * v_sign
 
 
-def head_outline(view: str = "Top") -> tuple[np.ndarray, np.ndarray]:
+def head_outline(view: str = "Top", surface=None) -> tuple[np.ndarray, np.ndarray]:
     """The reference head the 3D view draws, flattened to this view's plane:
     the convex outline of its hull, as a closed curve. A cartoon on purpose,
-    like the surface it comes from."""
+    like the surface it comes from -- or, given `surface` as (vertices,
+    faces), the outline of that surface instead."""
     from scipy.spatial import ConvexHull
 
-    vertices, _faces = anatomy.brain_surface()
+    vertices = surface[0] if surface is not None else anatomy.brain_surface()[0]
     points = np.asarray(vertices, dtype=float).reshape(-1, 3)
     (h_axis, h_sign), (v_axis, v_sign) = VIEWS[view]
     flat = np.column_stack([points[:, h_axis] * h_sign, points[:, v_axis] * v_sign])

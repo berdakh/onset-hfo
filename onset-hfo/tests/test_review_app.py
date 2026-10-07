@@ -69,8 +69,9 @@ def test_mne_figure_can_still_host_our_docks(built):
 
 def test_every_panel_is_docked(built):
     assert set(built.docks) == {"trends", "controls", "findings", "events",
-                                "detail", "brain", "map", "agreement", "provenance",
-                                "assistant", "preprocess", "patient", "quality"}
+                                "detail", "spectrum", "average", "sensitivity", "brain", "map",
+                                "agreement", "provenance", "assistant", "preprocess", "patient",
+                                "quality"}
     assert all(dock.widget() is not None for dock in built.docks.values())
 
 
@@ -2558,8 +2559,11 @@ def test_the_map_page_is_in_the_sidebar_and_its_button_asks_the_assistant(paged,
     host.show_page("map")
     asked = []
     paged.panels["assistant"].ask = lambda q: asked.append(q)
-    paged.panels["map"].ask.click()
-    qapp.processEvents()
+    try:
+        paged.panels["map"].ask.click()
+        qapp.processEvents()
+    finally:
+        del paged.panels["assistant"].ask        # the stub must not outlive this test
     assert asked == [WHERE_QUESTION]
     assert host.stack.currentWidget().objectName() == "page_assistant"
 
@@ -2687,3 +2691,374 @@ def test_the_report_preview_is_short_and_the_export_is_complete(paged, tmp_path,
     assert "## Appendix — every measurement" in text
     assert "| rank | channel | n events | rate | annotators |" in text
     assert "mean prominence db" in text, "every measurement is in the appendix"
+
+
+
+def test_the_preprocessing_panel_carries_the_design_the_reference_and_the_annotators(built):
+    from onset_hfo.preprocess import effective_reference
+
+    panel = built.panels["preprocess"]
+    assert panel.design.text().startswith("MNE builds: windowed FIR")
+    assert not panel.iir_order.isEnabled() and panel.phase.isEnabled()
+    panel.method.setCurrentIndex(panel.method.findData("iir"))
+    panel.iir_order.setValue(6)
+    assert panel.iir_order.isEnabled() and "Butterworth" in panel.design.text()
+    panel.shaft.setChecked(True)
+    panel.muscle.setChecked(True)
+    panel.amplitude.setChecked(True)
+    cfg = panel.config()
+    assert cfg.filter_method == "iir" and cfg.iir_order == 6
+    assert effective_reference(cfg) == "shaft" and not cfg.bipolar
+    assert cfg.annotate_muscle and cfg.annotate_amplitude and cfg.amplitude_ptp_uv is None
+    assert panel.ptp.isEnabled() and panel.muscle_z.isEnabled()
+    assert "muscle" in panel.summary.text() and "own shaft" in panel.summary.text()
+    assert panel.apply.isEnabled()
+    panel.reset_to_defaults()
+    cfg = panel.config()
+    assert cfg.filter_method == "fir" and effective_reference(cfg) == "bipolar"
+    assert not cfg.annotate_muscle and not panel.apply.isEnabled()
+
+
+
+def test_the_spectrum_panel_follows_the_chosen_channel_and_picks_back(built, review):
+    from onset_review import spectrum
+
+    panel = built.panels["spectrum"]
+    spec = panel.spectrum()
+    assert spec.available and spec.channels == list(review.raw.ch_names)
+    first = str(review.findings.iloc[0]["channel"])
+    second = str(review.findings.iloc[1]["channel"])
+    built.panels["findings"].channelPicked.emit(second)
+    assert panel._highlighted == second and second in panel.headline.text()
+    assert "slope" in panel.headline.text() and "% of its power" in panel.headline.text()
+    assert len(panel._lines) == len(spec.channels)
+    panel.show_mode.setCurrentIndex(panel.show_mode.findData("one"))
+    assert list(panel._lines) == [second]
+    panel.show_mode.setCurrentIndex(panel.show_mode.findData("leading"))
+    assert first in panel._lines and len(panel._lines) <= 6
+    picked = []
+    panel.channelPicked.connect(picked.append)
+
+    class Pick:
+        artist = panel._lines[first]
+
+    panel._picked(Pick())
+    assert picked == [first] and panel._highlighted == first
+    assert spectrum.summarise(spec).shape[0] == len(spec.channels)
+
+
+# -- the assistant's window-bound tools -----------------------------------------
+
+
+def test_explain_event_reads_the_selected_events_own_picture(review):
+    from onset_review import detail
+    from onset_review.assistant_tools import explain_tools, nearest_event
+
+    event = next(e for e in review.events if e.accepted and e.detector != "spike")
+    tool = explain_tools(review)["explain_event"]
+    out = tool.handler(None, channel=event.channel, start=float(event.start))
+    assert out["channel"] == event.channel and out["reading"] in ("island", "column", "unclear")
+    assert out["why"] and out["cycles"] is not None and "band_contrast_db" in out
+    assert out == detail.read_event(detail.snapshot(review, event))
+    assert nearest_event(review, event.channel, float(event.start) + 10.0) is None
+    from onset_agent.tools import ToolError
+
+    with pytest.raises(ToolError):
+        tool.handler(None, channel="ZZ9-ZZ10", start=0.0)
+
+
+def test_analyses_run_only_when_the_reviewer_ticks_the_box(qapp, review):
+    from onset_review.assistant import AssistantPanel
+
+    panel = AssistantPanel(review)
+    try:
+        # `other_windows` may be there too: it depends on what this machine has cached.
+        assert "explain_event" in panel.extra_tools()
+        assert not {"detect_hfo", "compare_window"} & set(panel.extra_tools())
+        panel.analyses.setChecked(True)
+        tools = panel.extra_tools()
+        assert "detect_hfo" in tools and "estimate_soz_probability" not in tools
+        assert "Runs on a copy" in tools["detect_hfo"].description
+        out = tools["detect_hfo"].handler(None, threshold_sd=4.0, k=3)
+        assert out["threshold_sd"] == 4.0 and out["run_id"].startswith("hfo")
+        assert "runtime_s" in out and len(out["channels"]) <= 3
+    finally:
+        panel.deleteLater()
+
+
+def test_the_assistant_explains_the_event_the_list_selected(qapp, review):
+    from onset_review.adjudication import event_key
+    from onset_review.assistant import AssistantPanel
+
+    panel = AssistantPanel(review)
+    try:
+        event = next(e for e in review.events if e.accepted and e.detector != "spike")
+        panel.note_event(event_key(event.channel, event.start, event.detector))
+        assert panel.extra_briefing("Why does the selected event read as real, or not?") == [
+            ("explain_event", {"channel": event.channel, "start": float(round(event.start, 3))})]
+        assert panel.extra_briefing("Which channels have the highest rate?") == []
+        panel.ask("Why does the selected event read as real, or not?")
+        text = panel.transcript.toPlainText()
+        assert "explain_event" in text and "reads as" in text
+        assert len(panel._history) == 1, "a verified answer is remembered"
+        panel.new_conversation()
+        assert panel._history == [] and "forgotten" in panel.transcript.toPlainText()
+    finally:
+        panel.deleteLater()
+
+
+# --------------------------------------------------------------------------
+# The template brain: offered only under measured contacts, and says what it is
+# --------------------------------------------------------------------------
+
+def _measured(review, tmp_path):
+    from onset_review import coordinates
+
+    names = coordinates.contacts_of(review)
+    path = tmp_path / "electrodes.tsv"
+    path.write_text("name\tx\ty\tz\n" + "".join(
+        f"{name}\t{-30 if index % 2 else 30}\t{-20 + index * 3}\t-15\n"
+        for index, name in enumerate(names)), encoding="utf-8")
+    return coordinates.read_coordinates(path, review)
+
+
+def test_the_template_brain_is_gated_on_measured_coordinates(built, review, tmp_path):
+    """Schematic contacts never get a rendered cortex under them, and a
+    sidecar that names the patient's own space keeps the template off too."""
+    brain = built.panels["brain"]
+    assert not brain.measured
+    assert not brain.template.isEnabled()
+    assert "measured coordinates" in brain.template.toolTip()
+    read = _measured(review, tmp_path)
+    assert read.usable
+    try:
+        brain.set_electrodes(read.frame, origin="the file you supplied", space="template")
+        assert brain.measured and brain.template.isEnabled()
+        brain.template.setChecked(True)
+        brain.set_space("patient")
+        assert not brain.template.isEnabled()
+        assert not brain.template.isChecked()
+        assert "patient space" in brain.template.toolTip()
+        brain.set_space("unknown")
+        assert brain.template.isEnabled()
+    finally:
+        brain.template.setChecked(False)
+        brain.set_space("unknown")
+        brain.set_electrodes(review.electrodes)
+    assert not brain.template.isEnabled()
+
+
+def test_the_template_brain_is_drawn_with_its_caption_or_says_why_not(
+        built, review, tmp_path, monkeypatch):
+    from onset_review import anatomy
+    from onset_review.anatomy import TEMPLATE_CAPTION
+
+    brain = built.panels["brain"]
+    read = _measured(review, tmp_path)
+    try:
+        brain.set_electrodes(read.frame, origin="the file you supplied", space="template")
+        # Not on this machine: the cartoon is drawn and the caption says why.
+        brain._surface, brain._surface_error = None, ""
+        monkeypatch.setattr(anatomy, "template_surface",
+                            lambda **_kw: (_ for _ in ()).throw(
+                                FileNotFoundError("not fetched")))
+        brain.template.setChecked(True)
+        brain.redraw()
+        assert not brain._template_drawn
+        assert "Template not drawn: not fetched" in brain.caption.text()
+        # Fetched: the surface is drawn and the caption carries the template's sentence.
+        brain._surface, brain._surface_error = None, ""
+        vertices = np.array([[0.05, 0, 0], [-0.05, 0, 0], [0, 0.05, 0], [0, -0.05, 0],
+                             [0, 0, 0.05], [0, 0, -0.05]])
+        faces = np.array([[0, 2, 4], [2, 1, 4], [1, 3, 4], [3, 0, 4],
+                          [2, 0, 5], [1, 2, 5], [3, 1, 5], [0, 3, 5]])
+        monkeypatch.setattr(anatomy, "template_surface", lambda **_kw: (vertices, faces))
+        brain.redraw()
+        assert brain._template_drawn
+        assert brain.caption.text().startswith(TEMPLATE_CAPTION)
+        assert "the file you supplied" in brain.caption.text()
+        # Unticked: cartoon again, no template sentence.
+        brain.template.setChecked(False)
+        brain.redraw()
+        assert not brain._template_drawn
+        assert TEMPLATE_CAPTION not in brain.caption.text()
+    finally:
+        brain.template.setChecked(False)
+        brain._surface, brain._surface_error = None, ""
+        brain.set_space("unknown")
+        brain.set_electrodes(review.electrodes)
+
+
+def test_the_contacts_page_fetches_the_template_on_a_worker(paged, tmp_path):
+    from qtpy.QtTest import QTest
+
+    page = paged.pages
+    assert page.fetch_button.objectName() == "onset_fetch_template"
+    was_text, was_enabled = page.fetch_button.text(), page.fetch_button.isEnabled()
+    calls = []
+
+    def fake():
+        calls.append(1)
+        return tmp_path
+
+    try:
+        page.fetch_template(fetch=fake)
+        for _ in range(300):
+            QTest.qWait(10)
+            if "Fetching" not in page.fetch_status.text():
+                break
+        assert calls == [1]
+        assert "Fetching" not in page.fetch_status.text()
+
+        def failing():
+            raise OSError("no network")
+
+        page.fetch_button.setEnabled(True)
+        page.fetch_template(fetch=failing)
+        for _ in range(300):
+            QTest.qWait(10)
+            if "failed" in page.fetch_status.text():
+                break
+        assert "The fetch failed: no network" in page.fetch_status.text()
+        assert page.fetch_button.isEnabled()
+    finally:
+        page.fetch_button.setText(was_text)
+        page.fetch_button.setEnabled(was_enabled)
+
+
+# --------------------------------------------------------------------------
+# The Average and Threshold panels
+# --------------------------------------------------------------------------
+
+def test_the_average_panel_follows_the_chosen_channel(built, review):
+    from onset_review import average
+
+    panel = built.panels["average"]
+    channels = [name for name, _n in average.channels_with_events(review)]
+    assert panel.channel.count() == len(channels)
+    assert not panel.canvas.isHidden() or panel.channel.count() == 0
+    chosen = channels[-1]
+    picked = []
+    panel.channelPicked.connect(picked.append)
+    built.panels["findings"].channelPicked.emit(chosen)
+    assert panel.channel.currentData() == chosen
+    assert chosen in panel.headline.text() and "averaged" in panel.headline.text()
+    assert picked == [chosen]
+    # The same channel again is a no-op, which is what ends the round trip.
+    built.panels["findings"].channelPicked.emit(chosen)
+    assert picked == [chosen]
+    # A channel with nothing to average is not followed.
+    panel.highlight("NOT-A-CHANNEL")
+    assert panel.channel.currentData() == chosen
+    assert panel.average() is panel.average(chosen)
+
+
+def test_the_threshold_panel_runs_on_request_and_tells_the_assistant(built, review):
+    from onset_review import sensitivity
+
+    panel = built.panels["sensitivity"]
+    assert panel.canvas.isHidden() and "Not run yet" in panel.status.text()
+    assistant = built.panels["assistant"]
+    assert "threshold_sensitivity" not in assistant.extra_tools()
+    assert assistant.extra_briefing("Does AR1-AR2 survive a stricter threshold?") == []
+    got = []
+    panel.computed.connect(got.append)
+    try:
+        panel.run(background=False)
+        assert len(got) == 1 and got[0].available
+        assert not panel.canvas.isHidden() and "Re-run in" in panel.status.text()
+        assert "the window's own" in panel.headline.text()
+        assert review.sensitivity is got[0]
+        # Computed once, the assistant gets it for free and is briefed with it.
+        tools = assistant.extra_tools()
+        assert "threshold_sensitivity" in tools and "free" in tools["threshold_sensitivity"].description
+        assert tools["threshold_sensitivity"].handler(None) == sensitivity.as_dict(got[0])
+        assert assistant.extra_briefing("Does AR1-AR2 survive a stricter threshold?") == [
+            ("threshold_sensitivity", {})]
+        assert assistant.extra_briefing("Which channel is busiest?") == []
+    finally:
+        review.sensitivity = None
+        panel.result = None
+
+
+def test_the_threshold_tool_is_offered_only_with_consent_until_it_has_run(review):
+    from onset_review.assistant_tools import sensitivity_tools
+
+    review.sensitivity = None
+    assert sensitivity_tools(review, allow_run=False) == {}
+    tools = sensitivity_tools(review, allow_run=True)
+    assert "a few seconds" in tools["threshold_sensitivity"].description
+    try:
+        out = tools["threshold_sensitivity"].handler(None)
+        assert out["available"] and review.sensitivity is not None
+    finally:
+        review.sensitivity = None
+
+
+# --------------------------------------------------------------------------
+# The findings draft on the Report page, and questions across windows
+# --------------------------------------------------------------------------
+
+def test_the_assistant_drafts_the_findings_and_the_report_page_takes_it_up(paged, review):
+    from onset_review.assistant import DRAFT_QUESTION
+
+    page = paged.pages
+    assistant = paged.panels["assistant"]
+    read = review.read
+    before = (read.draft, read.draft_by, read.draft_at)
+    taken = []
+    assistant.drafted.connect(lambda text, by: taken.append((text, by)))
+    try:
+        read.set_draft("", "")
+        page.findings_edit.blockSignals(True)
+        page.findings_edit.setPlainText("")
+        page.findings_edit.blockSignals(False)
+        assert page.draft_findings(), assistant.transcript.toPlainText()[-600:]
+        assert len(taken) == 1 and taken[0][1].startswith("assistant (")
+        assert read.draft == taken[0][0] and read.draft_is_assistants
+        assert page.findings_edit.toPlainText() == read.draft
+        assert "Drafted by the assistant" in page.findings_status.text()
+        assert DRAFT_QUESTION[:30] in assistant.transcript.toPlainText()
+        assert "Drafted by the assistant" in page.report_view.toPlainText()
+        # The reader edits: it is theirs now, in the box, the read and the report.
+        page.findings_edit.setPlainText(read.draft + " I confirmed this on the trace.")
+        assert not read.draft_is_assistants and read.draft.endswith("on the trace.")
+        assert "Written by" in page.findings_status.text()
+        assert "Drafted by" not in page.report_view.toPlainText()
+    finally:
+        read.draft, read.draft_by, read.draft_at = before
+
+
+def test_the_assistant_is_offered_the_other_windows_only_when_there_are_some(
+        qapp, review, recording, monkeypatch):
+    from onset_review import windows
+    from onset_review.assistant import AssistantPanel
+    from onset_review.assistant_tools import window_tools
+    from tests.test_review_core import _other_window_fixture
+
+    windows._CACHE.clear()
+    monkeypatch.setattr(windows, "_cache_dir", lambda: None)
+    lister, loader, loads = _other_window_fixture(review, recording)
+    assert window_tools(review, lister=lambda _c=None: None) == {}
+    tools = window_tools(review, allow_run=False, lister=lister)
+    assert list(tools) == ["other_windows"]
+    listed = tools["other_windows"].handler(None)
+    assert len(listed["other_windows"]) == 1 and "allows analyses" in listed["note"]
+    tools = window_tools(review, allow_run=True, lister=lister, loader=loader)
+    assert "compare_window" in tools
+    other = listed["other_windows"][0]
+    out = tools["compare_window"].handler(None, t_start=other["t_start"], t_stop=other["t_stop"])
+    assert out["leader_this_window"] == review.leader.get("leader") and loads
+    assert "leading_channels" in out and out["cached"] is False
+    with pytest.raises(Exception, match="no cached window"):
+        tools["compare_window"].handler(None, t_start=1.0, t_stop=2.0)
+    # The panel briefs the model with the listing for a question across windows.
+    panel = AssistantPanel(review)
+    try:
+        monkeypatch.setattr(windows, "other_windows",
+                            lambda session, cache_dir=None, lister=None: [other])
+        assert panel.extra_briefing("Did the leader change between the two minutes?") == [
+            ("other_windows", {})]
+        assert panel.extra_briefing("Which channel is busiest?") == []
+    finally:
+        panel.deleteLater()

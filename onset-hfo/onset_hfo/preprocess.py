@@ -31,7 +31,19 @@ import numpy as np
 from onset_hfo.config import BANDS, PreprocessConfig
 from onset_hfo.datasets import Recording
 
-__all__ = ["Prepared", "prepare", "bipolar_pairs", "describe"]
+__all__ = ["Prepared", "prepare", "bipolar_pairs", "describe", "effective_reference",
+           "filter_description", "learn_ptp_threshold", "REFERENCES"]
+
+#: The reference schemes by name, with the sentence each gets in the steps.
+REFERENCES = {
+    "bipolar": "re-reference to neighbouring contacts (bipolar)",
+    "average": "re-reference to the common average",
+    "median": "re-reference to the common median",
+    "shaft": "re-reference each contact to the mean of its own shaft",
+    "none": "leave the recording's own reference",
+}
+FILTER_METHODS = ("fir", "iir")
+FILTER_PHASES = ("zero", "minimum")
 
 _CONTACT_RE = re.compile(r"^([A-Za-z]+[A-Za-z']*?)(\d{1,3})$")
 #: Channel name prefixes that are never intracranial recordings in this dataset.
@@ -53,6 +65,10 @@ class Prepared:
     pairs: list[tuple[str, str]] = field(default_factory=list)
     steps: list[str] = field(default_factory=list)
     recording: Recording | None = None
+    #: Seconds marked by the artifact annotators, each ``{"channel": name or
+    #: None (every channel), "t_start", "t_stop" (file seconds), "reason"}``.
+    #: The data-quality stage sets them aside; nothing here deletes them.
+    annotations: list[dict] = field(default_factory=list)
 
     @property
     def duration(self) -> float:
@@ -113,6 +129,163 @@ def bipolar_pairs(ch_names: list[str], exclude: set[str] | None = None) -> list[
     return pairs
 
 
+def effective_reference(cfg: PreprocessConfig) -> str:
+    """The scheme in force: the named one, or what the two older flags say."""
+    if cfg.reference:
+        name = str(cfg.reference).lower()
+        if name not in REFERENCES:
+            raise ValueError(f"reference must be one of {', '.join(REFERENCES)}, "
+                             f"not {cfg.reference!r}")
+        return name
+    return "bipolar" if cfg.bipolar else "average" if cfg.average_reference else "none"
+
+
+def _shaft_of(name: str) -> str:
+    m = _CONTACT_RE.match(name)
+    return m.group(1).upper() if m else name.upper()
+
+
+def _iir_params(cfg: PreprocessConfig) -> dict:
+    return {"order": int(cfg.iir_order), "ftype": "butter", "output": "sos"}
+
+
+def filter_description(cfg: PreprocessConfig, sfreq: float) -> str:
+    """What the chosen design is, in MNE's own terms: the length of the FIR
+    in samples and seconds, or the order of the Butterworth, with the
+    transition band. Read off ``mne.filter.create_filter`` rather than
+    restated, so the sentence cannot drift from the filter."""
+    from mne.filter import create_filter
+
+    if not (cfg.highpass or cfg.lowpass):
+        return "no high- or low-pass"
+    rate = float(cfg.resample) if cfg.resample else float(sfreq)
+    kwargs = {}
+    if cfg.transition_bandwidth:
+        kwargs["l_trans_bandwidth"] = float(cfg.transition_bandwidth)
+        kwargs["h_trans_bandwidth"] = float(cfg.transition_bandwidth)
+    try:
+        if cfg.filter_method == "iir":
+            design = create_filter(None, rate, cfg.highpass or None, cfg.lowpass,
+                                   method="iir", iir_params=_iir_params(cfg),
+                                   phase="zero", verbose="ERROR")
+            order = int(design.get("order", cfg.iir_order))
+            return (f"Butterworth IIR of order {order}, applied forwards and backwards "
+                    f"(zero phase, effective order {2 * order})")
+        taps = create_filter(None, rate, cfg.highpass or None, cfg.lowpass, method="fir",
+                             phase=cfg.filter_phase, fir_design="firwin", verbose="ERROR",
+                             **kwargs)
+        n = int(np.asarray(taps).shape[0])
+        trans = (f"{float(cfg.transition_bandwidth):g} Hz" if cfg.transition_bandwidth
+                 else "MNE's automatic")
+        return (f"windowed FIR of {n} taps ({n / rate:.2f} s), "
+                f"{'zero' if cfg.filter_phase == 'zero' else 'minimum'} phase, "
+                f"{trans} transition band")
+    except Exception as error:      # noqa: BLE001 - a description must not refuse
+        return f"{cfg.filter_method} filter (could not be characterised: {error})"
+
+
+def learn_ptp_threshold(epochs: np.ndarray, n_folds: int = 5,
+                        n_candidates: int = 25) -> float:
+    """A peak-to-peak ceiling for one channel, learned from its own epochs by
+    cross-validation, the way ``autoreject`` learns its global threshold.
+
+    For each candidate ceiling, the epochs under it in the training folds
+    are averaged and compared with the median of the held-out fold; the
+    ceiling with the smallest error wins. Said plainly: it keeps the epochs
+    that look like the typical epoch, and a discharge does not. That is the
+    hazard :class:`onset_hfo.config.QualityConfig` documents, and why this is
+    an option rather than a default.
+    """
+    epochs = np.asarray(epochs, dtype=float)
+    if epochs.ndim != 2 or epochs.shape[0] < 2 * n_folds:
+        return float("inf")
+    ptp = epochs.max(axis=1) - epochs.min(axis=1)
+    candidates = np.unique(np.quantile(ptp, np.linspace(0.3, 1.0, n_candidates)))
+    n = epochs.shape[0]
+    folds = np.array_split(np.arange(n), n_folds)
+    best, best_error = float(candidates[-1]), float("inf")
+    for ceiling in candidates:
+        errors = []
+        for held in folds:
+            train = np.setdiff1d(np.arange(n), held)
+            kept = train[ptp[train] <= ceiling]
+            if kept.size == 0:
+                errors.append(float("inf"))
+                continue
+            mean = epochs[kept].mean(axis=0)
+            target = np.median(epochs[held], axis=0)
+            errors.append(float(np.sqrt(np.mean((mean - target) ** 2))))
+        error = float(np.mean(errors))
+        if error < best_error:
+            best, best_error = float(ceiling), error
+    return best
+
+
+def _annotate(raw, cfg: PreprocessConfig, t_offset: float, steps: list[str]) -> list[dict]:
+    """Run the artifact annotators MNE offers on the filtered, monopolar
+    signal, and return the seconds they marked in file time."""
+
+    found: list[dict] = []
+    if cfg.annotate_muscle:
+        from mne.preprocessing import annotate_muscle_zscore
+
+        # MNE's muscle detector knows scalp types; an intracranial contact is
+        # the same arithmetic. Done on a copy so the recording keeps its types.
+        probe = raw.copy()
+        probe.set_channel_types({name: "eeg" for name in probe.ch_names}, verbose="ERROR")
+        nyquist = float(probe.info["sfreq"]) / 2.0
+        band = (110.0, min(140.0, 0.9 * nyquist))
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            notes, _scores = annotate_muscle_zscore(
+                probe, ch_type="eeg", threshold=float(cfg.muscle_z),
+                min_length_good=0.1, filter_freq=band, verbose="ERROR")
+        for onset, duration in zip(notes.onset, notes.duration, strict=True):
+            found.append({"channel": None, "t_start": float(onset) + t_offset,
+                          "t_stop": float(onset + duration) + t_offset,
+                          "reason": "annotated_muscle"})
+        seconds = float(sum(notes.duration))
+        steps.append(f"marked {seconds:.1f} s of broadband high-frequency bursts across "
+                     f"the montage as muscle or movement (z > {cfg.muscle_z:g} in "
+                     f"{band[0]:.0f}–{band[1]:.0f} Hz); set aside by the quality stage")
+    if cfg.annotate_amplitude:
+        from mne.preprocessing import annotate_amplitude
+
+        data = raw.get_data() * 1e6
+        sfreq = float(raw.info["sfreq"])
+        width = max(1, int(round(sfreq)))
+        if cfg.amplitude_ptp_uv is not None:
+            ceilings = {name: float(cfg.amplitude_ptp_uv) for name in raw.ch_names}
+            how = f"a {float(cfg.amplitude_ptp_uv):g} µV peak-to-peak ceiling"
+        else:
+            ceilings = {}
+            for i, name in enumerate(raw.ch_names):
+                n = data.shape[1] // width
+                epochs = data[i, :n * width].reshape(n, width) if n else data[i:i + 1]
+                ceilings[name] = learn_ptp_threshold(epochs)
+            finite = [c for c in ceilings.values() if np.isfinite(c)]
+            how = (f"a peak-to-peak ceiling learned per contact by cross-validation "
+                   f"(median {np.median(finite):.0f} µV)" if finite else
+                   "a learned ceiling (too little signal to learn one)")
+        marked = 0.0
+        for name, ceiling in ceilings.items():
+            if not np.isfinite(ceiling):
+                continue
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                notes, _bads = annotate_amplitude(
+                    raw, peak=float(ceiling) * 1e-6, flat=None, bad_percent=100,
+                    min_duration=0.005, picks=[name], verbose="ERROR")
+            for onset, duration in zip(notes.onset, notes.duration, strict=True):
+                found.append({"channel": name, "t_start": float(onset) + t_offset,
+                              "t_stop": float(onset + duration) + t_offset,
+                              "reason": "annotated_amplitude"})
+                marked += float(duration)
+        steps.append(f"marked {marked:.1f} contact-seconds above {how}; set aside by "
+                     f"the quality stage, never interpolated")
+    return found
+
+
 def _check(cfg: PreprocessConfig, sfreq: float) -> None:
     """Refuse settings that would produce numbers rather than a measurement.
 
@@ -140,6 +313,28 @@ def _check(cfg: PreprocessConfig, sfreq: float) -> None:
                else ""))
     if cfg.notch_width <= 0:
         raise ValueError(f"notch width must be positive, not {cfg.notch_width:g} Hz")
+    if cfg.filter_method not in FILTER_METHODS:
+        raise ValueError(f"filter_method must be one of {FILTER_METHODS}, "
+                         f"not {cfg.filter_method!r}")
+    if cfg.filter_phase not in FILTER_PHASES:
+        raise ValueError(f"filter_phase must be one of {FILTER_PHASES}, "
+                         f"not {cfg.filter_phase!r}")
+    if cfg.filter_method == "iir" and not 1 <= int(cfg.iir_order) <= 16:
+        raise ValueError(f"iir_order must be between 1 and 16, not {cfg.iir_order}")
+    if cfg.transition_bandwidth is not None and float(cfg.transition_bandwidth) <= 0:
+        raise ValueError("transition_bandwidth must be positive")
+    if (cfg.transition_bandwidth and cfg.highpass
+            and float(cfg.transition_bandwidth) >= float(cfg.highpass)):
+        raise ValueError(
+            f"a {float(cfg.transition_bandwidth):g} Hz transition band is as wide as the "
+            f"{cfg.highpass:g} Hz high-pass, so the stop band would start below 0 Hz; "
+            "it must be narrower than the cut-off")
+    effective_reference(cfg)
+    if cfg.annotate_muscle and float(cfg.muscle_z) <= 0:
+        raise ValueError("muscle_z must be positive")
+    if cfg.annotate_amplitude and cfg.amplitude_ptp_uv is not None \
+            and float(cfg.amplitude_ptp_uv) <= 0:
+        raise ValueError("amplitude_ptp_uv must be positive")
 
 def describe(cfg: PreprocessConfig, band: tuple[float, float],
              sfreq: float) -> tuple[str, list[str]]:
@@ -166,11 +361,22 @@ def describe(cfg: PreprocessConfig, band: tuple[float, float],
         lines.append(f"notch {mains}"
                      + (" and its harmonics" if cfg.notch_harmonics else " only")
                      + f", {cfg.notch_width:g} Hz wide")
+    if cfg.highpass or cfg.lowpass:
+        lines.append(f"as a {filter_description(cfg, sfreq)}")
     if cfg.resample:
         lines.append(f"resample to {cfg.resample:g} Hz")
-    lines.append("re-reference to neighbouring contacts (bipolar)" if cfg.bipolar
-                 else "re-reference to the common average" if cfg.average_reference
-                 else "leave the recording's own reference")
+    try:
+        scheme = effective_reference(cfg)
+    except ValueError:
+        scheme = "none"
+    lines.append(REFERENCES[scheme])
+    if cfg.annotate_muscle:
+        lines.append(f"mark muscle and movement bursts (z > {cfg.muscle_z:g})")
+    if cfg.annotate_amplitude:
+        lines.append("mark seconds above "
+                     + (f"{float(cfg.amplitude_ptp_uv):g} µV peak-to-peak"
+                        if cfg.amplitude_ptp_uv is not None
+                        else "a peak-to-peak ceiling learned per contact"))
     if cfg.drop_bads:
         lines.append("drop channels the dataset flagged bad")
     if cfg.exclude:
@@ -207,10 +413,41 @@ def describe(cfg: PreprocessConfig, band: tuple[float, float],
     if cfg.notch_width > 4.0:
         warnings.append(f"A {cfg.notch_width:g} Hz notch is wide; its harmonics "
                         f"carve visible holes in the band being analysed.")
-    if not cfg.bipolar and not cfg.average_reference:
+    if scheme == "none":
         warnings.append("Without re-referencing, a shared reference puts the "
                         "same noise on every channel, which reads as HFOs "
                         "appearing everywhere at once.")
+    if scheme in ("average", "median"):
+        warnings.append("A common reference shares every channel's noise with "
+                        "every other, which is the effect the bipolar montage "
+                        "exists to avoid for HFO work.")
+    if cfg.filter_method not in FILTER_METHODS or cfg.filter_phase not in FILTER_PHASES:
+        warnings.append("The filter design must be FIR or IIR, zero or minimum phase.")
+    if cfg.filter_method == "iir" and int(cfg.iir_order) > 8:
+        warnings.append(f"A Butterworth of order {int(cfg.iir_order)} (effective "
+                        f"{2 * int(cfg.iir_order)}) rings hard at a sharp discharge; "
+                        "the ringing looks like a ripple.")
+    if (cfg.transition_bandwidth and cfg.highpass
+            and float(cfg.transition_bandwidth) >= float(cfg.highpass)):
+        warnings.append(f"The {float(cfg.transition_bandwidth):g} Hz transition band is "
+                        f"as wide as the {cfg.highpass:g} Hz high-pass; the stop band "
+                        "would start below 0 Hz. It must be narrower than the cut-off.")
+    if cfg.filter_phase == "minimum":
+        warnings.append("A minimum-phase filter delays the signal, so event times "
+                        "are late by part of the filter's length; the archive's "
+                        "markings are not.")
+    if cfg.annotate_muscle:
+        warnings.append("The muscle band (110–140 Hz) lies inside the ripple band. "
+                        "The detector marks seconds where it rises across the whole "
+                        "montage at once, which a ripple on one contact does not do; "
+                        "a widespread burst of real activity would still be marked.")
+    if cfg.annotate_amplitude:
+        warnings.append("An amplitude ceiling removes the loudest seconds, and on an "
+                        "epileptic contact the loudest seconds are the discharges. "
+                        "This project measured that and set its own segment test on "
+                        "discontinuity instead; use this knowing what it removes.")
+    if (cfg.annotate_muscle or cfg.annotate_amplitude):
+        warnings.append("Marked seconds take effect only with 'Check data quality' on.")
     return "; ".join(lines) + ".", warnings
 
 def prepare(rec: Recording, cfg: PreprocessConfig | None = None, verbose: bool = True) -> Prepared:
@@ -258,12 +495,23 @@ def prepare(rec: Recording, cfg: PreprocessConfig | None = None, verbose: bool =
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         if cfg.highpass or cfg.lowpass:
-            raw.filter(l_freq=cfg.highpass or None, h_freq=cfg.lowpass,
-                       fir_design="firwin", phase="zero", verbose="ERROR")
+            design = filter_description(cfg, float(raw.info["sfreq"]))
+            if cfg.filter_method == "iir":
+                raw.filter(l_freq=cfg.highpass or None, h_freq=cfg.lowpass,
+                           method="iir", iir_params=_iir_params(cfg), phase="zero",
+                           verbose="ERROR")
+            else:
+                extra = {}
+                if cfg.transition_bandwidth:
+                    extra = {"l_trans_bandwidth": float(cfg.transition_bandwidth),
+                             "h_trans_bandwidth": float(cfg.transition_bandwidth)}
+                raw.filter(l_freq=cfg.highpass or None, h_freq=cfg.lowpass,
+                           fir_design="firwin", phase=cfg.filter_phase, verbose="ERROR",
+                           **extra)
             if cfg.highpass:
-                steps.append(f"high-pass {cfg.highpass:g} Hz (zero-phase FIR)")
+                steps.append(f"high-pass {cfg.highpass:g} Hz ({design})")
             if cfg.lowpass:
-                steps.append(f"low-pass {cfg.lowpass:g} Hz (zero-phase FIR)")
+                steps.append(f"low-pass {cfg.lowpass:g} Hz ({design})")
         line_freq = cfg.line_freq if cfg.line_freq is not None else rec.line_freq
         if cfg.notch:
             source = "configured" if cfg.line_freq is not None else "from the dataset"
@@ -288,12 +536,18 @@ def prepare(rec: Recording, cfg: PreprocessConfig | None = None, verbose: bool =
         steps.append(f"resampled {before:g} Hz -> {target:g} Hz"
                      + (" (upsampled; adds no information)" if target > before else ""))
 
+    # 3b. artifact annotation, on the filtered monopolar signal ------------
+    annotations = (_annotate(raw, cfg, float(rec.t_offset), steps)
+                   if (cfg.annotate_muscle or cfg.annotate_amplitude) else [])
+
     data = raw.get_data(picks="all") * 1e6  # volts -> microvolts
     names = list(raw.ch_names)
 
     # 4. montage ----------------------------------------------------------
+    scheme = effective_reference(cfg)
     pairs: list[tuple[str, str]] = []
-    if cfg.bipolar:
+    montage = "monopolar"
+    if scheme == "bipolar":
         pairs = bipolar_pairs(names, exclude=set())
         if not pairs:
             steps.append("bipolar montage requested but no consecutive contact pairs were found; "
@@ -301,22 +555,54 @@ def prepare(rec: Recording, cfg: PreprocessConfig | None = None, verbose: bool =
         else:
             idx = {n: i for i, n in enumerate(names)}
             data = np.stack([data[idx[a]] - data[idx[b]] for a, b in pairs])
+            # A pair is marked wherever either of its contacts is.
+            renamed = []
+            for note in annotations:
+                if note["channel"] is None:
+                    renamed.append(note)
+                    continue
+                for a, b in pairs:
+                    if note["channel"] in (a, b):
+                        renamed.append({**note, "channel": f"{a}-{b}"})
+            annotations = renamed
             names = [f"{a}-{b}" for a, b in pairs]
+            montage = "bipolar"
             steps.append(f"bipolar montage: {len(pairs)} pairs of neighbouring contacts")
-    elif cfg.average_reference and len(names) > 1:
+    elif scheme == "average" and len(names) > 1:
         data = data - data.mean(axis=0, keepdims=True)
+        montage = "average"
         steps.append(
             f"common average reference across {len(names)} channels — note "
             f"that this shares every channel's noise with every other, which "
             f"is the effect the bipolar montage exists to avoid for HFO work")
-    montage = ("bipolar" if pairs
-               else "average" if cfg.average_reference and len(names) > 1
-               else "monopolar")
+    elif scheme == "median" and len(names) > 1:
+        data = data - np.median(data, axis=0, keepdims=True)
+        montage = "median"
+        steps.append(f"common median reference across {len(names)} channels — the "
+                     f"average's robust cousin: one faulty contact cannot drag it, "
+                     f"but it still shares the common noise")
+    elif scheme == "shaft" and len(names) > 1:
+        shafts: dict[str, list[int]] = {}
+        for i, name in enumerate(names):
+            shafts.setdefault(_shaft_of(name), []).append(i)
+        referenced = data.copy()
+        lonely = 0
+        for members in shafts.values():
+            if len(members) < 2:
+                lonely += 1
+                continue
+            referenced[members] = data[members] - data[members].mean(axis=0, keepdims=True)
+        data = referenced
+        montage = "shaft"
+        steps.append(f"per-shaft average reference: each contact minus the mean of its "
+                     f"own electrode ({len(shafts)} shafts"
+                     + (f"; {lonely} single-contact shaft(s) left as recorded" if lonely else "")
+                     + ")")
 
     prepared = Prepared(data=np.ascontiguousarray(data, dtype=np.float64), ch_names=names,
                         sfreq=float(raw.info["sfreq"]), t_offset=rec.t_offset, montage=montage,
                         line_freq=float(line_freq),
-                        pairs=pairs, steps=steps, recording=rec)
+                        pairs=pairs, steps=steps, recording=rec, annotations=annotations)
     if verbose:
         print(f"[onset-hfo] preprocessed: {prepared.n_channels} {montage} channels, "
               f"{prepared.duration:.1f} s @ {prepared.sfreq:g} Hz")

@@ -429,13 +429,24 @@ onset_review/         the desktop reviewer (Qt), installable on Ubuntu
   report.py           the record a reviewer exports when they are done
   panels.py           the dock widgets; they render and compute nothing
   controls.py         visible amplitude, window, channel and scroll controls
-  brainview.py        contacts in 3D: ranked, colour-coded, resection ringed
+  brainview.py        contacts in 3D: ranked, colour-coded, resection ringed; the fsaverage template under measured coordinates
+  contactmap.py       the flat per-contact map and the table the assistant is handed
+  mapview.py          that map, drawn, with a colour bar
+  spectrum.py         every channel's spectrum: slope, band share, mains share
+  spectrumview.py     that spectrum, drawn, the chosen channel in front
+  compact.py          what each table shows first, and the rest behind a toggle
+  average.py          a channel's events aligned and averaged: oscillation or transient?
+  averageview.py      that average, drawn in the detail view's three rows
+  sensitivity.py      the leaders re-tested at stricter thresholds
+  sensitivityview.py  that re-test, on request, with its verdict
+  windows.py          the other cached windows of a recording, analysed and compared
   preprocessing.py    the MNE filter/reference/resample chain, mouse-driven
   dataquality.py      which contacts and seconds were analysed, and which only flagged
   record.py           what the archive records about a patient, and what it does not
   patient.py          that record, drawn
   theme.py            one palette, one type scale; no panel writes a colour
   assistant.py        the agent in a dock: cites this window, or refuses
+  assistant_tools.py  what the window adds to it: explain this event, the threshold re-test, other windows, analyses by consent
   window.py           docks them onto MNE's own Qt trace browser
   launcher.py         the open dialog, and loading off the GUI thread
   importer.py         confirming what a file actually holds before it is analysed

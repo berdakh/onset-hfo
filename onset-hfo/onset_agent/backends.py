@@ -448,7 +448,9 @@ class ScriptedBackend(Backend):
         return "scripted policy - deterministic keyword rules, not a language model"
 
     def chat(self, messages: list[dict], tools: list[dict]) -> AssistantMessage:
-        question = next((m["content"] for m in messages if m["role"] == "user"), "")
+        # The latest question: with a conversation in the messages, the first
+        # user turn is the oldest one.
+        question = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
         observations = [m for m in messages if m["role"] == "tool"]
         q = (question or "").lower()
 
@@ -536,6 +538,9 @@ def _render(payloads: list) -> str:
             parts.append("Evidence on " + str(payload.get("channel", "")) + ": " + "; ".join(
                 f"{r['start']}-{r['stop']} s, peak {r.get('peak_frequency_hz')} Hz"
                 for r in rows) + ".")
+        if "reading" in payload and "why" in payload:
+            parts.append(f"{payload.get('channel')} at {payload.get('start_s')} s reads as "
+                         f"{payload['reading']}: {payload['why']}")
         if "shafts" in payload and "summary" in payload:
             if payload.get("available") is False:
                 parts.append("Where the activity sits cannot be said: "

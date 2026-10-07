@@ -42,13 +42,14 @@ from qtpy.QtWidgets import (
     QPushButton,
     QRadioButton,
     QSizePolicy,
+    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
 
 from onset_hfo.config import PreprocessConfig
-from onset_hfo.preprocess import describe
-from onset_review.theme import card, scrolled
+from onset_hfo.preprocess import describe, effective_reference, filter_description
+from onset_review.theme import card, current, muted, scrolled
 
 #: Re-exported: the sentence and the warnings a reviewer reads under these
 #: controls are computed in `onset_hfo.preprocess`, beside the refusals they
@@ -105,6 +106,32 @@ class PreprocessPanel(QWidget):
         self.harmonics = QCheckBox("…and its harmonics")
         self.harmonics.setChecked(start.notch_harmonics)
 
+        # -- filter design --------------------------------------------------
+        self.method = QComboBox()
+        self.method.addItem("Windowed FIR (MNE's default)", "fir")
+        self.method.addItem("Butterworth IIR", "iir")
+        self.method.setToolTip(
+            "HFO detection is filter-sensitive: a long FIR rings at a sharp "
+            "discharge and the ringing looks like a ripple. The design is "
+            "yours; the line below says what MNE actually builds.")
+        _select(self.method, start.filter_method)
+        self.iir_order = QSpinBox()
+        self.iir_order.setRange(1, 16)
+        self.iir_order.setValue(int(start.iir_order))
+        self.iir_order.setToolTip("Butterworth order; applied twice for zero phase, "
+                                  "so the effective order is double")
+        self.phase = QComboBox()
+        self.phase.addItem("Zero phase (no delay)", "zero")
+        self.phase.addItem("Minimum phase (causal, delayed)", "minimum")
+        _select(self.phase, start.filter_phase)
+        self.transition = _spin(0.0, 50.0, 0.25, " Hz", start.transition_bandwidth or 0.0,
+                                "FIR transition bandwidth. Narrower is sharper and "
+                                "longer; longer rings more. 0 lets MNE choose.")
+        self.transition.setSpecialValueText("auto")
+        self.design = QLabel()
+        self.design.setWordWrap(True)
+        self.design.setStyleSheet(f"color:{current().text_muted};font-size:9pt;")
+
         filters = QGroupBox("Filtering")
         form = QFormLayout(filters)
         form.addRow("High-pass", self.highpass)
@@ -112,25 +139,70 @@ class PreprocessPanel(QWidget):
         form.addRow(self.notch, self.mains)
         form.addRow("", self.harmonics)
         form.addRow("Notch width", self.notch_width)
+        form.addRow("Design", self.method)
+        form.addRow("IIR order", self.iir_order)
+        form.addRow("Phase", self.phase)
+        form.addRow("Transition", self.transition)
+        form.addRow("", self.design)
 
         # -- reference -----------------------------------------------------
         self.bipolar = QRadioButton("Bipolar — each contact minus its neighbour")
+        self.shaft = QRadioButton("Per-shaft average — each contact minus its electrode's mean")
+        self.median = QRadioButton("Common median across all channels")
         self.average = QRadioButton("Common average across all channels")
         self.monopolar = QRadioButton("None — keep the recording's reference")
         self.bipolar.setToolTip(
             "Standard for HFO work: a common reference shares its noise with "
             "every channel and produces HFOs that appear everywhere at once.")
+        self.shaft.setToolTip(
+            "The usual SEEG choice after bipolar: removes what a whole shaft "
+            "shares, keeps each contact's own signal at its own place.")
+        self.median.setToolTip(
+            "The average's robust cousin: one faulty contact cannot drag it. "
+            "Still shares the common noise.")
         self.average.setToolTip(
             "Standard elsewhere in EEG. For HFOs it re-introduces exactly the "
             "shared noise the bipolar montage exists to suppress.")
-        (self.bipolar if start.bipolar
-         else self.average if start.average_reference
-         else self.monopolar).setChecked(True)
+        self._reference_buttons = {"bipolar": self.bipolar, "shaft": self.shaft,
+                                   "median": self.median, "average": self.average,
+                                   "none": self.monopolar}
+        self._reference_buttons[effective_reference(start)].setChecked(True)
 
         reference = QGroupBox("Re-referencing")
         inner = QVBoxLayout(reference)
-        for button in (self.bipolar, self.average, self.monopolar):
+        for button in (self.bipolar, self.shaft, self.median, self.average, self.monopolar):
             inner.addWidget(button)
+
+        # -- artifact annotation ---------------------------------------------
+        self.muscle = QCheckBox("Mark muscle and movement bursts")
+        self.muscle.setChecked(bool(start.annotate_muscle))
+        self.muscle.setToolTip(
+            "MNE's muscle annotator: seconds where broadband 110–140 Hz power "
+            "rises across the whole montage at once. Set aside by the quality "
+            "stage, never deleted.")
+        self.muscle_z = _spin(1.0, 10.0, 0.5, " z", float(start.muscle_z),
+                              "How far above the montage's usual high-frequency "
+                              "power a second must rise to be marked")
+        self.amplitude = QCheckBox("Mark seconds above a peak-to-peak ceiling")
+        self.amplitude.setChecked(bool(start.annotate_amplitude))
+        self.amplitude.setToolTip(
+            "MNE's amplitude annotator, per contact. Off by default: an "
+            "amplitude ceiling removes the loudest seconds, and on an "
+            "epileptic contact those are the discharges.")
+        self.ptp = _spin(0.0, 20000.0, 50.0, " µV", float(start.amplitude_ptp_uv or 0.0),
+                         "The ceiling. 0 learns one per contact from the data by "
+                         "cross-validation, as autoreject does for its global "
+                         "threshold. Nothing is interpolated.")
+        self.ptp.setSpecialValueText("learn from the data")
+
+        artifacts = QGroupBox("Artifact annotation")
+        artifact_form = QFormLayout(artifacts)
+        artifact_form.addRow(self.muscle, self.muscle_z)
+        artifact_form.addRow(self.amplitude, self.ptp)
+        artifact_form.addRow("", muted(
+            "Marked seconds are set aside by the data-quality stage and shown "
+            "there with their reason; the detectors never see them. Nothing is "
+            "repaired or deleted.", current()))
 
         # -- rate ----------------------------------------------------------
         self.resample = _combo(RESAMPLE_CHOICES, start.resample)
@@ -188,7 +260,7 @@ class PreprocessPanel(QWidget):
         column = QVBoxLayout(body)
         column.setContentsMargins(4, 4, 4, 4)
         column.setSpacing(6)
-        for group in (filters, reference, rate, channels):
+        for group in (filters, reference, artifacts, rate, channels):
             column.addWidget(group)
         column.addWidget(self.summary)
         column.addWidget(self.warnings)
@@ -199,13 +271,16 @@ class PreprocessPanel(QWidget):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.addWidget(scrolled(body))
 
-        for widget in (self.highpass, self.lowpass, self.notch_width):
+        for widget in (self.highpass, self.lowpass, self.notch_width, self.transition,
+                       self.muscle_z, self.ptp):
             widget.valueChanged.connect(self.refresh)
-        for widget in (self.notch, self.harmonics, self.drop_bads):
+        self.iir_order.valueChanged.connect(self.refresh)
+        for widget in (self.notch, self.harmonics, self.drop_bads, self.muscle,
+                       self.amplitude):
             widget.stateChanged.connect(self.refresh)
-        for widget in (self.bipolar, self.average, self.monopolar):
+        for widget in self._reference_buttons.values():
             widget.toggled.connect(self.refresh)
-        for widget in (self.mains, self.resample):
+        for widget in (self.mains, self.resample, self.method, self.phase):
             widget.currentIndexChanged.connect(self.refresh)
         self.channels.itemChanged.connect(self.refresh)
         self.apply.clicked.connect(self._apply)
@@ -213,19 +288,37 @@ class PreprocessPanel(QWidget):
         self.refresh()
 
     # -- the config this panel describes -----------------------------------
+    def reference(self) -> str:
+        for name, button in self._reference_buttons.items():
+            if button.isChecked():
+                return name
+        return "none"
+
     def config(self) -> PreprocessConfig:
+        scheme = self.reference()
         return PreprocessConfig(
             line_freq=self.mains.currentData(),
             notch=self.notch.isChecked(),
             notch_width=float(self.notch_width.value()),
             notch_harmonics=self.harmonics.isChecked(),
-            bipolar=self.bipolar.isChecked(),
-            average_reference=self.average.isChecked(),
+            bipolar=scheme == "bipolar",
+            average_reference=scheme == "average",
+            # Named only when the two older flags cannot say it, so a panel on
+            # the defaults equals the defaults and Apply stays grey.
+            reference=scheme if scheme in ("median", "shaft") else None,
             highpass=float(self.highpass.value()) or 0.0,
             lowpass=float(self.lowpass.value()) or None,
             resample=self.resample.currentData(),
             drop_bads=self.drop_bads.isChecked(),
             exclude=tuple(self._checked()),
+            filter_method=str(self.method.currentData() or "fir"),
+            iir_order=int(self.iir_order.value()),
+            filter_phase=str(self.phase.currentData() or "zero"),
+            transition_bandwidth=float(self.transition.value()) or None,
+            annotate_muscle=self.muscle.isChecked(),
+            muscle_z=float(self.muscle_z.value()),
+            annotate_amplitude=self.amplitude.isChecked(),
+            amplitude_ptp_uv=float(self.ptp.value()) or None,
         )
 
     def _checked(self) -> list[str]:
@@ -235,8 +328,16 @@ class PreprocessPanel(QWidget):
 
     def refresh(self) -> None:
         """Rewrite the summary and the warnings for the current settings."""
-        summary, warnings = describe(self.config(), self._band, self._sfreq)
+        cfg = self.config()
+        summary, warnings = describe(cfg, self._band, self._sfreq)
         self.summary.setText("This will " + summary)
+        is_iir = cfg.filter_method == "iir"
+        self.iir_order.setEnabled(is_iir)
+        self.phase.setEnabled(not is_iir)
+        self.transition.setEnabled(not is_iir)
+        self.muscle_z.setEnabled(cfg.annotate_muscle)
+        self.ptp.setEnabled(cfg.annotate_amplitude)
+        self.design.setText("MNE builds: " + filter_description(cfg, self._sfreq))
         self.warnings.setText("\n".join("• " + w for w in warnings))
         self.warnings.setVisible(bool(warnings))
         self.apply.setEnabled(self.config() != (
@@ -251,7 +352,15 @@ class PreprocessPanel(QWidget):
         self.notch_width.setValue(cfg.notch_width)
         _select(self.mains, cfg.line_freq)
         _select(self.resample, cfg.resample)
-        self.bipolar.setChecked(cfg.bipolar)
+        self._reference_buttons[effective_reference(cfg)].setChecked(True)
+        _select(self.method, cfg.filter_method)
+        self.iir_order.setValue(int(cfg.iir_order))
+        _select(self.phase, cfg.filter_phase)
+        self.transition.setValue(cfg.transition_bandwidth or 0.0)
+        self.muscle.setChecked(bool(cfg.annotate_muscle))
+        self.muscle_z.setValue(float(cfg.muscle_z))
+        self.amplitude.setChecked(bool(cfg.annotate_amplitude))
+        self.ptp.setValue(float(cfg.amplitude_ptp_uv or 0.0))
         self.drop_bads.setChecked(cfg.drop_bads)
         for index in range(self.channels.count()):
             self.channels.item(index).setCheckState(Qt.Unchecked)
@@ -269,7 +378,8 @@ class PreprocessPanel(QWidget):
         _, warnings = describe(cfg, self._band, self._sfreq)
         blocking = [w for w in warnings if "would still run" in w
                     or "passes nothing" in w or "Nyquist" in w
-                    or "cannot carry" in w]
+                    or "cannot carry" in w or "below 0 Hz" in w
+                    or "must be FIR or IIR" in w]
         if blocking:
             self.warnings.setText("\n".join("• " + w for w in blocking)
                                   + "\n\nFix this before applying.")

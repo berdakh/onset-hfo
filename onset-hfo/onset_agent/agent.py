@@ -131,6 +131,12 @@ class AgentAnswer:
 # --------------------------------------------------------------------------
 
 _SEIZURE = re.compile(r"seizure|ictal|before|during|change over time", re.IGNORECASE)
+#: Words that mean the question needs an analysis run, not a table read.
+#: When the window has given the agent analysis tools, these put the tool
+#: schemas on the first call, so the model can ask for the run at once.
+_ANALYSIS = re.compile(r"stricter|threshold|surviv|robust|spectral|oscillat|noisy|carpet|"
+                       r"\blead|propagat|earlier|earliest|re-?run|again at|compare the "
+                       r"detectors|line.length|quality check|which detector", re.IGNORECASE)
 _WHERE = re.compile(r"\bwhere\b|\bside\b|\bleft\b|\bright\b|hemisphere|\bshaft|electrode|"
                     r"region|lobe|\bmap\b|spatial|neighbou?r|adjacen|spread|cluster|"
                     r"location|locali[sz]", re.IGNORECASE)
@@ -282,6 +288,36 @@ def digest(tool: str, payload) -> str:
                     f"{payload.get('duration_s')} s at {payload.get('sampling_rate_hz')} Hz, "
                     f"{payload.get('channels_analysed')} channels analysed, "
                     f"band {payload.get('band_hz')} Hz")
+        if tool in ("detect_hfo", "detect_spikes"):
+            rows = payload.get("channels") or {}
+            head = ", ".join(f"{c} {v.get('rate_per_min')}/min" for c, v in list(rows.items())[:4])
+            stands = payload.get("leader_stands_out")
+            return (f"{payload.get('detector', tool)} at {payload.get('threshold_sd')} SD on "
+                    f"{payload.get('n_channels_analysed')} channel(s): {head or 'nothing'}"
+                    + ("; the leader stands out" if stands else
+                       "; no channel stands out" if stands is False else ""))
+        if tool == "spectral_power":
+            rows = payload.get("relative_power") or {}
+            parts = []
+            for channel, bands in list(rows.items())[:3]:
+                if isinstance(bands, dict):
+                    parts.append(channel + ": " + ", ".join(
+                        f"{k} {v}" for k, v in list(bands.items())[:3]))
+            return "; ".join(parts) or json.dumps(payload, default=str)[:160]
+        if tool == "compare_detectors":
+            return (f"{payload.get('n_disagreements')} channel(s) the detectors rank "
+                    f"differently; agreement {payload.get('agreement')}")
+        if tool == "propagation_lead":
+            if not payload.get("available"):
+                return str(payload.get("reason") or "no lead")
+            rows = payload.get("channels") or []
+            return f"earliest {payload.get('earliest_channel')}; " + ", ".join(
+                f"{r['channel']} +{r['lead_ms']} ms" for r in rows[:4])
+        if tool == "channel_qc":
+            return json.dumps(payload, default=str)[:160]
+        if tool == "explain_event":
+            return (f"{payload.get('channel')} at {payload.get('start_s')} s: "
+                    f"{payload.get('reading')} — {payload.get('why')}")
         if tool == "contact_map":
             if not payload.get("available"):
                 return str(payload.get("note") or "no positions")
@@ -309,12 +345,16 @@ class OnsetAgent:
 
     def __init__(self, store: ResultStore, backend: Backend | None = None,
                  max_steps: int = 6, max_retries: int = 1, verbose: bool = False,
-                 brief: bool | None = None):
+                 brief: bool | None = None, extra_tools: dict | None = None):
         self.store = store
         self.backend = backend or ScriptedBackend()
         self.max_steps = max_steps
         self.max_retries = max_retries
         self.verbose = verbose
+        #: The tools in force: the read-only queries, plus whatever the caller
+        #: added (the desktop window's analysis tools, bound to its session).
+        self.extra_tools = dict(extra_tools or {})
+        self.tools = {**TOOLS, **self.extra_tools}
         # The briefing saves a language model its first round-trips. The
         # scripted policy has no round-trips to save and routes by question,
         # so it keeps calling its own tools.
@@ -325,12 +365,14 @@ class OnsetAgent:
 
     def _system(self, tools_offered: bool) -> str:
         return system_prompt(subject=self._subject, source=self._source,
-                             tool_names=list(TOOLS), briefed=self.brief,
+                             tool_names=list(self.tools), briefed=self.brief,
                              tools_offered=tools_offered)
 
     # -- public API -------------------------------------------------------
     def ask(self, question: str, should_stop: Callable[[], bool] | None = None,
-            on_event: Callable[[dict], None] | None = None) -> AgentAnswer:
+            on_event: Callable[[dict], None] | None = None,
+            history: list[tuple[str, str]] | None = None,
+            extra_briefing: list[tuple[str, dict]] | None = None) -> AgentAnswer:
         """Answer one question, or refuse and say why.
 
         `should_stop` is polled between steps; when it answers True, or when
@@ -340,6 +382,13 @@ class OnsetAgent:
         `on_event` receives every trace entry as it is made -- each query and
         what it returned, each thing the model wrote, each check -- so a
         window can show the work while it happens rather than after.
+
+        `history` is the conversation so far, as (question, answer) pairs,
+        placed after the base briefing and before this question so "and the
+        second one?" has something to refer to and a served model's prompt
+        cache still covers the briefing. `extra_briefing` names queries the
+        caller wants run for this question (the window's "explain this
+        event", say), run after the question whatever the backend.
         """
         from onset_agent.backends import Interrupted
 
@@ -402,19 +451,26 @@ class OnsetAgent:
                     print(f"  [tool] {call.name}({call.arguments}) -> "
                           f"{'ok' if entry['ok'] else entry['error']}")
 
-        if self.brief:
-            from onset_agent.backends import ToolCall
+        from onset_agent.backends import ToolCall
 
+        base: list[tuple[str, dict]] = []
+        if self.brief:
             base = briefing_base(self.store)
             run_calls([ToolCall(name, args, id=f"brief-{i + 1}")
                        for i, (name, args) in enumerate(base)], briefed=True)
-            messages.append({"role": "user", "content": question})
-            extras = briefing_extras(self.store, question, base)
-            if extras:
-                run_calls([ToolCall(name, args, id=f"brief-{len(base) + i + 1}")
-                           for i, (name, args) in enumerate(extras)], briefed=True)
-        else:
-            messages.append({"role": "user", "content": question})
+        for past_question, past_answer in list(history or [])[-6:]:
+            messages.append({"role": "user", "content": str(past_question)})
+            messages.append({"role": "assistant", "content": str(past_answer)})
+        messages.append({"role": "user", "content": question})
+        extras = list(extra_briefing or [])
+        if self.brief:
+            extras = briefing_extras(self.store, question, base) + extras
+        if extras:
+            run_calls([ToolCall(name, args, id=f"brief-{len(base) + i + 1}")
+                       for i, (name, args) in enumerate(extras)], briefed=True)
+        # A question that needs an analysis run gets the schemas at once, when
+        # there are analysis tools to run; otherwise the briefing is enough.
+        tools_at_once = bool(self.extra_tools) and bool(_ANALYSIS.search(question))
 
         for step in range(self.max_steps):
             if should_stop is not None and should_stop():
@@ -423,11 +479,12 @@ class OnsetAgent:
             # a thousand tokens the model does not need to read the briefing.
             # From the second step on they are offered, and the system prompt
             # says so.
-            offer_tools = not self.brief or step > 0
-            if self.brief and step == 1:
+            offer_tools = not self.brief or step > 0 or tools_at_once
+            if self.brief and offer_tools and "Call one of" not in messages[0]["content"]:
                 messages[0] = {"role": "system", "content": self._system(tools_offered=True)}
             try:
-                message = self.backend.chat(messages, tool_schemas() if offer_tools else [])
+                message = self.backend.chat(messages,
+                                            tool_schemas(self.tools) if offer_tools else [])
             except Interrupted:
                 return stopped(step)
             if message.tool_calls:
@@ -502,15 +559,21 @@ class OnsetAgent:
 
     # -- internals --------------------------------------------------------
     def _run_tool(self, call) -> tuple[dict, dict]:
-        entry = {"type": "tool_call", "tool": call.name, "arguments": call.arguments, "ok": True}
+        import time
+
+        entry = {"type": "tool_call", "tool": call.name, "arguments": call.arguments, "ok": True,
+                 "analysis": call.name in self.extra_tools}
+        started = time.perf_counter()
         try:
-            payload = dispatch(self.store, call.name, call.arguments)
+            payload = dispatch(self.store, call.name, call.arguments, tools=self.tools)
         except ToolError as exc:
             entry.update(ok=False, error=str(exc))
             return {"error": str(exc)}, entry
         except Exception as exc:  # a bug in a tool must not crash the session
             entry.update(ok=False, error=f"{type(exc).__name__}: {exc}")
             return {"error": "the tool failed"}, entry
+        finally:
+            entry["seconds"] = round(time.perf_counter() - started, 2)
         return payload if isinstance(payload, dict) else {"result": payload}, entry
 
 

@@ -30,6 +30,7 @@ from qtpy.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMainWindow,
+    QPlainTextEdit,
     QPushButton,
     QShortcut,
     QSplitter,
@@ -468,11 +469,20 @@ class PageWindow(QMainWindow):
         self.side.addTab(self.panels["findings"], "Ranking")
         self.side.addTab(self.panels["events"], "Events")
         self.side.addTab(self.panels["detail"], "This event")
+        self.side.addTab(self.panels["spectrum"], "Spectrum")
+        self.side.addTab(self.panels["average"], "Average")
+        self.side.addTab(self.panels["sensitivity"], "Threshold")
         self.side.setTabToolTip(0, "Channels ranked by rate — evidence, not a "
                                    "recommendation. Tinted rows are tied with "
                                    "the busiest.")
         self.side.setTabToolTip(2, "The selected event wideband, filtered and in "
                                    "time-frequency — oscillation or filter ringing?")
+        self.side.setTabToolTip(3, "Each channel's power spectrum, the chosen one in "
+                                   "front — noisy, busy, or mains?")
+        self.side.setTabToolTip(4, "A channel's events aligned and averaged — do they "
+                                   "average to an oscillation or to a transient?")
+        self.side.setTabToolTip(5, "The leading channels re-tested at stricter thresholds "
+                                   "— does the ranking survive?")
         outer.addWidget(self._split("recording", Qt.Horizontal, [left, self.side],
                                     [1000, COLUMN_WIDTH + 150], stretch=(1, 0)), 1)
         return page
@@ -571,11 +581,78 @@ class PageWindow(QMainWindow):
             "Without a coordinate file the layout is schematic: shafts in "
             "name order, contacts in number order. Enough to see which shafts "
             "are active; not enough for anything metric."))
+        box.addWidget(theme.section_label("Template brain"))
+        self.fetch_button = QPushButton("Fetch the template brain (MNE fsaverage)…")
+        self.fetch_button.setObjectName("onset_fetch_template")
+        self.fetch_button.setToolTip(
+            "Downloads MNE's fsaverage bundle once, a few hundred megabytes, into "
+            "your MNE data folder. Then 'Template brain' on the 3D view draws the "
+            "average cortex under measured contacts in MNI or fsaverage space.")
+        self.fetch_button.clicked.connect(lambda _=False: self.fetch_template())
+        self.fetch_status = theme.muted("")
+        self.fetch_status.setObjectName("onset_fetch_status")
+        box.addWidget(self.fetch_button)
+        box.addWidget(self.fetch_status)
+        box.addWidget(theme.muted(
+            "The template is an average brain, not this patient's. It is only "
+            "drawn under measured coordinates, and only meaningfully for "
+            "coordinates in a template space; the caption says so each time."))
+        self._say_template_state()
         box.addStretch(1)
         row.addWidget(self._split("contacts", Qt.Horizontal,
                                   [self.panels["brain"], column],
                                   [1100, COLUMN_WIDTH], stretch=(1, 0)), 1)
         return page
+
+    def _say_template_state(self) -> None:
+        from onset_review.anatomy import template_dir
+
+        root = template_dir()
+        if root is not None:
+            self.fetch_status.setText(f"On this machine: {root}")
+            self.fetch_button.setText("Template brain is fetched")
+            self.fetch_button.setEnabled(False)
+        else:
+            self.fetch_status.setText("Not on this machine yet.")
+
+    def fetch_template(self, fetch=None) -> None:
+        """Fetch the template on a worker, saying what is happening. `fetch`
+        is the function to run, for tests; the real one is MNE's."""
+        from qtpy.QtCore import QThread
+
+        from onset_review.anatomy import fetch_template
+
+        run = fetch or fetch_template
+        self.fetch_button.setEnabled(False)
+        self.fetch_status.setText("Fetching the template brain… a few hundred megabytes, once.")
+
+        class Worker(QThread):
+            def __init__(worker, parent):
+                super().__init__(parent)
+                worker.error = ""
+                worker.path = None
+
+            def run(worker):
+                try:
+                    worker.path = run()
+                except Exception as error:      # noqa: BLE001 - reported, not raised
+                    worker.error = str(error)
+
+        self._fetcher = Worker(self)
+
+        def done():
+            if self._fetcher.error:
+                self.fetch_status.setText(f"The fetch failed: {self._fetcher.error}")
+                self.fetch_button.setEnabled(True)
+                return
+            self._say_template_state()
+            brain = self.panels.get("brain")
+            if brain is not None:
+                brain._surface, brain._surface_error = None, ""
+                brain._update_template_gate()
+
+        self._fetcher.finished.connect(done)
+        self._fetcher.start()
 
     def _map_page(self) -> QWidget:
         page = QWidget()
@@ -655,6 +732,29 @@ class PageWindow(QMainWindow):
         box = QVBoxLayout(column)
         box.setContentsMargins(0, 0, 0, 0)
         box.setSpacing(theme.SPACING)
+        box.addWidget(theme.section_label("Findings paragraph"))
+        self.findings_edit = QPlainTextEdit()
+        self.findings_edit.setObjectName("onset_findings_draft")
+        self.findings_edit.setPlaceholderText(
+            "Write the findings in your own words, or let the assistant draft them "
+            "from the analysis; the report says which.")
+        self.findings_edit.setMaximumHeight(170)
+        self.findings_edit.setPlainText(getattr(self.session.read, "draft", "") or "")
+        self.findings_edit.textChanged.connect(self._findings_edited)
+        box.addWidget(self.findings_edit)
+        self.findings_status = theme.muted("")
+        self.findings_status.setObjectName("onset_findings_status")
+        box.addWidget(self.findings_status)
+        self.draft_button = QPushButton("Draft it with the assistant")
+        self.draft_button.setObjectName("onset_draft_findings")
+        self.draft_button.setToolTip(
+            "Asks the assistant for the findings paragraph from the evidence it is "
+            "briefed with; every number is checked against a query, and the report "
+            "marks the paragraph as the assistant's until you edit it.")
+        self.draft_button.setEnabled("assistant" in self.panels)
+        self.draft_button.clicked.connect(lambda _=False: self.draft_findings())
+        box.addWidget(self.draft_button)
+        self._say_findings_state()
         box.addWidget(theme.section_label("Agreement with the archive's annotators"))
         box.addWidget(self.panels["agreement"], 1)
         self.appendix = QCheckBox("Show the appendix (every measurement)")
@@ -676,7 +776,71 @@ class PageWindow(QMainWindow):
         row.addWidget(self._split("report", Qt.Horizontal, [preview, column],
                                   [1100, COLUMN_WIDTH], stretch=(1, 0)), 1)
         page.refresh = self.refresh_report      # type: ignore[attr-defined]
+        assistant = self.panels.get("assistant")
+        if assistant is not None and hasattr(assistant, "drafted"):
+            assistant.drafted.connect(self.take_draft)
         return page
+
+    # -- the findings paragraph ---------------------------------------------
+    def draft_findings(self) -> bool:
+        """Have the assistant draft the paragraph; it lands in the box and the
+        report marks it as the assistant's."""
+        assistant = self.panels.get("assistant")
+        if assistant is None:
+            return False
+        self.draft_button.setEnabled(False)
+        self.findings_status.setText("Asking the assistant…")
+        try:
+            drafted = assistant.draft_findings()
+        finally:
+            self.draft_button.setEnabled(True)
+        if not drafted:
+            self.findings_status.setText(
+                "No draft: the assistant refused or returned nothing. Its page says why.")
+        return drafted
+
+    def take_draft(self, text: str, by: str) -> None:
+        """A paragraph from the assistant: shown in the box, filed as its."""
+        read = self.session.read
+        read.set_draft(text, by)
+        self._keep_read()
+        self.findings_edit.blockSignals(True)
+        self.findings_edit.setPlainText(read.draft)
+        self.findings_edit.blockSignals(False)
+        self._say_findings_state()
+        self.refresh_report()
+
+    def _findings_edited(self) -> None:
+        """The reader typed: the paragraph is theirs now, and says so."""
+        read = self.session.read
+        text = self.findings_edit.toPlainText()
+        if text.strip() == read.draft.strip():
+            return
+        who = (getattr(read, "reader", "") or "").strip() or "the reader"
+        read.set_draft(text, who)
+        self._keep_read()
+        self._say_findings_state()
+        self.refresh_report()
+
+    def _keep_read(self) -> None:
+        from onset_review import adjudication
+
+        try:
+            adjudication.save(self.session.request, self.session.read)
+        except OSError as error:
+            self.findings_status.setText(f"Could not save the read: {error}")
+
+    def _say_findings_state(self) -> None:
+        read = self.session.read
+        if not read.draft:
+            self.findings_status.setText("Nothing written yet. The report then carries the "
+                                         "detector's numbers alone.")
+        elif read.draft_is_assistants:
+            self.findings_status.setText(
+                f"Drafted by the {read.draft_by}; the report marks it as unedited by you "
+                "until you change it.")
+        else:
+            self.findings_status.setText(f"Written by {read.draft_by}.")
 
     def refresh_report(self) -> None:
         """Rebuild the preview from the session as it is now, verdicts and all."""

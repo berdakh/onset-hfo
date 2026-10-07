@@ -908,3 +908,376 @@ def test_where_summary_counts_the_leaders_per_shaft_and_says_nothing_it_does_not
     assert "unknown" not in out["summary"] and "unmapped" not in out["summary"]
     assert out["positions"].startswith("schematic")
     assert out["summary"].startswith("3 of the top 5 channels on shaft AR;")
+
+
+
+# -- the spectrum (Qt-free) ----------------------------------------------------
+
+
+def test_the_spectrum_is_of_the_preprocessed_signal_in_microvolts(review):
+    from onset_review import spectrum
+
+    spec = spectrum.compute(review)
+    assert spec.available and spec.power.shape == (len(spec.channels), spec.freqs.size)
+    assert spec.channels == list(review.raw.ch_names)
+    assert spec.freqs[0] >= 0.5 and spec.freqs[-1] <= spec.sfreq / 2.0
+    assert (spec.power >= 0).all()
+    # Microvolts squared per hertz: the integral is the variance in µV².
+    i = 0
+    variance = float(np.var(review.raw.get_data()[i] * 1e6))
+    integral = float(np.trapezoid(spec.power[i], spec.freqs)) if hasattr(np, "trapezoid") \
+        else float(np.trapz(spec.power[i], spec.freqs))
+    assert 0.2 * variance < integral < 5.0 * variance
+
+
+def test_the_slope_tells_a_steep_background_from_a_flat_carpet():
+    from onset_review import spectrum
+
+    freqs = np.linspace(0.5, 500.0, 1000)
+    steep = freqs ** -2.0
+    flat = np.full_like(freqs, 1e-3)
+    spec = spectrum.Spectrum(freqs, np.vstack([steep, flat]), ["steep", "flat"],
+                             sfreq=1000.0, line_freq=50.0, band=(80.0, 250.0))
+    slope, _ = spectrum.slope_fit(spec, "steep")
+    assert slope == pytest.approx(-2.0, abs=0.05)
+    assert spectrum.slope_fit(spec, "flat")[0] == pytest.approx(0.0, abs=0.05)
+    assert spectrum.band_share(spec, "flat") > spectrum.band_share(spec, "steep")
+    table = spectrum.summarise(spec)
+    assert list(table["reading"]) == ["steep", "flat"]
+    assert spectrum.mains_lines(spec) == [50.0 * k for k in range(1, 10)]
+    # A comb of mains peaks reads as mains.
+    comb = steep.copy()
+    for line in spectrum.mains_lines(spec):
+        comb[np.abs(freqs - line) <= 1.0] += 10.0
+    spec = spectrum.Spectrum(freqs, comb[None, :], ["comb"], 1000.0, 50.0, (80.0, 250.0))
+    assert spectrum.summarise(spec)["reading"].iloc[0] == "mains"
+    assert "mains lines" in spectrum.describe(spec, "comb")
+
+
+# --------------------------------------------------------------------------
+# The template surface: a real cortex, only where real coordinates can sit on it
+# --------------------------------------------------------------------------
+
+def _write_stand_in_template(subjects_dir):
+    """A tiny closed surface written the way FreeSurfer writes a pial one, in
+    both hemispheres, so the reader and the decimation run on the real path
+    without the real 300 MB download."""
+    from onset_review.anatomy import TEMPLATE_SUBJECT, TEMPLATE_SURFACE
+
+    surf = subjects_dir / TEMPLATE_SUBJECT / "surf"
+    surf.mkdir(parents=True)
+    # An octahedron per hemisphere, in millimetres, 60 mm across, offset left
+    # and right the way the hemispheres are.
+    base = np.array([[30, 0, 0], [-30, 0, 0], [0, 30, 0], [0, -30, 0],
+                     [0, 0, 30], [0, 0, -30]], dtype=float)
+    faces = np.array([[0, 2, 4], [2, 1, 4], [1, 3, 4], [3, 0, 4],
+                      [2, 0, 5], [1, 2, 5], [3, 1, 5], [0, 3, 5]])
+    for hemi, shift in (("lh", -40.0), ("rh", 40.0)):
+        vertices = base + np.array([shift, 0.0, 0.0])
+        _write_freesurfer_triangles(surf / f"{hemi}.{TEMPLATE_SURFACE}", vertices, faces)
+    return subjects_dir
+
+
+def _write_freesurfer_triangles(path, vertices, faces):
+    """FreeSurfer's triangle format, as nibabel writes it: the format
+    ``lh.pial`` is in. Written here so the test does not need nibabel."""
+    with open(path, "wb") as handle:
+        handle.write(b"\xff\xff\xfe")
+        handle.write(b"created by a test\n\n")
+        np.array([len(vertices), len(faces)], dtype=">i4").tofile(handle)
+        np.asarray(vertices, dtype=">f4").reshape(-1).tofile(handle)
+        np.asarray(faces, dtype=">i4").reshape(-1).tofile(handle)
+
+
+def test_a_freesurfer_surface_is_read_without_nibabel(tmp_path):
+    from onset_review.anatomy import read_surface
+
+    vertices = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]])
+    faces = np.array([[0, 1, 2]])
+    _write_freesurfer_triangles(tmp_path / "lh.pial", vertices, faces)
+    got_v, got_f = read_surface(tmp_path / "lh.pial")
+    assert np.allclose(got_v, vertices) and np.array_equal(got_f, faces)
+    (tmp_path / "lh.bad").write_bytes(b"nope")
+    with pytest.raises((ValueError, OSError)):
+        read_surface(tmp_path / "lh.bad")
+
+
+def test_vertex_clustering_merges_a_cell_and_drops_collapsed_faces():
+    from onset_review.anatomy import cluster_decimate
+
+    # Four vertices, two of them within one cell: a triangle on each pair.
+    vertices = np.array([[0.0, 0.0, 0.0], [0.5, 0.5, 0.0], [10.0, 0.0, 0.0],
+                         [0.0, 10.0, 0.0]])
+    faces = np.array([[0, 1, 2], [0, 2, 3], [1, 2, 3]])
+    merged, kept = cluster_decimate(vertices, faces, cell=4.0)
+    assert merged.shape[0] == 3                       # 0 and 1 became one
+    assert kept.shape[0] == 1                         # the two big triangles became one
+    assert (kept[:, 0] != kept[:, 1]).all() and (kept[:, 1] != kept[:, 2]).all()
+    # The merged vertex sits at the pair's mean.
+    assert np.allclose(sorted(merged[:, 0]), [0.0, 0.25, 10.0])
+    # No decimation asked for: everything comes back as it went in.
+    same_v, same_f = cluster_decimate(vertices, faces, cell=0)
+    assert same_v.shape == vertices.shape and same_f.shape == faces.shape
+
+
+def test_the_template_is_found_only_where_it_has_been_fetched(tmp_path):
+    from onset_review.anatomy import template_dir
+
+    empty = tmp_path / "nothing"
+    empty.mkdir()
+    assert template_dir(empty) is None or template_dir(empty) != empty
+    root = _write_stand_in_template(tmp_path / "subjects")
+    assert template_dir(root) == root
+
+
+def test_the_template_surface_is_both_hemispheres_in_metres_and_cached(tmp_path):
+    from onset_review.anatomy import TEMPLATE_SUBJECT, template_surface
+
+    root = _write_stand_in_template(tmp_path / "subjects")
+    cache = tmp_path / "cache"
+    vertices, faces = template_surface(root, cell_mm=1.0, cache_dir=cache)
+    assert vertices.shape[1] == 3 and faces.shape[1] == 3
+    assert vertices.shape[0] == 12                    # six a hemisphere, none merged at 1 mm
+    assert faces.shape[0] == 16
+    assert faces.max() < vertices.shape[0]
+    # Millimetres became metres: the hemispheres sit 40 mm either side of the midline.
+    assert abs(vertices[:, 0].min() + 0.070) < 1e-6
+    assert abs(vertices[:, 0].max() - 0.070) < 1e-6
+    assert set(np.sign(vertices[:, 0]).astype(int)) == {-1, 1}
+    cached = list(cache.glob(f"template-{TEMPLATE_SUBJECT}-*.npz"))
+    assert len(cached) == 1
+    # The second read comes from the cache, so it works with the surfaces gone.
+    import shutil
+
+    shutil.rmtree(root / TEMPLATE_SUBJECT / "surf")
+    again_v, again_f = template_surface(root, cell_mm=1.0, cache_dir=cache)
+    assert np.allclose(again_v, vertices) and np.array_equal(again_f, faces)
+
+
+def test_a_missing_template_says_how_to_fetch_it(tmp_path, monkeypatch):
+    from onset_review import anatomy
+
+    # Whatever this machine has configured in MNE, the template is not found.
+    monkeypatch.setattr(anatomy, "template_dir", lambda _subjects_dir=None: None)
+    with pytest.raises(FileNotFoundError, match="fetch_fsaverage"):
+        anatomy.template_surface(tmp_path, cache_dir=tmp_path)
+
+
+def test_the_coordinate_space_is_read_from_the_sidecar_and_never_guessed(tmp_path):
+    import json
+
+    from onset_review.coordinates import coordinate_space
+
+    path = tmp_path / "sub-01_electrodes.tsv"
+    path.write_text("name\tx\ty\tz\nA1\t0\t0\t0\n", encoding="utf-8")
+    assert coordinate_space(path) == "unknown"
+    sidecar = tmp_path / "sub-01_coordsystem.json"
+    sidecar.write_text(json.dumps({"iEEGCoordinateSystem": "MNI152NLin2009aSym"}),
+                       encoding="utf-8")
+    assert coordinate_space(path) == "template"
+    sidecar.write_text(json.dumps({"iEEGCoordinateSystem": "Other",
+                                   "iEEGCoordinateSystemDescription": "scanner RAS"}),
+                       encoding="utf-8")
+    assert coordinate_space(path) == "patient"
+    sidecar.write_text("not json", encoding="utf-8")
+    assert coordinate_space(path) == "unknown"
+
+
+# --------------------------------------------------------------------------
+# The average event and the threshold re-test
+# --------------------------------------------------------------------------
+
+def test_the_average_event_aligns_at_the_peak_and_reads_the_mean(review):
+    from onset_review import average
+
+    channels = average.channels_with_events(review)
+    assert channels, "the synthetic window has accepted events"
+    leader, count = channels[0]
+    assert leader == str(review.findings.sort_values("rank")["channel"].iloc[0])
+    avg = average.compute(review, leader)
+    assert avg.available and avg.n_available == count and 0 < avg.n <= count
+    assert avg.times.shape == avg.mean_wideband.shape == avg.mean_band.shape
+    assert abs(avg.times[0] + average.HALF_S) < 1e-6 and abs(avg.times[-1] - average.HALF_S) < 1e-6
+    # Aligned at the band-passed peak: the mean band-passed trace peaks at zero.
+    assert abs(float(avg.times[np.argmax(avg.mean_band)])) <= 0.001
+    assert avg.sd_band.min() >= 0 and avg.mean_power_db.shape == (avg.freqs.size,
+                                                                   avg.tfr_times.size)
+    assert avg.reading in ("island", "column", "unclear") and avg.why
+    assert np.isfinite(avg.mean_duration_ms) and np.isfinite(avg.mean_frequency_hz)
+    text = average.describe(avg)
+    assert leader in text and "averaged" in text and avg.reading in text
+    # The synthetic bursts are oscillations by construction.
+    assert avg.band_contrast_db is not None and avg.band_contrast_db > 0
+
+
+def test_the_average_event_is_empty_without_events_or_signal(review):
+    from onset_review import average
+
+    nothing = average.compute(review, "NOT-A-CHANNEL")
+    assert not nothing.available and nothing.n == 0 and average.describe(nothing) == ""
+
+    class Bare:
+        request = review.request
+        events = review.events
+        findings = review.findings
+        raw = None
+
+    assert not average.compute(Bare(), average.channels_with_events(review)[0][0]).available
+
+
+def test_the_subsample_is_spread_through_the_window_not_the_first_n():
+    from onset_review.average import _subsample
+
+    events = list(range(100))
+    chosen = _subsample(events, 10)
+    assert len(chosen) == 10 and chosen[0] == 0 and chosen[-1] == 99
+    assert _subsample(events[:5], 10) == events[:5]
+
+
+def test_the_threshold_re_test_follows_the_leaders_and_says_who_survives(review):
+    from onset_review import sensitivity
+
+    sens = sensitivity.compute(review, factors=(1.0, 2.0), top=3)
+    assert sens.available and sens.runtime_s >= 0
+    assert sens.detector == review.request.primary
+    assert sens.thresholds == [sens.base_threshold, round(sens.base_threshold * 2, 3)]
+    assert sens.channels == [str(c) for c in review.findings.sort_values("rank")["channel"]][:3]
+    assert list(sens.rates.columns) == sens.thresholds
+    assert set(sens.rates.index) == set(review.findings["channel"].astype(str))
+    # A stricter threshold never finds more events.
+    assert (sens.counts[sens.thresholds[1]] <= sens.counts[sens.thresholds[0]]).all()
+    assert len(sens.leaders) == len(sens.tied) == len(sens.stands_out) == 2
+    survives = sens.survives_to()
+    assert survives in (None, 1.0, 2.0)
+    text = sensitivity.describe(sens)
+    assert "the window's own" in text and ("leads" in text or "nothing detected" in text)
+    handed = sensitivity.as_dict(sens)
+    assert handed["available"] and handed["window_leader_survives_to_factor"] == survives
+    assert set(handed["leading_channels_rate_per_min"]) == set(sens.channels)
+
+
+def test_the_threshold_re_test_says_why_when_it_cannot_run(review):
+    from onset_review import sensitivity
+
+    class Bare:
+        request = review.request
+        findings = review.findings
+        recording = None
+
+    sens = sensitivity.compute(Bare())
+    assert not sens.available and "no recording" in sens.reason
+    assert "Not re-tested" in sensitivity.describe(sens)
+    assert sensitivity.as_dict(sens) == {"available": False, "reason": sens.reason}
+
+
+# --------------------------------------------------------------------------
+# The findings draft, and the other windows of the same recording
+# --------------------------------------------------------------------------
+
+def test_the_findings_draft_is_filed_with_who_wrote_it_and_survives_the_round_trip():
+    from onset_review.adjudication import Adjudication
+
+    read = Adjudication(window="w", reader="Dr A")
+    assert not read.draft and not read.draft_is_assistants
+    read.set_draft("  AR1-AR2 led at 52/min.  ", "assistant (scripted (no language model))")
+    assert read.draft == "AR1-AR2 led at 52/min." and read.draft_is_assistants
+    assert read.draft_at.endswith("Z")
+    again = Adjudication.from_json(read.to_json())
+    assert (again.draft, again.draft_by, again.draft_at) == (read.draft, read.draft_by, read.draft_at)
+    read.set_draft("AR1-AR2 led at 52/min, which I confirmed on the trace.", "Dr A")
+    assert not read.draft_is_assistants and read.draft_by == "Dr A"
+    read.set_draft("", "Dr A")
+    assert read.draft == "" and read.draft_by == "" and read.draft_at == ""
+
+
+def test_the_report_prints_the_draft_as_the_assistants_until_the_reader_edits_it(review):
+    from onset_review import report
+
+    read = review.read
+    before = (read.draft, read.draft_by, read.draft_at)
+    try:
+        read.set_draft("", "")
+        assert "## Findings" not in report.review_markdown(review)
+        read.set_draft("AR1-AR2 led at 52/min.", "assistant (scripted (no language model))")
+        text = report.review_markdown(review)
+        assert "## Findings" in text and "AR1-AR2 led at 52/min." in text
+        assert "Drafted by the assistant (scripted (no language model))" in text
+        assert "has not been edited by the reader" in text
+        assert text.index("## Findings") < text.index("## Per-channel findings")
+        read.set_draft("AR1-AR2 led at 52/min; I agree.", "Dr A")
+        text = report.review_markdown(review)
+        assert "_Written by Dr A on" in text and "Drafted by" not in text
+    finally:
+        read.draft, read.draft_by, read.draft_at = before
+
+
+def _other_window_fixture(review, recording):
+    """A cache listing with this window and one more, and a loader that
+    analyses the synthetic recording instead of fetching anything."""
+    import pandas as pd
+
+    from onset_review.session import session_from_recording
+
+    request = review.request
+    span = request.span()
+    rows = [{"dataset": request.dataset, "subject": request.subject, "task": None,
+             "run": request.run, "t_start": span[0], "t_stop": span[1], "sfreq": 2000.0,
+             "n_channels": 50, "bands": "ripple", "path": "x"},
+            {"dataset": request.dataset, "subject": request.subject, "task": None,
+             "run": request.run, "t_start": span[1], "t_stop": span[1] + (span[1] - span[0]),
+             "sfreq": 2000.0, "n_channels": 50, "bands": "ripple", "path": "y"},
+            {"dataset": request.dataset, "subject": "sub-99", "task": None, "run": "01",
+             "t_start": 0.0, "t_stop": 60.0, "sfreq": 2000.0, "n_channels": 50,
+             "bands": "ripple", "path": "z"}]
+    frame = pd.DataFrame(rows)
+    loads = []
+
+    def loader(request, _cache_dir=None):
+        loads.append((request.t_start, request.t_stop))
+        return session_from_recording(recording, request)
+
+    return (lambda _cache_dir=None: frame), loader, loads
+
+
+def test_the_other_windows_are_this_recordings_and_not_this_one(review, recording, monkeypatch):
+    from onset_review import windows
+
+    windows._CACHE.clear()
+    monkeypatch.setattr(windows, "_cache_dir", lambda: None)
+    lister, loader, loads = _other_window_fixture(review, recording)
+    others = windows.other_windows(review, lister=lister)
+    span = review.request.span()
+    assert len(others) == 1 and others[0]["t_start"] == span[1]
+    assert others[0]["analysed"] is False and others[0]["duration_s"] == round(span[1] - span[0], 1)
+    assert windows.other_windows(review, lister=lambda _c=None: None) == []
+
+
+def test_another_window_is_analysed_with_this_windows_settings_once(review, recording,
+                                                                     monkeypatch, tmp_path):
+    from onset_review import windows
+
+    windows._CACHE.clear()
+    monkeypatch.setattr(windows, "_cache_dir", lambda: tmp_path / "windows")
+    lister, loader, loads = _other_window_fixture(review, recording)
+    other = windows.other_windows(review, lister=lister)[0]
+    there = windows.analyse_window(review, other["t_start"], other["t_stop"], loader=loader)
+    assert loads == [(other["t_start"], other["t_stop"])] and there["cached"] is False
+    assert there["leader"] and there["leading"] and there["window_s"] == [other["t_start"], other["t_stop"]]
+    again = windows.analyse_window(review, other["t_start"], other["t_stop"], loader=loader)
+    assert len(loads) == 1 and again["cached"] is True
+    assert windows.other_windows(review, lister=lister)[0]["analysed"] is True
+    # The disk copy serves a fresh process too.
+    windows._CACHE.clear()
+    third = windows.analyse_window(review, other["t_start"], other["t_stop"], loader=loader)
+    assert len(loads) == 1 and third["cached"] is True
+    here = windows.summarise(review)
+    comparison = windows.compare(here, there)
+    assert comparison["leader_this_window"] == here["leader"]
+    assert comparison["leader_changed"] == (here["leader"] != there["leader"])
+    assert {m["channel"] for m in comparison["leading_channels"]} >= {here["leader"]}
+    assert "Compare the tied sets" in comparison["note"]
+    # A different band is a different analysis, filed apart.
+    import dataclasses
+
+    other_band = dataclasses.replace(review.request, band="fast_ripple")
+    assert windows.window_key(other_band) != windows.window_key(review.request)
