@@ -85,6 +85,7 @@ BACKENDS = [
 #: tooltip and is what gets asked.
 SUGGESTIONS = [
     ("What can you do?", "What can you do?"),
+    ("What is an HFO?", "What is an HFO?"),
     ("Which channels have the highest ripple rate?", "Highest rates"),
     ("Show me the evidence for the busiest channel", "Show evidence"),
     ("Does any channel actually stand out?", "Anything stand out?"),
@@ -386,6 +387,7 @@ class AssistantPanel(QWidget):
         self.new_chat.clicked.connect(self.new_conversation)
         self._history: list[tuple[str, str]] = []
         self._drafting = False
+        self._sources: list = []
         self._event_key: str = ""
 
         top = QHBoxLayout()
@@ -765,7 +767,30 @@ class AssistantPanel(QWidget):
                 + "</div>")
             return
 
+        mode = getattr(answer, "mode", "data")
+        if mode == "general":
+            self._append(
+                f"<div style='margin:2px 0 6px;padding:6px;"
+                f"background:{theme.current().warn_surface};"
+                f"border-left:3px solid {theme.current().warn};'>"
+                f"<b>Not checked.</b> This is the model's own knowledge, not this analysis "
+                f"and not the project's documents; nothing here vouches for it."
+                f"<div style='margin-top:4px;'>{_paragraphs(answer.text)}</div>"
+                f"<div style='color:{theme.current().text_muted};font-size:{SMALL_PT}pt;"
+                f"margin-top:3px;'>{html.escape(answer.backend)} · unchecked</div></div>")
+            return
         parts = [f"<div style='margin:2px 0 4px;'>{_paragraphs(answer.text)}</div>"]
+        if mode == "background":
+            self._sources = list(getattr(answer, "sources", []) or [])
+            links = [f"<a href='doc:{i}'>{html.escape(label)}</a>"
+                     for i, (label, _text) in enumerate(self._sources)]
+            parts.append(f"<div style='font-size:{SMALL_PT}pt;margin-bottom:2px;'>"
+                         "from the documents: " + " · ".join(links) + "</div>")
+            parts.append(f"<div style='color:{theme.current().text_muted};font-size:{SMALL_PT}pt;'>"
+                         f"{html.escape(answer.backend)} · numbers checked against the cited "
+                         "sections</div>")
+            self._append("".join(parts))
+            return
         if answer.evidence_ids:
             links = []
             for evidence_id in answer.evidence_ids:
@@ -801,11 +826,35 @@ class AssistantPanel(QWidget):
         from urllib.parse import unquote
 
         text = unquote(url.toString())
+        if text.startswith("doc:"):
+            self._show_source(text[len("doc:"):])
+            return
         if not text.startswith("evidence:"):
             return
         parsed = parse_evidence_id(text[len("evidence:"):])
         if parsed is not None:
             self.evidencePicked.emit(parsed[0], parsed[1])
+
+    def _show_source(self, index: str) -> None:
+        """The cited document section, in a window of its own."""
+        from qtpy.QtWidgets import QDialog, QTextBrowser, QVBoxLayout
+
+        from onset_review.studypages import set_markdown
+
+        try:
+            label, body = self._sources[int(index)]
+        except (ValueError, IndexError):
+            return
+        dialog = QDialog(self)
+        dialog.setObjectName("onset_source_dialog")
+        dialog.setWindowTitle(label)
+        dialog.resize(640, 420)
+        box = QVBoxLayout(dialog)
+        view = QTextBrowser()
+        set_markdown(view, f"### {label}\n\n{body}")
+        box.addWidget(view)
+        self._source_dialog = dialog
+        dialog.show()
 
     def closeEvent(self, event):      # noqa: N802  (Qt's spelling)
         """Tidy up early when the panel is actually closed.

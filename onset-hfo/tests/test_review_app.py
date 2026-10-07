@@ -3142,3 +3142,42 @@ def test_the_side_column_is_wide_enough_for_every_tab(paged):
     assert labels == ["Ranking", "Events", "Event", "Spectrum", "Average", "Threshold"]
     assert side.minimumWidth() >= side.tabBar().sizeHint().width()
     assert paged.pages.splitter("recording").sizes()[1] >= side.minimumWidth() or True
+
+
+# --------------------------------------------------------------------------
+# Background answers in the panel: sources to click, a banner for the unchecked
+# --------------------------------------------------------------------------
+
+def test_the_panel_shows_a_background_answers_sources_and_opens_one(qapp, review):
+    from onset_review.assistant import SUGGESTIONS, AssistantPanel
+
+    assert any(label == "What is an HFO?" for _q, label in SUGGESTIONS)
+    panel = AssistantPanel(review)
+    try:
+        panel.ask("What is an HFO?")
+        text = panel.transcript.toPlainText()
+        assert "from the documents: GLOSSARY" in text and "From GLOSSARY" in text
+        assert panel._sources and panel._sources[0][0].startswith("GLOSSARY")
+        assert len(panel._history) == 1, "a verified background answer is remembered"
+        panel._show_source("0")
+        dialog = panel._source_dialog
+        assert dialog.windowTitle().startswith("GLOSSARY") and dialog.isVisible()
+        dialog.close()
+        panel._show_source("99")        # nothing to show, nothing to raise
+    finally:
+        panel.deleteLater()
+
+
+def test_the_panel_labels_an_unchecked_general_answer(qapp, review):
+    from onset_agent.agent import AgentAnswer
+    from onset_review.assistant import AssistantPanel
+
+    panel = AssistantPanel(review)
+    try:
+        panel._say_answer(AgentAnswer(question="q", text="Hans Berger, in 1924.", mode="general",
+                                      backend="fake", verified=False,
+                                      reason="the model alone: not checked against anything"))
+        text = panel.transcript.toPlainText()
+        assert "Not checked." in text and "Hans Berger" in text and "unchecked" in text
+    finally:
+        panel.deleteLater()

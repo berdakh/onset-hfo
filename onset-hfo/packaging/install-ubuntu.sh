@@ -152,6 +152,11 @@ if [[ "${SKIP_INSTALL}" == "0" ]]; then
       run rm -rf "${PREFIX}/site"
       run cp -R "${HERE}/site" "${PREFIX}/site"
     fi
+    if [[ -d "${HERE}/docs" ]]; then
+      say "Installing the documents the assistant answers background questions from in ${PREFIX}/docs"
+      run rm -rf "${PREFIX}/docs"
+      run cp -R "${HERE}/docs" "${PREFIX}/docs"
+    fi
   else
     say "Installing onset-hfo with the desktop reviewer (a few minutes)"
     run "${VENV_PY}" -m pip install --quiet -e "${HERE}[review]"

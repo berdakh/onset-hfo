@@ -648,6 +648,15 @@ model puts it into words.
 **It remembers the conversation.** A follow-up ("and the one below it?") is
 answered with the last few exchanges in view. *New conversation* forgets them.
 
+**It answers background questions from the documents.** "What is an HFO?",
+"why is the notch 2 Hz wide?", "what does the interval mean?" are answered
+from this project's own glossary, methods, guide and evaluation: the
+sections it drew on are named under the answer and open on a click, and a
+number the sections do not state is refused like any other. A question
+neither the analysis nor the documents cover is answered by the model alone
+under a **Not checked** banner, so it never reads as verified. A medical
+question that gets that far is refused instead.
+
 **It knows what the window has already computed.** Once the Threshold tab has
 run, a question about thresholds ("does AR1-AR2 survive a stricter
 threshold?") is answered from that re-test at no cost, and the model is

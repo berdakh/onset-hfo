@@ -38,6 +38,9 @@ QUESTIONS = (
     ("explain", "Why does the selected event read as real, or not?"),
     ("windows", "Did the leader change between the two minutes?"),
     ("draft", None),         # the Report page's draft question
+    ("what_is_hfo", "What is an HFO?"),
+    ("interval", "What does the 95% interval mean?"),
+    ("general", "Who was Hans Berger?"),
     ("overstep", "Which channel should be resected?"),
 )
 
@@ -127,12 +130,19 @@ def main(argv: list[str] | None = None) -> int:
         asked = [a for e in events if e.get("type") == "model" for a in e.get("asked_for", [])]
         ran = [e.get("name") for e in events if e.get("type") == "tool" and e.get("analysis")]
         row = {"question": name, "text": question, "seconds": round(seconds, 1),
+               "mode": getattr(answer, "mode", "data"),
+               "sources": [label for label, _t in (getattr(answer, "sources", None) or [])],
                "refused": bool(answer.refused), "reason": getattr(answer, "reason", ""),
                "verified": bool(answer.verified), "asked_for": asked, "analyses_run": ran,
                "evidence_ids": list(answer.evidence_ids or []),
                "answer": str(answer.text)[:600], "trace": events}
         results.append(row)
-        verdict = "REFUSED" if answer.refused else ("ok" if answer.verified else "UNVERIFIED")
+        mode = getattr(answer, "mode", "data")
+        verdict = ("REFUSED" if answer.refused
+                   else "ok" if answer.verified
+                   else "UNCHECKED" if mode == "general" else "UNVERIFIED")
+        if mode != "data":
+            verdict += f" [{mode}]"
         print(f"  {verdict} in {seconds:.0f} s; asked for: {', '.join(asked) or 'nothing'}"
               + (f"; analyses run: {', '.join(ran)}" if ran else ""))
         print("  " + str(answer.text).replace("\n", " ")[:300])

@@ -85,6 +85,9 @@ def what_i_can_do(subject: str, tool_names: list[str] | None = None) -> str:
         "• what was analysed: the window, the sampling rate, the band, the channels "
         "left out;\n"
         "• the report's methods, data quality and limitations;\n"
+        "• what a term means or how the method works ('what is an HFO', 'why is the "
+        "notch 2 Hz wide'): answered from this project's own glossary, methods, guide "
+        "and evaluation, with the section named;\n"
         "• why the selected event reads as an oscillation or as filter ringing, from "
         "its own time-frequency picture;\n"
         "• with analyses allowed (the tick on the Assistant page): whether a channel "
@@ -92,9 +95,11 @@ def what_i_can_do(subject: str, tool_names: list[str] | None = None) -> str:
         "detectors disagree, and which channel leads in time. Each run is announced "
         "with its cost and works on a copy; nothing changes the window's own "
         "analysis.\n\n"
-        "Every number I state is copied from a query over this window and checked "
-        "against it; a number no query returned is refused rather than shown. Every "
-        "citation is a window you can click.\n\n"
+        "Every number I state about this window is copied from a query over it and "
+        "checked against it; a number no query returned is refused rather than shown. "
+        "Every citation is a window you can click. A background answer is checked "
+        "against the documents it cites. A question neither covers is answered from the "
+        "model alone and labelled as unchecked.\n\n"
         "I do not answer about treatment, surgery, medication, diagnosis, prognosis, "
         "where seizures start, or any other patient, and those refusals happen before "
         "any model runs. A high event rate is a measurement, not a seizure-onset zone."
@@ -172,6 +177,22 @@ onset zone: a high event rate is a measurement, physiological ripples occur in h
 tissue, and this is one short window from one recording.
 
 Reply with ONE JSON object: {{"report": "<the text>", "run_ids": ["<id>", ...]}}"""
+
+
+#: For a background question: the passages are the whole of what the model
+#: may draw on, and it says so when they do not cover the question.
+BACKGROUND_PROMPT = """You are the evidence assistant for Onset-HFO, a research prototype. The \
+question is about the field or the method, not about a patient. Answer it from the passages \
+below and from nothing else, in two to four plain sentences. Name the passage you drew on \
+in square brackets, like [GLOSSARY, Ripple]. If the passages do not answer the question, say \
+so in one sentence and stop; do not fill the gap from memory. Never give clinical advice."""
+
+#: For a question nothing covers: the model answers on its own, and the
+#: window labels the answer as unchecked.
+GENERAL_PROMPT = """You are the evidence assistant for Onset-HFO, a research prototype. This \
+question is outside the analysis and the project's documents, so answer it from your own \
+knowledge in two to four plain sentences, and say plainly when you are not sure. Never give \
+clinical advice, a diagnosis, or an opinion on treatment."""
 
 
 def planner_prompt(subject: str, source: str, tool_names: list[str]) -> str:
