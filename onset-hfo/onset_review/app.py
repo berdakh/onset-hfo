@@ -200,6 +200,10 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.file is not None and args.open_path is None:
         args.open_path = args.file
+    # A saved project opens in the window, not through the import dialog.
+    project_path = None
+    if args.open_path is not None and str(args.open_path).endswith(".onsetproj"):
+        project_path, args.open_path = Path(args.open_path), None
 
     # Set before the loader is imported, so the refusal is in place from the
     # first fetch rather than checked later and hopefully honoured.
@@ -277,6 +281,10 @@ def main(argv: list[str] | None = None) -> int:
         # before it can exist, and keeps the dialog.
         review = _Review(app, None, False, args)
         review.start()
+        if project_path is not None:
+            from qtpy.QtCore import QTimer
+
+            QTimer.singleShot(0, lambda: review.open_project(project_path))
         return _finish(app.exec_() if hasattr(app, "exec_") else app.exec())
     else:
         request, overlay = launcher.choose_request(args.cache_dir)
@@ -368,6 +376,7 @@ class _Review:
             cached=self.cached_windows, on_open_cached=self.open_cached,
             on_import=self.import_file, on_choose=self.choose_window,
             on_open_path=self.open_path)
+        self._install_handlers(self.start_window)
         self.console = self.start_window.panels.get("console")
         if window.fit_to_screen(self.start_window):
             self.start_window.showMaximized()
@@ -439,6 +448,7 @@ class _Review:
         # into the new one with everything made in it.
         self.console = self.parts.panels.get("console")
         self.editor = self.parts.panels.get("editor")
+        self._install_handlers(self.parts.host)
         if page and self.parts.pages is not None:
             # The page the reviewer was on, after a re-analysis: a filter
             # applied from the Quality page should leave them on it.
@@ -638,6 +648,179 @@ class _Review:
         from onset_review.importer import choose_file
 
         self._open_request(choose_file(self._host(), self.args.cache_dir))
+
+    # -- many recordings, and whole projects ------------------------------------------------
+    def _install_handlers(self, host) -> None:
+        """What the File menu's batch and project entries, and the Files pane,
+        call: set on the window rather than passed down every builder."""
+        host.on_batch = self.batch
+        host.on_save_project = self.save_project
+        host.on_open_project = self.open_project
+
+    def batch(self, paths=None):
+        """File → Analyse many recordings: the batch window, analysing alike
+        with this window's settings (the defaults when nothing is open)."""
+        from onset_review.batchwindow import BatchWindow
+        from onset_review.files import current_folder
+        from onset_review.session import ReviewRequest
+
+        window = getattr(self, "batch_window", None)
+        if window is None or not window.isVisible():
+            template = (self.parts.session.request if self.parts is not None
+                        else ReviewRequest(detectors=("rms", "line_length")))
+            window = BatchWindow(template, cached=self.cached_windows, folder=current_folder())
+            window.openRequested.connect(self._open_request)
+            self.batch_window = window
+        if paths:
+            window.add_paths(paths)
+        window.show()
+        window.raise_()
+        return window
+
+    def save_project(self, path=None, include_recording=None):
+        """File → Save project: this recording and everything done with it."""
+        from qtpy.QtWidgets import QFileDialog, QMessageBox
+
+        from onset_review import project
+        from onset_review.files import current_folder
+
+        host = self._host()
+        if self.parts is None:
+            QMessageBox.information(host, "Save project", "Open a recording first: a project "
+                                    "is a recording and what was done with it.")
+            return None
+        session = self.parts.session
+        request = session.request
+        if include_recording is None:
+            include_recording = False
+            if request.path is not None and Path(request.path).is_file():
+                size = Path(request.path).stat().st_size / 1e6
+                answer = QMessageBox.question(
+                    host, "Include the recording?",
+                    f"Put {Path(request.path).name} ({size:,.0f} MB) inside the project, so "
+                    "it opens on another machine as it is? Without it the project keeps the "
+                    "file's location and a checksum, and asks for the file when it is not "
+                    "there.", QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
+                    QMessageBox.No)
+                if answer == QMessageBox.Cancel:
+                    return None
+                include_recording = answer == QMessageBox.Yes
+        if path is None:
+            suggested = current_folder() / f"{request.subject or 'project'}{project.SUFFIX}"
+            path, _ = QFileDialog.getSaveFileName(host, "Save the project", str(suggested),
+                                                  f"Onset projects (*{project.SUFFIX})")
+            if not path:
+                return None
+        tabs = ([{"title": e.title, "path": str(e.path) if e.path else None,
+                  "text": e.toPlainText()} for e in self.editor.editors()]
+                if self.editor is not None else [])
+        variables = (self.console.user_variables()
+                     if self.console is not None and self.console.started else {})
+        page = self.parts.pages.current_page() if self.parts.pages is not None else ""
+        manifest = project.save_project(path, request=request, read=session.read, page=page,
+                                        editor_tabs=tabs, console_log=list(session.console_log),
+                                        variables=variables,
+                                        include_recording=bool(include_recording))
+        import logging
+
+        logging.getLogger("onset_review").info("project saved: %s", manifest["path"])
+        left = manifest.get("variables_left_out") or {}
+        if host is not None and host.statusBar() is not None:
+            host.statusBar().showMessage(
+                f"Saved {Path(manifest['path']).name}"
+                + (f"; left out {', '.join(left)}" if left else ""), 10000)
+        return manifest
+
+    def open_project(self, path=None, ask: bool = True):
+        """File → Open project: unpack it, put back the verdicts, the cohort,
+        the scripts and the variables, and analyse the recording again from
+        its request."""
+        from qtpy.QtWidgets import QFileDialog, QMessageBox
+
+        from onset_review import project
+        from onset_review.files import current_folder
+
+        host = self._host()
+        if path is None:
+            path, _ = QFileDialog.getOpenFileName(host, "Open a project", str(current_folder()),
+                                                  f"Onset projects (*{project.SUFFIX})")
+            if not path:
+                return None
+
+        def locate(entry):
+            if not ask:
+                return None
+            chosen, _ = QFileDialog.getOpenFileName(
+                host, f"Where is {entry.get('name')}? (it was at {entry.get('path')})",
+                str(current_folder()))
+            return chosen or None
+
+        try:
+            state = project.open_project(path, locate=locate)
+        except Exception as error:      # noqa: BLE001 - a broken file is reported
+            QMessageBox.warning(host, "Open project", f"Could not open {Path(path).name}: "
+                                f"{error}")
+            return None
+        if state.request is None:
+            QMessageBox.warning(host, "Open project", "This project's recording could not be "
+                                "found: " + "; ".join(state.missing or ["no request in it"]))
+            return state
+        if state.read is not None:
+            project.restore_read(state.request, state.read)
+        if state.manifest.get("study"):
+            replace = True
+            if ask:
+                replace = QMessageBox.question(
+                    host, "Your cohort and re-runs",
+                    "The project carries a cohort and re-runs of the study. Use them in place "
+                    "of this machine's? This machine's are kept in study/before-… either way.",
+                    QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes) == QMessageBox.Yes
+            if replace:
+                project.restore_study(state)
+        self._open_request(state.request)
+        if self.parts is None or self.parts.session.request != state.request:
+            return state
+        editor = self.parts.panels.get("editor")
+        if editor is not None:
+            for tab in state.editor_tabs:
+                where = Path(tab["path"]) if tab.get("path") else None
+                if where is not None and where.is_file() and \
+                        where.read_text(encoding="utf-8", errors="replace") == tab.get("text"):
+                    editor.open_file(where)
+                else:
+                    editor.new_file(str(tab.get("text", "")),
+                                    title=tab.get("title") or (where.name if where else None))
+            if state.console_log:
+                editor.new_file("# Commands run in the console when the project was saved.\n"
+                                "# They were not run in this session: run a cell to run it.\n\n"
+                                + "\n\n# %%\n".join(state.console_log) + "\n",
+                                title="Console history")
+        console = self.parts.panels.get("console")
+        if state.variables_file is not None and console is not None:
+            load = True
+            if ask:
+                load = QMessageBox.question(
+                    host, "Console variables",
+                    f"Load the {len(state.manifest.get('variables') or [])} console variable(s) "
+                    "saved in the project? They are a pickle, which can run code as it is "
+                    "read: load them only from a project you trust.",
+                    QMessageBox.Yes | QMessageBox.No, QMessageBox.No) == QMessageBox.Yes
+            if load:
+                from onset_review.variables import load_workspace
+
+                console.start()
+                console.namespace.update(load_workspace(state.variables_file))
+                workspace = self.parts.panels.get("workspace")
+                if workspace is not None:
+                    workspace.refresh()
+        if state.page and self.parts.pages is not None:
+            self.parts.pages.show_page(state.page)
+        import logging
+
+        logging.getLogger("onset_review").info("project opened: %s", path)
+        if state.notes and ask:
+            QMessageBox.information(host, "Project opened", "\n\n".join(state.notes))
+        return state
 
     def open_path(self, path) -> None:
         """Open one file named by the Files pane: the same confirmation

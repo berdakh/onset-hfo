@@ -36,8 +36,9 @@ import numpy as np
 import pandas as pd
 
 __all__ = ["state_dir", "rerun_detectors", "load_your_sweep", "rerun_outcome",
-           "load_your_outcome", "cohort_entries", "add_to_cohort", "remove_from_cohort",
-           "cohort_frame", "compare_cohort", "contacts_of", "measure"]
+           "load_your_outcome", "cohort_entries", "add_to_cohort", "add_batch_row", "remove_from_cohort",
+           "cohort_frame", "compare_cohort", "contacts_of", "measure", "measure_counts",
+           "set_cohort", "COHORT_FILES"]
 
 OUTCOMES = {"seizure-free": True, "recurrence": False}
 
@@ -230,6 +231,16 @@ def _write_cohort(entries: list[dict]) -> None:
     path.write_text(json.dumps(entries, indent=1) + "\n")
 
 
+#: The files of `state_dir` a project carries: your cohort and your re-runs.
+COHORT_FILES = ("cohort.json", "your_sweep.csv", "your_sweep.json", "your_sweep_patients.csv",
+                "your_outcome.csv", "your_outcome.json", "your_outcome_groups.csv")
+
+
+def set_cohort(entries: list[dict]) -> None:
+    """Replace your cohort (a project being opened)."""
+    _write_cohort([e for e in entries if isinstance(e, dict)])
+
+
 def contacts_of(channels) -> list[str]:
     """The contacts behind channel names: both ends of a bipolar pair."""
     out: list[str] = []
@@ -245,25 +256,32 @@ def measure(session, resected_contacts) -> dict:
     """One patient as the Outcome study measures one: the busiest channel's
     tie-aware set from the window's counts (`candidate_channels`), and the
     share of it inside the resection, by the study's own functions."""
+    seconds = float(session.span[1] - session.span[0]) if session.span else \
+        float(session.raw.times[-1])
+    return measure_counts(session.findings, list(session.raw.ch_names), seconds,
+                          session.request.subject, resected_contacts)
+
+
+def measure_counts(findings, channels, seconds: float, subject: str,
+                   resected_contacts) -> dict:
+    """`measure` from a ranking table alone -- what a batch keeps of each
+    recording -- so a batch row joins a cohort exactly as an open window does."""
     from onset_hfo.clinical import Resection, classify_channels
     from onset_hfo.outcome import _candidate_metrics, _top_channel_resected, candidate_channels
 
-    findings = session.findings
     counts = findings.set_index("channel")["n_events"].astype(float) \
         if findings is not None and len(findings) else pd.Series(dtype=float)
-    channels = list(session.raw.ch_names)
+    channels = list(channels)
     counts = counts.reindex(channels, fill_value=0.0)
-    resection = Resection(subject=session.request.subject,
+    resection = Resection(subject=subject,
                           resected=tuple(c.upper() for c in resected_contacts), eloquent=())
     zones = classify_channels(channels, resection).set_index("channel")["zone"]
-    seconds = float(session.span[1] - session.span[0]) if session.span else \
-        float(session.raw.times[-1])
-    minutes = seconds / 60.0
+    minutes = float(seconds) / 60.0
     metrics = _candidate_metrics(counts, zones, minutes)
     return {**metrics, "top_channel_resected": _top_channel_resected(counts, zones),
             "candidates": candidate_channels(counts, minutes),
             "n_resected_channels": int((zones == "resected").sum()),
-            "n_channels": len(channels), "seconds": seconds}
+            "n_channels": len(channels), "seconds": float(seconds)}
 
 
 def add_to_cohort(session, outcome: str, resected_contacts, label: str = "") -> dict:
@@ -277,7 +295,7 @@ def add_to_cohort(session, outcome: str, resected_contacts, label: str = "") -> 
     request = session.request
     where = str(request.path) if request.path is not None else \
         f"{request.dataset}/{request.subject}/run-{request.run}"
-    entry = {
+    return _keep({
         "id": f"{where}@{request.t_start:g}-{request.t_stop:g}",
         "label": label or request.subject, "recording": where,
         "window_s": [float(request.t_start), float(request.t_stop)],
@@ -285,8 +303,42 @@ def add_to_cohort(session, outcome: str, resected_contacts, label: str = "") -> 
         "threshold_sd": request.threshold_sd, "outcome": outcome,
         "seizure_free": OUTCOMES[outcome], "resected": resected,
         "added": time.strftime("%Y-%m-%d %H:%M"),
-        **{k: v for k, v in measure(session, resected).items()},
-    }
+        **measure(session, resected),
+    })
+
+
+def add_batch_row(row: dict, findings, settings: dict, outcome: str, resected_contacts,
+                  label: str = "") -> dict:
+    """A batch row into your cohort, measured from the ranking the batch kept
+    (`onset_review.batchreview`), with the batch's settings recorded."""
+    if outcome not in OUTCOMES:
+        raise ValueError(f"outcome is one of {list(OUTCOMES)}, not {outcome!r}")
+    resected = [c.upper() for c in resected_contacts]
+    if not resected:
+        raise ValueError("name at least one resected contact")
+    if findings is None:
+        raise ValueError("this row has no ranking: it was not analysed")
+    channels = [c for c in str(row.get("channel_names", "")).split("|") if c] or \
+        list(findings["channel"])
+    seconds = float(row.get("analysed_seconds") or 0.0)
+    if seconds <= 0:
+        raise ValueError("this row does not say how long was analysed")
+    window = str(row.get("window_s", "")).split("–")
+    return _keep({
+        "id": f"{row.get('recording')}@{row.get('window_s')}",
+        "label": label or str(row.get("subject") or row.get("recording")),
+        "recording": str(row.get("recording")),
+        "window_s": [float(window[0]), float(window[1])] if len(window) == 2 else [],
+        "band": settings.get("band", ""), "detector": (settings.get("detectors") or [""])[0],
+        "threshold_sd": settings.get("threshold_sd"), "outcome": outcome,
+        "seizure_free": OUTCOMES[outcome], "resected": resected,
+        "added": time.strftime("%Y-%m-%d %H:%M"), "from_batch": True,
+        **measure_counts(findings, channels, seconds, str(row.get("subject", "")), resected),
+    })
+
+
+def _keep(entry: dict) -> dict:
+    """Keep `entry`, replacing an earlier one for the same recording and window."""
     entries = [e for e in cohort_entries() if e.get("id") != entry["id"]]
     entries.append(entry)
     _write_cohort(entries)

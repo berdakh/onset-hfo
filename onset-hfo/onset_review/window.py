@@ -635,6 +635,14 @@ def decorate(figure, session: ReviewSession, show_expert: bool = False,
             ed.raise_()
 
     panels["files"].scriptRequested.connect(open_script)
+
+    def handler(name: str, *args) -> None:
+        call = getattr(host, name, None)
+        if callable(call):
+            call(*args)
+
+    panels["files"].projectRequested.connect(lambda path: handler("on_open_project", path))
+    panels["files"].batchRequested.connect(lambda paths: handler("on_batch", paths))
     if on_open_path is not None:
         panels["files"].openRequested.connect(on_open_path)
     # Preprocessing sits with provenance rather than with the working views:
@@ -808,6 +816,7 @@ def decorate_start(*, cached=None, on_open_cached=None, on_import=None,
     opener.setEnabled(on_import is not None)
     if on_import is not None:
         opener.triggered.connect(lambda _=False: on_import())
+    _project_menu(file_menu, host, loaded=False)
     file_menu.addSeparator()
     file_menu.addAction("&Close window", host.close)
     view = menubar.addMenu("&View")
@@ -829,6 +838,32 @@ def decorate_start(*, cached=None, on_open_cached=None, on_import=None,
     _support_menu(help_menu, host)
     host.statusBar().showMessage("Open a recording to begin.")
     return host
+
+
+def _project_menu(file_menu, host, loaded: bool) -> None:
+    """The batch and the project entries. Each calls the handler the
+    application set on the window (`on_batch`, `on_save_project`,
+    `on_open_project`) when it is chosen, so no builder has to carry them."""
+    def call(name: str) -> None:
+        handler = getattr(host, name, None)
+        if callable(handler):
+            handler()
+
+    file_menu.addSeparator()
+    batch = file_menu.addAction("Analyse &many recordings…")
+    batch.setShortcut("Ctrl+Shift+A")
+    batch.setToolTip("Cached windows and files of your own, analysed alike, into one table")
+    batch.triggered.connect(lambda _=False: call("on_batch"))
+    file_menu.addSeparator()
+    opener = file_menu.addAction("Open &project…")
+    opener.setToolTip("A recording and everything done with it, saved as one file")
+    opener.triggered.connect(lambda _=False: call("on_open_project"))
+    saver = file_menu.addAction("&Save project…")
+    saver.setShortcut("Ctrl+Shift+S")
+    saver.setEnabled(loaded)
+    saver.setToolTip("This recording, its settings, your verdicts, the editor's scripts, the "
+                     "console's variables and your cohort, in one file")
+    saver.triggered.connect(lambda _=False: call("on_save_project"))
 
 
 def _support_menu(help_menu, host) -> None:
@@ -1116,6 +1151,7 @@ def _menus(figure, host: QMainWindow, panels: dict, docks: dict,
         "Opening another recording is not available in this window")
     if on_import is not None:
         opener.triggered.connect(lambda _=False: on_import())
+    _project_menu(file_menu, host, loaded=True)
     file_menu.addSeparator()
     _window_menu(file_menu, host, session, on_window, on_step_window)
     file_menu.addSeparator()

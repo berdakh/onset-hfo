@@ -38,6 +38,8 @@ __all__ = ["FilesPanel", "current_folder", "set_current_folder", "is_recording",
 
 #: What the editor opens.
 SCRIPT_SUFFIXES = (".py", ".ipynb")
+#: A saved project (`onset_review.project`).
+PROJECT_SUFFIX = ".onsetproj"
 
 
 HINT = "Double-click a recording to open it, a script to edit it, a folder to go into it."
@@ -94,6 +96,10 @@ class FilesPanel(QWidget):
     folderChanged = Signal(str)
     #: A script or notebook to open in the editor (absolute path).
     scriptRequested = Signal(str)
+    #: A saved project to open (absolute path).
+    projectRequested = Signal(str)
+    #: Recordings to analyse together (absolute paths).
+    batchRequested = Signal(list)
 
     def __init__(self, folder: str | Path | None = None, parent=None):
         super().__init__(parent)
@@ -115,11 +121,14 @@ class FilesPanel(QWidget):
         self.up_button = tool("↑", "Up one folder", self.go_up)
         self.home_button = tool("⌂", "Your home folder", lambda: self.set_folder(Path.home()))
         self.browse_button = tool("…", "Choose a folder", self.browse)
+        self.batch_button = tool("⧉", "Analyse the selected recordings together (or every "
+                                 "recording in this folder): File → Analyse many recordings",
+                                 self.request_batch)
 
         self.model = QFileSystemModel(self)
         self.model.setFilter(QDir.AllDirs | QDir.Files | QDir.NoDotAndDotDot)
         self.model.setNameFilters([f"*{s}" for s in supported_suffixes()]
-                                  + [f"*{s}" for s in SCRIPT_SUFFIXES])
+                                  + [f"*{s}" for s in SCRIPT_SUFFIXES] + [f"*{PROJECT_SUFFIX}"])
         self.model.setNameFilterDisables(True)       # others greyed, not hidden
         self.tree = QTreeView()
         self.tree.setObjectName("onset_files")
@@ -132,6 +141,9 @@ class FilesPanel(QWidget):
         for column in (1, 2, 3):
             self.tree.header().setSectionResizeMode(column, QHeaderView.ResizeToContents)
         self.tree.setColumnHidden(2, True)           # "Kind": the suffix says it
+        from qtpy.QtWidgets import QAbstractItemView
+
+        self.tree.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.tree.doubleClicked.connect(self._activated)
         self.tree.activated.connect(self._activated)
 
@@ -145,6 +157,7 @@ class FilesPanel(QWidget):
         bar.addWidget(self.home_button)
         bar.addWidget(self.path_edit, 1)
         bar.addWidget(self.browse_button)
+        bar.addWidget(self.batch_button)
         box = QVBoxLayout(self)
         box.setContentsMargins(0, 0, 0, 0)
         box.setSpacing(theme.SPACING // 2)
@@ -200,9 +213,30 @@ class FilesPanel(QWidget):
         if is_script(path):
             self.scriptRequested.emit(str(path.resolve()))
             return True
+        if path.is_file() and path.suffix == PROJECT_SUFFIX:
+            self.projectRequested.emit(str(path.resolve()))
+            return True
         self.hint.setText(f"{path.name} is not a recording this software reads; "
                           "File → Open a file lists the formats.")
         return False
+
+    def selected_recordings(self) -> list[str]:
+        """The recordings selected in the tree; every recording in the
+        folder when none is."""
+        chosen = {Path(self.model.filePath(index)) for index in
+                  self.tree.selectionModel().selectedRows(0)} if self.tree.selectionModel() \
+            else set()
+        if not chosen:
+            chosen = {p for p in self.folder.iterdir()} if self.folder.is_dir() else set()
+        return sorted(str(p.resolve()) for p in chosen if is_recording(p))
+
+    def request_batch(self) -> list[str]:
+        paths = self.selected_recordings()
+        if not paths:
+            self.hint.setText("No recordings selected, and none in this folder.")
+        else:
+            self.batchRequested.emit(paths)
+        return paths
 
     def listed(self) -> list[str]:
         """Names in the current folder as the tree has loaded them."""

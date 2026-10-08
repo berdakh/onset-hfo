@@ -1023,6 +1023,11 @@ class PageWindow(QMainWindow):
             if lent and self.current_page() == "analysis":
                 self._lend_panes()
 
+    def _call_handler(self, name: str, *args) -> None:
+        handler = getattr(self, name, None)
+        if callable(handler):
+            handler(*args)
+
     def _open_notebook(self, path: str) -> None:
         """A study page written as a notebook: on the Analysis page when there
         is one; otherwise where it was written is said, for Jupyter or later."""
@@ -1404,6 +1409,8 @@ class PageWindow(QMainWindow):
         connect_panes(self.panels["workspace"], files, self.panels["console"],
                       self.panels.get("editor"))
         files.scriptRequested.connect(self._open_script)
+        files.projectRequested.connect(lambda path: self._call_handler("on_open_project", path))
+        files.batchRequested.connect(lambda paths: self._call_handler("on_batch", paths))
         self.docks: dict = {}
         for key, title, what in self.PANES:
             dock = QDockWidget(title, self)
