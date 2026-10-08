@@ -1353,14 +1353,19 @@ def test_the_assistant_keeps_the_window_painting_while_it_works(qapp, review):
     """
     import inspect
 
-    from onset_review import assistant
+    from onset_review import assistant, workers
 
+    # The assistant never waits on a thread itself; `workers.run` does, in a
+    # nested loop, and waits without a limit only once the worker has said
+    # it is done. (A window closed meanwhile stops the worker instead.)
     source = inspect.getsource(assistant)
-    assert "QEventLoop" in source
-    # Exactly one place waits, and it is after the loop has already drained.
-    waits = [line.strip() for line in source.splitlines()
-             if ".wait()" in line and not line.strip().startswith("#")]
-    assert waits == ["worker.wait()"], waits
+    assert not [line for line in source.splitlines()
+                if ".wait(" in line and not line.strip().startswith("#")]
+    run = inspect.getsource(workers.run)
+    assert "QEventLoop" in run
+    unbounded = [line.strip() for line in run.splitlines() if ".wait()" in line]
+    assert unbounded == ["worker.wait()"], unbounded
+    assert run.index('done["finished"]') < run.index("worker.wait()")
 
     panel = assistant.AssistantPanel(review)
     try:
