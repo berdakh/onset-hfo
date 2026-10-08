@@ -43,6 +43,21 @@ from onset_hfo.preprocess import prepare
 from onset_hfo.synthetic import make_synthetic_recording
 
 
+@pytest.fixture(autouse=True)
+def _working_directory_is_put_back():
+    """Every test leaves the working directory where it found it.
+
+    The Console pane makes the Files pane's folder the process's working
+    directory when it starts, as Spyder does; a test that started one moved
+    the directory for every test after it, and the subprocess tests that
+    import this checkout from the working directory failed far from the
+    cause. Twice, so it is guarded here rather than in each test."""
+    here = os.getcwd()
+    yield
+    if os.getcwd() != here:
+        os.chdir(here)
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _window_settings_go_to_a_temporary_directory(tmp_path_factory):
     """The page window remembers its splitter sizes beside the assistant's

@@ -54,6 +54,7 @@ from onset_review.panels import (
     ProvenancePanel,
     TrendsPanel,
 )
+from onset_review.panes import add_pane_menu
 from onset_review.patient import PatientPanel
 from onset_review.preprocessing import PreprocessPanel
 from onset_review.sensitivityview import SensitivityPanel
@@ -791,7 +792,8 @@ def decorate_start(*, cached=None, on_open_cached=None, on_import=None,
     file_menu.addSeparator()
     file_menu.addAction("&Close window", host.close)
     view = menubar.addMenu("&View")
-    _pane_actions(view, host)
+    add_pane_menu(view, host, host.docks, host.panels, apply=host.apply_pane_layout,
+                  sidebar=host)
     view.addSeparator()
     reset = view.addAction("&Restore the default layout")
     reset.triggered.connect(lambda _=False: host.reset_layout())
@@ -1107,7 +1109,8 @@ def _menus(figure, host: QMainWindow, panels: dict, docks: dict,
         popped.triggered.connect(lambda _=False: pages.toggle_trace_window())
         view.aboutToShow.connect(lambda: popped.setChecked(pages.trace_popped))
         view.addSeparator()
-        _pane_actions(view, pages)
+        add_pane_menu(view, pages, pages.docks, panels, apply=pages.apply_pane_layout,
+                      sidebar=pages)
         view.addSeparator()
         docked = view.addAction("E&verything at once (docked panels)")
         docked.setToolTip("The original arrangement: every panel a dock on "
@@ -1143,6 +1146,9 @@ def _menus(figure, host: QMainWindow, panels: dict, docks: dict,
         view.addSeparator()
         for dock_widget in docks.values():
             view.addAction(dock_widget.toggleViewAction())
+        # The task layouts above already decide which panes show here; what
+        # this window lacks is a way to clear the windows the panes opened.
+        add_pane_menu(view, host, docks, panels, toggles=False, layouts=False)
         view.addSeparator()
     group = QActionGroup(host)
     group.setExclusive(True)
@@ -1204,21 +1210,6 @@ def how_to_read_text() -> str:
 
 def _how_to_read(host) -> None:
     QMessageBox.information(host, "How to read the pages", how_to_read_text())
-
-
-def _pane_actions(menu, host) -> None:
-    """View → Workspace and Files: each pane's own show/hide toggle, so the
-    tick follows the pane however it was closed."""
-    shortcuts = {"workspace": "Ctrl+Shift+W", "files": "Ctrl+Shift+F",
-                 "console": "Ctrl+Shift+I"}
-    for key, _title, what in getattr(host, "PANES", ()):
-        dock = host.pane(key)
-        if dock is None:
-            continue
-        action = dock.toggleViewAction()
-        action.setShortcut(shortcuts.get(key, ""))
-        action.setToolTip(what)
-        menu.addAction(action)
 
 
 def apply_layout(docks: dict, name: str) -> bool:

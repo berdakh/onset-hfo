@@ -763,6 +763,18 @@ run in a window is printed, in order, in the exported report under
 *Python console*: a reader of the report can always see whether a console
 touched the numbers in it. Nothing is written to disk unless a command does it.
 
+### Keeping the screen clear
+
+The panes and the windows they open are there when wanted and gone when not.
+**View → Pane layout → Page only** (`Ctrl+Shift+P`) closes every pane in one
+step; **Spyder** and **MATLAB** put them back in those programs' arrangements.
+**View → Close variable and figure windows** clears every window the
+Workspace and the Console opened. **View → Page sidebar** (`Ctrl+Shift+B`)
+hides the list of pages, leaving the page the whole width; `Alt+1`… and the
+View menu still move between pages. **F11** is full screen. The choices are
+kept for the next launch, and **View → Restore the default layout** undoes
+them.
+
 ### Preprocessing — change what is done to the signal
 
 ![The preprocessing panel](images/onset-review-preprocessing.png)
