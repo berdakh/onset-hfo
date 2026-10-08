@@ -459,14 +459,19 @@ def goto(figure, t: float, channel: str | None = None,
 MODES = ("pages", "docks")
 
 
-def build_panels(figure, session: ReviewSession, console=None) -> dict:
+def build_panels(figure, session: ReviewSession, console=None, editor=None) -> dict:
     """Every panel, built against one session. The same dict in both modes.
-    `console` is a Console pane to carry over from the window before, so
-    that a re-analysis keeps what was made in it."""
+    `console` and `editor` are the Console and the Editor to carry over from
+    the window before, so a re-analysis keeps what was made and written in
+    them."""
     if console is None:
         console = ConsolePanel(session)
     else:
         console.set_session(session)
+    if editor is None:
+        from onset_review.editor import EditorPanel
+
+        editor = EditorPanel(restore=True)
     return {
         "trends": TrendsPanel(session),
         "controls": TraceControls(figure),
@@ -491,6 +496,7 @@ def build_panels(figure, session: ReviewSession, console=None) -> dict:
         "workspace": WorkspacePanel(session),
         "files": FilesPanel(),
         "console": console,
+        "editor": editor,
     }
 
 
@@ -499,7 +505,8 @@ def decorate(figure, session: ReviewSession, show_expert: bool = False,
              on_electrodes=None, on_window=None, on_step_window=None,
              on_trace_at=None, mode: str = "docks", cached=None,
              on_open_cached=None, on_relayout=None,
-             on_choose=None, on_open_path=None, console=None) -> ReviewWindowParts:
+             on_choose=None, on_open_path=None, console=None,
+             editor=None) -> ReviewWindowParts:
     """Add the menus, the toolbar, the panels and the caveat around the trace.
 
     `on_preprocess` is called with a new `PreprocessConfig` when the reviewer
@@ -519,7 +526,7 @@ def decorate(figure, session: ReviewSession, show_expert: bool = False,
     if mode not in MODES:
         raise ValueError(f"mode must be one of {MODES}, not {mode!r}")
     display = _Display("selected", session.leader.get("leader"), show_expert)
-    panels = build_panels(figure, session, console=console)
+    panels = build_panels(figure, session, console=console, editor=editor)
     docks: dict = {}
 
     if mode == "pages":
@@ -614,8 +621,20 @@ def decorate(figure, session: ReviewSession, show_expert: bool = False,
     py = dock("console", "Console", Qt.LeftDockWidgetArea, panels["console"],
               "Python in this window's memory: session, raw, events, findings")
     host.splitDockWidget(ws, py, Qt.Vertical)
+    ed = dock("editor", "Editor", Qt.LeftDockWidgetArea, panels["editor"],
+              "Scripts and notebooks, run in the Console a cell at a time")
+    host.tabifyDockWidget(py, ed)
+    py.raise_()
     panels["workspace"].folder = lambda: panels["files"].folder
-    connect_panes(panels["workspace"], panels["files"], panels["console"])
+    connect_panes(panels["workspace"], panels["files"], panels["console"],
+                  panels["editor"])
+
+    def open_script(path: str) -> None:
+        if panels["editor"].open_file(path) is not None:
+            ed.show()
+            ed.raise_()
+
+    panels["files"].scriptRequested.connect(open_script)
     if on_open_path is not None:
         panels["files"].openRequested.connect(on_open_path)
     # Preprocessing sits with provenance rather than with the working views:

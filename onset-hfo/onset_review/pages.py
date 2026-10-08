@@ -57,6 +57,7 @@ __all__ = ["PageWindow", "PAGES", "STUDY_PAGES", "DISCLAIMER"]
 PAGES = (
     ("home", "Home"),
     ("recording", "Recording"),
+    ("analysis", "Analysis"),
     ("contacts", "Contacts"),
     ("map", "Map"),
     ("quality", "Signal"),
@@ -102,6 +103,9 @@ WHAT_IT_IS_NOT = (
 HOW_TO_READ = (
     ("recording", "channel ranking with both detectors side by side, "
                   "disagreement highlighted, and the signal behind any event"),
+    ("analysis", "your own Python on this recording, as in Spyder: scripts and notebooks "
+                 "run a cell at a time in a console that shares the Workspace, and a "
+                 "local model that drafts code for you to read before you run it"),
     ("contacts", "where the contacts are, ranked, relative to the resection"),
     ("map", "the same contacts flat, coloured by rate with a colour scale: the "
             "figure a paper prints, and the one the assistant can describe"),
@@ -348,15 +352,18 @@ class PageWindow(QMainWindow):
         self._labels: dict[str, str] = {}
         self.nav.setIconSize(QSize(16, 16))
 
-        def heading(text: str) -> None:
+        def heading(text: str, fold: bool = False) -> QListWidgetItem:
             item = QListWidgetItem(text.upper())
-            item.setFlags(Qt.NoItemFlags)
+            # A heading that folds is clickable, never selectable: a click
+            # opens or closes its group and does not change the page.
+            item.setFlags(Qt.ItemIsEnabled if fold else Qt.NoItemFlags)
             font = item.font()
             font.setPointSize(max(7, font.pointSize() - 2))
             font.setBold(True)
             item.setFont(font)
             item.setForeground(Qt.gray)
             self.nav.addItem(item)
+            return item
 
         # What each page is for, as its tooltip: the sidebar is the table of
         # contents, and a reader who hovers gets the line Home prints.
@@ -374,7 +381,8 @@ class PageWindow(QMainWindow):
             self.nav.addItem(item)
             if key == "home" or self.loaded:
                 self._items[key] = item
-        heading("The study")
+        self._study_heading = heading("The study", fold=True)
+        self._study_heading.setToolTip("Click to fold or unfold the study's pages")
         from onset_review.studies import STUDIES
 
         for key, label, what in STUDIES:
@@ -384,6 +392,8 @@ class PageWindow(QMainWindow):
             self._labels[key] = label
             self.nav.addItem(item)
             self._items[key] = item
+        self.nav.itemClicked.connect(self._heading_clicked)
+        self.set_study_folded(bool(self._remembered_value("study_folded")), remember=False)
         heading("The model")
         item = QListWidgetItem(glyphs.icon(CHAT_PAGE[0], tokens), CHAT_PAGE[1])
         item.setData(Qt.UserRole, CHAT_PAGE[0])
@@ -404,10 +414,48 @@ class PageWindow(QMainWindow):
         box.addWidget(self.nav, 1)
         self._sidebar = sidebar
 
+    # -- the study's pages, folded away ---------------------------------------
+    @property
+    def study_folded(self) -> bool:
+        from onset_review.studies import STUDIES
+
+        return all(self._items[key].isHidden() for key, _, _ in STUDIES
+                   if key in self._items)
+
+    def set_study_folded(self, folded: bool, remember: bool = True) -> None:
+        """Fold the six study pages under their heading, or show them. The
+        page that is showing stays, and Alt+number still reaches every page."""
+        from onset_review.studies import STUDIES
+
+        for key, _label, _what in STUDIES:
+            item = self._items.get(key)
+            if item is not None:
+                item.setHidden(bool(folded))
+        self._study_heading.setText(("▸ " if folded else "▾ ") + "THE STUDY")
+        if remember:
+            self.remember_layout()
+
+    def _heading_clicked(self, item) -> None:
+        if item is self._study_heading:
+            self.set_study_folded(not self.study_folded)
+
+    def _remembered_value(self, name: str):
+        import json
+
+        try:
+            payload = json.loads(self._layout_file().read_text(encoding="utf-8"))
+            return payload.get(name)
+        except (OSError, ValueError, TypeError, AttributeError):
+            return None
+
     def _nav_changed(self, current, _previous) -> None:
         key = current.data(Qt.UserRole) if current is not None else None
         if key and key in self._pages:
+            if key != "analysis":
+                self._return_panes()
             self.stack.setCurrentWidget(self._pages[key])
+            if key == "analysis":
+                self._lend_panes()
             self.title.setText(self._labels.get(key, ""))
             for page, widgets in self._page_actions.items():
                 for widget in widgets:
@@ -434,7 +482,7 @@ class PageWindow(QMainWindow):
     def _build_pages(self) -> None:
         builders = {
             "home": self._home_page, "recording": self._recording_page,
-            "contacts": self._contacts_page, "map": self._map_page,
+            "analysis": self._analysis_page, "contacts": self._contacts_page, "map": self._map_page,
             "quality": self._quality_page,
             "report": self._report_page, "assistant": self._assistant_page,
         }
@@ -449,9 +497,10 @@ class PageWindow(QMainWindow):
         from onset_review.studypages import StudyPage
 
         for key, _label, _what in STUDIES:
-            study = StudyPage(key, cached=self._cached)
+            study = StudyPage(key, cached=self._cached, session=self.session)
             if self._on_open_cached is not None:
                 study.openRequested.connect(self._on_open_cached)
+            study.notebookRequested.connect(self._open_notebook)
             page = self._on_card(study)
             page.setObjectName(f"page_{key}")
             self._pages[key] = page
@@ -844,10 +893,18 @@ class PageWindow(QMainWindow):
         # must take it along rather than leave a browser nobody can reach.
         if self.trace_popped:
             self.dock_trace()
+        self._return_panes()
         self.remember_layout()
+        editor = self.panels.get("editor")
+        if editor is not None:
+            editor.remember()
         workspace = self.panels.get("workspace")
         if workspace is not None:
             workspace.close_windows()
+        for page in self._pages.values():
+            closer = getattr(getattr(page, "body", page), "close_windows", None)
+            if callable(closer) and page is not workspace:
+                closer()
         console = self.panels.get("console")
         if console is not None and console.window() is self:
             # Only a console this window still holds: one carried into the
@@ -862,6 +919,130 @@ class PageWindow(QMainWindow):
         if splitter is not None and not on:
             upper = splitter.widget(0)
             splitter.setSizes([upper.sizeHint().height(), max(300, sum(splitter.sizes()))])
+
+    def _analysis_page(self) -> QWidget:
+        """Spyder on one page: the Editor on the left; the Workspace and
+        Files tabbed on the right, the Console under them. The three panes
+        are the window's own -- the same widgets as the docks -- brought
+        here while the page is up and given back when it is left, so a name
+        made here is in the Workspace on every page."""
+        from onset_review.editor import EditorPanel
+
+        editor = self.panels.get("editor")
+        if editor is None:
+            editor = EditorPanel(restore=True)
+            self.panels["editor"] = editor
+        self._slots: dict[str, QWidget] = {}
+        for key in ("workspace", "files", "console"):
+            slot = QWidget()
+            slot.setObjectName(f"onset_analysis_{key}")
+            box = QVBoxLayout(slot)
+            box.setContentsMargins(0, 0, 0, 0)
+            self._slots[key] = slot
+        self.analysis_tabs = QTabWidget()
+        self.analysis_tabs.setObjectName("onset_analysis_side")
+        self.analysis_tabs.setDocumentMode(True)
+        self.analysis_tabs.addTab(self._slots["workspace"], "Workspace")
+        self.analysis_tabs.addTab(self._slots["files"], "Files")
+        console = theme.card_frame(self._slots["console"], "Console", padding=4)
+        side = self._split("analysis_side", Qt.Vertical, [self.analysis_tabs, console],
+                           [360, 420])
+        code = theme.card_frame(editor, "Editor", padding=4)
+        body = self._split("analysis", Qt.Horizontal, [code, side], [780, 520],
+                           stretch=(3, 2))
+        #: key -> whether its dock was showing when the page took the pane.
+        self._lent: dict[str, bool] | None = None
+        page = QWidget()
+        box = QVBoxLayout(page)
+        box.setContentsMargins(0, 0, 0, 0)
+        box.addWidget(body, 1)
+        return page
+
+    # -- lending the panes to the Analysis page ------------------------------
+    @property
+    def panes_lent(self) -> bool:
+        return getattr(self, "_lent", None) is not None
+
+    def _lend_panes(self) -> None:
+        """Bring the Workspace, Files and Console onto the Analysis page; the
+        docks stand hidden, a note in each, until the page is left."""
+        if self.panes_lent or not getattr(self, "docks", None) \
+                or not hasattr(self, "_slots"):
+            return
+        lent = {}
+        building, self._building = getattr(self, "_building", False), True
+        try:
+            for key, slot in self._slots.items():
+                dock, panel = self.docks[key], self.panels[key]
+                lent[key] = dock.toggleViewAction().isChecked()
+                note = QLabel(f"The {dock.windowTitle()} is on the Analysis page while "
+                              "that page is open.")
+                note.setWordWrap(True)
+                note.setAlignment(Qt.AlignCenter)
+                note.setStyleSheet(f"color:{theme.current().text_muted};")
+                dock.setWidget(note)
+                slot.layout().addWidget(panel)
+                panel.show()
+                dock.setVisible(False)
+        finally:
+            self._building = building
+        self._lent = lent
+
+    def _return_panes(self) -> None:
+        """Give the panes back to their docks, each shown as it was."""
+        if not self.panes_lent:
+            return
+        lent, self._lent = self._lent, None
+        building, self._building = getattr(self, "_building", False), True
+        try:
+            for key, shown in lent.items():
+                dock, panel = self.docks[key], self.panels[key]
+                if panel.window() is not self:
+                    continue        # carried into the next window already
+                note = dock.widget()
+                dock.setWidget(panel)
+                panel.show()
+                if note is not None and note is not panel:
+                    note.hide()
+                    note.deleteLater()
+                dock.setVisible(shown)
+        finally:
+            self._building = building
+
+    @contextlib.contextmanager
+    def _panes_home(self):
+        """The panes in their docks for the length of the block (a layout
+        being applied, the arrangement being saved), and back on the
+        Analysis page after, if that is where they were."""
+        lent = self.panes_lent
+        if lent:
+            self._return_panes()
+        try:
+            yield
+        finally:
+            if lent and self.current_page() == "analysis":
+                self._lend_panes()
+
+    def _open_notebook(self, path: str) -> None:
+        """A study page written as a notebook: on the Analysis page when there
+        is one; otherwise where it was written is said, for Jupyter or later."""
+        if "analysis" in self._pages and self.panels.get("editor") is not None:
+            self._open_script(path)
+        elif self.statusBar() is not None:
+            self.statusBar().showMessage(
+                f"Notebook written to {path}. Open a recording to run it on the Analysis "
+                "page, or open it in Jupyter.", 10000)
+
+    def _open_script(self, path: str) -> None:
+        """A script or notebook double-clicked in the Files pane."""
+        editor = self.panels.get("editor")
+        if editor is None or "analysis" not in self._pages:
+            if self.statusBar() is not None:
+                self.statusBar().showMessage(
+                    "Scripts open on the Analysis page, once a recording is open.", 6000)
+            return
+        if editor.open_file(path) is not None:
+            self.show_page("analysis")
 
     def _contacts_page(self) -> QWidget:
         page = QWidget()
@@ -1218,7 +1399,9 @@ class PageWindow(QMainWindow):
         files = self.panels["files"]
         files.openRequested.connect(self._open_path)
         self.panels["workspace"].folder = lambda: files.folder
-        connect_panes(self.panels["workspace"], files, self.panels["console"])
+        connect_panes(self.panels["workspace"], files, self.panels["console"],
+                      self.panels.get("editor"))
+        files.scriptRequested.connect(self._open_script)
         self.docks: dict = {}
         for key, title, what in self.PANES:
             dock = QDockWidget(title, self)
@@ -1263,7 +1446,7 @@ class PageWindow(QMainWindow):
 
         self._building = True
         try:
-            with self._keeping_size():
+            with self._panes_home(), self._keeping_size():
                 shown = arrange(self, self.docks, name)
                 if shown:
                     self.resizeDocks([self.docks["workspace"]], [380], Qt.Horizontal)
@@ -1449,7 +1632,7 @@ class PageWindow(QMainWindow):
         if getattr(self, "docks", None):
             self._building = True
             try:
-                with self._keeping_size():
+                with self._panes_home(), self._keeping_size():
                     self._place_panes()
             finally:
                 self._building = False
@@ -1504,8 +1687,11 @@ class PageWindow(QMainWindow):
             splitters.update({k: base64.b64encode(v).decode("ascii")
                               for k, v in self.layout_state().items()})
             payload.update({"schema": 1, "compact": self.compact(), "splitters": splitters,
-                            "sidebar": self.sidebar_shown})
-            if getattr(self, "docks", None):
+                            "sidebar": self.sidebar_shown,
+                            "study_folded": self.study_folded})
+            if getattr(self, "docks", None) and not self.panes_lent:
+                # While the Analysis page holds the panes their docks stand
+                # hidden; that is not an arrangement to remember.
                 payload[self._panes_key] = base64.b64encode(
                     bytes(self.saveState().data())).decode("ascii")
             path.write_text(json.dumps(payload, indent=1) + "\n", encoding="utf-8")

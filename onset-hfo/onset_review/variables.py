@@ -202,8 +202,13 @@ def session_names(session) -> dict:
     for variable in _session_variables(session):
         if variable.name == "signal":
             names["signal"] = _signal_view(session.raw)
-        else:
-            names[variable.name] = variable.get()
+            continue
+        # The session's own object where it holds one -- `events` is the
+        # list the panels read, not the copy the list above describes -- so
+        # what is changed in the console is what the window shows.
+        own = getattr(session, variable.name, None)
+        names[variable.name] = (own if own is not None and not callable(own)
+                                else variable.get())
     return names
 
 

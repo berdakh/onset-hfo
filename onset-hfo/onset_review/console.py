@@ -55,20 +55,13 @@ _IPYTHON_NAMES = {"In", "Out", "get_ipython", "exit", "quit"}
 
 
 def _session_names(session) -> dict:
+    """Every name the Workspace lists, bound to the same object: one
+    workspace, seen from the list and from the console."""
+    from onset_review.variables import session_names
+
     if session is None:
         return {"session": None}
-    raw = session.raw
-    return {
-        "session": session,
-        "raw": raw,
-        "events": session.events,
-        "findings": session.findings,
-        "request": session.request,
-        "read": session.read,
-        "recording": session.recording,
-        "channels": list(raw.ch_names) if raw is not None else [],
-        "sfreq": float(session.sfreq),
-    }
+    return {"session": session, **session_names(session)}
 
 
 def namespace(session) -> dict:
@@ -110,12 +103,14 @@ def user_variables(ns: dict, injected: dict, hidden=()) -> dict:
 
 def _banner(session) -> str:
     where = session.request.label() if session is not None else "no recording open"
-    names = ("session, raw, events, findings, request, read, recording, channels, sfreq"
+    names = ("every name in the Workspace — raw, signal, times, channels, sfreq, events, "
+             "findings, quality, segments, request, read — and session"
              if session is not None else "session (None until a recording is open)")
     return (f"Python {sys.version.split()[0]} in this window's memory — {where}.\n"
             f"Named here: {names}; np, pd, mne, plt, onset_hfo.\n"
-            "raw.get_data() is the signal in volts. Figures open in windows of their "
-            "own. The working directory is the Files pane's folder.\n"
+            "signal is raw's samples in volts, read-only (np.array(signal) to change a "
+            "copy). Figures open in windows of their own. The working directory is the "
+            "Files pane's folder.\n"
             "Commands run here are listed in the exported report. A long computation "
             "holds the window until it finishes.\n")
 
@@ -127,6 +122,23 @@ def _monospace() -> QFont:
     font = QFontDatabase.systemFont(QFontDatabase.FixedFont)
     font.setPointSizeF(max(9.0, font.pointSizeF()))
     return font
+
+
+def _raised(before):
+    """The exception the plain console just printed, if a new one was."""
+    after = getattr(sys, "last_value", None)
+    return after if after is not None and after is not before else None
+
+
+def describe_error(error) -> str:
+    """An exception as the model is shown it: the last frames and the message."""
+    import traceback
+
+    if error is None:
+        return ""
+    lines = traceback.format_exception(type(error), error, error.__traceback__)
+    text = "".join(lines).strip().split("\n")
+    return "\n".join(text[-14:])
 
 
 class _BasicConsole(QWidget):
@@ -173,19 +185,21 @@ class _BasicConsole(QWidget):
         self._cursor = len(self._history)
         self._write(("... " if self._buffer else ">>> ") + line + "\n")
         self._buffer.append(line)
+        before = getattr(sys, "last_value", None)
         more = self._capture(lambda: self._interp.push(line))
         if not more:
             source = "\n".join(self._buffer)
             self._buffer = []
-            self._ran(source)
+            self._ran(source, _raised(before))
 
     def run(self, source: str) -> None:
         """Run a block as if typed, the result of a last expression echoed."""
         self._write("".join((">>> " if i == 0 else "... ") + line + "\n"
                             for i, line in enumerate(source.splitlines())))
         symbol = "single" if "\n" not in source.strip() else "exec"
+        before = getattr(sys, "last_value", None)
         self._capture(lambda: self._interp.runsource(source, "<console>", symbol))
-        self._ran(source)
+        self._ran(source, _raised(before))
 
     def _capture(self, call):
         out = io.StringIO()
@@ -241,7 +255,9 @@ class _Kernel:
 
     def _after(self, result) -> None:
         if self.active is not None:
-            self.active._ran(result.info.raw_cell if result.info is not None else "")
+            error = result.error_in_exec or result.error_before_exec
+            self.active._ran(result.info.raw_cell if result.info is not None else "",
+                             error)
 
 
 class _RichConsole:
@@ -323,6 +339,12 @@ class ConsolePanel(QWidget):
         self._impl = None
         self._injected: dict = {}
         self._figures_before: set[int] = set()
+        #: A command's source -> what the log keeps instead (a file's text
+        #: for the command that ran it).
+        self._log_as: dict[str, str] = {}
+        #: The last command's error, as `describe_error` puts it; "" after a
+        #: command that ran cleanly.
+        self.last_error = ""
         self._box = QVBoxLayout(self)
         self._box.setContentsMargins(0, 0, 0, 0)
         self._waiting = QLabel("The Python console starts when this pane is first shown.")
@@ -393,6 +415,17 @@ class ConsolePanel(QWidget):
         hidden = getattr(self._impl, "hidden", set())
         return user_variables(self.namespace, self._injected, hidden)
 
+    def visible_names(self) -> dict:
+        """What a name typed in the console finds, as the Workspace lists it:
+        the session's names and the user's own, without modules and
+        functions. Before the console starts, the session's alone."""
+        if self._impl is None:
+            return _session_names(self.session)
+        names = {k: v for k, v in self._injected.items()
+                 if not isinstance(v, types.ModuleType) and k in self.namespace}
+        names.update(self.user_variables())
+        return names
+
     def clear_user_variables(self) -> None:
         """Forget every name the user made (IPython's %reset, without the
         window's own)."""
@@ -431,15 +464,33 @@ class ConsolePanel(QWidget):
             self._impl.kernel.active = self
         self._impl.run(source)
 
+    def run_file(self, path) -> None:
+        """Run a script file in this namespace, as Spyder's runfile does: its
+        names land here, and the log keeps the file's text, not just its name."""
+        import shlex
+
+        path = Path(path).resolve()
+        text = path.read_text(encoding="utf-8")
+        self.start()
+        if self.kind == "ipython":
+            command = f"%run -i {shlex.quote(str(path))}"
+        else:
+            command = (f"exec(compile(open({str(path)!r}, encoding='utf-8').read(), "
+                       f"{str(path)!r}, 'exec'))")
+        self._log_as[command] = f"# Ran the file {path}\n{text.rstrip()}"
+        self.run(command)
+
     def _before(self) -> None:
         import matplotlib.pyplot as plt
 
         self._figures_before = set(plt.get_fignums())
 
-    def _ran(self, source: str) -> None:
+    def _ran(self, source: str, error=None) -> None:
+        self.last_error = describe_error(error)
+        logged = self._log_as.pop(source.strip(), source)
         if source.strip():
             if self.session is not None:
-                self.session.console_log.append(source.rstrip())
+                self.session.console_log.append(logged.rstrip())
         self._show_new_figures()
         here = Path.cwd()
         if self.folder is None or here != self.folder:
@@ -488,12 +539,19 @@ class ConsolePanel(QWidget):
             self._impl.shutdown()
 
 
-def connect_panes(workspace, files, console) -> None:
-    """Workspace, Files and Console as Spyder links them: the Workspace lists
-    what the console made and refreshes after each command; the console's
-    working directory and the Files pane's folder follow each other."""
+def connect_panes(workspace, files, console, editor=None) -> None:
+    """Workspace, Files, Console and Editor as Spyder links them: the
+    Workspace lists what the console made and refreshes after each command;
+    the console's working directory and the Files pane's folder follow each
+    other; the editor runs in the console and opens its dialogs in the
+    Files pane's folder."""
     if console is None:
         return
+    if editor is not None:
+        editor.console = console
+        if files is not None:
+            editor.folder = lambda: files.folder
+        console.executed.connect(lambda _source: editor.assistant.sync())
     if workspace is not None:
         workspace.console = console
         console.executed.connect(lambda _source: workspace.refresh())

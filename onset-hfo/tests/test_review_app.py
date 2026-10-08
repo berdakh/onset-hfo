@@ -73,7 +73,7 @@ def test_every_panel_is_docked(built):
                                 "detail", "spectrum", "average", "sensitivity", "brain", "map",
                                 "agreement", "provenance", "assistant", "preprocess", "patient",
                                 "quality", "components", "chat", "workspace", "files",
-                                "console"}
+                                "console", "editor"}
     assert all(dock.widget() is not None for dock in built.docks.values())
 
 
