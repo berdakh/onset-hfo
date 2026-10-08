@@ -201,8 +201,10 @@ sits under the Workspace in the same column, closed until asked for, and it
 keeps what you made in it when the window is re-analysed or another recording
 is opened.
 
-Two things to know. A long computation runs in the window's own thread, so
-the window waits until it finishes. And the console can change the objects the
+Two things to know. A long computation runs in the window's own thread: a
+strip above the prompt counts the seconds, and **Stop** (or `Esc`) interrupts
+it as `Ctrl+C` does — the rest of the window waits for it, and one long call
+inside a library finishes first. And the console can change the objects the
 panels and the report are built from, so every command run in a window is
 listed, in order, under *Python console* in the exported report. The full
 IPython console needs `qtconsole`, which the installer brings; without it the
@@ -222,7 +224,11 @@ types and columns, never the data, and the draft opens in its own tab with
 what could be checked — that it parses, any name that does not exist, any call
 that deletes files or uses the network. Nothing runs it but you. The
 Workspace's *Save/Load* keeps the console's variables as `.pkl`, `.npz` or
-`.mat`.
+`.mat`. Two more tabs sit beside the Workspace and Files on this page:
+**Plots**, where every figure the console or the editor draws collects (open
+one in a window, save it as PNG, PDF or SVG), and **History**, every command
+run in the console, searchable, any of which goes to the editor with a
+double-click.
 
 ![The Analysis page](images/onset-review-analysis.png)
 
@@ -234,7 +240,11 @@ rule you state, failures kept as rows with their reason — and any row can join
 everything done with it — settings, verdicts, scripts, console variables,
 cohort — in one `.onsetproj` file that *File → Open project…* (or
 `onset-review study.onsetproj`) reopens here or on another machine, analysing
-the recording again from its request.
+the recording again from its request. The batch window's **Across the batch**
+tab draws each recording's busiest channel with its interval on one chart,
+each detector's agreement with the experts across the recordings that have
+markings, and names any recording that differs from the rest (more than 3.5
+robust z from the batch's median, with five or more recordings).
 
 ![Analyse many recordings](images/onset-review-batch.png)
 

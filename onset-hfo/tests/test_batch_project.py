@@ -85,6 +85,100 @@ def test_a_batch_analyses_alike_and_keeps_going_past_a_failure(analyse, config, 
     assert batchreview.findings_for(result, first.to_dict()) is not None
 
 
+# -- across the batch ---------------------------------------------------------------------
+def _rows(n: int, loud: int | None = None) -> pd.DataFrame:
+    rows = []
+    for i in range(n):
+        rows.append({"recording": f"rec-{i}", "subject": "sub-01" if i < 3 else f"sub-{i:02d}",
+                     "leader": "AD3" if i in (0, 2) else f"B{i}",
+                     "leader_rate_per_min": 10.0 + i, "leader_ci_low": 5.0 + i,
+                     "leader_ci_high": 16.0 + i, "median_rate_per_min": 2.0,
+                     "stands_out": i % 2 == 0, "n_tied": 1 if i % 2 == 0 else 4,
+                     "events_total": 300 if i == loud else 20 + i, "analysed_seconds": 60.0,
+                     "channels": 40, "quality_set_aside": 2, "expert_f1": np.nan,
+                     "error": ""})
+    rows.append({"recording": "missing.edf", "subject": "missing", "error": "OSError: gone"})
+    return pd.DataFrame(rows)
+
+
+def test_robust_z_is_the_modified_z_with_a_fallback_for_a_zero_mad():
+    from onset_review.batchresults import robust_z
+
+    z = robust_z([1.0, 2.0, 3.0, 4.0, 100.0])
+    assert z[2] == 0 and z[4] == pytest.approx(0.6745 * 97 / 1.0)
+    z = robust_z([5.0, 5.0, 5.0, 5.0, 9.0])          # MAD 0: the mean deviation stands in
+    assert z[4] == pytest.approx(4.0 / (1.2533 * 0.8)) and z[0] == 0
+    assert list(robust_z([3.0, 3.0, np.nan])[:2]) == [0.0, 0.0]
+
+
+def test_across_the_batch_reads_leaders_repeats_agreement_and_outliers():
+    from onset_review import batchresults
+
+    scores = pd.DataFrame([{"recording": f"rec-{i}", "detector": d, "f1": f1,
+                            "rank_rho": 0.5}
+                           for i in range(3) for d, f1 in (("rms", 0.2 + i / 10),
+                                                           ("line_length", 0.1))])
+    a = batchresults.across(_rows(6, loud=4), scores)
+    assert len(a.leaders) == 6 and a.n_failed == 1 and a.can_flag
+    assert a.leaders.loc[4, "events_per_min"] == 300.0
+    assert list(a.outliers["recording"]) == ["rec-4"]
+    assert a.outliers.iloc[0]["measure"] == "accepted events per minute"
+    assert a.outliers.iloc[0]["direction"] == "higher"
+    assert a.recurring.to_dict("records") == [{"subject": "sub-01", "windows": 3,
+                                               "leader": "AD3", "times": 2}]
+    rms = a.agreement.set_index("detector").loc["rms"]
+    assert rms["n"] == 3 and rms["median_f1"] == pytest.approx(0.3)
+    text = " ".join(a.sentences)
+    assert "6 of 7 recordings analysed; 1 not" in text
+    assert "In 3 of 6 the busiest channel stands out" in text
+    assert "sub-01: the busiest channel was AD3 in 2 of 3 windows" in text
+    assert "RMS energy agreed best with them (median F1 0.30" in text
+    assert "rec-4" in text
+    few = batchresults.across(_rows(4, loud=3))
+    assert few.outliers.empty and not few.can_flag
+    assert "fewer than 5 recordings" in " ".join(few.sentences)
+    assert "None of these recordings carries expert markings" in " ".join(few.sentences)
+
+
+def test_the_figures_draw_every_recording_and_detector():
+    import matplotlib
+
+    matplotlib.use("Agg")
+    from matplotlib.figure import Figure
+
+    from onset_review import batchresults
+
+    a = batchresults.across(_rows(6), pd.DataFrame([
+        {"recording": "rec-0", "detector": "rms", "f1": 0.4, "rank_rho": 0.1},
+        {"recording": "rec-1", "detector": "hilbert", "f1": 0.2, "rank_rho": 0.2}]))
+    figure = Figure()
+    points = batchresults.draw_leaders(figure, figure.add_subplot(111), a.leaders)
+    assert set(points) == {f"rec-{i}" for i in range(6)}
+    filled = points["rec-0"].get_markerfacecolor()
+    assert filled != "white" and points["rec-1"].get_markerfacecolor() == "white"
+    figure = Figure()
+    dots = batchresults.draw_agreement(figure, figure.add_subplot(111), a.scores)
+    assert set(dots) == {"rms", "hilbert"}
+
+
+def test_a_batch_writes_and_reads_back_its_expert_scores(analyse, config, tmp_path):
+    from onset_review import batchresults
+
+    items = [batchreview.BatchItem(dataset="d", subject=f"sub-0{i}") for i in range(1, 3)]
+    result = batchreview.run_batch(items, ReviewRequest(detectors=("rms", "line_length")),
+                                   folder=tmp_path / "e", load=analyse)
+    row = result.rows.iloc[0]
+    assert row["events_total"] >= 0 and np.isfinite(row["leader_ci_low"])
+    assert row["leader_ci_low"] <= row["leader_rate_per_min"] <= row["leader_ci_high"]
+    back = batchreview.load_batch(tmp_path / "e")
+    if result.scores is not None:
+        assert (tmp_path / "e" / "scores.csv").exists()
+        assert set(back.scores["detector"]) == set(result.scores["detector"])
+        assert row["expert_f1"] == pytest.approx(result.scores.iloc[0]["f1"], abs=1e-3)
+    a = batchresults.across(back.rows, back.scores)
+    assert len(a.leaders) == 2 and a.sentences[0].startswith("2 of 2 recordings analysed")
+
+
 def test_a_batch_stops_between_recordings(analyse, config, tmp_path):
     items = [batchreview.BatchItem(dataset="d", subject=f"s{i}") for i in range(3)]
     calls = []
@@ -244,6 +338,14 @@ def test_the_batch_window_runs_shows_and_adds_to_the_cohort(qapp, analyse, confi
         channels = window.result.rows.iloc[0]["channel_names"].split("|")
         entry = window.add_to_cohort(0, "seizure-free", yourstudy.contacts_of(channels[:1]))
         assert entry is not None and yourstudy.cohort_entries()[-1]["from_batch"]
+        across = window.across_view
+        assert [window.tabs.tabText(i) for i in range(window.tabs.count())] == [
+            "Table", "Across the batch"]
+        assert across.summary.text().startswith("1 of 2 recordings analysed; 1 not")
+        window.tabs.setCurrentIndex(1)
+        _settle(qapp)
+        assert not across.leaders_canvas.isHidden() and across.leaders_canvas.parent() is not None
+        assert "Needs 5 analysed recordings" in across.outliers_note.text()
     finally:
         window.close()
 

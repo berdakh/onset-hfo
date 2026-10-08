@@ -131,8 +131,9 @@ def request_for(item: BatchItem, template, rule: FileRule):
                          task=item.task, t_start=item.t_start, t_stop=item.t_stop, **analysis)
 
 
-def summarise(session, seconds: float = float("nan")) -> dict:
-    """One recording's row."""
+def summarise(session, seconds: float = float("nan"), scores=False) -> dict:
+    """One recording's row. `scores` is `thisrecording.score_window`'s frame
+    when the caller has it already (None: no markings)."""
     from onset_review import thisrecording
 
     request = session.request
@@ -152,18 +153,30 @@ def summarise(session, seconds: float = float("nan")) -> dict:
         "leader": leader.get("leader", ""),
         "leader_rate_per_min": leader.get("leader_rate_per_min", np.nan),
         "leader_ci": "–".join(f"{v:g}" for v in leader.get("leader_ci", [])),
+        "leader_ci_low": _at(leader.get("leader_ci"), 0),
+        "leader_ci_high": _at(leader.get("leader_ci"), 1),
+        "median_rate_per_min": leader.get("median_rate_per_min", np.nan),
+        "events_total": int(sum(by_detector.values())),
         "stands_out": bool(leader.get("distinguishable", False)),
         "n_tied": len(session.candidates), "tied": ", ".join(session.candidates),
         "quality_set_aside": set_aside, "expert_f1": np.nan, "expert_rho": np.nan,
         "seconds": round(float(seconds), 1), "error": "",
     }
-    scores = thisrecording.score_window(session)
+    if scores is False:
+        scores = thisrecording.score_window(session)
     if scores is not None and len(scores):
         first = scores.iloc[0]
         row["expert_f1"] = round(float(first["f1"]), 3)
         row["expert_rho"] = round(float(first["rank_rho"]), 3) \
             if np.isfinite(first["rank_rho"]) else np.nan
     return row
+
+
+def _at(values, index: int) -> float:
+    try:
+        return float(list(values)[index])
+    except (IndexError, TypeError, ValueError):
+        return float("nan")
 
 
 def _slug(text: str) -> str:
@@ -175,12 +188,16 @@ class BatchResult:
     rows: pd.DataFrame
     folder: Path
     settings: dict = field(default_factory=dict)
+    #: Each recording with expert markings scored against them, one row per
+    #: recording and detector (``scores.csv``); None when none had markings.
+    scores: pd.DataFrame | None = None
 
 
 def run_batch(items, template, rule: FileRule | None = None, folder: str | Path | None = None,
               progress=None, should_stop=None, load=None) -> BatchResult:
     """Analyse each of `items` as `template` was, one after another. Writes
-    ``summary.csv``, ``summary.md``, ``settings.json`` and ``findings/`` into
+    ``summary.csv``, ``summary.md``, ``settings.json``, ``scores.csv`` (where
+    there are expert markings) and ``findings/`` into
     `folder` (a new folder under the state directory by default) as it goes,
     so a batch stopped halfway has its finished rows on disk."""
     if load is None:
@@ -198,6 +215,7 @@ def run_batch(items, template, rule: FileRule | None = None, folder: str | Path 
     }
     (folder / "settings.json").write_text(json.dumps(settings, indent=1, default=str) + "\n")
     rows: list[dict] = []
+    scored: list[pd.DataFrame] = []
     for index, item in enumerate(items):
         if should_stop is not None and should_stop():
             for rest in items[index:]:
@@ -209,7 +227,13 @@ def run_batch(items, template, rule: FileRule | None = None, folder: str | Path 
         try:
             request = request_for(item, template, rule)
             session = load(request)
-            row = summarise(session, time.monotonic() - started)
+            from onset_review.thisrecording import score_window
+
+            scores = score_window(session)
+            row = summarise(session, time.monotonic() - started, scores=scores)
+            if scores is not None and len(scores):
+                scored.append(scores.assign(recording=row["recording"],
+                                            subject=row["subject"]))
             name = f"{index + 1:03d}-{_slug(row['recording'])}.csv"
             session.findings.to_csv(folder / "findings" / name, index=False)
             row["findings_file"] = name
@@ -221,9 +245,10 @@ def run_batch(items, template, rule: FileRule | None = None, folder: str | Path 
             row = {**_empty(item), "error": f"{type(error).__name__}: {error}",
                    "seconds": round(time.monotonic() - started, 1)}
         rows.append(row)
-        _write(folder, rows, settings)
-    _write(folder, rows, settings)
-    return BatchResult(pd.DataFrame(rows), folder, settings)
+        _write(folder, rows, settings, scored)
+    _write(folder, rows, settings, scored)
+    return BatchResult(pd.DataFrame(rows), folder, settings,
+                       pd.concat(scored, ignore_index=True) if scored else None)
 
 
 def _empty(item: BatchItem) -> dict:
@@ -251,9 +276,11 @@ def _default_folder() -> Path:
     return base / time.strftime("batch-%Y%m%d-%H%M%S")
 
 
-def _write(folder: Path, rows: list[dict], settings: dict) -> None:
+def _write(folder: Path, rows: list[dict], settings: dict, scored=()) -> None:
     frame = pd.DataFrame(rows)
     frame.to_csv(folder / "summary.csv", index=False)
+    if scored:
+        pd.concat(scored, ignore_index=True).to_csv(folder / "scores.csv", index=False)
     done = frame[frame.get("error", "") == ""] if "error" in frame else frame
     lines = [f"# Batch — {len(frame)} recordings", "",
              f"{settings['when']} · detectors {', '.join(settings['detectors'])} · "
@@ -279,7 +306,8 @@ def load_batch(folder: str | Path) -> BatchResult:
     folder = Path(folder)
     rows = pd.read_csv(folder / "summary.csv").fillna("")
     settings = json.loads((folder / "settings.json").read_text())
-    return BatchResult(rows, folder, settings)
+    scores = pd.read_csv(folder / "scores.csv") if (folder / "scores.csv").exists() else None
+    return BatchResult(rows, folder, settings, scores)
 
 
 def findings_for(result: BatchResult, row: dict) -> pd.DataFrame | None:

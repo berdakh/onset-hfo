@@ -399,3 +399,79 @@ def test_the_workspace_saves_and_loads_the_console_s_variables(qapp, window, tmp
     assert console.namespace["raw_loaded"] == 1
     assert "loaded_one" in workspace.names()
     assert session.console_log[-1].startswith("# Loaded loaded_one, raw_loaded from ")
+
+
+# -- Plots and History ------------------------------------------------------------------
+def test_a_figure_drawn_on_the_page_goes_to_the_plots_pane_not_a_window(qapp, window,
+                                                                        tmp_path):
+    host, console = window.pages, window.panels["console"]
+    host.show_page("analysis")
+    _settle(qapp)
+    tabs = host.analysis_tabs
+    assert [tabs.tabText(i) for i in range(tabs.count())] == [
+        "Workspace", "Files", "Plots", "History"]
+    console.run("fig, ax = plt.subplots()\nax.plot(times[:100], signal[0, :100])")
+    console.run("plt.figure()\nplt.plot([1, 2, 3])")
+    _settle(qapp)
+    plots = console.plots
+    assert console.figure_windows == [], "on the page, no window of its own"
+    assert tabs.currentWidget() is plots and plots.isVisible()
+    assert len(plots.entries) == 2 and plots.current_index == 0
+    assert "plt.figure()" in plots.entries[0]["command"]     # newest first
+    assert not plots.view.pixmap().isNull()
+    plots.step(1)
+    assert plots.current_index == 1 and "2 of 2" in plots.where.text()
+    saved = plots.save(tmp_path / "first.pdf")
+    assert saved.read_bytes().startswith(b"%PDF")
+    plots.open_current()
+    assert len(console.figure_windows) == 1 and console.figure_windows[0].isVisible()
+    console.close_figures()
+    plots.remove_current()
+    assert len(plots.entries) == 1 and plots.current_index == 0
+    plots.clear()
+    assert plots.entries == [] and plots.empty.isVisible()
+    # Off the page, a figure still opens in a window, and is kept in the pane.
+    host.show_page("recording")
+    _settle(qapp)
+    console.run("plt.figure()\nplt.plot([3, 2, 1])")
+    _settle(qapp)
+    assert len(console.figure_windows) == 1 and len(plots.entries) == 1
+    console.close_figures()
+
+
+def test_history_keeps_commands_across_sessions_and_sends_them_to_the_editor(
+        qapp, window, tmp_path):
+    from qtpy.QtGui import QTextCursor
+
+    from onset_review.consolepanes import HistoryPanel, history_path, load_history
+
+    host, console, editor = window.pages, window.panels["console"], window.panels["editor"]
+    host.show_page("analysis")
+    history = console.history
+    history.clear(ask=False)
+    console.run("alpha = 1")
+    console.run("alpha = 1")                   # a repeat of the last: kept once
+    console.run("   ")
+    console.run("beta = alpha + 1\nprint(beta)")
+    sources = [e["source"] for e in history.entries]
+    assert sources == ["alpha = 1", "beta = alpha + 1\nprint(beta)"]
+    assert [e["source"] for e in load_history(history_path())] == sources
+    assert "(+1 lines)" in history.list.item(1).text()
+    # A new pane (the next session) reads the same history back.
+    assert [e["source"] for e in HistoryPanel().entries] == sources
+    history.search.setText("beta")
+    assert history.list.count() == 1
+    history.search.setText("")
+    history.list.selectAll()
+    code = editor.new_file("# mine\n")
+    cursor = code.textCursor()
+    cursor.movePosition(QTextCursor.End)
+    code.setTextCursor(cursor)
+    assert history.to_editor()
+    assert code.toPlainText() == "# mine\nalpha = 1\nbeta = alpha + 1\nprint(beta)\n"
+    history.list.clearSelection()
+    history.list.setCurrentRow(0)
+    history.list.item(0).setSelected(True)
+    console.namespace["alpha"] = 5
+    assert history.run_again() and console.namespace["alpha"] == 1
+    assert history.clear(ask=False) and load_history(history_path()) == []

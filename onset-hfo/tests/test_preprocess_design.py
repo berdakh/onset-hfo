@@ -53,7 +53,8 @@ def test_every_reference_scheme_has_a_sentence_and_runs(recording):
     assert effective_reference(PreprocessConfig(bipolar=False, average_reference=True)) == "average"
     assert effective_reference(PreprocessConfig(bipolar=False)) == "none"
     said = {"bipolar": "bipolar montage", "average": "common average",
-            "median": "common median", "shaft": "per-shaft average", "none": None}
+            "median": "common median", "shaft": "per-shaft average",
+            "laplacian": "Laplacian reference", "none": None}
     for scheme in REFERENCES:
         prep = prepare(recording, PreprocessConfig(reference=scheme), verbose=False)
         if said[scheme]:

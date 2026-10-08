@@ -36,6 +36,7 @@ from qtpy.QtWidgets import (
     QDoubleSpinBox,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QListWidget,
     QListWidgetItem,
     QPushButton,
@@ -54,6 +55,7 @@ from onset_hfo.preprocess import (
     effective_reference,
     filter_description,
     ica_methods_available,
+    parse_grid_columns,
 )
 from onset_review.theme import SettingsGroup, card, current, muted, scrolled
 
@@ -182,6 +184,7 @@ class PreprocessPanel(QWidget):
         # -- reference -----------------------------------------------------
         self.bipolar = QRadioButton("Bipolar — each contact minus its neighbour")
         self.shaft = QRadioButton("Per-shaft average — each contact minus its electrode's mean")
+        self.laplacian = QRadioButton("Laplacian — each contact minus its neighbours' mean")
         self.median = QRadioButton("Common median across all channels")
         self.average = QRadioButton("Common average across all channels")
         self.monopolar = QRadioButton("None — keep the recording's reference")
@@ -191,6 +194,18 @@ class PreprocessPanel(QWidget):
         self.shaft.setToolTip(
             "The usual SEEG choice after bipolar: removes what a whole shaft "
             "shares, keeps each contact's own signal at its own place.")
+        self.laplacian.setToolTip(
+            "For ECoG grids and strips: each contact minus the mean of its four "
+            "grid neighbours (or, on a strip or shaft, the contacts either side). "
+            "Sharper in space than bipolar, and each channel stays at its contact.")
+        self.grid_columns = QLineEdit(", ".join(f"{g}:{c}" for g, c in start.grid_columns))
+        self.grid_columns.setObjectName("onset_grid_columns")
+        self.grid_columns.setPlaceholderText("grid:columns, as G:8")
+        self.grid_columns.setToolTip(
+            "Each grid's name and how many columns it has, as G:8 for a grid G "
+            "numbered 1–8 along its first row. Needed only when the recording "
+            "carries no contact positions; a lead of more than 16 contacts with "
+            "neither is left as recorded rather than guessed at.")
         self.median.setToolTip(
             "The average's robust cousin: one faulty contact cannot drag it. "
             "Still shares the common noise.")
@@ -198,6 +213,7 @@ class PreprocessPanel(QWidget):
             "Standard elsewhere in EEG. For HFOs it re-introduces exactly the "
             "shared noise the bipolar montage exists to suppress.")
         self._reference_buttons = {"bipolar": self.bipolar, "shaft": self.shaft,
+                                   "laplacian": self.laplacian,
                                    "median": self.median, "average": self.average,
                                    "none": self.monopolar}
         self._reference_buttons[effective_reference(start)].setChecked(True)
@@ -207,9 +223,12 @@ class PreprocessPanel(QWidget):
         reference = SettingsGroup("Re-referencing")
         self._reference_group = QButtonGroup(self)
         self._reference_group.setExclusive(True)
-        for button in (self.bipolar, self.shaft, self.median, self.average, self.monopolar):
+        for button in (self.bipolar, self.shaft, self.laplacian, self.median, self.average,
+                       self.monopolar):
             self._reference_group.addButton(button)
             reference.add_row(button)
+            if button is self.laplacian:
+                reference.add_row("Grid columns", self.grid_columns)
 
         # -- artifact annotation ---------------------------------------------
         self.muscle = QCheckBox("Mark muscle and movement bursts")
@@ -366,6 +385,7 @@ class PreprocessPanel(QWidget):
             widget.stateChanged.connect(self.refresh)
         for widget in self._reference_buttons.values():
             widget.toggled.connect(self.refresh)
+        self.grid_columns.textChanged.connect(self.refresh)
         for widget in (self.mains, self.resample, self.method, self.phase):
             widget.currentIndexChanged.connect(self.refresh)
         self.channels.itemChanged.connect(self.refresh)
@@ -391,7 +411,8 @@ class PreprocessPanel(QWidget):
             average_reference=scheme == "average",
             # Named only when the two older flags cannot say it, so a panel on
             # the defaults equals the defaults and Apply stays grey.
-            reference=scheme if scheme in ("median", "shaft") else None,
+            reference=scheme if scheme in ("median", "shaft", "laplacian") else None,
+            grid_columns=self._grid_columns() if scheme == "laplacian" else (),
             highpass=float(self.highpass.value()) or 0.0,
             lowpass=float(self.lowpass.value()) or None,
             resample=self.resample.currentData(),
@@ -412,6 +433,20 @@ class PreprocessPanel(QWidget):
             ica_exclude=tuple(self._ica_exclude) if self.ica.isChecked() else (),
         )
 
+    def _grid_columns(self) -> tuple[tuple[str, int], ...]:
+        """The grids typed in; what cannot be read is left out and said."""
+        try:
+            return parse_grid_columns(self.grid_columns.text())
+        except ValueError:
+            return ()
+
+    def _grid_problem(self) -> str:
+        try:
+            parse_grid_columns(self.grid_columns.text())
+        except ValueError as error:
+            return f"Grid columns: {error}."
+        return ""
+
     def _regressing(self) -> list[str]:
         return [self.regress.item(i).text() for i in range(self.regress.count())
                 if self.regress.item(i).checkState() == Qt.Checked]
@@ -430,6 +465,9 @@ class PreprocessPanel(QWidget):
         """Rewrite the summary and the warnings for the current settings."""
         cfg = self.config()
         summary, warnings = describe(cfg, self._band, self._sfreq)
+        self.grid_columns.setEnabled(cfg.reference == "laplacian")
+        if cfg.reference == "laplacian" and self._grid_problem():
+            warnings = [self._grid_problem(), *warnings]
         self.summary.setText("This will " + summary)
         is_iir = cfg.filter_method == "iir"
         self.iir_order.setEnabled(is_iir)
@@ -460,6 +498,7 @@ class PreprocessPanel(QWidget):
         _select(self.mains, cfg.line_freq)
         _select(self.resample, cfg.resample)
         self._reference_buttons[effective_reference(cfg)].setChecked(True)
+        self.grid_columns.setText(", ".join(f"{g}:{c}" for g, c in cfg.grid_columns))
         _select(self.method, cfg.filter_method)
         self.iir_order.setValue(int(cfg.iir_order))
         _select(self.phase, cfg.filter_phase)
@@ -483,10 +522,13 @@ class PreprocessPanel(QWidget):
         """
         cfg = self.config()
         _, warnings = describe(cfg, self._band, self._sfreq)
+        if cfg.reference == "laplacian" and self._grid_problem():
+            warnings = [self._grid_problem(), *warnings]
         blocking = [w for w in warnings if "would still run" in w
                     or "passes nothing" in w or "Nyquist" in w
                     or "cannot carry" in w or "below 0 Hz" in w
-                    or "must be FIR or IIR" in w or "solver is not installed" in w]
+                    or "must be FIR or IIR" in w or "solver is not installed" in w
+                    or w.startswith("Grid columns:")]
         if blocking:
             self.warnings.setText("\n".join("• " + w for w in blocking)
                                   + "\n\nFix this before applying.")

@@ -32,7 +32,8 @@ from onset_hfo.config import BANDS, PreprocessConfig
 from onset_hfo.datasets import Recording
 
 __all__ = ["Prepared", "prepare", "ICA_METHODS", "ica_methods_available", "default_ica_method", "bipolar_pairs", "describe", "effective_reference",
-           "filter_description", "learn_ptp_threshold", "REFERENCES"]
+           "filter_description", "learn_ptp_threshold", "REFERENCES", "laplacian_neighbours",
+           "parse_grid_columns", "LAPLACIAN_STRIP_MAX"]
 
 #: The reference schemes by name, with the sentence each gets in the steps.
 REFERENCES = {
@@ -40,6 +41,7 @@ REFERENCES = {
     "average": "re-reference to the common average",
     "median": "re-reference to the common median",
     "shaft": "re-reference each contact to the mean of its own shaft",
+    "laplacian": "re-reference each contact to the mean of its neighbours (Laplacian)",
     "none": "leave the recording's own reference",
 }
 FILTER_METHODS = ("fir", "iir")
@@ -175,6 +177,86 @@ def effective_reference(cfg: PreprocessConfig) -> str:
 def _shaft_of(name: str) -> str:
     m = _CONTACT_RE.match(name)
     return m.group(1).upper() if m else name.upper()
+
+
+#: A lead with more contacts than this, no positions and no columns given is
+#: not taken as a strip: 32 contacts in one line is almost always a grid, and
+#: a grid read as a line makes the last contact of a row the neighbour of the
+#: first of the next.
+LAPLACIAN_STRIP_MAX = 16
+#: Contacts this much farther than a contact's nearest neighbour on its lead
+#: are not its neighbours: on a square grid the four sides are in and the
+#: diagonals (1.41x) out.
+NEIGHBOUR_REACH = 1.25
+
+
+def parse_grid_columns(text: str) -> tuple[tuple[str, int], ...]:
+    """``"G:8, LT:4"`` as `PreprocessConfig.grid_columns` wants it. A part that
+    is not ``name:columns`` with a positive count raises ValueError."""
+    out = []
+    for part in str(text or "").replace(";", ",").split(","):
+        if not part.strip():
+            continue
+        name, sep, count = part.partition(":")
+        if not sep or not name.strip() or not count.strip().isdigit() or int(count) < 1:
+            raise ValueError(f"{part.strip()!r} is not a grid and its columns, as G:8")
+        out.append((name.strip().upper(), int(count)))
+    return tuple(out)
+
+
+def laplacian_neighbours(names: list[str], positions: dict | None = None,
+                         grid_columns=()) -> tuple[dict[str, list[str]], list[str]]:
+    """Each contact's neighbours on its own lead, and what was done per lead.
+
+    Neighbours come from the contacts' positions when every contact has one
+    (those within `NEIGHBOUR_REACH` of its nearest); else from the grid's
+    columns when given; else, for a lead of up to `LAPLACIAN_STRIP_MAX`
+    contacts, the contacts numbered either side. A contact with no neighbour
+    present is absent from the result, and is left as recorded."""
+    columns = {str(k).upper(): int(v) for k, v in (grid_columns or ())}
+    leads: dict[str, dict[int, str]] = {}
+    for name in names:
+        m = _CONTACT_RE.match(name)
+        if m:
+            leads.setdefault(m.group(1).upper(), {})[int(m.group(2))] = name
+    have_positions = bool(positions) and all(n in positions for n in names)
+    out: dict[str, list[str]] = {}
+    notes: list[str] = []
+    for lead in sorted(leads):
+        numbered = leads[lead]
+        members = [numbered[k] for k in sorted(numbered)]
+        if have_positions and len(members) > 1:
+            xyz = np.array([positions[n] for n in members], dtype=float)
+            dist = np.linalg.norm(xyz[:, None, :] - xyz[None, :, :], axis=-1)
+            np.fill_diagonal(dist, np.inf)
+            for i, name in enumerate(members):
+                nearest = dist[i].min()
+                if np.isfinite(nearest) and nearest > 0:
+                    near = [members[j] for j in np.flatnonzero(dist[i] <= nearest * NEIGHBOUR_REACH)]
+                    out[name] = near
+            notes.append(f"{lead}: {len(members)} contacts, neighbours from their positions")
+        elif lead in columns:
+            width = columns[lead]
+            for number, name in numbered.items():
+                row, col = divmod(number - 1, width)
+                around = [(row, col - 1), (row, col + 1), (row - 1, col), (row + 1, col)]
+                near = [numbered.get(r * width + c + 1) for r, c in around
+                        if 0 <= c < width and r >= 0]
+                near = [n for n in near if n is not None]
+                if near:
+                    out[name] = near
+            rows = -(-max(numbered) // width)
+            notes.append(f"{lead}: {rows}×{width} grid, its four neighbours")
+        elif len(members) <= LAPLACIAN_STRIP_MAX:
+            for number, name in numbered.items():
+                near = [numbered[k] for k in (number - 1, number + 1) if k in numbered]
+                if near:
+                    out[name] = near
+            notes.append(f"{lead}: {len(members)} in a line, the contacts either side")
+        else:
+            notes.append(f"{lead}: {len(members)} contacts left as recorded — give its "
+                         f"columns ({lead}:8) if it is a grid")
+    return out, notes
 
 
 def _iir_params(cfg: PreprocessConfig) -> dict:
@@ -512,6 +594,10 @@ def _check(cfg: PreprocessConfig, sfreq: float) -> None:
             f"{cfg.highpass:g} Hz high-pass, so the stop band would start below 0 Hz; "
             "it must be narrower than the cut-off")
     effective_reference(cfg)
+    for entry in cfg.grid_columns or ():
+        if (len(entry) != 2 or not str(entry[0]).strip()
+                or int(entry[1]) != entry[1] or int(entry[1]) < 1):
+            raise ValueError(f"grid_columns entries are (grid name, columns), not {entry!r}")
     if cfg.annotate_muscle and float(cfg.muscle_z) <= 0:
         raise ValueError("muscle_z must be positive")
     if cfg.annotate_amplitude and cfg.amplitude_ptp_uv is not None \
@@ -564,7 +650,9 @@ def describe(cfg: PreprocessConfig, band: tuple[float, float],
         scheme = effective_reference(cfg)
     except ValueError:
         scheme = "none"
-    lines.append(REFERENCES[scheme])
+    lines.append(REFERENCES[scheme]
+                 + (" on grid " + ", ".join(f"{g} ({c} columns)" for g, c in cfg.grid_columns)
+                    if scheme == "laplacian" and cfg.grid_columns else ""))
     if cfg.annotate_muscle:
         lines.append(f"mark muscle and movement bursts (z > {cfg.muscle_z:g})")
     if cfg.annotate_amplitude:
@@ -620,6 +708,10 @@ def describe(cfg: PreprocessConfig, band: tuple[float, float],
         warnings.append("Without re-referencing, a shared reference puts the "
                         "same noise on every channel, which reads as HFOs "
                         "appearing everywhere at once.")
+    if scheme == "laplacian":
+        warnings.append("The Laplacian takes each contact's neighbours from its name and "
+                        "number, or its position: a contact quality marks bad still "
+                        "feeds the contacts beside it.")
     if scheme in ("average", "median"):
         warnings.append("A common reference shares every channel's noise with "
                         "every other, which is the effect the bipolar montage "
@@ -835,6 +927,25 @@ def prepare(rec: Recording, cfg: PreprocessConfig | None = None, verbose: bool =
                      f"own electrode ({len(shafts)} shafts"
                      + (f"; {lonely} single-contact shaft(s) left as recorded" if lonely else "")
                      + ")")
+
+    elif scheme == "laplacian" and len(names) > 1:
+        positions = None
+        if _has_positions(raw):
+            positions = {ch["ch_name"]: np.asarray(ch["loc"][:3], dtype=float)
+                         for ch in raw.info["chs"]}
+        neighbours, how = laplacian_neighbours(names, positions, cfg.grid_columns)
+        idx = {n: i for i, n in enumerate(names)}
+        referenced = data.copy()
+        for name, near in neighbours.items():
+            referenced[idx[name]] = data[idx[name]] - data[[idx[n] for n in near]].mean(axis=0)
+        data = referenced
+        montage = "laplacian"
+        alone = len(names) - len(neighbours)
+        steps.append("Laplacian reference: each contact minus the mean of its neighbours on "
+                     f"its own lead ({len(neighbours)} of {len(names)} contacts"
+                     + (f"; {alone} with no neighbour present left as recorded" if alone else "")
+                     + "). " + "; ".join(how)
+                     + ". A noisy neighbour is shared by every contact beside it.")
 
     prepared = Prepared(data=np.ascontiguousarray(data, dtype=np.float64), ch_names=names,
                         sfreq=float(raw.info["sfreq"]), t_offset=rec.t_offset, montage=montage,

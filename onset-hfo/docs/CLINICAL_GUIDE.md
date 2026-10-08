@@ -751,14 +751,22 @@ again from disk:
 | `session` | all of the above |
 | `np`, `pd`, `mne`, `plt`, `onset_hfo` | imported |
 
-A figure drawn there opens in a window of its own. Names you make appear in the
+A figure drawn there opens in a window of its own (on the Analysis page it
+goes to the **Plots** pane instead, below). Names you make appear in the
 Workspace under *Console*, where a double-click opens them like any other. The
 working directory is the Files pane's folder, and changing one changes the
 other. The console keeps what was made in it when the window is re-analysed:
 its names then point at the new analysis, and yours stay.
 
-**What it costs.** The console runs in the window's own thread: a computation
-that takes a minute holds the window for a minute. And because it works on
+**What it costs.** The console runs in the window's own thread. While a
+command runs, a strip above the prompt says so, with the seconds counting and
+a **Stop** button; Stop (or `Esc`) interrupts the command where it is, as
+`Ctrl+C` does in Spyder, and the report notes that it was stopped before it
+finished. The rest of the window repaints while it waits, but takes no clicks
+or keys until the command ends, so a second command cannot start on top of the
+first; closing the window stops the command, then closes. One long call inside
+a library — a large FFT, a file being read — finishes before Stop takes
+effect. And because it works on
 the window's own objects, a command can change what the panels and the report
 show — reassigning a value in `findings` changes the table. So every command
 run in a window is printed, in order, in the exported report under
@@ -796,6 +804,18 @@ script or a notebook in the Files pane to open it. Open tabs, and any text not
 yet saved, are kept for the next launch. A file run with `F5` is written into
 the report's *Python console* section whole, not only its name, so a number
 that came from a script can be traced to the script.
+
+**Plots and History.** Beside the Workspace and Files are two more tabs. Every
+figure the console or the editor draws goes to **Plots**: the newest shown
+large, the earlier ones as thumbnails beside it, each with the command that
+drew it. *Open in a window* gives one figure its own window to zoom and pan;
+*Save…* writes it as PNG, PDF or SVG; *Remove* and *Remove all* clear the
+pane. **History** lists every command run in the console — this session's and
+earlier ones', kept beside your settings — with a search box. Select one or
+several and *To the editor* (or double-click) puts them at the editor's
+cursor in the order they ran, which is how something worked out at the prompt
+becomes a script; *Run again* runs them in the console. Clearing the history
+does not touch the report: each window's own commands stay listed there.
 
 **Write code.** Under the tabs, say what you want in words — *“power spectrum
 of the three busiest channels”* — and the local model chosen on the Assistant
@@ -895,6 +915,27 @@ beside your current one. Double-click a row to open it in the window;
 patient, from the ranking the batch kept — the same numbers as adding it
 from the open window.
 
+![The batch read across its recordings](images/onset-review-batch-across.png)
+
+The **Across the batch** tab reads the finished table down its columns. A few
+plain sentences first: how many recordings were analysed; in how many the
+busiest channel stands out from the rest; for a subject with several windows
+in the batch, how often the busiest channel was the same one; which detector
+agreed best with the experts. Then **each recording's busiest channel** on
+one chart — its rate as a dot, its 95% interval as a line and the median
+channel's rate as a grey tick, the dot filled where the channel stands out and
+open where it is only the busiest of several tied. Then, for the recordings
+that carry expert markings, **each detector's F1** against the experts, a dot
+per recording and a bar at the median, so the spread is seen rather than an
+average. Last, **recordings that differ from the rest**: on accepted events
+per minute, the share of contacts set aside, the busiest channel's rate and
+the agreement with the experts, any recording more than 3.5 robust z from the
+batch's median (the modified z of Iglewicz and Hoaglin, from the median
+absolute deviation). It needs at least five analysed recordings; with fewer,
+nothing is called an outlier. Different is not wrong — it says which
+recording to open and look at. Nothing on the tab is a new analysis: it is
+read from the batch's `summary.csv` and `scores.csv`.
+
 **File → Save project…** (`Ctrl+Shift+S`) keeps the recording and everything
 done with it in one `.onsetproj` file: the request with its preprocessing,
 your verdicts and findings paragraph, the editor's scripts, the console's
@@ -948,7 +989,7 @@ mouse on them.
 | **Notch** | mains and its harmonics | harmonics at 180 and 240 Hz sit *inside* the ripple band. Turn the notch off and they are detected as oscillations |
 | **Notch width** | 2 Hz by default | wide notches carve visible holes in the band you are measuring |
 | **Filter design** | folded away under *Filter design*: FIR (MNE's default) or IIR Butterworth; zero-phase or causal; the transition band, or *auto* | the line under the controls says what MNE builds — "windowed FIR of 6,601 taps (3.3 s), zero phase" — because a filter's ringing is as long as that number says. A narrow transition band makes a long filter that rings hard round a sharp edge; a high-order IIR does the same |
-| **Re-referencing** | bipolar, per-shaft average, median, common average, or none | see below |
+| **Re-referencing** | bipolar, per-shaft average, Laplacian, median, common average, or none | see below |
 | **Muscle** | marks seconds of broadband muscle activity (MNE's `annotate_muscle_zscore`) | the marked seconds are set aside on every contact, and the Signal page says *annotated: muscle* for them. A low threshold sets aside a lot of a busy recording |
 | **Amplitude** | marks seconds whose peak-to-peak amplitude exceeds a ceiling, per contact (MNE's `annotate_amplitude`) | the ceiling can be typed in microvolts or *learned from the data*, the way autoreject's global threshold is: the value that best separates the recording's own seconds from its outliers under cross-validation. Large discharges exceed it too, and are set aside with the artefacts; look at what was marked before trusting the rate |
 | **Regress out** | the signal of an ECG lead, a reference or a ground channel the export carries, regressed out of every brain channel by least squares before the montage | the channel itself is never analysed. Regression removes whatever part of each contact follows the lead; a contact that genuinely shares a rhythm with it loses that rhythm too. Offered only when the recording carries such a channel |
@@ -966,6 +1007,20 @@ picks up in common (its own cable, its own amplifier bank) is removed without
 sharing another shaft's noise with it; the **median** is a common reference
 that one wild contact cannot drag along with it. Each is written into the
 report under its own name.
+
+The **Laplacian** is for ECoG grids and strips: each contact minus the mean of
+its neighbours on its own lead. It is sharper in space than bipolar, and each
+channel stays at its own contact rather than between two. On a grid the
+neighbours are the four sides, never the diagonals; on a strip or a depth
+shaft, the contacts either side. Where the recording carries contact
+positions, the neighbours come from them (those no farther than 1.25 times the
+contact's nearest neighbour). Without positions, a grid's shape cannot be read
+from its names, so type its columns under *Grid columns* — `G:8` for a grid G
+numbered 1–8 along its first row, 9–16 along the next; several as `G:8, LT:4`.
+A lead of more than 16 contacts with neither positions nor columns is **left as
+recorded** rather than guessed at, and the step written into the report says
+which leads were treated how. A contact the quality stage marks bad still
+feeds the contacts beside it, as with any reference built from neighbours.
 
 **What is marked, not repaired.** The two annotation steps follow MNE's own
 rule for artefacts: they *mark* seconds, they do not clean them. A marked
