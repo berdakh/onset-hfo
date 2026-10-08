@@ -149,20 +149,22 @@ def test_a_workspace_is_saved_and_loaded_in_each_format(tmp_path):
 
 
 # -- in the window ---------------------------------------------------------------
-qt = pytest.importorskip("qtpy.QtWidgets", reason="the review extra is not installed")
-pytest.importorskip("mne_qt_browser", reason="the review extra is not installed")
-
-from qtpy.QtCore import QThread  # noqa: E402
+# Skipped here, not at the top of the file, so the Qt-free tests above still
+# run on the job that installs no `review` extra.
 
 
 @pytest.fixture(scope="module")
 def qapp():
+    widgets = pytest.importorskip("qtpy.QtWidgets", reason="the review extra is not installed")
+    pytest.importorskip("mne_qt_browser", reason="the review extra is not installed")
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     os.environ.setdefault("MNE_BROWSER_BACKEND", "qt")
-    yield qt.QApplication.instance() or qt.QApplication([])
+    yield widgets.QApplication.instance() or widgets.QApplication([])
 
 
 def _settle(app, n=10):
+    from qtpy.QtCore import QThread
+
     for _ in range(n):
         app.processEvents()
         QThread.msleep(20)

@@ -210,6 +210,22 @@ pane is a plain Python console that says what to install.
 
 ![The Console under the Workspace, after a short analysis of AR1-AR2](images/onset-review-console.png)
 
+**The Analysis page.** Under Recording in the sidebar, the Workspace, Files
+and Console come onto one page beside an **Editor** of scripts and notebooks,
+as in Spyder, and go back to their docks when you leave it. Every Workspace
+name is the same object in the console (`signal` is the samples, read-only).
+`Ctrl+Enter` runs the cell under the cursor (cells start at `# %%`),
+`Shift+Enter` runs it and moves on, `F9` the selection, `F5` the file. A
+notebook opens as cells and saves back as a notebook. **Write code** asks the
+local model to draft Python from a sentence: it is told the Workspace's names,
+types and columns, never the data, and the draft opens in its own tab with
+what could be checked — that it parses, any name that does not exist, any call
+that deletes files or uses the network. Nothing runs it but you. The
+Workspace's *Save/Load* keeps the console's variables as `.pkl`, `.npz` or
+`.mat`.
+
+![The Analysis page](images/onset-review-analysis.png)
+
 **Keeping the screen clear.** The View menu has what is needed when the panes
 and their windows crowd the page:
 
@@ -250,6 +266,17 @@ Patients page can open a patient's cached window on the Recording page, which
 is the one link the site cannot make.
 
 ![A study page](images/onset-review-study.png)
+
+With a recording open, each study page also carries a section headed **This
+recording**: the open window scored against its expert markings the way the
+study scored each patient, marked on the sweep (or the detectors' agreement
+where there are no markings); a study patient ringed on the outcome chart.
+**Explore the chart** opens the figure live — hover, click a patient to open
+them, drag the threshold. **Re-run with your settings** runs the Detectors or
+Outcome study again with your choices, in the background, and shows it dashed
+beside the published lines, labelled yours. **Add this recording to your
+cohort** measures your own patients the same way. **Open as notebook** opens the
+page as a notebook that rebuilds it. None of it changes a published number.
 
 They read the checkout, or the release
 bundle's `site/` folder, which `install.sh` copies next to the environment; on

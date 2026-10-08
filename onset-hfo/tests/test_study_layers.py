@@ -281,20 +281,22 @@ def test_a_page_s_notebook_runs_and_rebuilds_its_numbers(key, tmp_path):
 
 
 # -- in the window ---------------------------------------------------------------------
-qt = pytest.importorskip("qtpy.QtWidgets", reason="the review extra is not installed")
-pytest.importorskip("mne_qt_browser", reason="the review extra is not installed")
-
-from qtpy.QtCore import Qt, QThread  # noqa: E402
+# Skipped here, not at the top of the file, so the Qt-free tests above still
+# run on the job that installs no `review` extra.
 
 
 @pytest.fixture(scope="module")
 def qapp():
+    widgets = pytest.importorskip("qtpy.QtWidgets", reason="the review extra is not installed")
+    pytest.importorskip("mne_qt_browser", reason="the review extra is not installed")
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     os.environ.setdefault("MNE_BROWSER_BACKEND", "qt")
-    yield qt.QApplication.instance() or qt.QApplication([])
+    yield widgets.QApplication.instance() or widgets.QApplication([])
 
 
 def _settle(app, n=8):
+    from qtpy.QtCore import QThread
+
     for _ in range(n):
         app.processEvents()
         QThread.msleep(15)
@@ -432,6 +434,8 @@ def test_this_recording_joins_your_cohort_from_the_outcome_page(qapp, pages):
     dialog._accept()
     assert "outcome" in dialog.problem.text()
     dialog.recurrence.setChecked(True)
+    from qtpy.QtCore import Qt
+
     dialog.contacts.item(0).setCheckState(Qt.Checked)
     outcome, ticked, label = dialog.values()
     entry = page.add_to_cohort(outcome, ticked, label)

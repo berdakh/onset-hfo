@@ -2218,10 +2218,14 @@ def test_the_sidebar_lists_the_sites_pages_in_order(paged):
     from onset_review.studies import STUDIES
 
     nav = paged.pages.nav
+    # Pages are the rows that name one; the study's heading is clickable too,
+    # to fold its pages away, but it is not a page and is never selected.
     enabled = [nav.item(i) for i in range(nav.count())
-               if nav.item(i).flags() & Qt.ItemIsEnabled]
+               if nav.item(i).flags() & Qt.ItemIsEnabled and nav.item(i).data(Qt.UserRole)]
     assert [i.data(Qt.UserRole) for i in enabled] == \
         [k for k, _ in PAGES] + [k for k, _, _ in STUDIES] + ["chat"]
+    heading = paged.pages._study_heading
+    assert heading.flags() & Qt.ItemIsEnabled and not heading.flags() & Qt.ItemIsSelectable
     labels = [nav.item(i).text() for i in range(nav.count())]
     for study in STUDY_PAGES:
         assert study in labels, "the study pages are listed, in the site's order"
