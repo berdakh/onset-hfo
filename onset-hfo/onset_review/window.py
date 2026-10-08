@@ -826,8 +826,36 @@ def decorate_start(*, cached=None, on_open_cached=None, on_import=None,
             "band and detectors, or File → Open a file… for a recording of "
             "your own."))
     help_menu.addAction("How to read the pages", lambda: _how_to_read(host))
+    _support_menu(help_menu, host)
     host.statusBar().showMessage("Open a recording to begin.")
     return host
+
+
+def _support_menu(help_menu, host) -> None:
+    """Help's last two entries in every window: the model check, and a
+    problem report to send (`onset_review.helpdialogs`)."""
+    help_menu.addSeparator()
+
+    def open_dialog(name: str):
+        from onset_review import helpdialogs
+
+        dialogs = host.__dict__.setdefault("_support_dialogs", {})
+        dialog = dialogs.get(name)
+        if dialog is None or (name == "report"):
+            dialog = (helpdialogs.ModelCheckDialog(host) if name == "check"
+                      else helpdialogs.ReportDialog(host))
+            dialogs[name] = dialog
+        dialog.show()
+        dialog.raise_()
+        return dialog
+
+    check = help_menu.addAction("Test the local model…")
+    check.setToolTip("Put the Assistant page's model through the assistant and Write code, "
+                     "graded, and save the result to send")
+    check.triggered.connect(lambda _=False: open_dialog("check"))
+    report = help_menu.addAction("Report a problem…")
+    report.setToolTip("Versions, the machine and the window's log, in one file to send")
+    report.triggered.connect(lambda _=False: open_dialog("report"))
 
 
 def _wire(figure, host, panels: dict, session: ReviewSession,
@@ -1214,6 +1242,7 @@ def _menus(figure, host: QMainWindow, panels: dict, docks: dict,
     help_menu.addAction("How to read the pages", lambda: _how_to_read(host))
     help_menu.addAction("Keyboard shortcuts (MNE trace)",
                         lambda: _shortcuts(figure, host))
+    _support_menu(help_menu, host)
 
 
 def how_to_read_text() -> str:

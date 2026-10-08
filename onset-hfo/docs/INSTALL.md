@@ -380,6 +380,32 @@ tarball from a checkout:
 
 ## If something goes wrong
 
+**Help → Report a problem…** shows, and saves as one zip to send, what a
+developer needs: the versions of everything that matters, this machine, the
+window's own log and the latest model check. The log is written as the window
+runs — what was opened, every background job and how long it took or why it
+was stopped, every warning and error with its traceback, Qt's complaints —
+to `~/.local/state/onset-review/onset-review.log`, rotated at a megabyte; a
+crash that takes the program down is written to `crash.log` beside it. The
+report writes your home folder as `~` and holds no signal, but it does name
+the recordings and files that were opened.
+
+**Help → Test the local model…** measures how well the model chosen on the
+Assistant page serves this software on this machine. It asks the assistant
+eight questions a reviewer asks, each with what should happen — answered with
+every number checked, or refused where it asks for a clinical decision — and
+gives *Write code* nine requests whose drafts are run on the recording, in a
+scratch folder with a time limit, and graded against the right answer ("how
+many events were accepted" has one). It runs in a process of its own and
+takes several minutes on a CPU; the result is saved for you to send and goes
+into the next problem report. From a terminal:
+
+```bash
+python -m onset_review.modelcheck                       # the Assistant page's model
+python -m onset_review.modelcheck --backend ollama --model qwen2.5:3b-instruct
+```
+
+
 **`could not load the Qt platform plugin "xcb"`** — a system library is
 missing. Run the installer without `--no-apt`, or install the list in step 1
 above. To see which library:

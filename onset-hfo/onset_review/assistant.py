@@ -602,11 +602,23 @@ class AssistantPanel(QWidget):
                                   extra_briefing=self.extra_briefing(text))
         self._worker.progress.connect(self._progress)
         self._set_busy(True)
+        import logging
+        import time as _time
+
+        asked_at = _time.monotonic()
         try:
             _run(self._worker)
         finally:
             self._set_busy(False)
             self.question.setFocus()
+        answer = self._worker.answer
+        logging.getLogger("onset_review.assistant").info(
+            "question via %s %s: %s in %.1f s", self._worker._kind,
+            self._worker._model or "(default)",
+            "error: " + str(self._worker.error) if self._worker.error
+            else "refused" if answer is not None and answer.refused
+            else "answered, checked" if answer is not None and answer.verified
+            else "answered, unchecked", _time.monotonic() - asked_at)
 
         if self._worker.error:
             self._say_system(
