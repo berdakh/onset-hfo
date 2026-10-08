@@ -200,6 +200,8 @@ def review_markdown(session: ReviewSession, reviewer: str | None = None,
         out += ["### Dataset notes", ""]
         out += [f"- {note}" for note in session.notes] + [""]
 
+    out += _console_section(session)
+
     if notes.strip():
         out += ["## Reviewer notes", "", notes.strip(), ""]
 
@@ -231,6 +233,21 @@ def review_markdown(session: ReviewSession, reviewer: str | None = None,
             "subject, window, band, detector and threshold reproduces this "
             "document.", ""]
     return "\n".join(out)
+
+
+def _console_section(session: ReviewSession) -> list[str]:
+    """The Python console's commands, when any were run. The console shares
+    memory with the window, so a command can change what the tables above
+    were built from; listing them is how a reader knows whether one did."""
+    log = [entry for entry in getattr(session, "console_log", []) if entry.strip()]
+    if not log:
+        return []
+    count = f"{len(log)} command" + ("s were" if len(log) != 1 else " was")
+    return ["## Python console", "",
+            f"{count} run in the Python console in this window. The console works on "
+            "the same objects as the window, so a command that changed one may have "
+            "changed what this report shows. The commands, in the order they were run:",
+            "", "```python", *("\n".join(log).splitlines()), "```", ""]
 
 
 def write_review(session: ReviewSession, path: str | Path,

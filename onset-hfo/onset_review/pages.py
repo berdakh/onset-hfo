@@ -845,6 +845,11 @@ class PageWindow(QMainWindow):
         workspace = self.panels.get("workspace")
         if workspace is not None:
             workspace.close_windows()
+        console = self.panels.get("console")
+        if console is not None and console.window() is self:
+            # Only a console this window still holds: one carried into the
+            # next window by a re-analysis has already left.
+            console.close_figures()
         super().closeEvent(event)
 
     def _toggle_trend(self, on: bool) -> None:
@@ -1177,6 +1182,10 @@ class PageWindow(QMainWindow):
         ("files", "Files",
          "The current folder. Double-click a recording to open it, a folder to "
          "go into it."),
+        ("console", "Console",
+         "Python in this window's memory, as Spyder's IPython console: session, "
+         "raw, events and findings are the window's own objects. Commands run here "
+         "are listed in the exported report."),
     )
     #: Below this screen width the panes start hidden on a loaded window: at
     #: 1366 px the Recording page needs the width. View → Workspace / Files
@@ -1190,6 +1199,7 @@ class PageWindow(QMainWindow):
         does."""
         from qtpy.QtWidgets import QDockWidget
 
+        from onset_review.console import ConsolePanel, connect_panes
         from onset_review.files import FilesPanel
         from onset_review.workspace import WorkspacePanel
 
@@ -1200,9 +1210,12 @@ class PageWindow(QMainWindow):
             self.panels["workspace"] = WorkspacePanel(self.session)
         if self.panels.get("files") is None:
             self.panels["files"] = FilesPanel()
+        if self.panels.get("console") is None:
+            self.panels["console"] = ConsolePanel(self.session)
         files = self.panels["files"]
         files.openRequested.connect(self._open_path)
         self.panels["workspace"].folder = lambda: files.folder
+        connect_panes(self.panels["workspace"], files, self.panels["console"])
         self.docks: dict = {}
         for key, title, what in self.PANES:
             dock = QDockWidget(title, self)
@@ -1219,24 +1232,48 @@ class PageWindow(QMainWindow):
             dock.toggleViewAction().triggered.connect(
                 lambda on, dock=dock: on and self._fit_pane(dock))
             self.docks[key] = dock
+        self.docks["console"].visibilityChanged.connect(self._size_console)
         self._place_panes()
 
     def _place_panes(self) -> None:
-        """The opening arrangement: both on the right, tabbed, Files in front
-        before a recording is open and the Workspace after."""
+        """The opening arrangement, Spyder's: one column on the right, the
+        Workspace and Files tabbed at the top, the Console under them. Files
+        in front before a recording is open, the Workspace after.
+
+        Built with every pane showing, stacked first and tabbed second: Qt
+        keeps a hidden pane's place only if the place was made while it
+        showed, and tabbing first then splitting put the Console back into
+        the tab group the first time it was shown."""
         workspace, files = self.docks["workspace"], self.docks["files"]
-        for dock in (workspace, files):
-            # Shown while being placed: Qt does not tab a hidden dock, so a
-            # reset after the reviewer closed both would leave them apart.
-            dock.setVisible(True)
+        console = self.docks["console"]
+        for dock in (workspace, files, console):
             dock.setFloating(False)
-            self.addDockWidget(Qt.RightDockWidgetArea, dock)
+            dock.setVisible(True)
+            self.removeDockWidget(dock)
+        self.addDockWidget(Qt.RightDockWidgetArea, workspace, Qt.Vertical)
+        self.addDockWidget(Qt.RightDockWidgetArea, console, Qt.Vertical)
         self.tabifyDockWidget(workspace, files)
+        for dock in (workspace, files, console):
+            dock.setVisible(True)
         (workspace if self.loaded else files).raise_()
         self.resizeDocks([workspace], [380], Qt.Horizontal)
         shown = (not self.loaded) or self._wide_screen()
         for dock in (workspace, files):
             dock.setVisible(shown)
+        # Closed until asked for: it is the one pane that runs code, and
+        # starting it costs a second of IPython.
+        console.setVisible(False)
+
+    def _size_console(self, visible: bool) -> None:
+        """A console opened under the Workspace gets half the column; Qt
+        would give it the least it can, a few lines."""
+        console, workspace = self.docks["console"], self.docks["workspace"]
+        if (not visible or getattr(self, "_building", False) or console.isFloating()
+                or workspace.isHidden() or console.height() >= 220):
+            return
+        column = workspace.height() + console.height()
+        self.resizeDocks([workspace, console], [column // 2, column - column // 2],
+                         Qt.Vertical)
 
     def _fit_pane(self, dock) -> bool:
         """A pane shown beside the pages on a screen too narrow for both

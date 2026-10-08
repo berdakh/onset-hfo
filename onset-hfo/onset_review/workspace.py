@@ -242,6 +242,8 @@ class WorkspacePanel(QWidget):
         #: A callable giving the current folder, set by whoever holds the
         #: Files pane; Export suggests writing there.
         self.folder = None
+        #: The Console pane, when there is one: its names are listed too.
+        self.console = None
 
         self.search = QLineEdit()
         self.search.setObjectName("onset_workspace_search")
@@ -315,7 +317,8 @@ class WorkspacePanel(QWidget):
             self.session = session
         self.tree.clear()
         self._by_name = {}
-        if self.session is None:
+        console = self.console.user_variables() if self.console is not None else {}
+        if self.session is None and not console:
             self.count.setText("No recording open.")
             return
         p = theme.current()
@@ -329,7 +332,7 @@ class WorkspacePanel(QWidget):
             item.setFont(0, font)
             item.setForeground(0, Qt.gray)
             groups[name] = item
-        listed = variables.variables(self.session)
+        listed = variables.variables(self.session, console)
         for variable in listed:
             self._by_name[variable.name] = variable
             row = QTreeWidgetItem(groups[variable.group],
@@ -341,6 +344,8 @@ class WorkspacePanel(QWidget):
             if variable.missing:
                 for column in range(4):
                     row.setForeground(column, QColor(p.text_muted))
+        for group in groups.values():
+            group.setHidden(group.childCount() == 0)
         self.tree.expandAll()
         self.count.setText(f"{len(listed)} variables · double-click one to open it "
                            "in a window")

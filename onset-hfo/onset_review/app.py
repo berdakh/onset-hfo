@@ -343,6 +343,8 @@ class _Review:
         self.mode = getattr(args, "layout", "pages") or "pages"
         #: The window with nothing open, while it is showing.
         self.start_window = None
+        #: The Python console, carried from window to window.
+        self.console = None
 
     def start(self) -> None:
         """Open on Home with nothing loaded; everything else comes from there."""
@@ -352,6 +354,7 @@ class _Review:
             cached=self.cached_windows, on_open_cached=self.open_cached,
             on_import=self.import_file, on_choose=self.choose_window,
             on_open_path=self.open_path)
+        self.console = self.start_window.panels.get("console")
         if window.fit_to_screen(self.start_window):
             self.start_window.showMaximized()
         else:
@@ -410,7 +413,12 @@ class _Review:
                                      mode=self.mode,
                                      cached=self.cached_windows,
                                      on_open_cached=self.open_cached,
-                                     on_relayout=self.relayout)
+                                     on_relayout=self.relayout,
+                                     console=self.console)
+        # One console for the life of the application: a re-analysis or a
+        # newly opened recording rebuilds the window, and the console moves
+        # into the new one with everything made in it.
+        self.console = self.parts.panels.get("console")
         if page and self.parts.pages is not None:
             # The page the reviewer was on, after a re-analysis: a filter
             # applied from the Quality page should leave them on it.

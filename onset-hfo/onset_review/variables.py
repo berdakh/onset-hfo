@@ -24,7 +24,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-__all__ = ["Variable", "variables", "describe", "as_table", "as_array", "as_tree",
+__all__ = ["Variable", "variables", "console_variables", "describe", "as_table", "as_array", "as_tree",
            "export", "GROUPS"]
 
 #: The order the groups are listed in, and what each is.
@@ -35,6 +35,7 @@ GROUPS = (
     ("Anatomy", "where the contacts are and what the surgeon removed"),
     ("Your read", "the verdicts given at this window"),
     ("Setup", "the request that produced all of the above, step by step"),
+    ("Console", "names you made in the Python console"),
 )
 
 #: Arrays up to this many elements get a min/max in their summary; beyond
@@ -170,8 +171,22 @@ class _Lazy:
         return self._produce()
 
 
-def variables(session) -> list[Variable]:
-    """Every object the session holds, in reading order, grouped."""
+def console_variables(names: dict) -> list[Variable]:
+    """The names a console made, as workspace entries."""
+    return [_entry(name, value, "Console", "Made in the Python console.")
+            for name, value in sorted(names.items())]
+
+
+def variables(session, console: dict | None = None) -> list[Variable]:
+    """Every object the session holds, in reading order, grouped; then the
+    names `console` (the console's own) adds."""
+    extra = console_variables(console or {})
+    if session is None:
+        return extra
+    return _session_variables(session) + extra
+
+
+def _session_variables(session) -> list[Variable]:
     request = session.request
     raw = session.raw
     out: list[Variable] = []
