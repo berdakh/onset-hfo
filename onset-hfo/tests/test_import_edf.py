@@ -15,6 +15,8 @@ import numpy as np
 import pytest
 
 pytest.importorskip("edfio")      # what mne.export needs to write an EDF; in [dev]
+pytest.importorskip("qtpy.QtWidgets", reason="the review extra is not installed")
+pytest.importorskip("mne_qt_browser", reason="the review extra is not installed")
 
 
 

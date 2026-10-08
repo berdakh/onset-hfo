@@ -678,6 +678,13 @@ def test_judging_an_event_updates_the_channel_progress_column(judging, review):
     the reader starts working, which is the moment it starts mattering."""
     findings, events = judging.panels["findings"], judging.panels["events"]
     findings.all_columns.setChecked(True)     # Judged lives behind All columns
+    try:
+        _judging_updates_the_progress_column(findings, events)
+    finally:
+        findings.all_columns.setChecked(False)  # the window is shared with later tests
+
+
+def _judging_updates_the_progress_column(findings, events):
     events.view.selectRow(0)
     channel = str(events._shown.iloc[0]["channel"])
     findings.select_channel(channel)
