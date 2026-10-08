@@ -872,6 +872,43 @@ opens it on the Analysis page, the starting point for a question of your own.
 The six pages fold away under their heading (click *THE STUDY* in the
 sidebar); `Alt`+number still reaches them.
 
+### Many recordings at once, and a project to keep
+
+![Six patients analysed alike, one row each](images/onset-review-batch.png)
+
+**File → Analyse many recordings…** (`Ctrl+Shift+A`) runs a list of
+recordings one after another, in the background, with the settings of the
+window that opened it — detectors, band, threshold, preprocessing, the
+quality stage — into one table: the accepted events, the busiest channel and
+its interval, whether it stands out, the channels tied with it, the contacts
+the quality stage set aside and, where the archive has expert markings, how
+the window scores against them. Add cached windows from the same list as
+Home's, or files of your own; the Files pane's ⧉ button sends the selected
+recordings (or the whole folder). A file's channels are typed by **one rule
+for all of them** — every channel SEEG or ECoG, except names like ECG*, EMG*,
+EOG* — because a batch cannot stop to ask about each file; check one file
+alone with *File → Open a file* first. A recording that fails is a row with
+the reason, and the batch goes on; Stop ends it between recordings. The
+table, each recording's ranking and the settings are written to a folder
+beside your current one. Double-click a row to open it in the window;
+*Add to your cohort…* measures it the way the Outcome study measures a
+patient, from the ranking the batch kept — the same numbers as adding it
+from the open window.
+
+**File → Save project…** (`Ctrl+Shift+S`) keeps the recording and everything
+done with it in one `.onsetproj` file: the request with its preprocessing,
+your verdicts and findings paragraph, the editor's scripts, the console's
+variables and command history, your cohort and re-runs, and the page you were
+on. A file of your own can go inside it (asked when you save); otherwise the
+project keeps its location and a checksum, asks for it when it is not there,
+and says so if the file found is not the same one. **File → Open project…**,
+a double-click in the Files pane or `onset-review study.onsetproj` puts it all
+back and analyses the recording again from its request — so a project
+reopened is the same analysis, not a copy of its numbers. Your verdicts and
+cohort on this machine are kept beside the project's, never overwritten
+unseen. The console history comes back as a script in the editor, not as
+commands run.
+
 ### When something goes wrong
 
 **Help → Report a problem…** saves one file to send: the software's versions,

@@ -959,12 +959,17 @@ class CohortDialog(QDialog):
     contacts that were resected -- ticked from the recording's own contacts,
     the archive's resection already ticked where there is one."""
 
-    def __init__(self, session, parent=None):
+    def __init__(self, session, parent=None, *, subject: str | None = None,
+                 channels=None, known=None):
         super().__init__(parent)
         from onset_review.yourstudy import contacts_of
 
+        if session is not None:
+            subject = session.request.subject
+            channels = list(session.raw.ch_names)
+            known = getattr(session.resection, "resected", ()) or ()
         self.setWindowTitle("Add this recording to your cohort")
-        self.label = QLineEdit(session.request.subject)
+        self.label = QLineEdit(subject or "")
         self.free = QRadioButton("Seizure-free")
         self.recurrence = QRadioButton("Recurrence")
         group = QButtonGroup(self)
@@ -974,10 +979,10 @@ class CohortDialog(QDialog):
         outcome.addWidget(self.free)
         outcome.addWidget(self.recurrence)
         outcome.addStretch(1)
-        known = {c.upper() for c in getattr(session.resection, "resected", ()) or ()}
+        known = {c.upper() for c in (known or ())}
         self.contacts = QListWidget()
         self.contacts.setObjectName("onset_cohort_contacts")
-        for contact in contacts_of(session.raw.ch_names):
+        for contact in contacts_of(channels or ()):
             item = QListWidgetItem(contact)
             item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
             item.setCheckState(Qt.Checked if contact in known else Qt.Unchecked)
@@ -1002,6 +1007,11 @@ class CohortDialog(QDialog):
         box.addLayout(form)
         box.addWidget(self.problem)
         box.addWidget(buttons)
+
+    @classmethod
+    def for_channels(cls, subject: str, channels, parent=None) -> CohortDialog:
+        """The dialog for a recording that is not open: a batch row."""
+        return cls(None, parent, subject=subject, channels=channels)
 
     def values(self) -> tuple[str, list[str], str]:
         outcome = "seizure-free" if self.free.isChecked() else (

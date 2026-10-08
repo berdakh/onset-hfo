@@ -170,11 +170,12 @@ def facts(session) -> list[tuple[str, str]]:
            ("Expert markings", f"{len(_truth(session))} events on "
                                f"{len(_reviewed(session))} reviewed channels"
             if has_markings(session) else "none in this window")]
-    if session.quality is not None and len(session.quality):
-        verdicts = session.quality.get("verdict")
-        if verdicts is not None:
-            out.append(("Quality verdicts", ", ".join(
-                f"{n} {v}" for v, n in verdicts.value_counts().items())))
+    quality = session.quality
+    if quality is not None and len(quality) and "good" in quality:
+        good = int(quality["good"].astype(bool).sum())
+        flagged = int(quality["flagged"].astype(bool).sum()) if "flagged" in quality else 0
+        out.append(("Quality stage", f"{good} of {len(quality)} contacts analysed; "
+                                     f"{len(quality) - good} set aside, {flagged} flagged"))
     return out
 
 

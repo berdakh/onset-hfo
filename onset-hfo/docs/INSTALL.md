@@ -226,6 +226,18 @@ Workspace's *Save/Load* keeps the console's variables as `.pkl`, `.npz` or
 
 ![The Analysis page](images/onset-review-analysis.png)
 
+**Many recordings, and projects.** *File → Analyse many recordings…*
+(`Ctrl+Shift+A`) analyses a list of cached windows and files of your own one
+after another, alike, into one table with a row each — files typed by one
+rule you state, failures kept as rows with their reason — and any row can join
+*Your cohort*. *File → Save project…* (`Ctrl+Shift+S`) keeps a recording and
+everything done with it — settings, verdicts, scripts, console variables,
+cohort — in one `.onsetproj` file that *File → Open project…* (or
+`onset-review study.onsetproj`) reopens here or on another machine, analysing
+the recording again from its request.
+
+![Analyse many recordings](images/onset-review-batch.png)
+
 **Keeping the screen clear.** The View menu has what is needed when the panes
 and their windows crowd the page:
 
