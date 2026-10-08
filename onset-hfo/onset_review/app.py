@@ -350,7 +350,8 @@ class _Review:
 
         self.start_window = window.decorate_start(
             cached=self.cached_windows, on_open_cached=self.open_cached,
-            on_import=self.import_file, on_choose=self.choose_window)
+            on_import=self.import_file, on_choose=self.choose_window,
+            on_open_path=self.open_path)
         if window.fit_to_screen(self.start_window):
             self.start_window.showMaximized()
         else:
@@ -400,6 +401,7 @@ class _Review:
         self.parts = window.decorate(figure, session, show_expert=self.overlay,
                                      on_preprocess=self.reanalyse,
                                      on_import=self.import_file,
+                                     on_open_path=self.open_path,
                                      on_quality=self.requality,
                                      on_electrodes=self.use_coordinates,
                                      on_window=self.go_to_window,
@@ -605,10 +607,22 @@ class _Review:
         two windows sharing a process would share nothing else. A reviewer who
         wants both runs the command twice.
         """
-        from onset_review import launcher
         from onset_review.importer import choose_file
 
-        request = choose_file(self._host(), self.args.cache_dir)
+        self._open_request(choose_file(self._host(), self.args.cache_dir))
+
+    def open_path(self, path) -> None:
+        """Open one file named by the Files pane: the same confirmation
+        dialog as File → Open a file, without the file chooser before it."""
+        from onset_review.importer import ImportDialog
+
+        dialog = ImportDialog(path, self._host())
+        accepted = dialog.exec_() if hasattr(dialog, "exec_") else dialog.exec()
+        self._open_request(dialog.request() if accepted else None)
+
+    def _open_request(self, request) -> None:
+        from onset_review import launcher
+
         if request is None:
             return
         session = launcher.load_with_progress(request, self.args.cache_dir,

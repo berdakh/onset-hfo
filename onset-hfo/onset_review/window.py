@@ -43,6 +43,7 @@ from onset_review.chatview import ChatPanel
 from onset_review.controls import AMPLITUDE_STEP, TraceControls
 from onset_review.dataquality import QualityPanel
 from onset_review.eventview import EventDetailPanel
+from onset_review.files import FilesPanel
 from onset_review.icaview import ComponentsPanel
 from onset_review.mapview import ContactMapPanel
 from onset_review.panels import (
@@ -57,6 +58,7 @@ from onset_review.preprocessing import PreprocessPanel
 from onset_review.sensitivityview import SensitivityPanel
 from onset_review.session import BAND_COLOURS, ReviewSession, annotations_for
 from onset_review.spectrumview import SpectrumPanel
+from onset_review.workspace import WorkspacePanel
 
 __all__ = ["decorate", "open_trace", "has_dock_host", "marks_for",
            "fit_to_screen", "work_area",
@@ -478,6 +480,8 @@ def build_panels(figure, session: ReviewSession) -> dict:
         "quality": QualityPanel(session),
         "agreement": AgreementPanel(session),
         "provenance": ProvenancePanel(session),
+        "workspace": WorkspacePanel(session),
+        "files": FilesPanel(),
     }
 
 
@@ -486,7 +490,7 @@ def decorate(figure, session: ReviewSession, show_expert: bool = False,
              on_electrodes=None, on_window=None, on_step_window=None,
              on_trace_at=None, mode: str = "docks", cached=None,
              on_open_cached=None, on_relayout=None,
-             on_choose=None) -> ReviewWindowParts:
+             on_choose=None, on_open_path=None) -> ReviewWindowParts:
     """Add the menus, the toolbar, the panels and the caveat around the trace.
 
     `on_preprocess` is called with a new `PreprocessConfig` when the reviewer
@@ -516,7 +520,8 @@ def decorate(figure, session: ReviewSession, show_expert: bool = False,
                                on_window=on_window, on_step_window=on_step_window,
                                on_trace_at=on_trace_at, cached=cached,
                                on_open_cached=on_open_cached,
-                               on_relayout=on_relayout, on_choose=on_choose)
+                               on_relayout=on_relayout, on_choose=on_choose,
+                               on_open_path=on_open_path)
 
     host = figure if has_dock_host(figure) else QMainWindow()
     host.setWindowTitle(f"Onset Review — {session.request.label()}")
@@ -589,6 +594,17 @@ def decorate(figure, session: ReviewSession, show_expert: bool = False,
                   "Ask about this window; answers cite it or refuse")
     talk = dock("chat", "Chat", Qt.RightDockWidgetArea, panels["chat"],
                 "The local model on its own: not connected to this recording, nothing checked")
+    # Spyder's two panes: what this window holds, and the current folder.
+    # On the left, tabbed, out of the way of the working stack on the right;
+    # not in any task layout, so they start hidden and View shows them.
+    ws = dock("workspace", "Workspace", Qt.LeftDockWidgetArea, panels["workspace"],
+              "Every variable this window holds; double-click one to open it")
+    fs = dock("files", "Files", Qt.LeftDockWidgetArea, panels["files"],
+              "The current folder; double-click a recording to open it")
+    host.tabifyDockWidget(ws, fs)
+    panels["workspace"].folder = lambda: panels["files"].folder
+    if on_open_path is not None:
+        panels["files"].openRequested.connect(on_open_path)
     # Preprocessing sits with provenance rather than with the working views:
     # it is the other half of the same question. "How this was produced" says
     # what was done; the tab next to it is where a reviewer changes it.
@@ -704,7 +720,7 @@ def _decorate_pages(figure, session: ReviewSession, panels: dict,
                     display: _Display, show_expert: bool, *, on_preprocess,
                     on_import, on_quality, on_electrodes, on_window,
                     on_step_window, on_trace_at, cached, on_open_cached,
-                    on_relayout, on_choose=None) -> ReviewWindowParts:
+                    on_relayout, on_choose=None, on_open_path=None) -> ReviewWindowParts:
     """The same panels as a sidebar of pages. See `onset_review.pages`."""
     from onset_review.pages import PageWindow
 
@@ -714,7 +730,8 @@ def _decorate_pages(figure, session: ReviewSession, panels: dict,
         on_import=on_import,
         on_place_contacts=lambda: _load_coordinates(holder["host"], session,
                                                     panels, on_electrodes),
-        on_export=lambda: _export(holder["host"], session))
+        on_export=lambda: _export(holder["host"], session),
+        on_open_path=on_open_path)
     holder["host"] = host
     host.setWindowTitle(f"Onset Review — {session.request.label()}")
     parts = ReviewWindowParts(figure, host, panels, {}, session)
@@ -734,7 +751,7 @@ def _decorate_pages(figure, session: ReviewSession, panels: dict,
 
 
 def decorate_start(*, cached=None, on_open_cached=None, on_import=None,
-                   on_choose=None):
+                   on_choose=None, on_open_path=None):
     """The window the application opens on: Home, and nothing loaded yet.
 
     A `pages.PageWindow` without a session, with the one menu that makes
@@ -744,7 +761,7 @@ def decorate_start(*, cached=None, on_open_cached=None, on_import=None,
     from onset_review.pages import PageWindow
 
     host = PageWindow(cached=cached, on_open_cached=on_open_cached,
-                      on_import=on_import)
+                      on_import=on_import, on_open_path=on_open_path)
     host.setWindowTitle("Onset Review")
     menubar = host.menuBar()
     file_menu = menubar.addMenu("&File")
@@ -760,6 +777,11 @@ def decorate_start(*, cached=None, on_open_cached=None, on_import=None,
         opener.triggered.connect(lambda _=False: on_import())
     file_menu.addSeparator()
     file_menu.addAction("&Close window", host.close)
+    view = menubar.addMenu("&View")
+    _pane_actions(view, host)
+    view.addSeparator()
+    reset = view.addAction("&Restore the default layout")
+    reset.triggered.connect(lambda _=False: host.reset_layout())
     help_menu = menubar.addMenu("&Help")
     help_menu.addAction(
         "What am I looking at?",
@@ -1072,6 +1094,8 @@ def _menus(figure, host: QMainWindow, panels: dict, docks: dict,
         popped.triggered.connect(lambda _=False: pages.toggle_trace_window())
         view.aboutToShow.connect(lambda: popped.setChecked(pages.trace_popped))
         view.addSeparator()
+        _pane_actions(view, pages)
+        view.addSeparator()
         docked = view.addAction("E&verything at once (docked panels)")
         docked.setToolTip("The original arrangement: every panel a dock on "
                           "the trace's window, with the three task layouts.")
@@ -1167,6 +1191,20 @@ def how_to_read_text() -> str:
 
 def _how_to_read(host) -> None:
     QMessageBox.information(host, "How to read the pages", how_to_read_text())
+
+
+def _pane_actions(menu, host) -> None:
+    """View → Workspace and Files: each pane's own show/hide toggle, so the
+    tick follows the pane however it was closed."""
+    shortcuts = {"workspace": "Ctrl+Shift+W", "files": "Ctrl+Shift+F"}
+    for key, _title, what in getattr(host, "PANES", ()):
+        dock = host.pane(key)
+        if dock is None:
+            continue
+        action = dock.toggleViewAction()
+        action.setShortcut(shortcuts.get(key, ""))
+        action.setToolTip(what)
+        menu.addAction(action)
 
 
 def apply_layout(docks: dict, name: str) -> bool:

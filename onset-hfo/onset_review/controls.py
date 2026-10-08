@@ -22,7 +22,6 @@ from __future__ import annotations
 from qtpy.QtCore import Qt, Signal
 from qtpy.QtWidgets import (
     QDoubleSpinBox,
-    QHBoxLayout,
     QLabel,
     QMenu,
     QPushButton,
@@ -177,51 +176,34 @@ class TraceControls(QWidget):
         home.setMaximumWidth(30)
         home.clicked.connect(self.go_home)
 
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(6, 2, 6, 2)
-        layout.setSpacing(3)
+        def labelled(text):
+            return QLabel(text)
 
-        layout.addWidget(QLabel("Amplitude"))
-        layout.addWidget(_button("−", "Smaller traces (key: -)",
-                                 lambda: self._scale(1 / AMPLITUDE_STEP)))
-        layout.addWidget(self.gain)
-        layout.addWidget(_button("+", "Taller traces (key: +)",
-                                 lambda: self._scale(AMPLITUDE_STEP)))
+        # Sized to their content, so that on a laptop the row wraps onto two
+        # lines rather than three; every line taken here is a line of trace.
+        self.gain.setMinimumWidth(62)
+        self.seconds.setMaximumWidth(84)
+        self.channels.setMaximumWidth(72)
+        self.position.setMaximumWidth(96)
 
-        layout.addSpacing(10)
-        layout.addWidget(QLabel("Window"))
-        layout.addWidget(self.seconds)
-
-        layout.addSpacing(10)
-        layout.addWidget(QLabel("Channels"))
-        layout.addWidget(self.channels)
-        layout.addWidget(_button("▲", "Scroll up through the channels (key: ↑)",
-                                 lambda: self._vscroll(-1)))
-        layout.addWidget(_button("▼", "Scroll down through the channels (key: ↓)",
-                                 lambda: self._vscroll(1)))
-
-        layout.addSpacing(10)
-        layout.addWidget(QLabel("At"))
-        layout.addWidget(_button("◀◀", "Back one screen (key: Home)",
-                                 lambda: self._hscroll("-full")))
-        layout.addWidget(_button("◀", "Back (key: ←)",
-                                 lambda: self._hscroll("left")))
-        layout.addWidget(self.position)
-        layout.addWidget(_button("▶", "Forward (key: →)",
-                                 lambda: self._hscroll("right")))
-        layout.addWidget(_button("▶▶", "Forward one screen (key: End)",
-                                 lambda: self._hscroll("+full")))
-        layout.addWidget(home)
-        layout.addStretch(1)
-
-        # The keys, behind a "?" rather than written across the bar: a
-        # sentence there was the widest thing in the row and the least
-        # important, and on a 1366-wide laptop it set the floor for the
-        # whole window.
-        layout.addWidget(theme.help_button(
-            "Amplitude: the trace's scale. Window: seconds on screen. Channels: "
-            "rows on screen. At: where the window starts. The trace also takes "
-            "the usual MNE keys; press ? on it."))
+        amplitude = theme.cluster(
+            labelled("Amplitude"),
+            _button("−", "Smaller traces (key: -)", lambda: self._scale(1 / AMPLITUDE_STEP)),
+            self.gain,
+            _button("+", "Taller traces (key: +)", lambda: self._scale(AMPLITUDE_STEP)))
+        window = theme.cluster(labelled("Window"), self.seconds)
+        channels = theme.cluster(
+            labelled("Channels"), self.channels,
+            _button("▲", "Scroll up through the channels (key: ↑)", lambda: self._vscroll(-1)),
+            _button("▼", "Scroll down through the channels (key: ↓)", lambda: self._vscroll(1)))
+        at = theme.cluster(
+            labelled("At"),
+            _button("◀◀", "Back one screen (key: Home)", lambda: self._hscroll("-full")),
+            _button("◀", "Back (key: ←)", lambda: self._hscroll("left")),
+            self.position,
+            _button("▶", "Forward (key: →)", lambda: self._hscroll("right")),
+            _button("▶▶", "Forward one screen (key: End)", lambda: self._hscroll("+full")),
+            home)
 
         self.tools = QToolButton()
         self.tools.setObjectName("onset_trace_tools")
@@ -233,7 +215,21 @@ class TraceControls(QWidget):
         self.tools.setPopupMode(QToolButton.InstantPopup)
         self.tools.setMenu(self._tools_menu())
         self.tools.setVisible(not self.tools.menu().isEmpty())
-        layout.addWidget(self.tools)
+        # The keys, behind a "?" rather than written across the bar: a
+        # sentence there was the widest thing in the row and the least
+        # important.
+        extras = theme.cluster(theme.help_button(
+            "Amplitude: the trace's scale. Window: seconds on screen. Channels: "
+            "rows on screen. At: where the window starts. The trace also takes "
+            "the usual MNE keys; press ? on it."), self.tools)
+
+        # A row that wraps: on a 1366-wide laptop the groups go onto a second
+        # line instead of setting a floor for the whole window, which is what
+        # one long row did.
+        layout = theme.flow_layout(self, spacing=10)
+        layout.setContentsMargins(6, 2, 6, 2)
+        for group in (amplitude, window, channels, at, extras):
+            layout.addWidget(group)
         self.show_browser_toolbar(False)
 
         self.seconds.valueChanged.connect(self._set_seconds)

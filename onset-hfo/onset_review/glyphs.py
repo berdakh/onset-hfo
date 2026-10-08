@@ -145,6 +145,13 @@ def _research(p: QPainter, c: QColor) -> None:
     p.drawLine(QPointF(8, 4), QPointF(8, 13.5))
 
 
+def _workspace(p: QPainter, c: QColor) -> None:
+    p.drawRect(QRectF(2, 3, 12, 10))
+    p.drawLine(QPointF(2, 6.5), QPointF(14, 6.5))
+    p.drawLine(QPointF(6.5, 6.5), QPointF(6.5, 13))
+    p.drawLine(QPointF(2, 9.75), QPointF(14, 9.75))
+
+
 def _chat(p: QPainter, c: QColor) -> None:
     path = QPainterPath()
     path.addRoundedRect(QRectF(2, 2.5, 12, 9), 3, 3)
@@ -159,7 +166,7 @@ _DRAW = {
     "quality": _quality, "report": _report, "assistant": _assistant,
     "detectors": _detectors, "outcome": _outcome, "patients": _patients,
     "data": _data, "architecture": _architecture, "research": _research,
-    "chat": _chat,
+    "chat": _chat, "workspace": _workspace,
 }
 
 

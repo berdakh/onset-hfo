@@ -191,7 +191,8 @@ class PageWindow(QMainWindow):
 
     def __init__(self, figure=None, panels: dict | None = None, session=None, *,
                  cached=None, on_open_cached=None, on_import=None,
-                 on_place_contacts=None, on_export=None, parent=None):
+                 on_place_contacts=None, on_export=None, on_open_path=None,
+                 parent=None):
         """With a session, the whole window. Without one, the start state:
         the same sidebar and Home page, the other pages disabled until a
         recording is opened from Home or from the File menu. The application
@@ -205,6 +206,7 @@ class PageWindow(QMainWindow):
         self._on_import = on_import
         self._on_place_contacts = on_place_contacts
         self._on_export = on_export
+        self._on_open_path = on_open_path
         if self.loaded:
             remember_recent(self.session.request)
         self._pages: dict[str, QWidget] = {}
@@ -258,9 +260,16 @@ class PageWindow(QMainWindow):
         body = self._split("main", Qt.Horizontal, [self._sidebar, right],
                            [SIDEBAR_WIDTH, 1400], stretch=(0, 1))
         self.setCentralWidget(body)
+        # Placing the panes moves them, and a move saves the arrangement:
+        # without this the default would be written over the remembered one
+        # before it is read.
+        self._building = True
+        self._build_panes()
 
         self.nav.currentItemChanged.connect(self._nav_changed)
         self.restore_layout_state(self._remembered())
+        self._restore_panes()
+        self._building = False
         if self._remembered_compact() is False:
             for key in self.COMPACT_PANELS:
                 panel = self.panels.get(key)
@@ -832,6 +841,10 @@ class PageWindow(QMainWindow):
         # must take it along rather than leave a browser nobody can reach.
         if self.trace_popped:
             self.dock_trace()
+        self.remember_layout()
+        workspace = self.panels.get("workspace")
+        if workspace is not None:
+            workspace.close_windows()
         super().closeEvent(event)
 
     def _toggle_trend(self, on: bool) -> None:
@@ -1154,6 +1167,121 @@ class PageWindow(QMainWindow):
     def _assistant_page(self) -> QWidget:
         return self._on_card(self.panels["assistant"])
 
+    # -- panes: Spyder's dockable panels ----------------------------------
+    #: (key, title, what it is). The order they are tabbed in.
+    PANES = (
+        ("workspace", "Workspace",
+         "Every variable this window holds, with its type and size, as MATLAB's "
+         "Workspace or Spyder's Variable Explorer lists them. Double-click one "
+         "to open it in a window of its own."),
+        ("files", "Files",
+         "The current folder. Double-click a recording to open it, a folder to "
+         "go into it."),
+    )
+    #: Below this screen width the panes start hidden on a loaded window: at
+    #: 1366 px the Recording page needs the width. View → Workspace / Files
+    #: shows them, and whatever the reviewer arranges is remembered.
+    PANES_MIN_WIDTH = 1600
+
+    def _build_panes(self) -> None:
+        """Workspace and Files as dock widgets: dragged to any edge, floated
+        as windows of their own, tabbed together or apart, closed and
+        reopened from View. The pages stay in the middle, as Spyder's editor
+        does."""
+        from qtpy.QtWidgets import QDockWidget
+
+        from onset_review.files import FilesPanel
+        from onset_review.workspace import WorkspacePanel
+
+        self.setDockOptions(QMainWindow.AnimatedDocks | QMainWindow.AllowTabbedDocks
+                            | QMainWindow.AllowNestedDocks)
+        self.setTabPosition(Qt.AllDockWidgetAreas, QTabWidget.North)
+        if self.panels.get("workspace") is None:
+            self.panels["workspace"] = WorkspacePanel(self.session)
+        if self.panels.get("files") is None:
+            self.panels["files"] = FilesPanel()
+        files = self.panels["files"]
+        files.openRequested.connect(self._open_path)
+        self.panels["workspace"].folder = lambda: files.folder
+        self.docks: dict = {}
+        for key, title, what in self.PANES:
+            dock = QDockWidget(title, self)
+            dock.setObjectName(f"pane_{key}")
+            dock.setToolTip(what)
+            dock.setWidget(self.panels[key])
+            dock.setFeatures(QDockWidget.DockWidgetMovable | QDockWidget.DockWidgetFloatable
+                             | QDockWidget.DockWidgetClosable)
+            dock.setAllowedAreas(Qt.AllDockWidgetAreas)
+            dock.setMinimumWidth(240)
+            dock.dockLocationChanged.connect(lambda *_: self.remember_layout())
+            dock.topLevelChanged.connect(lambda *_: self.remember_layout())
+            dock.toggleViewAction().triggered.connect(lambda *_: self.remember_layout())
+            dock.toggleViewAction().triggered.connect(
+                lambda on, dock=dock: on and self._fit_pane(dock))
+            self.docks[key] = dock
+        self._place_panes()
+
+    def _place_panes(self) -> None:
+        """The opening arrangement: both on the right, tabbed, Files in front
+        before a recording is open and the Workspace after."""
+        workspace, files = self.docks["workspace"], self.docks["files"]
+        for dock in (workspace, files):
+            # Shown while being placed: Qt does not tab a hidden dock, so a
+            # reset after the reviewer closed both would leave them apart.
+            dock.setVisible(True)
+            dock.setFloating(False)
+            self.addDockWidget(Qt.RightDockWidgetArea, dock)
+        self.tabifyDockWidget(workspace, files)
+        (workspace if self.loaded else files).raise_()
+        self.resizeDocks([workspace], [380], Qt.Horizontal)
+        shown = (not self.loaded) or self._wide_screen()
+        for dock in (workspace, files):
+            dock.setVisible(shown)
+
+    def _fit_pane(self, dock) -> bool:
+        """A pane shown beside the pages on a screen too narrow for both
+        opens as a window of its own instead: a window wider than its screen
+        loses its maximise button on X11, which is worse than a floating
+        pane. True if it was floated."""
+        from qtpy.QtWidgets import QApplication
+
+        screen = QApplication.primaryScreen()
+        if screen is None or dock.isFloating():
+            return False
+        if self.minimumSizeHint().width() <= screen.availableGeometry().width():
+            return False
+        dock.setFloating(True)
+        dock.resize(420, 560)
+        return True
+
+    def _wide_screen(self) -> bool:
+        from qtpy.QtWidgets import QApplication
+
+        screen = QApplication.primaryScreen()
+        return screen is not None and screen.availableGeometry().width() >= self.PANES_MIN_WIDTH
+
+    @property
+    def _panes_key(self) -> str:
+        return "panes" if self.loaded else "panes_start"
+
+    def _restore_panes(self) -> bool:
+        import base64
+        import json
+
+        try:
+            payload = json.loads(self._layout_file().read_text(encoding="utf-8"))
+            blob = payload.get(self._panes_key)
+            return bool(blob) and self.restoreState(QByteArray(base64.b64decode(blob)))
+        except (OSError, ValueError, TypeError):
+            return False
+
+    def _open_path(self, path: str) -> None:
+        if self._on_open_path is not None:
+            self._on_open_path(path)
+
+    def pane(self, key: str):
+        return getattr(self, "docks", {}).get(key)
+
     # -- regions a mouse can drag ------------------------------------------
     def _split(self, name: str, orientation, widgets: list, sizes: list[int],
                stretch: tuple[int, ...] | None = None) -> QSplitter:
@@ -1215,6 +1343,12 @@ class PageWindow(QMainWindow):
         """Every region back to its opening size, and nothing remembered."""
         for splitter, default in self._splitters.values():
             splitter.setSizes(default)
+        if getattr(self, "docks", None):
+            self._building = True
+            try:
+                self._place_panes()
+            finally:
+                self._building = False
         self._forget()
 
     def _layout_file(self):
@@ -1248,11 +1382,26 @@ class PageWindow(QMainWindow):
         import base64
         import json
 
+        if getattr(self, "_building", False):
+            return
         try:
             path = self._layout_file()
             path.parent.mkdir(parents=True, exist_ok=True)
-            payload = {"schema": 1, "compact": self.compact(), "splitters": {
-                k: base64.b64encode(v).decode("ascii") for k, v in self.layout_state().items()}}
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+                if not isinstance(payload, dict):
+                    payload = {}
+            except (OSError, ValueError):
+                payload = {}
+            # Merged, not replaced: the start window has fewer regions than a
+            # loaded one, and its save must not forget the others.
+            splitters = dict(payload.get("splitters") or {})
+            splitters.update({k: base64.b64encode(v).decode("ascii")
+                              for k, v in self.layout_state().items()})
+            payload.update({"schema": 1, "compact": self.compact(), "splitters": splitters})
+            if getattr(self, "docks", None):
+                payload[self._panes_key] = base64.b64encode(
+                    bytes(self.saveState().data())).decode("ascii")
             path.write_text(json.dumps(payload, indent=1) + "\n", encoding="utf-8")
         except OSError:
             pass        # a layout that cannot be saved is still a layout

@@ -171,6 +171,24 @@ so on — is a splitter you drag with the mouse. Sizes are remembered across
 re-analyses and across launches; **View → Restore the default layout** puts
 them back.
 
+Two **panes** sit beside the pages, as Spyder's do: **Workspace**, every
+variable the open window holds — the signal, the events, the ranking, the
+quality tables, the request — with its type, size and a glimpse of its value,
+and **Files**, the current folder. Double-click a variable to open it in a
+window of its own: a table for tables, the channels × samples array with
+times along the top, a tree for the request and your read. Open as many as
+you like and drag them where you want them; *Export…* writes a copy (.csv,
+.npy or .json) to the current folder. In Files, double-click a folder to go
+in and a recording to open it, through the same import dialog as *File → Open
+a file…*. Each pane can be dragged to any edge of the window, tabbed with the
+other or apart, floated as a window of its own, or closed; **View → Workspace**
+(`Ctrl+Shift+W`) and **View → Files** (`Ctrl+Shift+F`) bring them back, and
+the arrangement is remembered. On a screen narrower than 1600 px a loaded
+window starts with them hidden, and a pane shown there opens as its own
+window: beside the Recording page on a 1366 px laptop there is no room.
+
+![The Workspace and Files panes beside the Recording page](images/onset-review-workspace.png)
+
 Under the first group sit the six **study pages** of the results site —
 Detectors, Outcome, Patients, Data, Architecture, Research — built in the
 window from the same committed tables the site reads (`data/`), through the
