@@ -72,7 +72,7 @@ def test_every_panel_is_docked(built):
     assert set(built.docks) == {"trends", "controls", "findings", "events",
                                 "detail", "spectrum", "average", "sensitivity", "brain", "map",
                                 "agreement", "provenance", "assistant", "preprocess", "patient",
-                                "quality", "components", "chat"}
+                                "quality", "components", "chat", "workspace", "files"}
     assert all(dock.widget() is not None for dock in built.docks.values())
 
 
@@ -3818,3 +3818,188 @@ def test_the_assistant_transcript_is_cards_with_chips_and_a_folded_trace(qapp, r
         assert 'href="evidence:' in panel.transcript.toHtml(), "citations stay clickable"
     finally:
         panel.deleteLater()
+
+
+# -- Spyder's panes: the Workspace and the current folder ----------------------
+def test_the_workspace_and_files_panes_dock_float_tab_and_close(paged):
+    """Asked for as MATLAB's and Spyder's: a list of the variables and a
+    current folder, in panes that can be dragged about."""
+    from qtpy.QtWidgets import QDockWidget
+
+    host = paged.pages
+    workspace, files = host.pane("workspace"), host.pane("files")
+    for dock in (workspace, files):
+        dock.show()        # hidden at first on a narrow screen, as here
+        assert isinstance(dock, QDockWidget)
+        features = dock.features()
+        for flag in (QDockWidget.DockWidgetMovable, QDockWidget.DockWidgetFloatable,
+                     QDockWidget.DockWidgetClosable):
+            assert features & flag
+        assert dock.allowedAreas() == Qt.AllDockWidgetAreas
+    assert files in host.tabifiedDockWidgets(workspace), "tabbed together at first"
+    workspace.setFloating(True)
+    assert workspace.isFloating() and workspace.isWindow()
+    workspace.setFloating(False)
+    host.addDockWidget(Qt.LeftDockWidgetArea, files)
+    assert host.dockWidgetArea(files) == Qt.LeftDockWidgetArea
+    workspace.close()
+    files.close()
+    host.reset_layout()
+    assert host.dockWidgetArea(files) == Qt.RightDockWidgetArea
+    assert host.dockWidgetArea(workspace) == Qt.RightDockWidgetArea
+    assert files.isHidden() == (not host._wide_screen()), "the opening rule again"
+    files.show()
+    workspace.show()
+    assert files in host.tabifiedDockWidgets(workspace), "tabbed again after a reset"
+
+
+def test_the_view_menu_toggles_each_pane(paged):
+    host = paged.pages
+    view = _menu(host, "View")
+    actions = {a.text().replace("&", ""): a for a in view.actions()}
+    for title, shortcut in (("Workspace", "Ctrl+Shift+W"), ("Files", "Ctrl+Shift+F")):
+        assert title in actions, list(actions)
+        assert actions[title].shortcut().toString() == shortcut
+    dock = host.pane("files")
+    action = actions["Files"]
+    action.setChecked(True)       # the window is not shown, so sync by hand
+    assert not dock.isHidden()
+    action.trigger()
+    assert dock.isHidden()
+    action.trigger()
+    assert not dock.isHidden()
+
+
+def test_the_workspace_lists_the_session_and_opens_a_variable_in_its_own_window(
+        paged, tmp_path):
+    panel = paged.panels["workspace"]
+    names = panel.names()
+    for name in ("raw", "signal", "events", "findings", "request", "read"):
+        assert name in names
+    window = panel.open("findings")
+    assert window is not None and window.isWindow() and window.view_kind == "table"
+    assert window.body.model().rowCount() == len(paged.session.findings)
+    assert panel.open("findings") is window, "a second double-click raises it"
+    array = panel.open("signal")
+    assert array.view_kind == "array"
+    model = array.body.model()
+    assert model.rowCount() == len(paged.session.raw.ch_names)
+    assert model.headerData(0, Qt.Vertical) == paged.session.raw.ch_names[0]
+    assert model.headerData(0, Qt.Horizontal).endswith(" s")
+    tree = panel.open("request")
+    assert tree.view_kind == "tree" and tree.body.topLevelItemCount() > 5
+    out = tree.export(tmp_path / "request")
+    assert out.suffix == ".json" and out.exists()
+    panel.search.setText("sig")
+    visible = [panel.tree.topLevelItem(g).child(c).text(0)
+               for g in range(panel.tree.topLevelItemCount())
+               for c in range(panel.tree.topLevelItem(g).childCount())
+               if not panel.tree.topLevelItem(g).child(c).isHidden()]
+    assert visible == ["signal"]
+    panel.search.clear()
+    panel.close_windows()
+    assert panel.windows == []
+
+
+def test_the_files_pane_browses_and_hands_a_recording_to_the_import(
+        qapp, tmp_path, monkeypatch):
+    """Double-click a folder to go in, a recording to open it; anything else
+    says why not. The current folder is remembered and is where Export
+    suggests writing."""
+    from onset_review import files as files_module
+    from onset_review.files import FilesPanel, current_folder
+
+    monkeypatch.setenv("ONSET_REVIEW_CONFIG_DIR", str(tmp_path / "config"))
+    (tmp_path / "data" / "sub").mkdir(parents=True)
+    edf = tmp_path / "data" / "study.edf"
+    edf.write_bytes(b"0")
+    note = tmp_path / "data" / "notes.txt"
+    note.write_text("x")
+    panel = FilesPanel(tmp_path / "data")
+    asked = []
+    panel.openRequested.connect(asked.append)
+    assert panel.folder == (tmp_path / "data").resolve()
+    assert panel.open_path(tmp_path / "data" / "sub") is True
+    assert panel.folder == (tmp_path / "data" / "sub").resolve()
+    assert current_folder() == panel.folder, "remembered for the next launch"
+    panel.go_up()
+    assert panel.folder == (tmp_path / "data").resolve()
+    assert panel.open_path(edf) is True and asked == [str(edf.resolve())]
+    assert panel.open_path(note) is False and "not a recording" in panel.hint.text()
+    assert panel.set_folder(tmp_path / "missing") is False
+    assert panel.folder == (tmp_path / "data").resolve()
+    assert files_module.is_recording(edf) and not files_module.is_recording(note)
+
+
+def test_a_double_clicked_recording_reaches_the_app(paged):
+    host = paged.pages
+    opened = []
+    host._on_open_path = opened.append
+    host.panels["files"].openRequested.emit("/tmp/study.edf")
+    assert opened == ["/tmp/study.edf"]
+
+
+def test_the_start_window_has_the_panes_with_files_in_front(qapp, tmp_path, monkeypatch):
+    from onset_review import window
+
+    monkeypatch.setenv("ONSET_REVIEW_CONFIG_DIR", str(tmp_path))
+    opened = []
+    host = window.decorate_start(cached=lambda: __import__("pandas").DataFrame(),
+                                 on_open_path=opened.append)
+    try:
+        assert host.pane("files") is not None and host.pane("workspace") is not None
+        assert not host.pane("files").isHidden(), "the start window shows the folder"
+        assert host.panels["workspace"].names() == []
+        assert "No recording" in host.panels["workspace"].count.text()
+        host.panels["files"].openRequested.emit("/tmp/x.edf")
+        assert opened == ["/tmp/x.edf"]
+        view = _menu(host, "View")
+        assert {"Workspace", "Files"} <= {a.text().replace("&", "") for a in view.actions()}
+    finally:
+        host.close()
+
+
+def test_the_panes_arrangement_is_remembered(qapp, review, tmp_path, monkeypatch):
+    from onset_review import window
+
+    monkeypatch.setenv("ONSET_REVIEW_CONFIG_DIR", str(tmp_path))
+    first = window.decorate_start(cached=lambda: __import__("pandas").DataFrame())
+    first.addDockWidget(Qt.LeftDockWidgetArea, first.pane("files"))
+    first.remember_layout()
+    first.close()
+    second = window.decorate_start(cached=lambda: __import__("pandas").DataFrame())
+    try:
+        assert second.dockWidgetArea(second.pane("files")) == Qt.LeftDockWidgetArea
+    finally:
+        second.close()
+
+
+def test_the_pages_window_fits_a_laptop_screen_with_the_panes_hidden(paged):
+    """Seen in a screenshot from a 1366-wide laptop: the window cut off at
+    the right. The Recording page's controls row and the Events filters were
+    single rows that set a 1792 px minimum; they wrap now."""
+    host = paged.pages
+    for key in ("workspace", "files"):
+        host.pane(key).hide()
+    minimum = host.minimumSizeHint()
+    assert minimum.width() <= SMALL_SCREEN[0], (
+        f"the pages window needs {minimum.width()} px; a {SMALL_SCREEN[0]} px "
+        "screen cannot show it")
+    assert paged.panels["controls"].minimumSizeHint().width() < 500
+
+
+def test_a_pane_that_does_not_fit_beside_the_pages_opens_as_a_window(paged, monkeypatch):
+    host = paged.pages
+    dock = host.pane("workspace")
+    dock.setFloating(False)
+    dock.show()
+
+    class Narrow:
+        def availableGeometry(self):
+            from qtpy.QtCore import QRect
+
+            return QRect(0, 0, 900, 700)
+
+    monkeypatch.setattr(qt.QApplication, "primaryScreen", staticmethod(lambda: Narrow()))
+    assert host._fit_pane(dock) is True and dock.isFloating()
+    dock.setFloating(False)

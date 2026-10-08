@@ -626,3 +626,107 @@ def scrolled(body):
     area.setWidgetResizable(True)
     area.setFrameShape(QFrame.NoFrame)
     return area
+
+
+# -- a row that wraps -----------------------------------------------------------
+def _flow_layout_class():
+    """Qt's own FlowLayout example, built on first use so this module still
+    imports without a display. Items sit left to right and wrap to a new
+    line when the row is narrower than they are, so a row's minimum width is
+    its widest item rather than all of them: a toolbar that wraps on a
+    1366-wide laptop instead of making the window wider than the screen."""
+    from qtpy.QtCore import QPoint, QRect, QSize, Qt
+    from qtpy.QtWidgets import QLayout
+
+    class FlowLayout(QLayout):
+        def __init__(self, parent=None, spacing: int = SPACING // 2):
+            super().__init__(parent)
+            self._items = []
+            self.setSpacing(spacing)
+            self.setContentsMargins(0, 0, 0, 0)
+
+        def addItem(self, item):                           # noqa: N802
+            self._items.append(item)
+
+        def count(self):
+            return len(self._items)
+
+        def itemAt(self, index):                           # noqa: N802
+            return self._items[index] if 0 <= index < len(self._items) else None
+
+        def takeAt(self, index):                           # noqa: N802
+            return self._items.pop(index) if 0 <= index < len(self._items) else None
+
+        def expandingDirections(self):                     # noqa: N802
+            return Qt.Orientation(0)
+
+        def hasHeightForWidth(self):                       # noqa: N802
+            return True
+
+        def heightForWidth(self, width):                   # noqa: N802
+            return self._arrange(QRect(0, 0, width, 0), apply=False)
+
+        def setGeometry(self, rect):                       # noqa: N802
+            super().setGeometry(rect)
+            self._arrange(rect, apply=True)
+
+        def sizeHint(self):                                # noqa: N802
+            width = sum(i.sizeHint().width() for i in self._items if not i.isEmpty())
+            width += self.spacing() * max(0, len(self._items) - 1)
+            height = max((i.sizeHint().height() for i in self._items), default=0)
+            m = self.contentsMargins()
+            return QSize(width + m.left() + m.right(), height + m.top() + m.bottom())
+
+        def minimumSize(self):                             # noqa: N802
+            size = QSize()
+            for item in self._items:
+                size = size.expandedTo(item.minimumSize())
+            m = self.contentsMargins()
+            return size + QSize(m.left() + m.right(), m.top() + m.bottom())
+
+        def _arrange(self, rect, apply: bool) -> int:
+            m = self.contentsMargins()
+            area = rect.adjusted(m.left(), m.top(), -m.right(), -m.bottom())
+            x, y, line = area.x(), area.y(), 0
+            gap = self.spacing()
+            for item in self._items:
+                if item.isEmpty():
+                    continue
+                hint = item.sizeHint()
+                if x + hint.width() > area.right() + 1 and line > 0:
+                    x, y, line = area.x(), y + line + gap, 0
+                if apply:
+                    item.setGeometry(QRect(QPoint(x, y), hint))
+                x += hint.width() + gap
+                line = max(line, hint.height())
+            return y + line - rect.y() + m.bottom()
+
+    return FlowLayout
+
+
+_FLOW = None
+
+
+def flow_layout(parent=None, spacing: int = SPACING // 2):
+    """A `FlowLayout` (see `_flow_layout_class`)."""
+    global _FLOW
+    if _FLOW is None:
+        _FLOW = _flow_layout_class()
+    return _FLOW(parent, spacing)
+
+
+def cluster(*widgets, spacing: int = 3):
+    """Widgets that belong together, as one item a flow row wraps around
+    rather than through: a label with its control, a run of buttons."""
+    from qtpy.QtWidgets import QHBoxLayout, QLayout, QWidget
+
+    holder = QWidget()
+    box = QHBoxLayout(holder)
+    box.setContentsMargins(0, 0, 0, 0)
+    box.setSpacing(spacing)
+    for widget in widgets:
+        if isinstance(widget, QLayout):
+            box.addLayout(widget)
+        else:
+            box.addWidget(widget)
+    return holder

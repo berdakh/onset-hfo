@@ -643,14 +643,15 @@ class EventsPanel(QWidget):
         self._compact = True
         self.all_columns.toggled.connect(lambda on: self.set_compact(not on))
 
-        bar = QHBoxLayout()
-        for widget in (self.kind, self.channel, self.on_spike, self.rejected):
-            bar.addWidget(widget)
-        bar.addStretch(1)
-        bar.addWidget(self.all_columns)
         self.count = QLabel()
         self.count.setStyleSheet(f"color:{theme.current().text_muted};font-size:9pt;")
-        bar.addWidget(self.count)
+        # Wrapping rows: in one line, these set the side column's minimum
+        # width and with it the window's, past a 1366-wide screen.
+        bar = theme.flow_layout(spacing=8)
+        for group in (theme.cluster(self.kind, self.channel),
+                      theme.cluster(self.on_spike, self.rejected),
+                      theme.cluster(self.all_columns, self.count)):
+            bar.addWidget(group)
 
         self.model = DataFrameModel(self._all, self._columns(), self._tint)
         self.view = _table_view()
@@ -663,9 +664,7 @@ class EventsPanel(QWidget):
         # exist.
         self.buttons = {}
         self.shortcuts = []
-        verdicts = QHBoxLayout()
-        verdicts.setSpacing(4)
-        verdicts.addWidget(QLabel("This event:"))
+        verdicts = theme.flow_layout(spacing=8)
         segments = QHBoxLayout()
         for verdict, text, key, tip in self.KEYS:
             button = _compact(QPushButton(text))
@@ -676,22 +675,21 @@ class EventsPanel(QWidget):
             self.buttons[verdict] = button
             self._bind(key, lambda verdict=verdict: self.judge(verdict))
         theme.segmented(list(self.buttons.values()), segments)
-        verdicts.addLayout(segments)
         self.undo = _compact(QPushButton("Clear"))
         self.undo.setToolTip("Take this verdict back (Backspace)")
         self.undo.clicked.connect(lambda _=False: self.judge(""))
-        verdicts.addWidget(self.undo)
         self._bind("Backspace", lambda: self.judge(""))
         self.note = _compact(QPushButton("Note…"))
         self.note.setToolTip("Say why, in a sentence (N)")
         self.note.clicked.connect(self._write_note)
-        verdicts.addWidget(self.note)
         self._bind("N", self._write_note)
-        verdicts.addStretch(1)
         self.progress = QLabel()
         self.progress.setStyleSheet(
             f"color:{theme.current().text_muted};font-size:9pt;")
-        verdicts.addWidget(self.progress)
+        for group in (theme.cluster(QLabel("This event:"), segments, spacing=4),
+                      theme.cluster(self.undo, self.note, spacing=4),
+                      self.progress):
+            verdicts.addWidget(group)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 0)

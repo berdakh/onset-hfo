@@ -697,6 +697,40 @@ says so and waits; with one, an empty page offers three questions to try.
 What a 3B model knows about medicine is uneven; where the machine allows,
 the 7B the hardware chooser offers is the better companion.
 
+### Workspace and Files — the panes beside the pages
+
+![The Workspace and Files panes](images/onset-review-workspace.png)
+
+For anyone who has used MATLAB or Spyder: the **Workspace** pane lists every
+object the open window holds, grouped — *Signal* (the MNE `raw`, the samples
+as an array, their times, the channel names), *Results* (every event, the
+ranking, the tied set, the expert markings), *Quality*, *Anatomy*, *Your read*
+and *Setup* (the request, the preprocessing steps). Each row gives the type,
+the size and a glimpse of the value. Double-click one to open it in a window
+of its own: a sortable table for tables and event lists, the channels ×
+samples array with each column's time in the original recording, a tree for
+the request and your verdicts.
+
+![The signal opened from the Workspace](images/onset-review-variable.png)
+
+Nothing in these windows changes the analysis; they are read-only. *Export…*
+writes a copy — .csv for a table, .npy for an array, .json otherwise — and
+suggests the current folder. The signal array is fetched only when opened or
+exported: a minute at 2000 Hz is several million numbers, and the list does
+not pay for them to be drawn.
+
+The **Files** pane is the current folder, remembered between launches.
+Recordings the importer reads are in full colour, everything else greyed.
+Double-click a recording to open it — through the same channel-type
+confirmation as *File → Open a file…*, because the file's own channel types
+are usually wrong.
+
+Both panes can be dragged to any edge, tabbed together or apart, floated as
+windows of their own, or closed; *View → Workspace* and *View → Files* bring
+them back, and the arrangement is kept for next time. On a laptop screen they
+start hidden and open as floating windows, so that the Recording page keeps
+its width.
+
 ### Preprocessing — change what is done to the signal
 
 ![The preprocessing panel](images/onset-review-preprocessing.png)

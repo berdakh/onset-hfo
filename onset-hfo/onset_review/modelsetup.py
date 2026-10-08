@@ -127,7 +127,11 @@ class _LookWorker(QThread):
 class _PullWorker(QThread):
     """Stream one pull, reporting every status line Ollama sends."""
 
-    progress = Signal(str, int, int)
+    #: (status, bytes done, bytes total). Declared with `object`, not `int`:
+    #: a Qt `int` is 32-bit, and a 2.4 GB model is more bytes than that,
+    #: so every progress line of a real pull raised OverflowError on the
+    #: terminal and the bar stayed busy with no number on it.
+    progress = Signal(str, object, object)
 
     def __init__(self, tag: str, base_url: str, parent=None):
         super().__init__(parent)
