@@ -21,7 +21,8 @@ from qtpy.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap
 __all__ = ["glyph", "icon", "NAMES"]
 
 #: The glyphs there are, by the sidebar key they are drawn beside.
-NAMES = ("home", "recording", "contacts", "map", "quality", "report", "assistant",
+NAMES = ("home", "recording", "analysis", "contacts", "map", "quality", "report",
+         "assistant",
          "detectors", "outcome", "patients", "data", "architecture", "research",
          "chat")
 
@@ -152,6 +153,13 @@ def _workspace(p: QPainter, c: QColor) -> None:
     p.drawLine(QPointF(2, 9.75), QPointF(14, 9.75))
 
 
+def _analysis(p: QPainter, c: QColor) -> None:
+    # Code: a pair of angle brackets around a slash.
+    _polyline(p, [(5, 4), (1.5, 8), (5, 12)])
+    _polyline(p, [(11, 4), (14.5, 8), (11, 12)])
+    p.drawLine(QPointF(9.25, 3), QPointF(6.75, 13))
+
+
 def _chat(p: QPainter, c: QColor) -> None:
     path = QPainterPath()
     path.addRoundedRect(QRectF(2, 2.5, 12, 9), 3, 3)
@@ -162,8 +170,8 @@ def _chat(p: QPainter, c: QColor) -> None:
 
 
 _DRAW = {
-    "home": _home, "recording": _recording, "contacts": _contacts, "map": _map,
-    "quality": _quality, "report": _report, "assistant": _assistant,
+    "home": _home, "recording": _recording, "analysis": _analysis,
+    "contacts": _contacts, "map": _map, "quality": _quality, "report": _report, "assistant": _assistant,
     "detectors": _detectors, "outcome": _outcome, "patients": _patients,
     "data": _data, "architecture": _architecture, "research": _research,
     "chat": _chat, "workspace": _workspace,
