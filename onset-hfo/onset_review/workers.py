@@ -21,8 +21,10 @@ be -- the end of the program:
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
+import time
 import weakref
 
 __all__ = ["track", "run", "running", "stop_all", "finish", "STOP_WAIT_MS"]
@@ -31,6 +33,7 @@ __all__ = ["track", "run", "running", "stop_all", "finish", "STOP_WAIT_MS"]
 STOP_WAIT_MS = 3000
 
 _TRACKED: weakref.WeakSet = weakref.WeakSet()
+_log = logging.getLogger("onset_review.workers")
 
 
 def track(worker):
@@ -71,6 +74,9 @@ def run(worker) -> bool:
     from qtpy.QtCore import QEventLoop
 
     track(worker)
+    name = type(worker).__name__
+    started = time.monotonic()
+    _log.info("%s started", name)
     done = {"finished": False}
 
     def finished() -> None:
@@ -83,7 +89,12 @@ def run(worker) -> bool:
     loop.exec_() if hasattr(loop, "exec_") else loop.exec()
     if done["finished"] or not worker.isRunning():
         worker.wait()
+        error = getattr(worker, "error", None)
+        _log.info("%s finished in %.1f s%s", name, time.monotonic() - started,
+                  f" with an error: {error}" if error else "")
         return True
+    _log.warning("%s still running %.1f s in when its window closed; stopping it",
+                 name, time.monotonic() - started)
     _stop(worker)
     worker.wait(STOP_WAIT_MS)
     if hasattr(worker, "error") and not getattr(worker, "error", None):
@@ -118,6 +129,9 @@ def finish(code: int) -> int:
     left = stop_all()
     if left:
         names = ", ".join(sorted({type(w).__name__ for w in left}))
+        _log.warning("left without waiting for %s", names)
+        for handler in logging.getLogger().handlers:
+            handler.flush()
         print(f"onset-review: closed while still working ({names}); left without "
               "waiting for it.", file=sys.stderr)
         sys.stdout.flush()

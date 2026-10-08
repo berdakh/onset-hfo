@@ -872,6 +872,15 @@ opens it on the Analysis page, the starting point for a question of your own.
 The six pages fold away under their heading (click *THE STUDY* in the
 sidebar); `Alt`+number still reaches them.
 
+### When something goes wrong
+
+**Help → Report a problem…** saves one file to send: the software's versions,
+this machine, and the window's own log of what it did — what was opened, each
+background job and its timing, every error. It names the recordings that were
+opened but holds no signal. **Help → Test the local model…** grades the
+assistant and *Write code* with the model you use, on this machine, and keeps
+the result for the next report.
+
 ### Keeping the screen clear
 
 The panes and the windows they open are there when wanted and gone when not.

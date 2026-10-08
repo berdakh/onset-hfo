@@ -542,10 +542,18 @@ class CodeAssistant(QWidget):
         conversation = codewriter.messages(text, names, script, self.history)
         reply, model, error = self._ask(conversation)
         if error:
+            import logging
+
+            logging.getLogger("onset_review.editor").warning("Write code failed: %s", error)
             self._say([f"The model could not draft: {error}"], bad=True)
             return None
         code = codewriter.extract_code(reply)
         draft = codewriter.check_code(code, names)
+        import logging
+
+        logging.getLogger("onset_review.editor").info(
+            "Write code via %s: %d lines, parses %s, %d unknown names, %d flagged calls",
+            model, len(code.splitlines()), draft.parses, len(draft.unknown), len(draft.risky))
         self.last = draft
         self.history.append((conversation[-1]["content"], reply))
         self.history = self.history[-4:]

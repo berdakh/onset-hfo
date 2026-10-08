@@ -245,6 +245,10 @@ def main(argv: list[str] | None = None) -> int:
     from onset_review import launcher
 
     app = QApplication.instance() or QApplication(sys.argv[:1])
+    from onset_review import applog
+
+    applog.setup()
+    applog.install_qt_handler()
     app.setApplicationName("Onset Review")
     app.setApplicationDisplayName("Onset Review")
 
@@ -408,6 +412,11 @@ class _Review:
             # ever the way in.
             page = "recording"
         self._attach_read(session)
+        import logging
+
+        logging.getLogger("onset_review").info(
+            "opened %s (%d channels, %d events)", session.request.label(),
+            len(session.raw.ch_names) if session.raw is not None else 0, len(session.events))
 
         figure = window.open_trace(session, show_expert=self.overlay,
                                    show=self.args.screenshot is None)
