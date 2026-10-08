@@ -22,9 +22,10 @@ one word, and its tooltip is the line Home prints about the page.
 
 from __future__ import annotations
 
+import contextlib
 import html
 
-from qtpy.QtCore import QByteArray, QEvent, QSize, Qt, Signal
+from qtpy.QtCore import QByteArray, QEvent, QSize, Qt, QTimer, Signal
 from qtpy.QtGui import QKeySequence
 from qtpy.QtWidgets import (
     QCheckBox,
@@ -269,6 +270,8 @@ class PageWindow(QMainWindow):
         self.nav.currentItemChanged.connect(self._nav_changed)
         self.restore_layout_state(self._remembered())
         self._restore_panes()
+        if self._remembered_sidebar() is False:
+            self._sidebar.setVisible(False)
         self._building = False
         if self._remembered_compact() is False:
             for key in self.COMPACT_PANELS:
@@ -845,6 +848,11 @@ class PageWindow(QMainWindow):
         workspace = self.panels.get("workspace")
         if workspace is not None:
             workspace.close_windows()
+        console = self.panels.get("console")
+        if console is not None and console.window() is self:
+            # Only a console this window still holds: one carried into the
+            # next window by a re-analysis has already left.
+            console.close_figures()
         super().closeEvent(event)
 
     def _toggle_trend(self, on: bool) -> None:
@@ -1177,6 +1185,10 @@ class PageWindow(QMainWindow):
         ("files", "Files",
          "The current folder. Double-click a recording to open it, a folder to "
          "go into it."),
+        ("console", "Console",
+         "Python in this window's memory, as Spyder's IPython console: session, "
+         "raw, events and findings are the window's own objects. Commands run here "
+         "are listed in the exported report."),
     )
     #: Below this screen width the panes start hidden on a loaded window: at
     #: 1366 px the Recording page needs the width. View → Workspace / Files
@@ -1190,6 +1202,7 @@ class PageWindow(QMainWindow):
         does."""
         from qtpy.QtWidgets import QDockWidget
 
+        from onset_review.console import ConsolePanel, connect_panes
         from onset_review.files import FilesPanel
         from onset_review.workspace import WorkspacePanel
 
@@ -1200,9 +1213,12 @@ class PageWindow(QMainWindow):
             self.panels["workspace"] = WorkspacePanel(self.session)
         if self.panels.get("files") is None:
             self.panels["files"] = FilesPanel()
+        if self.panels.get("console") is None:
+            self.panels["console"] = ConsolePanel(self.session)
         files = self.panels["files"]
         files.openRequested.connect(self._open_path)
         self.panels["workspace"].folder = lambda: files.folder
+        connect_panes(self.panels["workspace"], files, self.panels["console"])
         self.docks: dict = {}
         for key, title, what in self.PANES:
             dock = QDockWidget(title, self)
@@ -1219,46 +1235,133 @@ class PageWindow(QMainWindow):
             dock.toggleViewAction().triggered.connect(
                 lambda on, dock=dock: on and self._fit_pane(dock))
             self.docks[key] = dock
+        self.docks["console"].visibilityChanged.connect(self._size_console)
         self._place_panes()
 
     def _place_panes(self) -> None:
-        """The opening arrangement: both on the right, tabbed, Files in front
-        before a recording is open and the Workspace after."""
+        """The opening arrangement, Spyder's (see `onset_review.panes`): the
+        Workspace and Files tabbed on the right, the Console under them;
+        Files in front before a recording is open, the Workspace after; the
+        Console closed until asked for, since it is the one pane that runs
+        code and starting it costs a second of IPython."""
+        from onset_review.panes import arrange
+
+        arrange(self, self.docks, "Spyder")
         workspace, files = self.docks["workspace"], self.docks["files"]
-        for dock in (workspace, files):
-            # Shown while being placed: Qt does not tab a hidden dock, so a
-            # reset after the reviewer closed both would leave them apart.
-            dock.setVisible(True)
-            dock.setFloating(False)
-            self.addDockWidget(Qt.RightDockWidgetArea, dock)
-        self.tabifyDockWidget(workspace, files)
         (workspace if self.loaded else files).raise_()
         self.resizeDocks([workspace], [380], Qt.Horizontal)
         shown = (not self.loaded) or self._wide_screen()
         for dock in (workspace, files):
             dock.setVisible(shown)
+        self.docks["console"].setVisible(False)
+
+    def apply_pane_layout(self, name: str) -> list[str]:
+        """View → Pane layout: arrange the panes as `name` has them, keeping
+        this window's sizes and its narrow-screen rule, and remember it.
+        Returns the panes left showing."""
+        from onset_review.panes import arrange
+
+        self._building = True
+        try:
+            with self._keeping_size():
+                shown = arrange(self, self.docks, name)
+                if shown:
+                    self.resizeDocks([self.docks["workspace"]], [380], Qt.Horizontal)
+        finally:
+            self._building = False
+        if "console" in shown:
+            self._size_console(True)
+        floated = [key for key in shown if self._fit_pane(self.docks[key])]
+        if floated and self.statusBar() is not None:
+            self.statusBar().showMessage(
+                "The screen is too narrow to dock "
+                + ", ".join(self.docks[k].windowTitle() for k in floated)
+                + " beside the page; opened as windows instead.", 8000)
+        self.remember_layout()
+        return shown
+
+    @contextlib.contextmanager
+    def _keeping_size(self):
+        """Arranging shows every pane for a moment, which raises the window's
+        minimum width, and Qt widens the window to match and never narrows it
+        back: a 1366 px laptop window came out 1502 px wide. The size the
+        window had is put back, unless what is left showing needs more."""
+        maximised, size = self.isMaximized(), self.size()
+
+        def restore() -> None:
+            if not self.isVisible():
+                return
+            if maximised:
+                self.showMaximized()
+            else:
+                self.resize(size.expandedTo(self.minimumSizeHint()))
+
+        try:
+            yield
+        finally:
+            # Now, and again once the event loop has turned: Qt applies the
+            # widening when it next lays the window out, after this returns.
+            restore()
+            QTimer.singleShot(0, restore)
+
+    # -- the sidebar ----------------------------------------------------------
+    @property
+    def sidebar_shown(self) -> bool:
+        return not self._sidebar.isHidden()
+
+    def set_sidebar(self, on: bool) -> None:
+        """View → Page sidebar: the list of pages, hidden to give the page its
+        width. Alt+1… and the View menu still move between pages."""
+        if bool(on) == self.sidebar_shown:
+            return
+        self._sidebar.setVisible(bool(on))
+        self.remember_layout()
+
+    def _remembered_sidebar(self):
+        import json
+
+        try:
+            payload = json.loads(self._layout_file().read_text(encoding="utf-8"))
+            value = payload.get("sidebar")
+            return None if value is None else bool(value)
+        except (OSError, ValueError, TypeError):
+            return None
+
+    def _size_console(self, visible: bool) -> None:
+        """A console opened under the Workspace gets half the column; Qt
+        would give it the least it can, a few lines."""
+        console, workspace = self.docks["console"], self.docks["workspace"]
+        if (not visible or getattr(self, "_building", False) or console.isFloating()
+                or workspace.isHidden() or console.height() >= 220):
+            return
+        column = workspace.height() + console.height()
+        self.resizeDocks([workspace, console], [column // 2, column - column // 2],
+                         Qt.Vertical)
 
     def _fit_pane(self, dock) -> bool:
         """A pane shown beside the pages on a screen too narrow for both
         opens as a window of its own instead: a window wider than its screen
         loses its maximise button on X11, which is worse than a floating
         pane. True if it was floated."""
-        from qtpy.QtWidgets import QApplication
-
-        screen = QApplication.primaryScreen()
-        if screen is None or dock.isFloating():
+        width = self._screen_width()
+        if width is None or dock.isFloating():
             return False
-        if self.minimumSizeHint().width() <= screen.availableGeometry().width():
+        if self.minimumSizeHint().width() <= width:
             return False
         dock.setFloating(True)
         dock.resize(420, 560)
         return True
 
-    def _wide_screen(self) -> bool:
+    def _screen_width(self) -> int | None:
+        """The usable width of the screen this window opens on, or None."""
         from qtpy.QtWidgets import QApplication
 
         screen = QApplication.primaryScreen()
-        return screen is not None and screen.availableGeometry().width() >= self.PANES_MIN_WIDTH
+        return None if screen is None else int(screen.availableGeometry().width())
+
+    def _wide_screen(self) -> bool:
+        width = self._screen_width()
+        return width is not None and width >= self.PANES_MIN_WIDTH
 
     @property
     def _panes_key(self) -> str:
@@ -1346,9 +1449,11 @@ class PageWindow(QMainWindow):
         if getattr(self, "docks", None):
             self._building = True
             try:
-                self._place_panes()
+                with self._keeping_size():
+                    self._place_panes()
             finally:
                 self._building = False
+        self._sidebar.setVisible(True)
         self._forget()
 
     def _layout_file(self):
@@ -1398,7 +1503,8 @@ class PageWindow(QMainWindow):
             splitters = dict(payload.get("splitters") or {})
             splitters.update({k: base64.b64encode(v).decode("ascii")
                               for k, v in self.layout_state().items()})
-            payload.update({"schema": 1, "compact": self.compact(), "splitters": splitters})
+            payload.update({"schema": 1, "compact": self.compact(), "splitters": splitters,
+                            "sidebar": self.sidebar_shown})
             if getattr(self, "docks", None):
                 payload[self._panes_key] = base64.b64encode(
                     bytes(self.saveState().data())).decode("ascii")

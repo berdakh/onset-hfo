@@ -72,7 +72,8 @@ def test_every_panel_is_docked(built):
     assert set(built.docks) == {"trends", "controls", "findings", "events",
                                 "detail", "spectrum", "average", "sensitivity", "brain", "map",
                                 "agreement", "provenance", "assistant", "preprocess", "patient",
-                                "quality", "components", "chat", "workspace", "files"}
+                                "quality", "components", "chat", "workspace", "files",
+                                "console"}
     assert all(dock.widget() is not None for dock in built.docks.values())
 
 
@@ -3827,6 +3828,10 @@ def test_the_workspace_and_files_panes_dock_float_tab_and_close(paged):
     from qtpy.QtWidgets import QDockWidget
 
     host = paged.pages
+    # Shown, as a reviewer's window always is before a pane is toggled: Qt
+    # restores a hidden pane's tab place only in a window that has been laid
+    # out on screen.
+    host.show()
     workspace, files = host.pane("workspace"), host.pane("files")
     for dock in (workspace, files):
         dock.show()        # hidden at first on a narrow screen, as here
@@ -3851,6 +3856,7 @@ def test_the_workspace_and_files_panes_dock_float_tab_and_close(paged):
     files.show()
     workspace.show()
     assert files in host.tabifiedDockWidgets(workspace), "tabbed again after a reset"
+    host.hide()
 
 
 def test_the_view_menu_toggles_each_pane(paged):

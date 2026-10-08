@@ -318,6 +318,10 @@ class ReviewSession:
     #: The ICA stage's record when it ran (see `onset_hfo.preprocess`), for
     #: the Components panel. None when the stage is off.
     ica: dict | None = None
+    #: Every command run in the Python console while this session was the
+    #: window's, in order. Printed in the report, because the console can
+    #: change the objects the report is built from. See `onset_review.console`.
+    console_log: list[str] = field(default_factory=list)
 
     @property
     def span(self) -> tuple[float, float]:

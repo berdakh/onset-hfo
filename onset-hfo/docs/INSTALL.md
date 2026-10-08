@@ -189,6 +189,47 @@ window: beside the Recording page on a 1366 px laptop there is no room.
 
 ![The Workspace and Files panes beside the Recording page](images/onset-review-workspace.png)
 
+A third pane, **Console** (`Ctrl+Shift+I`), is Python in the window's own
+memory, as Spyder's IPython console: `session`, `raw`, `events`, `findings`,
+`request`, `read` and `recording` are the open window's objects, not copies,
+and `np`, `pd`, `mne`, `plt` and `onset_hfo` are imported. Run your own
+analysis on the signal on screen — `raw.get_data()` is it, in volts — and what
+you make appears in the Workspace under *Console*. A figure a command draws
+opens in a window of its own. The console's working directory is the Files
+pane's folder, and an `os.chdir` or `%cd` moves the Files pane with it. It
+sits under the Workspace in the same column, closed until asked for, and it
+keeps what you made in it when the window is re-analysed or another recording
+is opened.
+
+Two things to know. A long computation runs in the window's own thread, so
+the window waits until it finishes. And the console can change the objects the
+panels and the report are built from, so every command run in a window is
+listed, in order, under *Python console* in the exported report. The full
+IPython console needs `qtconsole`, which the installer brings; without it the
+pane is a plain Python console that says what to install.
+
+![The Console under the Workspace, after a short analysis of AR1-AR2](images/onset-review-console.png)
+
+**Keeping the screen clear.** The View menu has what is needed when the panes
+and their windows crowd the page:
+
+| View entry | what it does |
+|---|---|
+| **Workspace**, **Files**, **Console** | show or hide one pane (`Ctrl+Shift+W`, `F`, `I`) |
+| **Pane layout → Page only** | close every pane at once (`Ctrl+Shift+P`) |
+| **Pane layout → Spyder** | Workspace and Files tabbed on the right, the Console under them |
+| **Pane layout → MATLAB** | Files on the left; the Workspace on the right, the Console under it |
+| **Close variable and figure windows** | every window the Workspace and the Console opened |
+| **Page sidebar** | hide the list of pages to give the page its width (`Ctrl+Shift+B`); `Alt+1`… still move between pages |
+| **Full screen** | the window and nothing else (`F11`) |
+
+The layout and the sidebar are remembered for the next launch; **Restore the
+default layout** brings both back. On a screen too narrow to dock the panes
+beside the page, a layout opens them as windows of their own and the status
+bar says so.
+
+![The Recording page with every pane closed and the sidebar hidden, on a 1366 × 768 screen](images/onset-review-page-only.png)
+
 Under the first group sit the six **study pages** of the results site —
 Detectors, Outcome, Patients, Data, Architecture, Research — built in the
 window from the same committed tables the site reads (`data/`), through the

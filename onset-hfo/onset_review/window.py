@@ -40,6 +40,7 @@ from onset_review.assistant import AssistantPanel
 from onset_review.averageview import AveragePanel
 from onset_review.brainview import BrainPanel
 from onset_review.chatview import ChatPanel
+from onset_review.console import ConsolePanel, connect_panes
 from onset_review.controls import AMPLITUDE_STEP, TraceControls
 from onset_review.dataquality import QualityPanel
 from onset_review.eventview import EventDetailPanel
@@ -53,6 +54,7 @@ from onset_review.panels import (
     ProvenancePanel,
     TrendsPanel,
 )
+from onset_review.panes import add_pane_menu
 from onset_review.patient import PatientPanel
 from onset_review.preprocessing import PreprocessPanel
 from onset_review.sensitivityview import SensitivityPanel
@@ -457,8 +459,14 @@ def goto(figure, t: float, channel: str | None = None,
 MODES = ("pages", "docks")
 
 
-def build_panels(figure, session: ReviewSession) -> dict:
-    """Every panel, built against one session. The same dict in both modes."""
+def build_panels(figure, session: ReviewSession, console=None) -> dict:
+    """Every panel, built against one session. The same dict in both modes.
+    `console` is a Console pane to carry over from the window before, so
+    that a re-analysis keeps what was made in it."""
+    if console is None:
+        console = ConsolePanel(session)
+    else:
+        console.set_session(session)
     return {
         "trends": TrendsPanel(session),
         "controls": TraceControls(figure),
@@ -482,6 +490,7 @@ def build_panels(figure, session: ReviewSession) -> dict:
         "provenance": ProvenancePanel(session),
         "workspace": WorkspacePanel(session),
         "files": FilesPanel(),
+        "console": console,
     }
 
 
@@ -490,7 +499,7 @@ def decorate(figure, session: ReviewSession, show_expert: bool = False,
              on_electrodes=None, on_window=None, on_step_window=None,
              on_trace_at=None, mode: str = "docks", cached=None,
              on_open_cached=None, on_relayout=None,
-             on_choose=None, on_open_path=None) -> ReviewWindowParts:
+             on_choose=None, on_open_path=None, console=None) -> ReviewWindowParts:
     """Add the menus, the toolbar, the panels and the caveat around the trace.
 
     `on_preprocess` is called with a new `PreprocessConfig` when the reviewer
@@ -510,7 +519,7 @@ def decorate(figure, session: ReviewSession, show_expert: bool = False,
     if mode not in MODES:
         raise ValueError(f"mode must be one of {MODES}, not {mode!r}")
     display = _Display("selected", session.leader.get("leader"), show_expert)
-    panels = build_panels(figure, session)
+    panels = build_panels(figure, session, console=console)
     docks: dict = {}
 
     if mode == "pages":
@@ -602,7 +611,11 @@ def decorate(figure, session: ReviewSession, show_expert: bool = False,
     fs = dock("files", "Files", Qt.LeftDockWidgetArea, panels["files"],
               "The current folder; double-click a recording to open it")
     host.tabifyDockWidget(ws, fs)
+    py = dock("console", "Console", Qt.LeftDockWidgetArea, panels["console"],
+              "Python in this window's memory: session, raw, events, findings")
+    host.splitDockWidget(ws, py, Qt.Vertical)
     panels["workspace"].folder = lambda: panels["files"].folder
+    connect_panes(panels["workspace"], panels["files"], panels["console"])
     if on_open_path is not None:
         panels["files"].openRequested.connect(on_open_path)
     # Preprocessing sits with provenance rather than with the working views:
@@ -751,7 +764,7 @@ def _decorate_pages(figure, session: ReviewSession, panels: dict,
 
 
 def decorate_start(*, cached=None, on_open_cached=None, on_import=None,
-                   on_choose=None, on_open_path=None):
+                   on_choose=None, on_open_path=None, console=None):
     """The window the application opens on: Home, and nothing loaded yet.
 
     A `pages.PageWindow` without a session, with the one menu that makes
@@ -760,7 +773,8 @@ def decorate_start(*, cached=None, on_open_cached=None, on_import=None,
     """
     from onset_review.pages import PageWindow
 
-    host = PageWindow(cached=cached, on_open_cached=on_open_cached,
+    host = PageWindow(panels={"console": console} if console is not None else None,
+                      cached=cached, on_open_cached=on_open_cached,
                       on_import=on_import, on_open_path=on_open_path)
     host.setWindowTitle("Onset Review")
     menubar = host.menuBar()
@@ -778,7 +792,8 @@ def decorate_start(*, cached=None, on_open_cached=None, on_import=None,
     file_menu.addSeparator()
     file_menu.addAction("&Close window", host.close)
     view = menubar.addMenu("&View")
-    _pane_actions(view, host)
+    add_pane_menu(view, host, host.docks, host.panels, apply=host.apply_pane_layout,
+                  sidebar=host)
     view.addSeparator()
     reset = view.addAction("&Restore the default layout")
     reset.triggered.connect(lambda _=False: host.reset_layout())
@@ -1094,7 +1109,8 @@ def _menus(figure, host: QMainWindow, panels: dict, docks: dict,
         popped.triggered.connect(lambda _=False: pages.toggle_trace_window())
         view.aboutToShow.connect(lambda: popped.setChecked(pages.trace_popped))
         view.addSeparator()
-        _pane_actions(view, pages)
+        add_pane_menu(view, pages, pages.docks, panels, apply=pages.apply_pane_layout,
+                      sidebar=pages)
         view.addSeparator()
         docked = view.addAction("E&verything at once (docked panels)")
         docked.setToolTip("The original arrangement: every panel a dock on "
@@ -1130,6 +1146,9 @@ def _menus(figure, host: QMainWindow, panels: dict, docks: dict,
         view.addSeparator()
         for dock_widget in docks.values():
             view.addAction(dock_widget.toggleViewAction())
+        # The task layouts above already decide which panes show here; what
+        # this window lacks is a way to clear the windows the panes opened.
+        add_pane_menu(view, host, docks, panels, toggles=False, layouts=False)
         view.addSeparator()
     group = QActionGroup(host)
     group.setExclusive(True)
@@ -1191,20 +1210,6 @@ def how_to_read_text() -> str:
 
 def _how_to_read(host) -> None:
     QMessageBox.information(host, "How to read the pages", how_to_read_text())
-
-
-def _pane_actions(menu, host) -> None:
-    """View → Workspace and Files: each pane's own show/hide toggle, so the
-    tick follows the pane however it was closed."""
-    shortcuts = {"workspace": "Ctrl+Shift+W", "files": "Ctrl+Shift+F"}
-    for key, _title, what in getattr(host, "PANES", ()):
-        dock = host.pane(key)
-        if dock is None:
-            continue
-        action = dock.toggleViewAction()
-        action.setShortcut(shortcuts.get(key, ""))
-        action.setToolTip(what)
-        menu.addAction(action)
 
 
 def apply_layout(docks: dict, name: str) -> bool:

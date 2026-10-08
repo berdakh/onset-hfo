@@ -731,6 +731,50 @@ them back, and the arrangement is kept for next time. On a laptop screen they
 start hidden and open as floating windows, so that the Recording page keeps
 its width.
 
+### Console — your own analysis, on the window's own objects
+
+![The Console under the Workspace](images/onset-review-console.png)
+
+For an analysis this software does not do, **View → Console**
+(`Ctrl+Shift+I`) opens Python in the window's memory, the way Spyder's IPython
+console works. The names are the window's own objects, not copies loaded
+again from disk:
+
+| name | what it is |
+|---|---|
+| `raw` | MNE's Raw: the window as analysed, after preprocessing, in volts |
+| `events` | every detection, accepted or rejected, as Event objects |
+| `findings` | the ranking table: one row per channel |
+| `request`, `read`, `recording` | what was asked for, your verdicts, the fetched slice |
+| `session` | all of the above |
+| `np`, `pd`, `mne`, `plt`, `onset_hfo` | imported |
+
+A figure drawn there opens in a window of its own. Names you make appear in the
+Workspace under *Console*, where a double-click opens them like any other. The
+working directory is the Files pane's folder, and changing one changes the
+other. The console keeps what was made in it when the window is re-analysed:
+its names then point at the new analysis, and yours stay.
+
+**What it costs.** The console runs in the window's own thread: a computation
+that takes a minute holds the window for a minute. And because it works on
+the window's own objects, a command can change what the panels and the report
+show — reassigning a value in `findings` changes the table. So every command
+run in a window is printed, in order, in the exported report under
+*Python console*: a reader of the report can always see whether a console
+touched the numbers in it. Nothing is written to disk unless a command does it.
+
+### Keeping the screen clear
+
+The panes and the windows they open are there when wanted and gone when not.
+**View → Pane layout → Page only** (`Ctrl+Shift+P`) closes every pane in one
+step; **Spyder** and **MATLAB** put them back in those programs' arrangements.
+**View → Close variable and figure windows** clears every window the
+Workspace and the Console opened. **View → Page sidebar** (`Ctrl+Shift+B`)
+hides the list of pages, leaving the page the whole width; `Alt+1`… and the
+View menu still move between pages. **F11** is full screen. The choices are
+kept for the next launch, and **View → Restore the default layout** undoes
+them.
+
 ### Preprocessing — change what is done to the signal
 
 ![The preprocessing panel](images/onset-review-preprocessing.png)

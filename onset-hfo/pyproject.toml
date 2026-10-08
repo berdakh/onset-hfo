@@ -1,6 +1,6 @@
 [project]
 name = "onset-hfo"
-version = "0.3.4"
+version = "0.3.5"
 description = "Onset-HFO: a first prototype for detecting high-frequency oscillations and interictal epileptiform discharges in public intracranial EEG, with an evidence-only agent on an open-weight model"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -64,12 +64,24 @@ ml = ["scikit-learn>=1.3"]
 # scikit-learn is here because MNE's ``fastica`` ICA solver -- the one the
 # Preprocessing panel offers first -- is scikit-learn's FastICA; without it
 # the panel's Apply failed with an ImportError in the window.
+#
+# qtconsole (which brings ipykernel and IPython) is the Console pane: IPython
+# in the window's own memory, as Spyder's. Without it the pane falls back to
+# a plain Python console that says what to install.
+#
+# PySide6 is held below 6.12: with 6.12.0 the reviewer's tests all passed and
+# the process then died -- "deallocating None: bug likely caused by a refcount
+# error in a C extension" -- in PySide6's own code, on this project's code and
+# on master's alike, while 6.11.2 exits cleanly. A refcount error can bring the
+# window down at any time, not only at exit. Lift the bound once a 6.12 release
+# runs the desktop job clean.
 review = [
-    "PySide6-Essentials>=6.6",
+    "PySide6-Essentials>=6.6,<6.12",
     "mne-qt-browser>=0.6",
     "pyqtgraph>=0.13",
     "qtpy>=2.4",
     "scikit-learn>=1.3",
+    "qtconsole>=5.5",
 ]
 
 [project.scripts]
