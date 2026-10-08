@@ -1,6 +1,6 @@
 [project]
 name = "onset-hfo"
-version = "0.3.3"
+version = "0.3.4"
 description = "Onset-HFO: a first prototype for detecting high-frequency oscillations and interictal epileptiform discharges in public intracranial EEG, with an evidence-only agent on an open-weight model"
 readme = "README.md"
 requires-python = ">=3.10"
