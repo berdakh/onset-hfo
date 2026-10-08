@@ -273,7 +273,7 @@ def main(argv: list[str] | None = None) -> int:
         # before it can exist, and keeps the dialog.
         review = _Review(app, None, False, args)
         review.start()
-        return app.exec_() if hasattr(app, "exec_") else app.exec()
+        return _finish(app.exec_() if hasattr(app, "exec_") else app.exec())
     else:
         request, overlay = launcher.choose_request(args.cache_dir)
         if request is None:
@@ -288,7 +288,15 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.screenshot is not None:
         return _screenshot(app, review.parts, args.screenshot)
-    return app.exec_() if hasattr(app, "exec_") else app.exec()
+    return _finish(app.exec_() if hasattr(app, "exec_") else app.exec())
+
+
+def _finish(code: int) -> int:
+    """After the window: stop what is still working, and never hang the
+    terminal waiting for it (`onset_review.workers.finish`)."""
+    from onset_review.workers import finish
+
+    return finish(code)
 
 
 def _prefill(dialog, args) -> None:

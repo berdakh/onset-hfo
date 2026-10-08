@@ -47,7 +47,7 @@ from __future__ import annotations
 import html
 import re
 
-from qtpy.QtCore import QEventLoop, QRegularExpression, Qt, QThread, QUrl, Signal
+from qtpy.QtCore import QRegularExpression, Qt, QThread, QUrl, Signal
 from qtpy.QtGui import QFont, QImage, QTextCharFormat, QTextDocument
 from qtpy.QtWidgets import (
     QButtonGroup,
@@ -703,11 +703,9 @@ class StudyPage(QWidget):
         worker.progressed.connect(lambda i, n, subject: (
             progress.setValue(i), progress.setLabelText(f"{subject} ({i + 1} of {n})")))
         progress.canceled.connect(worker.stop)
-        loop = QEventLoop()
-        worker.finished.connect(loop.quit)
-        worker.start()
-        loop.exec_() if hasattr(loop, "exec_") else loop.exec()
-        worker.wait()
+        from onset_review.workers import run
+
+        run(worker)
         progress.close()
         if worker.error:
             self.say(f"The re-run failed: {worker.error}")

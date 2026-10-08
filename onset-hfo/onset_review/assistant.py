@@ -34,7 +34,7 @@ import os
 import tempfile
 from pathlib import Path
 
-from qtpy.QtCore import QEventLoop, QThread, QTimer, Signal
+from qtpy.QtCore import QThread, QTimer, Signal
 from qtpy.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -321,13 +321,13 @@ def _run(worker) -> None:
     appears, the panel does not visibly disable, and with a local model behind
     it that is half a minute of an application the desktop reports as not
     responding. The loop is quit by the thread's own `finished`, which is
-    delivered to this thread because the worker object lives on it.
+    delivered to this thread because the worker object lives on it -- or by
+    the window closing, when the worker is stopped rather than waited for
+    (`onset_review.workers.run`).
     """
-    loop = QEventLoop()
-    worker.finished.connect(loop.quit)
-    worker.start()
-    loop.exec_() if hasattr(loop, "exec_") else loop.exec()
-    worker.wait()
+    from onset_review.workers import run
+
+    run(worker)
 
 
 
