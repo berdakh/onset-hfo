@@ -246,3 +246,26 @@ def test_what_can_you_do_is_answered_at_once_without_evidence_or_a_model(qapp, m
     assert "no recording attached" not in text and panel._store is None
     assert "no model needed" in text
     panel.close()
+
+
+def test_a_pull_larger_than_two_gigabytes_still_reports_progress(qapp):
+    """Seen on a real machine pulling qwen3:4b, 2.4 GB: OverflowError on
+    every progress line and a bar stuck busy. The worker's signal was
+    declared with Qt's 32-bit `int`; a byte count past 2 147 483 647 does
+    not fit. It now carries Python integers."""
+    from qtpy.QtCore import QEventLoop, QTimer
+
+    from onset_review.modelsetup import ModelSetupBox, _PullWorker
+
+    box = ModelSetupBox()
+    worker = _PullWorker("qwen3:4b", "http://127.0.0.1:11434/v1", box)
+    worker.progress.connect(box._progress)
+    total, done = 2_600_000_000, 1_300_000_000
+    assert total > 2 ** 31 - 1
+    worker.progress.emit("pulling manifest", done, total)     # raised OverflowError before
+    loop = QEventLoop()
+    QTimer.singleShot(0, loop.quit)
+    loop.exec()
+    assert box.bar.value() == 50
+    assert "1.30 of 2.60 GB" in box.bar.format()
+    box.close()
