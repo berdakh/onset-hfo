@@ -18,11 +18,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
-__all__ = ["sweep_chart", "outcome_chart", "SERIES", "DETECTOR_LABELS"]
+__all__ = ["sweep_chart", "outcome_chart", "draw_sweep", "draw_outcome", "SERIES",
+           "DETECTOR_LABELS", "MARK", "YOURS"]
 
 #: Categorical hues, in fixed order: the accent, then an orange. Checked with
 #: the palette validator: adjacent-pair CVD separation 26.6, contrast >= 3:1.
 SERIES = ("#0B6BCB", "#C2410C")
+#: This recording's point, and a reader's own re-run: ink, not a third hue,
+#: so neither is mistaken for a published series.
+MARK = "#1D1D1F"
+YOURS = "#6E6E73"
 TEXT = "#1D1D1F"
 MUTED = "#6E6E73"
 GRID = "#E5E5EA"
@@ -56,21 +61,27 @@ def _quiet(axis) -> None:
     axis.set_axisbelow(True)
 
 
-def sweep_chart(frame, band: str, metric: str, best, path: Path) -> Path:
-    """The threshold sweep: `metric` against threshold (SD), one line per
-    detector, the operating point chosen by the page's criterion marked and
-    named. `frame` is the committed sweep, `best` the operating-point rows."""
+def draw_sweep(figure, axis, frame, band: str, metric: str, best, marks=(),
+               yours=None) -> dict:
+    """The sweep on `axis`. `marks` are points for the open recording
+    ({detector, threshold_sd, value, label}); `yours` a reader's own re-run
+    of the sweep, drawn dashed beside the published lines. Returns the
+    artists by detector, for a window that answers the pointer."""
     part = frame[frame["band"] == band].sort_values("threshold_sd")
     detectors = [d for d in ("rms", "line_length", "hilbert", "energy")
                  if d in set(part["detector"])]
-    plt, figure, axis = _figure(8.4, 3.4)
     _quiet(axis)
+    artists: dict = {"lines": {}, "marks": [], "yours": {}}
+    colours = {}
     for index, detector in enumerate(detectors):
         rows = part[part["detector"] == detector].dropna(subset=[metric])
         colour = SERIES[index % len(SERIES)]
-        axis.plot(rows["threshold_sd"], rows[metric], color=colour, linewidth=2,
-                  marker="o", markersize=4, markerfacecolor="white", markeredgewidth=1.5,
-                  solid_capstyle="round", label=DETECTOR_LABELS.get(detector, detector))
+        colours[detector] = colour
+        (line,) = axis.plot(rows["threshold_sd"], rows[metric], color=colour, linewidth=2,
+                            marker="o", markersize=4, markerfacecolor="white",
+                            markeredgewidth=1.5, solid_capstyle="round",
+                            label=DETECTOR_LABELS.get(detector, detector))
+        artists["lines"][detector] = (line, rows)
         if len(rows):
             last = rows.iloc[-1]
             axis.annotate(DETECTOR_LABELS.get(detector, detector),
@@ -88,12 +99,48 @@ def sweep_chart(frame, band: str, metric: str, best, path: Path) -> Path:
                 axis.annotate(f"chosen: {at:g} SD, {value:.2f}", (at, value),
                               xytext=(0, 11), textcoords="offset points", ha="center",
                               fontsize=9, color=TEXT)
+    if yours is not None and len(yours):
+        mine = yours[yours["band"] == band].sort_values("threshold_sd")
+        for detector in sorted(set(mine["detector"])):
+            rows = mine[mine["detector"] == detector].dropna(subset=[metric])
+            (line,) = axis.plot(rows["threshold_sd"], rows[metric],
+                                color=colours.get(detector, YOURS), linewidth=1.6,
+                                linestyle=(0, (4, 3)), marker="s", markersize=4,
+                                label=f"{DETECTOR_LABELS.get(detector, detector)} — yours "
+                                      f"({int(rows['n_subjects'].max()) if 'n_subjects' in rows else '?'}"
+                                      " patients)")
+            artists["yours"][detector] = (line, rows)
+    for mark in marks:
+        (point,) = axis.plot([mark["threshold_sd"]], [mark["value"]], marker="*",
+                             markersize=15, color=colours.get(mark["detector"], MARK),
+                             markeredgecolor=MARK, markeredgewidth=1.2, zorder=6,
+                             linestyle="none")
+        axis.annotate(f"{mark.get('label', 'this window')} "
+                      f"({DETECTOR_LABELS.get(mark['detector'], mark['detector'])}): "
+                      f"{mark['value']:.2f}", (mark["threshold_sd"], mark["value"]),
+                      xytext=(0, -16), textcoords="offset points", ha="center",
+                      fontsize=8.5, color=MARK)
+        artists["marks"].append((point, mark))
     axis.set_xlabel("threshold (standard deviations above the baseline)", color=MUTED,
                     fontsize=9)
     axis.set_ylabel(METRIC_LABELS.get(metric, metric), color=MUTED, fontsize=9)
     axis.set_xlim(left=max(0.0, float(part["threshold_sd"].min()) - 0.3))
     axis.legend(frameon=False, fontsize=9, loc="lower left", labelcolor=TEXT)
+    return artists
+
+
+def sweep_chart(frame, band: str, metric: str, best, path: Path, marks=(),
+                yours=None) -> Path:
+    """The threshold sweep: `metric` against threshold (SD), one line per
+    detector, the operating point chosen by the page's criterion marked and
+    named. `frame` is the committed sweep, `best` the operating-point rows."""
+    plt, figure, axis = _figure(8.4, 3.4)
+    draw_sweep(figure, axis, frame, band, metric, best, marks=marks, yours=yours)
     figure.tight_layout()
+    return _save(plt, figure, path)
+
+
+def _save(plt, figure, path) -> Path:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     figure.savefig(path, dpi=150, facecolor="white")
@@ -101,36 +148,58 @@ def sweep_chart(frame, band: str, metric: str, best, path: Path) -> Path:
     return path
 
 
-def outcome_chart(cohort, groups, path: Path) -> Path:
-    """Every patient as a dot: the share of the tied busiest set that the
-    surgeon removed, by outcome, for the expert markings and for our
-    detector side by side, with each group's mean as a bar and the AUC
-    the page reports written in the corner."""
+def draw_outcome(figure, cohort, groups, highlight: str | None = None,
+                 yours=None) -> list:
+    """Every patient as a dot on two panels of `figure`. `highlight` rings one
+    subject's dots; `yours` (a reader's own cohort: subject, seizure_free,
+    candidates_resected_rms) adds their patients as hollow squares on the
+    detector's panel. Returns (scatter, subjects, values, outcome label)
+    for each set of dots, for a window that answers the pointer."""
     import numpy as np
 
-    plt, figure, axes = _figure(8.4, 3.2)
-    axes.remove()
     panels = figure.subplots(1, 2, sharex=True, sharey=True)
     free = cohort["seizure_free"].astype(bool)
     # Seizure-free on top, as the text reads it; recurrence below.
     rows = [("recurrence", ~free, SERIES[1]), ("seizure-free", free, SERIES[0])]
     rng = np.random.default_rng(7)
+    found = []
     for axis, (source, title) in zip(panels, (("expert", "Expert markings"),
                                               ("rms", "Our RMS detector")), strict=True):
         _quiet(axis)
         axis.xaxis.grid(True, color=GRID, linewidth=0.8)
         axis.yaxis.grid(False)
         column = f"candidates_resected_{source}"
-        for level, (_label, mask, colour) in enumerate(rows):
+        for level, (label, mask, colour) in enumerate(rows):
             values = cohort.loc[mask, column].astype(float).to_numpy()
+            subjects = cohort.loc[mask, "subject"].astype(str).tolist()
             y = level + rng.uniform(-0.26, 0.26, size=len(values))
-            axis.scatter(values, y, s=46, color=colour, edgecolor="white", linewidth=1.5,
-                         alpha=0.9, zorder=4)
+            dots = axis.scatter(values, y, s=46, color=colour, edgecolor="white",
+                                linewidth=1.5, alpha=0.9, zorder=4)
+            found.append((dots, subjects, values, f"{label} · {title.lower()}"))
+            if highlight in subjects:
+                at = subjects.index(highlight)
+                axis.scatter([values[at]], [y[at]], s=190, facecolor="none",
+                             edgecolor=MARK, linewidth=1.8, zorder=6)
+                axis.annotate(highlight, (values[at], y[at]), xytext=(0, 10),
+                              textcoords="offset points", ha="center", fontsize=8.5,
+                              color=MARK)
             mean = float(values.mean()) if len(values) else float("nan")
             axis.plot([mean, mean], [level - 0.32, level + 0.32], color=colour, linewidth=2.5,
                       zorder=5)
             axis.annotate(f"mean {mean:.2f}", (mean, level + 0.36), ha="center", va="bottom",
                           fontsize=8.5, color=TEXT)
+        if source == "rms" and yours is not None and len(yours):
+            mine_free = yours["seizure_free"].astype(bool)
+            for level, mask in ((0, ~mine_free), (1, mine_free)):
+                values = yours.loc[mask, "candidates_resected_rms"].astype(float).to_numpy()
+                if not len(values):
+                    continue
+                subjects = yours.loc[mask, "subject"].astype(str).tolist()
+                y = level + rng.uniform(-0.26, 0.26, size=len(values))
+                dots = axis.scatter(values, y, s=52, marker="s", facecolor="none",
+                                    edgecolor=YOURS, linewidth=1.6, zorder=6)
+                found.append((dots, subjects, values,
+                              ("seizure-free" if level else "recurrence") + " · your cohort"))
         axis.set_yticks([0, 1])
         axis.set_yticklabels([f"{label} ({int(mask.sum())})" for label, mask, _ in rows],
                              color=TEXT, fontsize=9)
@@ -147,9 +216,17 @@ def outcome_chart(cohort, groups, path: Path) -> Path:
         axis.set_title(heading, loc="left", fontsize=9.5, color=TEXT, linespacing=1.4)
         axis.set_xlabel("share of the tied busiest channels inside the resection",
                         color=MUTED, fontsize=9)
+    return found
+
+
+def outcome_chart(cohort, groups, path: Path, highlight: str | None = None,
+                  yours=None) -> Path:
+    """Every patient as a dot: the share of the tied busiest set that the
+    surgeon removed, by outcome, for the expert markings and for our
+    detector side by side, with each group's mean as a bar and the AUC
+    the page reports written in the corner."""
+    plt, figure, axes = _figure(8.4, 3.2)
+    axes.remove()
+    draw_outcome(figure, cohort, groups, highlight=highlight, yours=yours)
     figure.tight_layout(w_pad=2.0)
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    figure.savefig(path, dpi=150, facecolor="white")
-    plt.close(figure)
-    return path
+    return _save(plt, figure, path)

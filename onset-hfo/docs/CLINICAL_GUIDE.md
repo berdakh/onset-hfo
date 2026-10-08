@@ -720,10 +720,11 @@ exported: a minute at 2000 Hz is several million numbers, and the list does
 not pay for them to be drawn.
 
 The **Files** pane is the current folder, remembered between launches.
-Recordings the importer reads are in full colour, everything else greyed.
-Double-click a recording to open it — through the same channel-type
-confirmation as *File → Open a file…*, because the file's own channel types
-are usually wrong.
+Recordings the importer reads, scripts and notebooks are in full colour,
+everything else greyed. Double-click a recording to open it — through the same
+channel-type confirmation as *File → Open a file…*, because the file's own
+channel types are usually wrong — and a script or notebook to open it in the
+Analysis page's editor.
 
 Both panes can be dragged to any edge, tabbed together or apart, floated as
 windows of their own, or closed; *View → Workspace* and *View → Files* bring
@@ -746,6 +747,7 @@ again from disk:
 | `events` | every detection, accepted or rejected, as Event objects |
 | `findings` | the ranking table: one row per channel |
 | `request`, `read`, `recording` | what was asked for, your verdicts, the fetched slice |
+| `signal`, `times`, `quality`, `segments`, … | every other name the Workspace lists, the same object |
 | `session` | all of the above |
 | `np`, `pd`, `mne`, `plt`, `onset_hfo` | imported |
 
@@ -762,6 +764,113 @@ show — reassigning a value in `findings` changes the table. So every command
 run in a window is printed, in order, in the exported report under
 *Python console*: a reader of the report can always see whether a console
 touched the numbers in it. Nothing is written to disk unless a command does it.
+
+### Analysis — your own scripts on this recording, with Python written for you
+
+![The Analysis page: a script in the editor, its output in the console](images/onset-review-analysis.png)
+
+The **Analysis** page, under Recording in the sidebar, is Spyder on one page:
+an **Editor** of scripts on the left; the Workspace and Files tabbed on the
+right, the Console under them. They are the same panes as View's — brought
+onto this page while it is open and returned to where they were when you
+leave it — so a name made here is in the Workspace on every page.
+
+Every name the Workspace lists is the same object in the console: `raw`,
+`signal`, `times`, `channels`, `sfreq`, `events`, `findings`, `quality`,
+`segments`, `read`, `request` and the rest. `signal` is `raw`'s own samples
+(channels × time, volts), **read-only**: `np.array(signal)` makes a copy you
+can change, and nothing you do to a copy reaches the analysis.
+
+| key | runs |
+|---|---|
+| `Ctrl+Enter` | the cell the cursor is in; a cell starts at a line beginning `# %%` |
+| `Shift+Enter` | the cell, then moves to the next |
+| `F9` | the selected lines, or the line the cursor is on |
+| `F5` | the whole file, saved first |
+| `Ctrl+S`, `Ctrl+N`, `Ctrl+/` | save, a new tab, comment lines in or out |
+
+A **notebook** (`.ipynb`) opens as `# %%` cells, Markdown kept as comments,
+and saves back as a notebook — without outputs, since the outputs are
+whatever the console prints when you run the cells here. Double-click a
+script or a notebook in the Files pane to open it. Open tabs, and any text not
+yet saved, are kept for the next launch. A file run with `F5` is written into
+the report's *Python console* section whole, not only its name, so a number
+that came from a script can be traced to the script.
+
+**Write code.** Under the tabs, say what you want in words — *“power spectrum
+of the three busiest channels”* — and the local model chosen on the Assistant
+page drafts it. What the model is told is the inventory, never the data: each
+Workspace name with its type and size, a table's column names, a dict's keys.
+The draft opens in a tab of its own that begins by saying a model wrote it and
+nothing checked what it computes. What *can* be checked without running it is
+listed under the request and at the top of the draft: whether it parses, any
+name it reads that does not exist (the commonest way a small model's code
+fails), and any call that deletes files, starts a program or uses the network.
+**Nothing runs a draft but you.** After an error, *Fix the last error* sends the
+error and the script back for a corrected draft. A request for a medical
+decision gets no code.
+
+**Saving and loading variables.** The Workspace's *Save/Load* saves what you
+made in the console — `.pkl` keeps everything, `.npz` arrays and numbers,
+`.mat` opens in MATLAB — and says which names a format could not hold.
+Loading puts the names back into the console; a saved `raw` comes back as
+`raw_loaded` rather than replacing the recording on screen. A `.pkl` file can
+run code as it is read, as every pickle can: load only one you made or trust.
+
+What this page does not make the software: a point-and-click analysis suite,
+or a place where a console result changes the panels. A rate computed here is
+not on the Ranking or the Map. The report lists what was run; the panels show
+what the pipeline computed.
+
+### The study pages, against this recording
+
+![The Detectors page with this recording set against the study](images/onset-review-study-this.png)
+
+The six study pages are the project's published record and say the same
+thing whatever is open. With a recording open, each gains a section headed
+**This recording**, always caveated as one window of one patient:
+
+- **Detectors** scores this window against its expert markings exactly as the
+  study scored each patient — same functions, reviewed channels only — and
+  marks it as a star on the sweep. A recording without markings has nothing to
+  score against; the page says so and shows how far the detectors that ran
+  agree with each other instead.
+- **Outcome** rings a study patient's dot. For anyone else it says the plain
+  thing: the result describes 20 patients and cannot be applied to one, and
+  nothing in this software predicts an outcome.
+- **Patients** opens on the open subject; **Data** lists the open file's facts
+  beside the two archives; **Architecture** lists the steps this analysis
+  actually ran, with its settings.
+
+![The sweep, live: drag the threshold, hover a point](images/onset-review-chart.png)
+
+**Explore the chart** opens the page's figure live: hover a point or a dot for
+its value or its patient, click a patient's dot to open their window, and on
+the sweep drag the threshold — the readout gives every detector's measured
+numbers at it, from the committed table, never between the measured points.
+
+**Re-run with your settings** runs the Detectors or the Outcome study again
+with your band, detectors, thresholds and window, through the study's own
+functions, in the background, one patient at a time (Stop ends it between
+patients). By default only recordings already on this machine are used. The
+result appears under *Your re-run — not the published study* and dashed on
+the chart; every skipped patient is named with the reason. The committed
+tables are never touched.
+
+**Your cohort.** On the Outcome page, *Add this recording to your cohort*
+measures the open window the way the study measures a patient — the channels
+tied with the busiest, and the share of them inside the contacts you tick as
+resected — with the outcome you enter. With two or more patients in each
+group the page gives the study's own comparison (AUC with its interval and a
+permutation p) and the smallest effect groups that size could detect; with
+fewer, it says a comparison is not possible. It is yours, kept on this
+machine, unvalidated, and labelled so everywhere it shows.
+
+**Open as notebook** writes the page as a notebook that rebuilds it from the
+same tables with the same functions — its recomputed AUC is the page's — and
+opens it on the Analysis page, the starting point for a question of your own.
+The six pages fold away under their heading (click *THE STUDY* in the
+sidebar); `Alt`+number still reaches them.
 
 ### Keeping the screen clear
 

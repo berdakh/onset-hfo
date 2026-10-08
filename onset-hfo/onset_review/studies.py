@@ -23,7 +23,7 @@ from pathlib import Path
 
 __all__ = ["STUDIES", "available", "build", "controls", "patient_rows",
            "cached_window_for", "site_root", "key_message", "fold_tables",
-           "FOLD_ROWS"]
+           "FOLD_ROWS", "chart_data"]
 
 #: (key, sidebar label, one-line description)
 STUDIES = (
@@ -465,17 +465,100 @@ def cached_window_for(subject: str, windows) -> dict | None:
     return rows.iloc[0].to_dict()
 
 
-def build(key: str, **choices) -> str:
-    """One page's Markdown. Unknown keys raise; missing data explains itself."""
+def build(key: str, session=None, **choices) -> str:
+    """One page's Markdown. Unknown keys raise; missing data explains itself.
+
+    With `session` (the recording open in the window) the page gains a
+    *This recording* section under its title (`onset_review.thisrecording`),
+    and the Detectors and Outcome charts mark it. A reader's own re-run and
+    cohort (`onset_review.yourstudy`) are added under *Yours* when there are
+    any. The published text and tables are the same either way."""
     builders = {"detectors": _detectors, "outcome": _outcome, "patients": _patients,
                 "data": _data, "architecture": _architecture, "research": _research}
     if key not in builders:
         raise KeyError(f"no study page {key!r}; one of {[k for k, _, _ in STUDIES]}")
-    return builders[key](**choices)
+    if key in ("detectors", "outcome"):
+        text = builders[key](session=session, **choices)
+    else:
+        text = builders[key](**choices)
+    extra = _this_recording(key, session)
+    if extra:
+        head, _, rest = text.partition("\n")
+        text = f"{head}\n\n{extra}\n{rest}"
+    return text
+
+
+def _this_recording(key: str, session) -> str:
+    if session is None:
+        return ""
+    from onset_review import thisrecording
+
+    cohort = None
+    if key == "outcome":
+        panels = _panels()
+        try:
+            cohort = panels.cohort_overview() if panels is not None else None
+        except Exception:       # noqa: BLE001 - the section says what it can without it
+            cohort = None
+    try:
+        return thisrecording.section(key, session, cohort)
+    except Exception as error:       # noqa: BLE001 - a section must not cost the page
+        return note("warn", f"This recording could not be set against the study: {error}")
+
+
+def _stamp(*parts) -> str:
+    """A short digest of what a figure shows, so a changed figure gets a new
+    file name and the page never shows the one cached before it."""
+    import hashlib
+
+    return hashlib.sha1(repr(parts).encode()).hexdigest()[:10]
+
+
+def chart_data(key: str, session=None, **choices) -> dict | None:
+    """What a page's chart is drawn from, for the window that draws it live
+    (`onset_review.chartview`). None for a page without a chart or data."""
+    panels = _panels()
+    if panels is None:
+        return None
+    if key == "detectors":
+        from onset_review import thisrecording, yourstudy
+
+        band = choices.get("band", "ripple")
+        metric = choices.get("metric", "rank_rho")
+        frame = panels.sweep()
+        if frame is None or not len(frame):
+            return None
+        yours, _settings = yourstudy.load_your_sweep()
+        start = None
+        if session is not None:
+            detector = session.request.detectors[0]
+            try:
+                start = thisrecording.threshold_for(session, detector)
+            except Exception:       # noqa: BLE001
+                start = None
+        return {"kind": "sweep", "frame": frame, "band": band, "metric": metric,
+                "best": panels.operating_points(choices.get("criterion", "rank_rho")),
+                "marks": thisrecording.marks(session, metric, band) if session else [],
+                "yours": yours, "start_threshold": start}
+    if key == "outcome":
+        import pandas as pd
+
+        from onset_review import thisrecording, yourstudy
+
+        groups_path = Path(panels.STUDIES) / "outcome_groups_300s.csv"
+        if not groups_path.exists():
+            return None
+        groups = pd.read_csv(groups_path).query("scope == 'reviewed' and band == 'fast_ripple'")
+        mine = yourstudy.cohort_frame()
+        return {"kind": "outcome", "cohort": panels.cohort_overview(), "groups": groups,
+                "highlight": session.request.subject
+                if thisrecording.in_cohort(session) else None,
+                "yours": mine if len(mine) else None}
+    return None
 
 
 def _detectors(band: str = "ripple", metric: str = "rank_rho",
-               criterion: str = "rank_rho", **_) -> str:
+               criterion: str = "rank_rho", session=None, **_) -> str:
     panels = _panels()
     if panels is None:
         return _missing("Detectors and how they are scored")
@@ -529,12 +612,18 @@ denominator every recall figure below is a fraction of.
 """)
 
     out.append(f"## The sweep, as committed — {BANDS.get(band, band)}, {METRICS.get(metric, metric)}\n")
-    from onset_review import studycharts
+    from onset_review import studycharts, thisrecording, yourstudy
 
     best_points = panels.operating_points(criterion)
-    out.append(chart(f"sweep-{band}-{metric}-{criterion}",
-                     lambda path: studycharts.sweep_chart(frame, band, metric, best_points, path),
+    marks = thisrecording.marks(session, metric, band) if session is not None else []
+    yours, your_settings = yourstudy.load_your_sweep()
+    out.append(chart(f"sweep-{band}-{metric}-{criterion}-{_stamp(marks, your_settings)}",
+                     lambda path: studycharts.sweep_chart(frame, band, metric, best_points,
+                                                          path, marks=marks, yours=yours),
                      "The threshold sweep, one line per detector"))
+    if marks or yours is not None:
+        out.append("*Stars: this window, measured the same way. Dashed: your re-run, "
+                   "below. Solid lines are the published sweep.*\n")
     part = frame[frame["band"] == band]
     pivot = part.pivot(index="threshold_sd", columns="detector", values=metric).reset_index()
     out.append(table(pivot.rename(columns={"threshold_sd": "threshold (SD)"})))
@@ -653,10 +742,36 @@ reported instead of one headline.
                             "about an hour after the first fetch. `data/benchmark/` is "
                             "the committed extract this page reads. Full tables and the "
                             "reasoning: `docs/EVALUATION.md`."))
+    out.append(_your_sweep_section(yours, your_settings, band))
     return "\n".join(out)
 
 
-def _outcome(**_) -> str:
+def _your_sweep_section(yours, settings: dict, band: str) -> str:
+    """Your re-run of the sweep, labelled, beside the published one."""
+    if yours is None or not len(yours):
+        return ""
+    out = ["## Your re-run — not the published study\n"]
+    window = settings.get("window_s", [0, 60])
+    out.append(note("warn",
+        f"Run on this machine on {settings.get('when', '?')} with your settings: "
+        f"{', '.join(settings.get('detectors', []))} at "
+        f"{', '.join(f'{t:g}' for t in settings.get('thresholds', []))} SD, "
+        f"{window[0]:g}–{window[1]:g} s, on {settings.get('n_subjects', 0)} of "
+        f"{len(settings.get('subjects', []))} patients. Means over the patients that "
+        "ran; not reviewed, not published."))
+    skipped = settings.get("skipped") or {}
+    shown = yours[yours["band"] == band] if band in set(yours["band"]) else yours
+    out.append(table(shown.round(3), rename={
+        "threshold_sd": "threshold (SD)", "f1": "F1", "rank_rho": "channel-rank ρ",
+        "detections": "detections / 60 s", "top5_overlap": "top-5 shared",
+        "n_subjects": "patients"}))
+    if skipped:
+        out.append("Skipped: " + "; ".join(f"{s} ({why})" for s, why in skipped.items())
+                   + "\n")
+    return "\n".join(out)
+
+
+def _outcome(session=None, **_) -> str:
     panels = _panels()
     if panels is None:
         return _missing("Surgical outcome, and whether any of it is stable")
@@ -672,14 +787,25 @@ This one compares it to **what happened to the patient after surgery** — the
 only reference standard in epilepsy surgery that is not another opinion.
 """, "## Was the busiest fast-ripple channel inside the resection?\n"]
     if len(groups):
-        from onset_review import studycharts
+        from onset_review import studycharts, thisrecording, yourstudy
 
         cohort = panels.cohort_overview()
         view_groups = groups.query("scope == 'reviewed' and band == 'fast_ripple'")
-        out.append(chart("outcome-patients",
-                         lambda path: studycharts.outcome_chart(cohort, view_groups, path),
+        highlight = session.request.subject if thisrecording.in_cohort(session) else None
+        mine = yourstudy.cohort_frame()
+        mine = mine if len(mine) else None
+        out.append(chart(f"outcome-patients-{_stamp(highlight, None if mine is None else mine.to_dict())}",
+                         lambda path: studycharts.outcome_chart(cohort, view_groups, path,
+                                                                highlight=highlight,
+                                                                yours=mine),
                          "Every patient: the share of the tied busiest channels inside "
                          "the resection, by outcome"))
+        if highlight or mine is not None:
+            out.append("*" + " ".join(part for part in (
+                f"The ringed dot is {highlight}, open now." if highlight else "",
+                "Hollow squares on the detector's panel are your cohort, below; they are "
+                "not in the published groups or their AUC." if mine is not None else "")
+                if part) + "*\n")
         out.append("*Each dot is one patient; the bar is the group's mean. The AUC "
                    "is how often a seizure-free patient sits to the right of a "
                    "recurrence.*\n")
@@ -819,6 +945,85 @@ produces about two such rows, so one is *fewer* than expected.
 """)
     out.append(note("info", "Full design, every table, and the list of what this cannot "
                             "support: `docs/OUTCOME.md`."))
+    out.append(_your_outcome_section())
+    out.append(_your_cohort_section())
+    return "\n".join(out)
+
+
+def _your_outcome_section() -> str:
+    """Your re-run of the Outcome study, labelled, if there is one."""
+    from onset_review import studycharts, yourstudy
+
+    cohort, settings = yourstudy.load_your_outcome()
+    if cohort is None or not len(cohort):
+        return ""
+    window = settings.get("window_s", [0, 300])
+    out = ["## Your re-run — not the published study\n",
+           note("warn", f"Run on this machine on {settings.get('when', '?')}: detector "
+                        f"{settings.get('detector')}, {settings.get('band', '').replace('_', ' ')} "
+                        f"band, threshold {settings.get('threshold_sd') or 'its measured default'}"
+                        f", {window[0]:g}–{window[1]:g} s, on {len(cohort)} of "
+                        f"{len(settings.get('subjects', []))} patients. Not reviewed, not "
+                        "published.")]
+    groups = settings.get("groups")
+    view = None
+    if groups is not None and len(groups):
+        view = groups.query("scope == 'reviewed'")
+        detector = settings.get("detector", "rms")
+        view = view.assign(source=view["source"].replace({detector: "rms"}))
+    out.append(chart(f"your-outcome-{_stamp(settings.get('when'), len(cohort))}",
+                     lambda path: studycharts.outcome_chart(cohort, view, path),
+                     "Your re-run: every patient by outcome"))
+    if view is not None and len(view):
+        rows = view[view["metric"] == "candidates_resected"]
+        out.append(table(rows.round(3), columns=[
+            "source", "mean_seizure_free", "mean_recurrence", "auc", "auc_lo", "auc_hi",
+            "p_permutation"], rename={"mean_seizure_free": "seizure-free, mean",
+                                      "mean_recurrence": "recurrence, mean", "auc": "AUC",
+                                      "auc_lo": "AUC low", "auc_hi": "AUC high",
+                                      "p_permutation": "p (permutation)"}))
+    skipped = settings.get("skipped") or {}
+    if skipped:
+        out.append("Skipped: " + "; ".join(f"{s} ({why})" for s, why in skipped.items()) + "\n")
+    return "\n".join(out)
+
+
+def _your_cohort_section() -> str:
+    """The reader's own patients, measured as the study measures one."""
+    from onset_review import yourstudy
+
+    frame = yourstudy.cohort_frame()
+    out = ["## Your cohort\n"]
+    if not len(frame):
+        out.append("Your own patients can be measured here the way the study measures "
+                   "one: open a recording, then *Add this recording to your cohort* "
+                   "above, with the contacts that were resected and the outcome. Nothing "
+                   "is added without you.\n")
+        return "\n".join(out)
+    out.append(note("warn", "Your patients, your resections, your outcomes, measured on "
+                            "the windows you added. Not validated, not reviewed; a "
+                            "handful of patients cannot establish an effect either way."))
+    out.append(table(frame.drop(columns=["id"]).round(2), rename={
+        "subject": "patient", "seizure_free": "seizure-free",
+        "candidates_resected_rms": "tied set resected", "n_candidates": "tied set size",
+        "top_channel_resected": "busiest resected"}))
+    result = yourstudy.compare_cohort(frame)
+    n1, n2 = result["n_seizure_free"], result["n_recurrence"]
+    if n1 >= 2 and n2 >= 2:
+        floor = result["floor"]
+        reach = (f"The smallest AUC groups this size could detect with 80% power is "
+                 f"**{floor:.2f}**." if floor == floor else
+                 "Groups this size cannot reach 80% power for any effect, however large: "
+                 "no result here could be significant.")
+        out.append(f"Seizure-free {n1}, recurrence {n2}: AUC **{result['auc']:.2f}** "
+                   f"({result['auc_lo']:.2f}–{result['auc_hi']:.2f}), permutation p = "
+                   f"{result['p_permutation']:.2f}. {reach}\n")
+    else:
+        out.append(f"Seizure-free {n1}, recurrence {n2}: a comparison needs at least two "
+                   "patients in each group.\n")
+    if result.get("mixed_settings"):
+        out.append(note("warn", "Your patients were measured with different bands or "
+                                "detectors; the comparison mixes them."))
     return "\n".join(out)
 
 

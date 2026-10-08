@@ -24,6 +24,22 @@ once:
 
 The Patients page carries the one link the site cannot make: a patient picked
 there can be opened on the Recording page, if a window of theirs is cached.
+
+And the pages answer to the analysis that is open, without a published
+number changing (`onset_review.thisrecording`, `onset_review.yourstudy`):
+
+* **This recording** under each title: the open window set against the study,
+  measured the same way, and said to be one window of one patient.
+* **Explore the chart** opens the page's figure live (`onset_review.chartview`):
+  hover for values, click a patient to open them, drag the threshold.
+* **Re-run with your settings** runs the Detectors or the Outcome study again
+  with the reader's band, detectors, thresholds and window, in the
+  background, and shows the result dashed beside the published lines.
+* **Add this recording to your cohort** measures the open window as the
+  Outcome study measures a patient, with the resection and outcome the
+  reader enters.
+* **Open as notebook** writes the page as a notebook that rebuilds it
+  (`onset_review.studynotebooks`) and opens it on the Analysis page.
 """
 
 from __future__ import annotations
@@ -31,15 +47,25 @@ from __future__ import annotations
 import html
 import re
 
-from qtpy.QtCore import QRegularExpression, Qt, QThread, QUrl, Signal
+from qtpy.QtCore import QEventLoop, QRegularExpression, Qt, QThread, QUrl, Signal
 from qtpy.QtGui import QFont, QImage, QTextCharFormat, QTextDocument
 from qtpy.QtWidgets import (
+    QButtonGroup,
     QCheckBox,
     QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QDoubleSpinBox,
+    QFormLayout,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QProgressDialog,
     QPushButton,
+    QRadioButton,
     QTextBrowser,
     QVBoxLayout,
     QWidget,
@@ -379,13 +405,21 @@ class StudyPage(QWidget):
 
     #: A cached window row the reviewer asked to open, from the Patients page.
     openRequested = Signal(dict)
+    #: A notebook written by Open as notebook, to open in the editor.
+    notebookRequested = Signal(str)
 
-    def __init__(self, key: str, *, cached=None, parent=None):
+    def __init__(self, key: str, *, cached=None, session=None, parent=None):
         super().__init__(parent)
         if key not in {k for k, _, _ in studies.STUDIES}:
             raise KeyError(f"no study page {key!r}")
         self.key = key
         self._cached = cached
+        #: The recording open in the window, or None: the page's *This
+        #: recording* layer is drawn from it.
+        self.session = session
+        self.chart_windows: list = []
+        #: Replaces the study's own runner (tests): called with the settings.
+        self.study_runner = None
         self._built = False
         self._text = ""
         self.combos: dict[str, QComboBox] = {}
@@ -434,6 +468,33 @@ class StudyPage(QWidget):
                                         "patient picked above on the Recording page")
             self.open_button.clicked.connect(self._open_patient)
             top.addWidget(self.open_button)
+        # What a reader can do with the page, beyond reading it.
+        self.actions: dict[str, QPushButton] = {}
+
+        def action(name: str, text: str, tip: str, slot) -> None:
+            button = QPushButton(text)
+            button.setObjectName(f"onset_study_{key}_{name}")
+            button.setToolTip(tip)
+            button.clicked.connect(lambda _=False: slot())
+            self.actions[name] = button
+
+        if key in ("detectors", "outcome"):
+            action("explore", "Explore the chart", "The page's figure in a window that "
+                   "answers the pointer: hover for values, click a patient to open them"
+                   + (", drag the threshold" if key == "detectors" else ""),
+                   self.explore_chart)
+            action("rerun", "Re-run with your settings…", "Run this study again with your "
+                   "band, detectors, thresholds and window; the result is shown beside the "
+                   "published one, labelled yours", self.rerun_dialog)
+        if key == "outcome":
+            action("add", "Add this recording to your cohort…", "Measure the open window "
+                   "the way the study measures a patient, with the resection and outcome "
+                   "you enter", self.add_to_cohort_dialog)
+            action("remove", "Remove…", "Take a patient out of your cohort",
+                   self.remove_from_cohort_dialog)
+        action("notebook", "Open as notebook", "Write this page as a notebook that "
+               "rebuilds it from the same tables, and open it on the Analysis page",
+               self.open_notebook)
         top.addStretch(1)
         self.show_tables = QCheckBox("Show every table")
         self.show_tables.setObjectName(f"onset_study_{key}_tables")
@@ -455,6 +516,19 @@ class StudyPage(QWidget):
         box.setSpacing(theme.SPACING)
         box.addWidget(self.key_card)
         box.addLayout(top)
+        if self.actions:
+            row = theme.flow_layout()
+            for button in self.actions.values():
+                row.addWidget(button)
+            holder = QWidget()
+            holder.setLayout(row)
+            self.note = QLabel("")
+            self.note.setObjectName(f"onset_study_{key}_note")
+            self.note.setWordWrap(True)
+            self.note.setStyleSheet(f"color:{tokens.text_muted};font-size:9pt;")
+            self.note.hide()
+            box.addWidget(holder)
+            box.addWidget(self.note)
         box.addWidget(self.view, 1)
         box.addWidget(self.ask)
 
@@ -473,6 +547,12 @@ class StudyPage(QWidget):
         combo.blockSignals(True)
         for subject in rows["subject"]:
             combo.addItem(str(subject), str(subject))
+        from onset_review import thisrecording
+
+        if thisrecording.in_cohort(self.session):
+            index = combo.findData(self.session.request.subject)
+            if index >= 0:
+                combo.setCurrentIndex(index)
         combo.blockSignals(False)
 
     # -- building ----------------------------------------------------------
@@ -486,7 +566,7 @@ class StudyPage(QWidget):
         self._fill_subjects()
         choices = self.choices()
         try:
-            text = studies.build(self.key, **choices)
+            text = studies.build(self.key, session=self.session, **choices)
         except Exception as error:      # noqa: BLE001 - a study page must not kill the window
             text = (f"# {self.key.title()}\n\n> **This page could not be built:** "
                     f"{error}\n\nThe same page is on the results site: {studies.SITE}")
@@ -499,6 +579,7 @@ class StudyPage(QWidget):
         title = next((label for k, label, _ in studies.STUDIES if k == self.key), self.key)
         self.ask.set_page(title, text, message.get("lead", ""))
         self._built = True
+        self._enable_actions()
         if self.open_button is not None:
             self.open_button.setEnabled(self._window_for_current() is not None)
             self.open_button.setToolTip(
@@ -549,8 +630,393 @@ class StudyPage(QWidget):
         if row is not None:
             self.openRequested.emit(row)
 
+    # -- doing things with the page ------------------------------------------------
+    def _enable_actions(self) -> None:
+        from onset_review import yourstudy
+
+        if "add" in self.actions:
+            self.actions["add"].setEnabled(self.session is not None)
+            if self.session is None:
+                self.actions["add"].setToolTip("Open a recording first")
+        if "remove" in self.actions:
+            self.actions["remove"].setEnabled(bool(yourstudy.cohort_entries()))
+
+    def say(self, text: str) -> None:
+        if hasattr(self, "note"):
+            self.note.setText(text)
+            self.note.setVisible(bool(text))
+
+    def explore_chart(self):
+        """The page's figure, live. Returns the window, or None."""
+        from onset_review.chartview import ChartWindow
+
+        data = studies.chart_data(self.key, session=self.session, **self.choices())
+        if data is None:
+            self.say("This page's tables are not on this machine, so there is no chart.")
+            return None
+        title = next((label for k, label, _ in studies.STUDIES if k == self.key), self.key)
+        window = ChartWindow(data["kind"], data, title=f"{title} — chart")
+        window.subjectClicked.connect(self._open_subject)
+        self.chart_windows = [w for w in self.chart_windows if not w.isHidden()] + [window]
+        window.show()
+        return window
+
+    def _open_subject(self, subject: str) -> None:
+        row = None
+        if self._cached is not None:
+            try:
+                row = studies.cached_window_for(subject, self._cached())
+            except Exception:       # noqa: BLE001
+                row = None
+        if row is None:
+            self.say(f"No window of {subject} is cached on this machine; fetch one with "
+                     "onset-hfo fetch.")
+            return
+        self.openRequested.emit(row)
+
+    def rerun_dialog(self) -> dict | None:
+        dialog = RerunDialog(self.key, self.session, self)
+        if dialog.exec() != QDialog.Accepted:
+            return None
+        return self.run_study(dialog.settings())
+
+    def run_study(self, settings: dict) -> dict | None:
+        """Run the study with `settings` (as `RerunDialog.settings` gives
+        them) behind a progress dialog with a Stop button, then rebuild the
+        page with the result beside the published one."""
+        from onset_review import yourstudy
+
+        runner = self.study_runner
+        if runner is None:
+            function = (yourstudy.rerun_detectors if self.key == "detectors"
+                        else yourstudy.rerun_outcome)
+
+            def runner(settings, progress=None, should_stop=None):
+                arguments = {k: v for k, v in settings.items() if k != "offline"}
+                return function(**arguments, progress=progress, should_stop=should_stop)
+
+        progress = QProgressDialog("Starting…", "Stop", 0, max(1, len(settings["subjects"])),
+                                   self)
+        progress.setWindowTitle("Re-running the study with your settings")
+        progress.setMinimumDuration(0)
+        worker = _StudyWorker(runner, settings, self)
+        worker.progressed.connect(lambda i, n, subject: (
+            progress.setValue(i), progress.setLabelText(f"{subject} ({i + 1} of {n})")))
+        progress.canceled.connect(worker.stop)
+        loop = QEventLoop()
+        worker.finished.connect(loop.quit)
+        worker.start()
+        loop.exec_() if hasattr(loop, "exec_") else loop.exec()
+        worker.wait()
+        progress.close()
+        if worker.error:
+            self.say(f"The re-run failed: {worker.error}")
+            return None
+        result = worker.result or {}
+        skipped = result.get("skipped") or {}
+        ran = len(settings["subjects"]) - len(skipped)
+        self.say(f"Re-run on {ran} of {len(settings['subjects'])} patients"
+                 + (f"; skipped {len(skipped)} (named on the page)" if skipped else "")
+                 + ". It is under *Your re-run* below, and dashed on the chart.")
+        self.rebuild()
+        return result
+
+    def add_to_cohort_dialog(self) -> dict | None:
+        if self.session is None:
+            return None
+        dialog = CohortDialog(self.session, self)
+        if dialog.exec() != QDialog.Accepted:
+            return None
+        return self.add_to_cohort(*dialog.values())
+
+    def add_to_cohort(self, outcome: str, resected, label: str = "") -> dict | None:
+        from onset_review import yourstudy
+
+        try:
+            entry = yourstudy.add_to_cohort(self.session, outcome, resected, label)
+        except ValueError as error:
+            self.say(str(error))
+            return None
+        self.say(f"{entry['label']} is in your cohort: {entry['n_candidates']} tied channel(s), "
+                 f"{entry['candidates_resected']:.0%} of them inside the resection you "
+                 "entered.")
+        self.rebuild()
+        return entry
+
+    def remove_from_cohort_dialog(self) -> bool:
+        from onset_review import yourstudy
+
+        entries = yourstudy.cohort_entries()
+        if not entries:
+            return False
+        labels = [f"{e.get('label')} — {e.get('recording')} "
+                  f"{e['window_s'][0]:g}–{e['window_s'][1]:g} s" for e in entries]
+        chosen, ok = QInputDialog.getItem(self, "Remove from your cohort",
+                                          "Patient to remove:", labels, 0, False)
+        if not ok:
+            return False
+        removed = yourstudy.remove_from_cohort(entries[labels.index(chosen)]["id"])
+        self.rebuild()
+        return removed
+
+    def open_notebook(self, folder=None):
+        """Write the page as a notebook in the Files pane's folder and ask the
+        window to open it. Returns its path."""
+        from onset_review.files import current_folder
+        from onset_review.studynotebooks import write_study_notebook
+
+        try:
+            path = write_study_notebook(self.key, folder or current_folder(), self._text,
+                                        **self.choices())
+        except OSError as error:
+            self.say(f"Could not write the notebook: {error}")
+            return None
+        self.say(f"Wrote {path}.")
+        self.notebookRequested.emit(str(path))
+        return path
+
+    def close_windows(self) -> None:
+        for window in self.chart_windows:
+            window.close()
+        self.chart_windows = []
+
     def keyPressEvent(self, event):      # noqa: N802  (Qt's spelling)
         if event.key() == Qt.Key_F5:
             self.rebuild()
             return
         super().keyPressEvent(event)
+
+
+class _StudyWorker(QThread):
+    """A re-run of a study, off the GUI thread, one patient at a time."""
+
+    progressed = Signal(int, int, str)
+
+    def __init__(self, runner, settings: dict, parent=None):
+        super().__init__(parent)
+        self._runner, self._settings = runner, settings
+        self._stop = False
+        self.result: dict | None = None
+        self.error: str | None = None
+
+    def stop(self) -> None:
+        self._stop = True
+
+    def run(self) -> None:
+        import os
+
+        from onset_hfo.datasets import OFFLINE_ENV
+
+        previous = os.environ.get(OFFLINE_ENV)
+        if self._settings.get("offline"):
+            # Only what is on this machine: the fetch layer refuses the rest.
+            os.environ[OFFLINE_ENV] = "1"
+        try:
+            self.result = self._runner(
+                self._settings, progress=lambda i, n, s: self.progressed.emit(i, n, s),
+                should_stop=lambda: self._stop)
+        except Exception as error:      # noqa: BLE001 - reported on the page
+            self.error = f"{type(error).__name__}: {error}"
+        finally:
+            if self._settings.get("offline"):
+                if previous is None:
+                    os.environ.pop(OFFLINE_ENV, None)
+                else:
+                    os.environ[OFFLINE_ENV] = previous
+
+
+def _cohort_subjects() -> list[str]:
+    rows = studies.patient_rows()
+    if rows is None or not len(rows):
+        return [f"sub-{i:02d}" for i in range(1, 21)]
+    return [str(s) for s in rows["subject"]]
+
+
+class RerunDialog(QDialog):
+    """The settings of a re-run: for the Detectors study, band, detectors,
+    thresholds and window; for the Outcome study, detector, band, threshold
+    and window. Opens on the open recording's choices where it has them."""
+
+    DETECTORS = ("rms", "line_length", "hilbert", "energy")
+
+    def __init__(self, key: str, session=None, parent=None):
+        super().__init__(parent)
+        from onset_review.studycharts import DETECTOR_LABELS
+
+        self.key = key
+        self.setWindowTitle("Re-run the Detectors study" if key == "detectors"
+                            else "Re-run the Outcome study")
+        request = session.request if session is not None else None
+        form = QFormLayout()
+        self.band = QComboBox()
+        for value, text in studies.BANDS.items():
+            self.band.addItem(text, value)
+        band = request.band if request is not None else (
+            "ripple" if key == "detectors" else "fast_ripple")
+        self.band.setCurrentIndex(max(0, self.band.findData(band)))
+        form.addRow("Band", self.band)
+        chosen = set(request.detectors) if request is not None else {"rms", "line_length"}
+        self.detector_boxes: dict[str, QCheckBox] = {}
+        self.detector = QComboBox()
+        if key == "detectors":
+            row = QHBoxLayout()
+            for name in self.DETECTORS:
+                box = QCheckBox(DETECTOR_LABELS.get(name, name))
+                box.setChecked(name in chosen)
+                self.detector_boxes[name] = box
+                row.addWidget(box)
+            form.addRow("Detectors", row)
+            self.thresholds = QLineEdit("2, 2.5, 3, 3.5, 4, 5")
+            self.thresholds.setToolTip("Thresholds in robust SD, separated by commas")
+            form.addRow("Thresholds (SD)", self.thresholds)
+        else:
+            for name in self.DETECTORS:
+                self.detector.addItem(DETECTOR_LABELS.get(name, name), name)
+            first = request.detectors[0] if request is not None else "rms"
+            self.detector.setCurrentIndex(max(0, self.detector.findData(first)))
+            form.addRow("Detector", self.detector)
+            self.thresholds = QLineEdit("" if request is None or request.threshold_sd is None
+                                        else f"{request.threshold_sd:g}")
+            self.thresholds.setPlaceholderText("the detector's measured default")
+            form.addRow("Threshold (SD)", self.thresholds)
+        self.t_start = QDoubleSpinBox()
+        self.t_stop = QDoubleSpinBox()
+        for spin in (self.t_start, self.t_stop):
+            spin.setRange(0.0, 3600.0)
+            spin.setDecimals(0)
+            spin.setSuffix(" s")
+        self.t_stop.setValue(60.0 if key == "detectors" else 300.0)
+        window = QHBoxLayout()
+        window.addWidget(self.t_start)
+        window.addWidget(QLabel("to"))
+        window.addWidget(self.t_stop)
+        form.addRow("Window of each run-01", window)
+        self.subjects = QLineEdit(", ".join(_cohort_subjects()))
+        self.subjects.setToolTip("The patients to include, separated by commas")
+        form.addRow("Patients", self.subjects)
+        self.offline = QCheckBox("Only recordings already on this machine (no downloads)")
+        self.offline.setChecked(True)
+        self.offline.setToolTip("Unticked, a patient not yet fetched is downloaded from "
+                                "OpenNeuro first: a few tens of MB each")
+        form.addRow("", self.offline)
+        self.problem = QLabel("")
+        self.problem.setStyleSheet(f"color:{theme.current().bad};")
+        self.problem.setWordWrap(True)
+        published = ("The published study used RMS and line length on the first 60 s"
+                     if key == "detectors" else
+                     "The published study used RMS in the fast-ripple band on the whole "
+                     "300 s run")
+        lead = QLabel(f"{published}. Your re-run is kept beside it, labelled yours; the "
+                      "published tables are never changed. It runs in the background and "
+                      "can be stopped between patients.")
+        lead.setWordWrap(True)
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.button(QDialogButtonBox.Ok).setText("Run")
+        buttons.accepted.connect(self._accept)
+        buttons.rejected.connect(self.reject)
+        box = QVBoxLayout(self)
+        box.addWidget(lead)
+        box.addLayout(form)
+        box.addWidget(self.problem)
+        box.addWidget(buttons)
+
+    def _numbers(self) -> list[float]:
+        text = self.thresholds.text().replace(";", ",")
+        return [float(part) for part in text.split(",") if part.strip()]
+
+    def settings(self) -> dict:
+        subjects = [s.strip() for s in self.subjects.text().split(",") if s.strip()]
+        window = {"t_start": float(self.t_start.value()), "t_stop": float(self.t_stop.value())}
+        if self.key == "detectors":
+            return {"subjects": subjects, "thresholds": self._numbers(),
+                    "detectors": [n for n, b in self.detector_boxes.items() if b.isChecked()],
+                    "bands": [self.band.currentData()], **window,
+                    "offline": self.offline.isChecked()}
+        numbers = self._numbers()
+        return {"subjects": subjects, "detector": self.detector.currentData(),
+                "band": self.band.currentData(),
+                "threshold_sd": numbers[0] if numbers else None, **window,
+                "offline": self.offline.isChecked()}
+
+    def _accept(self) -> None:
+        try:
+            settings = self.settings()
+        except ValueError:
+            self.problem.setText("Thresholds are numbers separated by commas.")
+            return
+        if not settings["subjects"]:
+            self.problem.setText("Name at least one patient.")
+        elif self.key == "detectors" and not settings["detectors"]:
+            self.problem.setText("Tick at least one detector.")
+        elif self.key == "detectors" and not settings["thresholds"]:
+            self.problem.setText("Give at least one threshold.")
+        elif settings["t_stop"] <= settings["t_start"]:
+            self.problem.setText("The window must end after it starts.")
+        else:
+            self.accept()
+
+
+class CohortDialog(QDialog):
+    """The open recording into your cohort: a name, the outcome, and the
+    contacts that were resected -- ticked from the recording's own contacts,
+    the archive's resection already ticked where there is one."""
+
+    def __init__(self, session, parent=None):
+        super().__init__(parent)
+        from onset_review.yourstudy import contacts_of
+
+        self.setWindowTitle("Add this recording to your cohort")
+        self.label = QLineEdit(session.request.subject)
+        self.free = QRadioButton("Seizure-free")
+        self.recurrence = QRadioButton("Recurrence")
+        group = QButtonGroup(self)
+        group.addButton(self.free)
+        group.addButton(self.recurrence)
+        outcome = QHBoxLayout()
+        outcome.addWidget(self.free)
+        outcome.addWidget(self.recurrence)
+        outcome.addStretch(1)
+        known = {c.upper() for c in getattr(session.resection, "resected", ()) or ()}
+        self.contacts = QListWidget()
+        self.contacts.setObjectName("onset_cohort_contacts")
+        for contact in contacts_of(session.raw.ch_names):
+            item = QListWidgetItem(contact)
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            item.setCheckState(Qt.Checked if contact in known else Qt.Unchecked)
+            self.contacts.addItem(item)
+        self.problem = QLabel("")
+        self.problem.setStyleSheet(f"color:{theme.current().bad};")
+        lead = QLabel("Measured the way the Outcome study measures a patient: the channels "
+                      "tied with the busiest in this window, and the share of them inside "
+                      "the contacts you tick. Your entry, kept on this machine, labelled "
+                      "yours wherever it shows.")
+        lead.setWordWrap(True)
+        form = QFormLayout()
+        form.addRow("Patient", self.label)
+        form.addRow("Outcome", outcome)
+        form.addRow("Resected contacts", self.contacts)
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.button(QDialogButtonBox.Ok).setText("Add")
+        buttons.accepted.connect(self._accept)
+        buttons.rejected.connect(self.reject)
+        box = QVBoxLayout(self)
+        box.addWidget(lead)
+        box.addLayout(form)
+        box.addWidget(self.problem)
+        box.addWidget(buttons)
+
+    def values(self) -> tuple[str, list[str], str]:
+        outcome = "seizure-free" if self.free.isChecked() else (
+            "recurrence" if self.recurrence.isChecked() else "")
+        ticked = [self.contacts.item(i).text() for i in range(self.contacts.count())
+                  if self.contacts.item(i).checkState() == Qt.Checked]
+        return outcome, ticked, self.label.text().strip()
+
+    def _accept(self) -> None:
+        outcome, ticked, _label = self.values()
+        if not outcome:
+            self.problem.setText("Choose the outcome.")
+        elif not ticked:
+            self.problem.setText("Tick the contacts that were resected.")
+        else:
+            self.accept()

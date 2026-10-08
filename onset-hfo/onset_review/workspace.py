@@ -28,9 +28,12 @@ from qtpy.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
+    QMenu,
+    QMessageBox,
     QPlainTextEdit,
     QPushButton,
     QTableView,
+    QToolButton,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -262,6 +265,20 @@ class WorkspacePanel(QWidget):
         self.copy_button.setEnabled(False)
         self.copy_button.setToolTip("Put the variable's name on the clipboard")
         self.copy_button.clicked.connect(lambda _=False: self.copy_name())
+        # MATLAB's save and load: the names made in the console, to a file
+        # and back. The session's own objects are the analysis's and are not
+        # written here (Export… writes any one of them).
+        self.file_button = QToolButton()
+        self.file_button.setObjectName("onset_workspace_file")
+        self.file_button.setText("Save/Load")
+        self.file_button.setToolTip("Save the variables you made in the console to a "
+                                    "file, or load variables from one")
+        self.file_button.setPopupMode(QToolButton.InstantPopup)
+        menu = QMenu(self.file_button)
+        self.save_action = menu.addAction("Save console variables…",
+                                          lambda: self.save_variables())
+        self.load_action = menu.addAction("Load variables…", lambda: self.load_variables())
+        self.file_button.setMenu(menu)
 
         self.tree = QTreeWidget()
         self.tree.setObjectName("onset_workspace")
@@ -298,7 +315,8 @@ class WorkspacePanel(QWidget):
             ".json otherwise. Nothing here changes the analysis."))
         actions = QHBoxLayout()
         actions.setSpacing(theme.SPACING // 2)
-        for button in (self.open_button, self.export_button, self.copy_button):
+        for button in (self.open_button, self.export_button, self.copy_button,
+                       self.file_button):
             actions.addWidget(button)
         actions.addStretch(1)
         box = QVBoxLayout(self)
@@ -424,6 +442,88 @@ class WorkspacePanel(QWidget):
             return self.folder() if callable(self.folder) else self.folder
         except Exception:        # noqa: BLE001 - a suggestion, never a failure
             return None
+
+    # -- saving and loading ---------------------------------------------------------
+    def save_variables(self, path: str | Path | None = None) -> tuple[list[str], dict]:
+        """Write the console's names to `path` (asked for when not given):
+        .pkl keeps everything, .npz arrays and numbers, .mat what MATLAB
+        reads. Returns (saved, {name: why not})."""
+        names = self.console.user_variables() if self.console is not None else {}
+        if not names:
+            self._say_file("Nothing to save: no variables have been made in the console yet. "
+                           "Export… writes one of the session's.")
+            return [], {}
+        if path is None:
+            suffixes = ";;".join(f"{what[0].upper() + what[1:]} (*{suffix})"
+                                 for suffix, what in variables.WORKSPACE_SUFFIXES)
+            folder = Path(self._folder() or Path.cwd())
+            chosen, _ = QFileDialog.getSaveFileName(self, "Save the console's variables",
+                                                    str(folder / "workspace.pkl"), suffixes)
+            if not chosen:
+                return [], {}
+            path = chosen
+        path = Path(path)
+        if path.suffix.lower() not in {s for s, _ in variables.WORKSPACE_SUFFIXES}:
+            path = path.with_suffix(".pkl")
+        try:
+            path, saved, skipped = variables.save_workspace(names, path)
+        except (OSError, ValueError) as error:
+            self._say_file(f"Could not save: {error}")
+            return [], {}
+        line = (f"Saved {len(saved)} variable{'s' if len(saved) != 1 else ''} to {path.name}"
+                if saved else f"Nothing saved to {path.name}")
+        if skipped:
+            line += "; left out " + "; ".join(f"{k} ({why})" for k, why in skipped.items())
+        self._say_file(line + ".")
+        return saved, skipped
+
+    def load_variables(self, path: str | Path | None = None) -> list[str]:
+        """Read a saved workspace into the console. A .pkl file runs code as
+        it is read, so the dialog says to open only one you trust."""
+        if self.console is None:
+            self._say_file("There is no console to load variables into.")
+            return []
+        if path is None:
+            chosen, _ = QFileDialog.getOpenFileName(
+                self, "Load variables into the console", str(self._folder() or Path.cwd()),
+                "Saved workspaces (*.pkl *.npz *.mat *.npy);;All files (*)")
+            if not chosen:
+                return []
+            path = chosen
+            if Path(path).suffix.lower() == ".pkl" and QMessageBox.question(
+                    self, "Load a pickle?",
+                    "Reading a .pkl file can run any code it carries. Load it only if you "
+                    "made it or trust where it came from.",
+                    QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
+                return []
+        try:
+            loaded = variables.load_workspace(path)
+        except Exception as error:      # noqa: BLE001 - reported in the pane
+            self._say_file(f"Could not load {Path(path).name}: {error}")
+            return []
+        self.console.start()
+        clashes = [n for n in loaded if n in self.console.visible_names()
+                   and n not in self.console.user_variables()]
+        for name in clashes:
+            # A saved name never replaces the window's own: `raw` from a file
+            # is not the recording on screen.
+            loaded[f"{name}_loaded"] = loaded.pop(name)
+        self.console.namespace.update(loaded)
+        if self.console.session is not None:
+            self.console.session.console_log.append(
+                f"# Loaded {', '.join(sorted(loaded))} from {Path(path).resolve()}")
+        self.refresh()
+        line = f"Loaded {len(loaded)} variable{'s' if len(loaded) != 1 else ''} " \
+               f"from {Path(path).name}"
+        if clashes:
+            line += " (" + ", ".join(clashes) + " renamed …_loaded: the window's own names " \
+                    "are kept)"
+        self._say_file(line + ".")
+        return sorted(loaded)
+
+    def _say_file(self, text: str) -> None:
+        self.count.setText(text)
+        self.count.setToolTip(text)
 
     def copy_name(self) -> None:
         name = self._selected_name()

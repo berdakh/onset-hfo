@@ -24,8 +24,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-__all__ = ["Variable", "variables", "console_variables", "describe", "as_table", "as_array", "as_tree",
-           "export", "GROUPS"]
+__all__ = ["Variable", "variables", "console_variables", "session_names", "describe",
+           "as_table", "as_array", "as_tree", "export", "save_workspace", "load_workspace",
+           "WORKSPACE_SUFFIXES", "GROUPS"]
 
 #: The order the groups are listed in, and what each is.
 GROUPS = (
@@ -184,6 +185,41 @@ def variables(session, console: dict | None = None) -> list[Variable]:
     if session is None:
         return extra
     return _session_variables(session) + extra
+
+
+def session_names(session) -> dict:
+    """Every name the Workspace lists for `session`, bound to its object: the
+    console's view of the same workspace, so a name read in one is the name
+    typed in the other.
+
+    `signal` is the samples `raw` holds, read-only, rather than a copy: a
+    copy of a long span is gigabytes, and writing into it would change the
+    analysis under the panels. `np.array(signal)` makes a copy to change.
+    """
+    if session is None:
+        return {}
+    names = {}
+    for variable in _session_variables(session):
+        if variable.name == "signal":
+            names["signal"] = _signal_view(session.raw)
+            continue
+        # The session's own object where it holds one -- `events` is the
+        # list the panels read, not the copy the list above describes -- so
+        # what is changed in the console is what the window shows.
+        own = getattr(session, variable.name, None)
+        names[variable.name] = (own if own is not None and not callable(own)
+                                else variable.get())
+    return names
+
+
+def _signal_view(raw) -> np.ndarray:
+    held = getattr(raw, "_data", None)
+    if getattr(raw, "preload", False) and isinstance(held, np.ndarray):
+        view = held.view()
+    else:
+        view = raw.get_data()
+    view.flags.writeable = False
+    return view
 
 
 def _session_variables(session) -> list[Variable]:
@@ -395,3 +431,144 @@ def export(value, path: str | Path) -> Path:
         return path
     path.write_text(json.dumps(_plain(value), indent=2, default=repr))
     return path
+
+
+# -- saving and loading a workspace ------------------------------------------------
+#: What a workspace can be saved as: (suffix, what it holds).
+WORKSPACE_SUFFIXES = (
+    (".pkl", "everything Python can pickle; open again in this software or Python"),
+    (".npz", "arrays and numbers only; NumPy's own format"),
+    (".mat", "arrays, numbers, text and tables; opens in MATLAB"),
+)
+
+
+def _numeric(value) -> np.ndarray | None:
+    """`value` as a plain numeric array, or None if it is not one."""
+    if isinstance(value, (bool, int, float, np.integer, np.floating)):
+        return np.asarray(value)
+    if isinstance(value, np.ndarray) and value.dtype != object:
+        return value
+    if isinstance(value, (list, tuple)) and value and all(
+            isinstance(x, (bool, int, float, np.integer, np.floating)) for x in value):
+        return np.asarray(value)
+    return None
+
+
+def _for_matlab(value):
+    """`value` as scipy.io.savemat writes it, or None if it has no MATLAB form."""
+    array = _numeric(value)
+    if array is not None:
+        return array
+    if isinstance(value, str):
+        return value
+    if isinstance(value, pd.DataFrame):
+        return {str(column): (value[column].to_numpy() if value[column].dtype != object
+                              else value[column].astype(str).to_numpy(dtype=object))
+                for column in value.columns}
+    if isinstance(value, pd.Series):
+        return value.to_numpy()
+    if isinstance(value, (list, tuple)) and value and all(isinstance(x, str) for x in value):
+        return np.asarray(value, dtype=object)
+    if isinstance(value, dict) and value and all(
+            isinstance(k, str) and k.isidentifier() for k in value):
+        inner = {k: _for_matlab(v) for k, v in value.items()}
+        return inner if all(v is not None for v in inner.values()) else None
+    return None
+
+
+def save_workspace(names: dict, path: str | Path) -> tuple[Path, list[str], dict[str, str]]:
+    """Write `names` to `path`, in the format its suffix names (see
+    `WORKSPACE_SUFFIXES`). Returns (path, the names written, {name: why
+    not} for the ones the format cannot hold). Nothing is written when
+    nothing can be."""
+    path = Path(path)
+    suffix = path.suffix.lower()
+    if suffix not in {s for s, _ in WORKSPACE_SUFFIXES}:
+        raise ValueError(f"a workspace is saved as {', '.join(s for s, _ in WORKSPACE_SUFFIXES)}"
+                         f", not {suffix or 'a file without a suffix'}")
+    kept: dict = {}
+    skipped: dict[str, str] = {}
+    if suffix == ".pkl":
+        return _pickle_workspace(names, path)
+    for name, value in names.items():
+        if suffix == ".npz":
+            array = _numeric(value)
+            if array is None:
+                skipped[name] = "not an array or a number; save as .pkl to keep it"
+                continue
+            kept[name] = array
+        else:
+            if not name.isidentifier() or len(name) > 63:
+                skipped[name] = "not a name MATLAB accepts"
+                continue
+            converted = _for_matlab(value)
+            if converted is None:
+                skipped[name] = "has no MATLAB form; save as .pkl to keep it"
+                continue
+            kept[name] = converted
+    if not kept:
+        return path, [], skipped
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if suffix == ".npz":
+        np.savez(path, **kept)
+    else:
+        from scipy.io import savemat
+
+        savemat(path, kept, long_field_names=True, oned_as="row")
+    return path, list(kept), skipped
+
+
+def _pickle_workspace(names: dict, path: Path) -> tuple[Path, list[str], dict[str, str]]:
+    """All of `names` in one pickle; if one of them cannot be pickled, each
+    is tried on its own and the ones that fail are left out. Tried whole
+    first so an array of gigabytes is not pickled twice."""
+    import pickle
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        payload = pickle.dumps(dict(names), protocol=pickle.HIGHEST_PROTOCOL)
+        skipped: dict[str, str] = {}
+        kept = list(names)
+    except Exception:      # noqa: BLE001 - narrowed below, name by name
+        good, skipped = {}, {}
+        for name, value in names.items():
+            try:
+                pickle.dumps(value, protocol=pickle.HIGHEST_PROTOCOL)
+            except Exception as error:      # noqa: BLE001 - reported, not raised
+                skipped[name] = f"cannot be pickled ({type(error).__name__})"
+                continue
+            good[name] = value
+        kept = list(good)
+        if not good:
+            return path, [], skipped
+        payload = pickle.dumps(good, protocol=pickle.HIGHEST_PROTOCOL)
+    path.write_bytes(payload)
+    return path, kept, skipped
+
+
+def load_workspace(path: str | Path) -> dict:
+    """The names a saved workspace holds. A .pkl file runs code when it is
+    read, as every pickle does: open only one you made or trust."""
+    path = Path(path)
+    suffix = path.suffix.lower()
+    if suffix == ".pkl":
+        import pickle
+
+        with open(path, "rb") as handle:
+            loaded = pickle.load(handle)      # noqa: S301 - the reader chose the file
+        if not isinstance(loaded, dict):
+            return {path.stem: loaded}
+        return {str(k): v for k, v in loaded.items()}
+    if suffix == ".npz":
+        with np.load(path, allow_pickle=False) as held:
+            return {name: (held[name].item() if held[name].ndim == 0 else held[name])
+                    for name in held.files}
+    if suffix == ".mat":
+        from scipy.io import loadmat
+
+        loaded = loadmat(path, squeeze_me=True, simplify_cells=True)
+        return {k: v for k, v in loaded.items() if not k.startswith("__")}
+    if suffix == ".npy":
+        return {path.stem: np.load(path, allow_pickle=False)}
+    raise ValueError(f"cannot load a workspace from {suffix or 'a file without a suffix'}: "
+                     "use .pkl, .npz, .mat or .npy")

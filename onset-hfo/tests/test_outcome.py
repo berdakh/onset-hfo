@@ -326,6 +326,30 @@ def test_power_floor_is_high_for_this_cohort():
     assert 0.75 <= floor <= 0.95
 
 
+@pytest.mark.parametrize("n1, n2", [(13, 7), (5, 4), (3, 3)])
+def test_power_floor_is_the_one_test_at_a_time_result(n1, n2):
+    """The floor draws every simulation at once; the result must be what one
+    Mann-Whitney test per simulation, drawn in turn, gave -- the same random
+    stream, the same tests, the same number (NaN when no effect could reach
+    significance at all, as with three against three)."""
+    from scipy.stats import mannwhitneyu, norm
+
+    def one_at_a_time(n_sims=120, seed=3):
+        rng = np.random.default_rng(seed)
+        for target in np.arange(0.55, 1.00, 0.01):
+            delta = norm.ppf(target) * np.sqrt(2.0)
+            wins = sum(mannwhitneyu(rng.normal(delta, 1.0, n1), rng.normal(0.0, 1.0, n2),
+                                    alternative="two-sided").pvalue < 0.05
+                       for _ in range(n_sims))
+            if wins / n_sims >= 0.80:
+                return float(round(target, 2))
+        return float("nan")
+
+    expected = one_at_a_time()
+    got = min_detectable_auc(n1, n2, n_sims=120, seed=3)
+    assert (got == expected) or (np.isnan(got) and np.isnan(expected))
+
+
 def test_compare_groups_splits_on_published_outcome():
     subjects = pd.DataFrame({
         "subject": ["sub-01", "sub-02", "sub-03", "sub-04"],

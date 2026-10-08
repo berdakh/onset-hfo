@@ -5,7 +5,8 @@ Recordings the importer can read are listed in full colour; anything else
 is greyed but still shown, because a folder is easier to recognise whole.
 Double-click a folder to go into it, a recording to open it -- through the
 same import dialog as File → Open a file, so the channel types are still
-confirmed before anything is analysed.
+confirmed before anything is analysed -- and a script or a notebook to open
+it in the Analysis page's editor.
 
 The current folder is remembered between launches (`files.json` beside the
 assistant's settings) and is where the Workspace's Export suggests writing,
@@ -33,7 +34,13 @@ from qtpy.QtWidgets import (
 
 from onset_review import theme
 
-__all__ = ["FilesPanel", "current_folder", "set_current_folder", "is_recording"]
+__all__ = ["FilesPanel", "current_folder", "set_current_folder", "is_recording", "is_script"]
+
+#: What the editor opens.
+SCRIPT_SUFFIXES = (".py", ".ipynb")
+
+
+HINT = "Double-click a recording to open it, a script to edit it, a folder to go into it."
 
 
 def _state_file() -> Path:
@@ -72,6 +79,12 @@ def is_recording(path: str | Path) -> bool:
     return path.is_file() and detect_format(path) is not None
 
 
+def is_script(path: str | Path) -> bool:
+    """Whether the Analysis page's editor opens this file."""
+    path = Path(path)
+    return path.is_file() and path.suffix.lower() in SCRIPT_SUFFIXES
+
+
 class FilesPanel(QWidget):
     """The current folder and what is in it."""
 
@@ -79,6 +92,8 @@ class FilesPanel(QWidget):
     openRequested = Signal(str)
     #: The folder just made current.
     folderChanged = Signal(str)
+    #: A script or notebook to open in the editor (absolute path).
+    scriptRequested = Signal(str)
 
     def __init__(self, folder: str | Path | None = None, parent=None):
         super().__init__(parent)
@@ -103,7 +118,8 @@ class FilesPanel(QWidget):
 
         self.model = QFileSystemModel(self)
         self.model.setFilter(QDir.AllDirs | QDir.Files | QDir.NoDotAndDotDot)
-        self.model.setNameFilters([f"*{s}" for s in supported_suffixes()])
+        self.model.setNameFilters([f"*{s}" for s in supported_suffixes()]
+                                  + [f"*{s}" for s in SCRIPT_SUFFIXES])
         self.model.setNameFilterDisables(True)       # others greyed, not hidden
         self.tree = QTreeView()
         self.tree.setObjectName("onset_files")
@@ -119,7 +135,7 @@ class FilesPanel(QWidget):
         self.tree.doubleClicked.connect(self._activated)
         self.tree.activated.connect(self._activated)
 
-        self.hint = QLabel("Double-click a recording to open it; a folder to go into it.")
+        self.hint = QLabel(HINT)
         self.hint.setWordWrap(True)
         self.hint.setStyleSheet(f"color:{theme.current().text_muted};font-size:9pt;")
 
@@ -151,7 +167,7 @@ class FilesPanel(QWidget):
         self.tree.setRootIndex(root)
         self.path_edit.setText(str(folder))
         self.up_button.setEnabled(folder.parent != folder)
-        self.hint.setText("Double-click a recording to open it; a folder to go into it.")
+        self.hint.setText(HINT)
         if remember:
             set_current_folder(folder)
         self.folderChanged.emit(str(folder))
@@ -180,6 +196,9 @@ class FilesPanel(QWidget):
             return self.set_folder(path)
         if is_recording(path):
             self.openRequested.emit(str(path.resolve()))
+            return True
+        if is_script(path):
+            self.scriptRequested.emit(str(path.resolve()))
             return True
         self.hint.setText(f"{path.name} is not a recording this software reads; "
                           "File → Open a file lists the formats.")
