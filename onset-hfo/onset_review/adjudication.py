@@ -40,6 +40,7 @@ from pathlib import Path
 
 __all__ = [
     "EVENT_VERDICTS", "CHANNEL_VERDICTS", "EVENT_LABELS", "CHANNEL_LABELS",
+    "CHANNEL_SHORT",
     "MATCH_TOLERANCE_S", "Judgement", "Adjudication",
     "event_key", "window_id", "reader_name", "store_dir", "path_for",
     "load", "save", "reconcile",
@@ -66,6 +67,16 @@ EVENT_LABELS = {
 CHANNEL_LABELS = {
     "accept": "Count this contact",
     "ignore": "Ignore this contact",
+    "unsure": "Cannot tell",
+}
+
+#: The same verdicts as the ranking's buttons say them and as its "My read"
+#: cell repeats them: short, so that the column fits beside the rate on a
+#: laptop, and the same words in both places, so the cell reads as what
+#: was pressed. The report keeps the long form above.
+CHANNEL_SHORT = {
+    "accept": "Count it",
+    "ignore": "Ignore it",
     "unsure": "Cannot tell",
 }
 

@@ -670,13 +670,21 @@ def test_a_channel_verdict_shows_in_the_findings_table(judging, review):
     channel = findings.selected_channel()
     assert findings.judge_channel("ignore") == channel
     assert review.read.channel_verdict(channel) == "ignore"
-    assert findings.model.row_value(0, "my_read") == "Ignore this contact"
+    assert findings.model.row_value(0, "my_read") == "Ignore it"      # as the button says
 
 
 def test_judging_an_event_updates_the_channel_progress_column(judging, review):
     """Without the refresh wiring the progress column goes stale the moment
     the reader starts working, which is the moment it starts mattering."""
     findings, events = judging.panels["findings"], judging.panels["events"]
+    findings.all_columns.setChecked(True)     # Judged lives behind All columns
+    try:
+        _judging_updates_the_progress_column(findings, events)
+    finally:
+        findings.all_columns.setChecked(False)  # the window is shared with later tests
+
+
+def _judging_updates_the_progress_column(findings, events):
     events.view.selectRow(0)
     channel = str(events._shown.iloc[0]["channel"])
     findings.select_channel(channel)
@@ -2334,6 +2342,49 @@ def test_the_trace_can_be_lifted_into_its_own_window_and_put_back(paged):
     pages.dock_trace()
     assert not pages.trace_popped and paged.host.isAncestorOf(figure)
     assert pages.trace_placeholder.isHidden()
+
+
+def test_the_browser_s_own_toolbar_is_folded_into_the_controls_row(paged):
+    """Seen at laptop width: two toolbars stacked over the trace, ours and
+    MNE's, the second repeating the first in icons. MNE's is hidden while
+    the trace is on the page; what it alone offers is a menu at the end of
+    our row, and it comes back when the trace is in a window of its own."""
+    from onset_review.controls import DUPLICATED_TOOLS
+
+    pages, controls = paged.pages, paged.panels["controls"]
+    pages.show_page("recording")
+    toolbar = controls.browser_toolbar
+    assert toolbar is not None and toolbar.isHidden()
+    assert not controls.tools.isHidden()
+    texts = [action.text() for action in controls.tools.menu().actions()]
+    for kept in ("Toggle annotations mode", "Toggle crosshair", "Overview bar",
+                 "Settings", "Help"):
+        assert kept in texts, texts
+    assert not any(text in DUPLICATED_TOOLS for text in texts), texts
+    assert "Show projectors" not in texts, "intracranial recordings carry none"
+
+    pages.pop_out_trace()
+    assert not toolbar.isHidden(), "its only bar out there"
+    pages.dock_trace()
+    assert toolbar.isHidden()
+
+
+def test_the_compact_ranking_fits_the_side_column_at_laptop_width(qapp, review):
+    """Seen at 1366 px: the ranking's last column cut off behind a scroll
+    bar. Five columns now, headers padded less, verdicts in the button's
+    own words; the sum has to fit the column the Recording page gives it."""
+    from onset_review.panels import FindingsPanel
+
+    panel = FindingsPanel(review)
+    panel.resize(470, 500)
+    panel.show()
+    qapp.processEvents()
+    header = panel.view.horizontalHeader()
+    assert panel._columns() == ["rank", "channel", "rate", "annotators", "my_read"]
+    assert header.length() <= panel.view.viewport().width(), \
+        [header.sectionSize(i) for i in range(header.count())]
+    assert panel.view.horizontalScrollBar().maximum() == 0
+    panel.close()
 
 
 def test_closing_the_popped_out_window_brings_the_trace_back(paged):

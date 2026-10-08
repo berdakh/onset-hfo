@@ -316,7 +316,7 @@ def stylesheet(p: Palette) -> str:
     }}
     QHeaderView::section {{
         background: {p.surface}; color: {p.text_muted};
-        padding: {SPACING // 2}px {SPACING}px; border: none;
+        padding: {SPACING // 2}px {SPACING // 2}px; border: none;
         border-bottom: 1px solid {p.separator}; font-weight: 600;
     }}
     QTableView::item {{ padding: 2px {SPACING // 2}px; }}

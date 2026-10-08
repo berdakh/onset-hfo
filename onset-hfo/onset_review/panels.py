@@ -44,7 +44,7 @@ __all__ = ["FindingsPanel", "EventsPanel", "TrendsPanel", "AgreementPanel",
 #: Columns renamed for reading. A clinician should never have to learn that
 #: `mean_prominence_db` is how far the oscillation rises above the background.
 HEADERS = {
-    "rate": "Rate /min (95%)",
+    "rate": "Rate /min",
     "annotators": "Annotators",
     "verdict": "My read",
     "my_read": "My read",
@@ -87,6 +87,10 @@ HEADERS = {
 HEADER_TIPS = {
     "verdict": "Your verdict on this event. A/D/U while this panel has focus.",
     "my_read": "Your verdict on this contact",
+    "rate": "Events per minute on this contact, with its 95% interval in brackets: "
+            "two channels whose intervals overlap cannot be told apart",
+    "annotators": "What the archive's annotators marked on this contact; 'not reviewed' "
+                  "where they never looked, which is a different thing from zero",
     "judged": "How many of this contact's ranked events you have given a "
               "verdict on — the same events the Events column counts",
     "rate_per_min": "The detector's rate, over the seconds actually analysed "
@@ -373,13 +377,14 @@ class FindingsPanel(QWidget):
     #: letters belong to the event list, where they are pressed hundreds of
     #: times, and a contact is judged once.
     CHANNEL_KEYS = (
-        ("accept", "Count it", "This contact's events are worth counting"),
-        ("ignore", "Ignore it", "Exclude this contact from the reading — a "
-                                "popping electrode, or signal you do not "
-                                "trust. The rate stays on screen; your verdict "
-                                "goes in the report beside it."),
-        ("unsure", "Cannot tell", "Recorded as undecided rather than left "
-                                  "blank, which is a different thing"),
+        ("accept", adjudication.CHANNEL_SHORT["accept"],
+         "This contact's events are worth counting"),
+        ("ignore", adjudication.CHANNEL_SHORT["ignore"],
+         "Exclude this contact from the reading — a popping electrode, or "
+         "signal you do not trust. The rate stays on screen; your verdict "
+         "goes in the report beside it."),
+        ("unsure", adjudication.CHANNEL_SHORT["unsure"],
+         "Recorded as undecided rather than left blank, which is a different thing"),
     )
 
     #: As on `EventsPanel`.
@@ -396,7 +401,7 @@ class FindingsPanel(QWidget):
             # The reader's own verdict outranks every automatic tint: once
             # someone has said "ignore this contact", that is the most
             # important thing about the row.
-            if row.get("my_read") == adjudication.CHANNEL_LABELS["ignore"]:
+            if row.get("my_read") == adjudication.CHANNEL_SHORT["ignore"]:
                 return theme.current().bad_surface
             if row.get("channel") in tied:
                 return theme.current().highlight
@@ -484,7 +489,7 @@ class FindingsPanel(QWidget):
             frame["judged"] = []
             return frame
         frame["my_read"] = [
-            adjudication.CHANNEL_LABELS.get(read.channel_verdict(str(ch)), "")
+            adjudication.CHANNEL_SHORT.get(read.channel_verdict(str(ch)), "")
             for ch in frame["channel"]]
         frame["judged"] = [
             (lambda p: f"{p['judged']} of {p['total']}" if p else "—")(

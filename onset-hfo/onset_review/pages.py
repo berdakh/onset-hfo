@@ -792,6 +792,8 @@ class PageWindow(QMainWindow):
         size = self.figure.size()
         self.figure.setParent(None)
         self.figure.setWindowFlags(Qt.Window)
+        # In a window of its own the browser's toolbar is its only bar.
+        self.panels["controls"].show_browser_toolbar(True)
         self.figure.setWindowTitle(
             f"Onset Review — trace — {self.session.request.label()}")
         if size.width() > 200 and size.height() > 200:
@@ -812,6 +814,7 @@ class PageWindow(QMainWindow):
         self.figure.removeEventFilter(self)
         self.figure.setWindowFlags(Qt.Widget)
         self.figure.setParent(self._trace_slot)
+        self.panels["controls"].show_browser_toolbar(False)
         self._trace_slot.layout().addWidget(self.figure, 1)
         self.figure.show()
         self.trace_placeholder.setVisible(False)
