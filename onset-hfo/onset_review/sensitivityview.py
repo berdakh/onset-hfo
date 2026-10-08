@@ -112,7 +112,9 @@ class SensitivityPanel(QWidget):
         self._worker = _Worker(self._session, self)
         self._worker.finished.connect(self._done)
         if background:
-            self._worker.start()
+            from onset_review.workers import track
+
+            track(self._worker).start()
         else:
             self._worker.run()
             self._done()

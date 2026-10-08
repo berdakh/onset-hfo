@@ -1143,7 +1143,9 @@ class PageWindow(QMainWindow):
                 brain._update_template_gate()
 
         self._fetcher.finished.connect(done)
-        self._fetcher.start()
+        from onset_review.workers import track
+
+        track(self._fetcher).start()
 
     def _map_page(self) -> QWidget:
         page = QWidget()

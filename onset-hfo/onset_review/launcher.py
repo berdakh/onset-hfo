@@ -34,7 +34,7 @@ import dataclasses
 from pathlib import Path
 
 import pandas as pd
-from qtpy.QtCore import QEventLoop, QObject, Qt, QThread, Signal, Slot
+from qtpy.QtCore import QObject, Qt, QThread, Signal, Slot
 from qtpy.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -392,12 +392,10 @@ def load_with_progress(request: ReviewRequest, cache_dir: Path | None = None,
     # A nested event loop rather than a `processEvents` spin: queued
     # connections are delivered by an event loop, and spinning means the GUI
     # thread is sometimes inside paint code when one arrives.
-    loop = QEventLoop()
-    worker.finished.connect(loop.quit)
+    from onset_review.workers import run
+
     dialog.show()
-    worker.start()
-    loop.exec_() if hasattr(loop, "exec_") else loop.exec()
-    worker.wait()
+    run(worker)
     dialog.close()
 
     session, error = worker.session, worker.error

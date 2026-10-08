@@ -228,7 +228,9 @@ class ModelSetupBox(QWidget):
         self.again.setEnabled(False)
         self._looker = _LookWorker(self._base_url, self)
         self._looker.finished.connect(self._looked)
-        self._looker.start()
+        from onset_review.workers import track
+
+        track(self._looker).start()
 
     def wait(self, ms: int = 30000) -> None:
         """Block until the current worker has finished. For tests and the
@@ -330,7 +332,9 @@ class ModelSetupBox(QWidget):
         self._puller = _PullWorker(tag, look.base_url, self)
         self._puller.progress.connect(self._progress)
         self._puller.finished.connect(self._pulled)
-        self._puller.start()
+        from onset_review.workers import track
+
+        track(self._puller).start()
 
     def _progress(self, status: str, done: int, total: int) -> None:
         if total > 0:
