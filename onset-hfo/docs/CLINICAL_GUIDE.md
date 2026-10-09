@@ -1625,8 +1625,61 @@ before the seizure (0.52, over the 27 seizures where that could be tested),
 barely better than the energy ratio alone (0.73),
 and its single top channel was in the zone in 15 of 28 patients.
 
-What comes next — template localisation, the combined map and the report —
-arrives phase by phase.
+![One real patient's map: interictal rate against ictal index with the archive's onset-zone channels filled, the contacts on the template from above, and the combined table](images/onset-review-case-map.png)
+
+*Above: a real patient (ds004100 sub-HUP139). The case holds the archive's
+own recordings: three seizures and five minutes of interictal recording. The
+contact positions are the archive's own, imported from fsaverage, and the
+onset-zone contacts are the ones its `channels.tsv` marks `soz`.*
+
+**Map.** Where the contacts are, on a **template brain** (MNI152), when the
+patient's own CT and MRI are not to hand. Every position on this step is a
+template position: approximate, and labelled so on the page, in the files
+and in the coordinate system written with them.
+
+- **Import coordinates…** reads a planning or navigation system's export
+  (TSV, CSV or plain text: a name and x, y, z) in **MNI152** or **fsaverage**
+  space. fsaverage is moved to MNI152 by FreeSurfer's published linear
+  transform. Metres are recognised and turned into millimetres.
+- **Plan an electrode…** places one. A **depth** electrode is a straight line
+  with contact 1 at the target (the deepest point) and the rest towards the
+  entry. A **strip** or **grid** is a flat sheet from its first contact. Each
+  point is typed in millimetres or taken from the centre of an atlas
+  structure. Set the spacing **on the template**: on real implants the
+  template spacing was 5.0–6.4 mm for most shafts. A plan at a 3.5 mm
+  catalogue pitch put contacts a median 10 mm off, where the right spacing
+  gave 2.5 mm ([`TEMPLATE_MAP.md`](TEMPLATE_MAP.md)).
+- **Fetch the atlas** (0.6 MB, once) gives each contact a **probable**
+  structure: Harvard-Oxford cortical and subcortical, so the hippocampus and
+  amygdala are named. A label is *in* a structure, *near* one (within 5 mm,
+  with the distance), *white matter*, or *outside the brain*. Even at real
+  positions only half the contacts were inside a named structure, so read
+  each one as "probably".
+- Tick the **Onset zone** contacts as you judge them and **Save the onset
+  zone**. The software never computes this set. It is stored with who set it
+  and when, and logged.
+
+The **combined map** then puts, per analysed channel: the pooled interictal
+rate with its interval and whether it is tied with the busiest; the median
+ictal index and in how many seizures it reached 0.3; where it is (a bipolar
+channel at its pair's midpoint, with both contacts' probable structures);
+and whether it is in the marked zone. The statement says, for this patient,
+which channel each measure puts highest and whether it is in the zone, the
+AUC of each measure for the zone's channels, and which channels both single
+out. The chart plots rate against index, zone channels filled, beside the
+contacts on the template from above or the side, sized by rate and shaded by
+index. One patient's agreement is an observation, not a validation; the
+studies in [`OUTCOME.md`](OUTCOME.md) and [`ICTAL.md`](ICTAL.md) test the
+methods.
+
+Positions are saved as BIDS-iEEG
+(`sub-*/ses-implant01/ieeg/*_space-MNI152NLin2009cAsym_electrodes.tsv` and
+its `coordsystem.json`), each with where it came from and its label. Every
+import, plan, removal and onset-zone change goes into the case's log. If the
+patient's own imaging turns up later, its coordinates in MNI152 import the
+same way and replace the template ones contact by contact.
+
+What comes next — the signed, versioned report — arrives in the last phase.
 
 ## 6. What this has actually been measured to do
 

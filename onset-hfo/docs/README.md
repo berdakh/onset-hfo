@@ -73,7 +73,10 @@ Read in this order:
 9. [**ICTAL.md**](ICTAL.md) — the ictal half: does the Epileptogenicity
    Index find the clinicians' onset zone on 28 patients, against a control
    40 s before each seizure, and what the archive's onset marks do to it.
-10. [**LIMITATIONS.md**](LIMITATIONS.md) — read before quoting any number from
+10. [**TEMPLATE_MAP.md**](TEMPLATE_MAP.md) — contacts placed on a template
+    brain: how far a straight-line plan lands from real implants (HUP, 38
+    patients), and what an atlas label is worth.
+11. [**LIMITATIONS.md**](LIMITATIONS.md) — read before quoting any number from
     this repository to anyone.
 
 ## "I am joining the project and need to do something useful"

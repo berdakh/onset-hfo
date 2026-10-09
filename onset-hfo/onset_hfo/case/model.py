@@ -99,6 +99,10 @@ class Case:
     #: and preprocessing, as a review request's fields (`onset_review.project.
     #: request_to_dict`). Empty until the Preprocess step saves it.
     analysis: dict = field(default_factory=dict)
+    #: Contact sets a clinician named, e.g. {"soz": {"contacts": [...], "by": ..,
+    #: "at": ..}}: the seizure onset zone as they judged it, for the Map step's
+    #: agreement. Never computed by the software.
+    zones: dict = field(default_factory=dict)
 
     # -- making and opening ----------------------------------------------------------
     @classmethod
@@ -127,7 +131,8 @@ class Case:
                    created_by=data.get("created_by", ""), note=data.get("note", ""),
                    recordings=[Recording.from_json(r) for r in data.get("recordings", [])],
                    steps=dict(data.get("steps", {})), log=list(data.get("log", [])),
-                   analysis=dict(data.get("analysis", {})))
+                   analysis=dict(data.get("analysis", {})),
+                   zones=dict(data.get("zones", {})))
 
     @staticmethod
     def is_case(folder: str | Path) -> bool:
@@ -137,7 +142,8 @@ class Case:
         data = {"schema": SCHEMA, "case_id": self.case_id, "created": self.created,
                 "created_by": self.created_by, "note": self.note,
                 "recordings": [r.to_json() for r in self.recordings],
-                "steps": self.steps, "log": self.log, "analysis": self.analysis}
+                "steps": self.steps, "log": self.log, "analysis": self.analysis,
+                "zones": self.zones}
         path = self.root / CASE_FILE
         partial = path.with_suffix(".json.partial")
         partial.write_text(json.dumps(data, indent=1) + "\n", encoding="utf-8")
@@ -235,6 +241,19 @@ class Case:
         run = rec if isinstance(rec, str) else rec.run
         self.record("changed marks", f"run {run}: {len(added)} added, {len(removed)} removed",
                     by)
+
+    def zone(self, name: str = "soz") -> list[str]:
+        return list(self.zones.get(name, {}).get("contacts", []))
+
+    def set_zone(self, contacts, name: str = "soz", by: str = "") -> None:
+        """A clinician's contact set (by default the seizure onset zone), logged."""
+        before = set(self.zone(name))
+        contacts = sorted(dict.fromkeys(str(c).strip().upper() for c in contacts if str(c).strip()))
+        self.zones[name] = {"contacts": contacts, "by": by or _user(), "at": _now()}
+        added, removed = set(contacts) - before, before - set(contacts)
+        self.record(f"set the {name} contacts",
+                    f"{len(contacts)} contact(s); added {', '.join(sorted(added)) or 'none'}; "
+                    f"removed {', '.join(sorted(removed)) or 'none'}", by)
 
     @property
     def derivatives(self) -> Path:

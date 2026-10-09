@@ -348,6 +348,7 @@ chance — see [`docs/EVALUATION.md`](docs/EVALUATION.md).
 | [`docs/ORCHESTRATION.md`](docs/ORCHESTRATION.md) | the tool contract, the evidence store, the S0–S3 ladder, and what verification costs |
 | [`docs/LOCALIZATION.md`](docs/LOCALIZATION.md) | the cohort, the learned per-contact model, calibration and conformal sets, and how much of it transfers |
 | [`docs/ICTAL.md`](docs/ICTAL.md) | the Epileptogenicity Index against the clinicians' onset zone on 28 patients, with a pre-seizure control |
+| [`docs/TEMPLATE_MAP.md`](docs/TEMPLATE_MAP.md) | contacts on a template brain: straight-line plans against 38 patients' real implants, and what an atlas label is worth |
 | [`docs/EVALUATION.md`](docs/EVALUATION.md) | what was measured, how, and what the numbers mean |
 | [`docs/OUTCOME.md`](docs/OUTCOME.md) | the surgical-outcome study and the window-stability study: design, results, and what they cannot support |
 | [`docs/LIMITATIONS.md`](docs/LIMITATIONS.md) | what this must not be used for |

@@ -132,7 +132,12 @@ that names the patient is written. The case window then takes the channels
 and the marks — hours at a glance, MNE's browser to mark seizures, sleep and
 artefacts — chooses segments by rule (sleep stage, away from seizures and
 artefacts), analyses them alike and pools them into one ranking with
-intervals, and opens any minute in the review window. `onset-review
+intervals, and opens any minute in the review window. It then finds where
+each marked seizure starts (the Epileptogenicity Index), and places the
+contacts on a template brain (imported in MNI152 or fsaverage, or planned
+there) with probable atlas labels, to set the two side by side with the
+onset zone you mark. The atlas is fetched once, about 0.6 MB, from
+TemplateFlow. `onset-review
 /path/to/case` opens a case from the terminal. The clinical guide's section
 5a has the whole of it.
 

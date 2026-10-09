@@ -24,6 +24,11 @@ page beside it.
 * **Ictal onset** computes the Epileptogenicity Index of every marked seizure
   and how consistently each channel leads (`onset_review.caseictal`).
 * **Review** opens each segment in the review window and counts the verdicts.
+* **Map** places the contacts on the template brain (imported from a planning
+  system, or planned as shafts, strips and grids), labels them with an atlas
+  as *probable* structures, takes the clinician's onset zone, and puts the
+  interictal rate, the ictal index and the zone side by side
+  (`onset_hfo.case.electrodes`, `onset_review.casemap`).
 """
 
 from __future__ import annotations
@@ -1429,6 +1434,400 @@ class ReviewPage(QWidget):
         return request
 
 
+class PlanDialog(QDialog):
+    """Place an electrode on the template: a depth shaft from its target to its
+    entry, or a strip or grid from its first contact. Points are typed in MNI
+    millimetres or taken from an atlas structure's centre."""
+
+    def __init__(self, atlas=None, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Plan an electrode on the template")
+        self.atlas = atlas
+        self.group = QLineEdit()
+        self.group.setPlaceholderText("the electrode's name, e.g. LA")
+        self.kind = QComboBox()
+        for label, key in (("Depth (SEEG)", "depth"), ("Strip", "strip"), ("Grid", "grid")):
+            self.kind.addItem(label, key)
+        self.points = {}
+        form = QFormLayout()
+        form.addRow("Electrode", self.group)
+        form.addRow("Kind", self.kind)
+        for key, title in (("first", "Target / first contact"), ("second", "Entry / along"),
+                           ("third", "Across (grids)")):
+            row = QHBoxLayout()
+            boxes = []
+            for axis in "xyz":
+                box = QDoubleSpinBox()
+                box.setRange(-120.0, 120.0)
+                box.setDecimals(1)
+                box.setSuffix(f" {axis}")
+                boxes.append(box)
+                row.addWidget(box)
+            choose = QComboBox()
+            choose.addItem("or a structure's centre…", "")
+            if atlas is not None:
+                for name in atlas.regions():
+                    choose.addItem(name, name)
+            choose.currentIndexChanged.connect(
+                lambda _i, c=choose, b=boxes: self._from_structure(c, b))
+            row.addWidget(choose, 1)
+            self.points[key] = boxes
+            form.addRow(title, row)
+        self.count = QDoubleSpinBox()
+        self.count.setDecimals(0)
+        self.count.setRange(1, 64)
+        self.count.setValue(8)
+        self.rows = QDoubleSpinBox()
+        self.rows.setDecimals(0)
+        self.rows.setRange(1, 16)
+        self.rows.setValue(1)
+        self.spacing = QDoubleSpinBox()
+        self.spacing.setRange(0.5, 20.0)
+        self.spacing.setValue(5.0)
+        self.spacing.setSuffix(" mm on the template")
+        self.spacing.setToolTip("On real implants warped to the template the spacing was "
+                                "5.0–6.4 mm for most shafts, and planning at a smaller "
+                                "catalogue pitch put contacts a median 10 mm off "
+                                "(docs/TEMPLATE_MAP.md).")
+        form.addRow("Contacts (per row)", self.count)
+        form.addRow("Rows (grids)", self.rows)
+        form.addRow("Spacing", self.spacing)
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        box = QVBoxLayout(self)
+        box.addWidget(_muted("Depth: contact 1 at the target (the deepest point), the rest "
+                             "towards the entry. Strip or grid: contact 1 at the first point, "
+                             "numbered along the second, rows towards the third; flat, where "
+                             "the cortex is not. Template positions are approximate."))
+        box.addLayout(form)
+        box.addWidget(buttons)
+
+    def _from_structure(self, choose, boxes) -> None:
+        name = choose.currentData()
+        if not name or self.atlas is None:
+            return
+        for box, value in zip(boxes, self.atlas.centroid(name), strict=True):
+            box.setValue(float(value))
+
+    def point(self, key: str):
+        return [b.value() for b in self.points[key]]
+
+    def plan(self):
+        from onset_hfo.case.electrodes import plan_depth, plan_sheet
+
+        group = self.group.text().strip().upper()
+        if not group:
+            raise ValueError("name the electrode")
+        kind = self.kind.currentData()
+        n = int(self.count.value())
+        if kind == "depth":
+            return plan_depth(group, self.point("first"), self.point("second"), n,
+                              self.spacing.value())
+        rows = 1 if kind == "strip" else int(self.rows.value())
+        return plan_sheet(group, self.point("first"), self.point("second"),
+                          self.point("third"), rows, n, self.spacing.value())
+
+
+class MapPage(QWidget):
+    changed = Signal()
+
+    def __init__(self, window, parent=None):
+        super().__init__(parent)
+        self.window_ = window
+        self._job = None
+        self.atlas = None
+        self.import_button = QPushButton("Import coordinates…")
+        self.import_button.clicked.connect(lambda _=False: self.import_dialog())
+        self.plan_button = QPushButton("Plan an electrode…")
+        self.plan_button.clicked.connect(lambda _=False: self.plan_dialog())
+        self.remove_button = QPushButton("Remove the selected")
+        self.remove_button.clicked.connect(lambda _=False: self.remove_selected())
+        self.atlas_button = QPushButton("Fetch the atlas (0.6 MB)")
+        self.atlas_button.clicked.connect(lambda _=False: self.fetch_atlas())
+        self.zone_button = QPushButton("Save the onset zone")
+        self.zone_button.setToolTip("The contacts ticked in the Onset zone column: the seizure "
+                                    "onset zone as you judge it, for the agreement below.")
+        self.zone_button.clicked.connect(lambda _=False: self.save_zone())
+        self.view = QComboBox()
+        self.view.addItem("from above", "top")
+        self.view.addItem("from the side", "side")
+        self.view.currentIndexChanged.connect(lambda _i: self._draw())
+        self.done_button = QPushButton("Map done")
+        self.done_button.clicked.connect(lambda _=False: self.window_.complete("map"))
+        top = QHBoxLayout()
+        for widget in (self.import_button, self.plan_button, self.remove_button,
+                       self.atlas_button):
+            top.addWidget(widget)
+        top.addStretch(1)
+        top.addWidget(self.done_button)
+        from onset_hfo.case.electrodes import TEMPLATE_NOTE
+
+        self.note = _muted(TEMPLATE_NOTE)
+        self.contacts = QTableWidget(0, 5)
+        self.contacts.setObjectName("onset_case_contacts")
+        self.contacts.setHorizontalHeaderLabels(["Contact", "Onset zone", "x, y, z (mm)",
+                                                 "From", "Probably"])
+        self.contacts.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.contacts.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.contacts.verticalHeader().setVisible(False)
+        self.contacts.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        self.contacts.horizontalHeader().setStretchLastSection(True)
+        left = QWidget()
+        left_box = QVBoxLayout(left)
+        left_box.setContentsMargins(0, 0, 0, 0)
+        left_box.addWidget(self.contacts, 1)
+        zone_row = QHBoxLayout()
+        zone_row.addWidget(self.zone_button)
+        zone_row.addStretch(1)
+        left_box.addLayout(zone_row)
+        self.statement = QLabel("")
+        self.statement.setObjectName("onset_case_map_statement")
+        self.statement.setWordWrap(True)
+        self.statement.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+        from matplotlib.figure import Figure
+
+        self.figure = Figure(figsize=(7.0, 3.4), dpi=100)
+        self.canvas = FigureCanvasQTAgg(self.figure)
+        self.canvas.setMinimumHeight(260)
+        self.combined = QTableWidget(0, 8)
+        self.combined.setObjectName("onset_case_combined")
+        self.combined.setHorizontalHeaderLabels(["Channel", "Rate /min", "Interval", "Tied",
+                                                 "Index", "Seizures ≥ 0.3", "Probably",
+                                                 "Onset zone"])
+        self.combined.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.combined.verticalHeader().setVisible(False)
+        self.combined.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        self.combined.horizontalHeader().setStretchLastSection(True)
+        right = QWidget()
+        right_box = QVBoxLayout(right)
+        right_box.setContentsMargins(0, 0, 0, 0)
+        view_row = QHBoxLayout()
+        view_row.addWidget(self.statement, 1)
+        view_row.addWidget(self.view)
+        right_box.addLayout(view_row)
+        right_box.addWidget(self.canvas, 1)
+        right_box.addWidget(self.combined, 1)
+        split = QSplitter(Qt.Horizontal)
+        split.addWidget(left)
+        split.addWidget(right)
+        split.setSizes([420, 760])
+        box = QVBoxLayout(self)
+        box.addLayout(top)
+        box.addWidget(self.note)
+        box.addWidget(split, 1)
+        self._table = pd.DataFrame()
+        self._names: list[str] = []
+
+    # -- data ------------------------------------------------------------------------------------
+    def _load_atlas(self):
+        from onset_hfo.case.atlas import Atlas
+
+        if self.atlas is None and Atlas.available():
+            try:
+                self.atlas = Atlas.load()
+            except (OSError, ValueError):
+                self.atlas = None
+        self.atlas_button.setVisible(self.atlas is None)
+        return self.atlas
+
+    def _contact_names(self, electrodes) -> list[str]:
+        names = []
+        for rec in self.window_.case.recordings:
+            try:
+                channels = self.window_.case.channels(rec)
+            except (OSError, ValueError):
+                continue
+            for row in channels.itertuples():
+                if str(row.type).upper() in ("SEEG", "ECOG", "EEG", "DBS"):
+                    name = str(row.name).strip().upper()
+                    if name not in names:
+                        names.append(name)
+        for name in electrodes["name"].astype(str).str.upper():
+            if name not in names:
+                names.append(name)
+        return names
+
+    def refresh(self) -> None:
+        from onset_hfo.case.electrodes import load_electrodes
+
+        case = self.window_.case
+        self._load_atlas()
+        electrodes = load_electrodes(case)
+        self._names = self._contact_names(electrodes)
+        placed = {str(r.name).upper(): r for r in electrodes.itertuples()}
+        zone = set(case.zone("soz"))
+        self.contacts.blockSignals(True)
+        self.contacts.setRowCount(len(self._names))
+        for r, name in enumerate(self._names):
+            row = placed.get(name)
+            where = (f"{row.x:.1f}, {row.y:.1f}, {row.z:.1f}" if row is not None else "–")
+            source = row.source if row is not None else "not placed"
+            probably = ""
+            if row is not None and row.label_how:
+                probably = (row.label if row.label_how == "in" else
+                            f"near {row.label} ({row.label_mm:.0f} mm)"
+                            if row.label_how == "near" else row.label_how)
+            for c, value in zip((0, 2, 3, 4), (name, where, source, probably), strict=True):
+                self.contacts.setItem(r, c, QTableWidgetItem(value))
+            tick = QTableWidgetItem("")
+            tick.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
+            tick.setCheckState(Qt.Checked if name in zone else Qt.Unchecked)
+            self.contacts.setItem(r, 1, tick)
+        self.contacts.blockSignals(False)
+        self._show_combined()
+
+    def _show_combined(self) -> None:
+        from onset_review.caseictal import latest_ictal
+        from onset_review.casemap import agreement, combined_table, statement
+
+        case = self.window_.case
+        table = combined_table(case)
+        self._table = table
+        ictal = latest_ictal(case)
+        found = agreement(table, ictal.consistent() if ictal else [])
+        self.statement.setText(statement(table, found) if len(table) else
+                               "Run the Interictal or Ictal onset step to map its results.")
+        rows = table.to_dict("records")
+        self.combined.setRowCount(len(rows))
+        for r, row in enumerate(rows):
+            rate = "–" if pd.isna(row["rate_per_min"]) else f"{row['rate_per_min']:.2f}"
+            ci = "" if pd.isna(row["rate_ci_low"]) else \
+                f"{row['rate_ci_low']:.2f}–{row['rate_ci_high']:.2f}"
+            ei = "–" if pd.isna(row["median_ei"]) else f"{row['median_ei']:.2f}"
+            high = "" if pd.isna(row["seizures"]) else \
+                f"{int(row['seizures_high'])} of {int(row['seizures'])}"
+            values = (row["channel"], rate, ci, "yes" if row["tied"] else "", ei, high,
+                      row["where"] or ("not placed" if not row["placed"] else ""),
+                      "yes" if row["soz"] else "")
+            for c, value in enumerate(values):
+                self.combined.setItem(r, c, QTableWidgetItem(str(value)))
+        self._draw()
+
+    def _draw(self) -> None:
+        from onset_review.casemap import draw_combined
+
+        if len(self._table):
+            draw_combined(self.figure, self._table, self.atlas,
+                          view=self.view.currentData() or "top")
+        else:
+            self.figure.clear()
+        self.canvas.draw_idle()
+
+    # -- actions ---------------------------------------------------------------------------------
+    def _store(self, frame, action: str, detail: str) -> None:
+        from onset_hfo.case.electrodes import add_labels, load_electrodes, merge, save_electrodes
+
+        if self._load_atlas() is not None:
+            frame = add_labels(frame, self.atlas)
+        merged = merge(load_electrodes(self.window_.case), frame)
+        save_electrodes(self.window_.case, merged, action, detail, by=self.window_.reader())
+        self.refresh()
+        self.changed.emit()
+
+    def import_file(self, path, space: str = "MNI152"):
+        from onset_hfo.case.electrodes import read_coordinate_file
+
+        frame = read_coordinate_file(path, space)
+        self._store(frame, "imported contact positions",
+                    f"{len(frame)} contact(s) from {Path(path).name} ({space})")
+        return frame
+
+    def import_dialog(self):
+        from onset_hfo.case.electrodes import SPACES
+
+        path, _ = QFileDialog.getOpenFileName(self, "Contact positions in a template space",
+                                              str(Path.home()),
+                                              "Coordinates (*.tsv *.csv *.txt);;All files (*)")
+        if not path:
+            return None
+        space, ok = QInputDialog.getItem(self, "Which space", "The file's coordinates are in:",
+                                         list(SPACES), 0, False)
+        if not ok:
+            return None
+        try:
+            return self.import_file(path, space)
+        except (OSError, ValueError) as error:
+            QMessageBox.warning(self, "Import coordinates", str(error))
+            return None
+
+    def add_planned(self, frame):
+        group = str(frame["group"].iloc[0]) if len(frame) else ""
+        self._store(frame, "planned an electrode on the template",
+                    f"{group}: {len(frame)} contact(s) from "
+                    f"({frame['x'].iloc[0]:.1f}, {frame['y'].iloc[0]:.1f}, "
+                    f"{frame['z'].iloc[0]:.1f}) mm")
+        return frame
+
+    def plan_dialog(self):
+        dialog = PlanDialog(self._load_atlas(), self)
+        if dialog.exec() != QDialog.Accepted:
+            return None
+        try:
+            return self.add_planned(dialog.plan())
+        except ValueError as error:
+            QMessageBox.warning(self, "Plan an electrode", str(error))
+            return None
+
+    def remove_selected(self) -> list[str]:
+        from onset_hfo.case.electrodes import load_electrodes, save_electrodes
+
+        rows = sorted({i.row() for i in self.contacts.selectionModel().selectedRows()}) \
+            if self.contacts.selectionModel() else []
+        names = {self._names[r] for r in rows if r < len(self._names)}
+        electrodes = load_electrodes(self.window_.case)
+        keep = electrodes[~electrodes["name"].str.upper().isin(names)]
+        if len(keep) == len(electrodes):
+            return []
+        save_electrodes(self.window_.case, keep, "removed contact positions",
+                        ", ".join(sorted(names)), by=self.window_.reader())
+        self.refresh()
+        return sorted(names)
+
+    def ticked(self) -> list[str]:
+        return [self._names[r] for r in range(self.contacts.rowCount())
+                if self.contacts.item(r, 1) is not None
+                and self.contacts.item(r, 1).checkState() == Qt.Checked]
+
+    def save_zone(self) -> list[str]:
+        contacts = self.ticked()
+        self.window_.case.set_zone(contacts, "soz", by=self.window_.reader())
+        self._show_combined()
+        self.changed.emit()
+        return contacts
+
+    def fetch_atlas(self, wait: bool = False):
+        from onset_hfo.case.atlas import fetch_atlas
+
+        self._job = _Job(lambda progress, should_stop: fetch_atlas(progress=progress), self)
+        self._job.finished.connect(self._fetched)
+        self.atlas_button.setEnabled(False)
+        self._job.start()
+        if wait:
+            self._job.wait()
+            self._fetched()
+        return self._job
+
+    def _fetched(self) -> None:
+        from onset_hfo.case.electrodes import add_labels, load_electrodes, save_electrodes
+
+        job, self._job = self._job, None
+        self.atlas_button.setEnabled(True)
+        if job is None:
+            return
+        if job.error is not None:
+            QMessageBox.warning(self, "Fetch the atlas", f"Not fetched: {job.error}")
+            return
+        if self._load_atlas() is not None:
+            electrodes = load_electrodes(self.window_.case)
+            if len(electrodes):
+                save_electrodes(self.window_.case, add_labels(electrodes, self.atlas),
+                                "labelled contacts with the atlas",
+                                f"{len(electrodes)} contact(s)", by=self.window_.reader())
+        self.refresh()
+
+
 class LaterPage(QWidget):
     def __init__(self, title: str, phase: int, parent=None):
         super().__init__(parent)
@@ -1466,10 +1865,12 @@ class CaseWindow(QMainWindow):
         self.interictal_page = InterictalPage(self)
         self.ictal_page = IctalPage(self)
         self.review_page = ReviewPage(self)
+        self.map_page = MapPage(self)
         own = {"import": self.import_page, "channels": self.channels_page,
                "annotate": self.annotate_page, "segments": self.segments_page,
                "preprocess": self.settings_page, "interictal": self.interictal_page,
-               "ictal": self.ictal_page, "review": self.review_page}
+               "ictal": self.ictal_page, "review": self.review_page,
+               "map": self.map_page}
         self.page_for: dict[str, QWidget] = {}
         for key, title, phase in STEPS:
             page = own.get(key) or LaterPage(title, phase)
