@@ -77,3 +77,18 @@ def test_the_summary_counts_each_way_and_leaves_out_a_mismatched_frame():
     assert block["patients_worse_warped"] == ["sub-1"]
     assert block["patients_worse_blended"] == []
     assert summary["dsX"]["primary"]["contacts"] == 2
+
+
+def test_surface_ras_plus_the_centre_is_scanner_ras(tmp_path):
+    import nibabel as nib
+    import numpy as np
+
+    # A conformed (LIA, 1 mm) volume with its centre away from the origin, as FreeSurfer has it.
+    affine = np.array([[-1.0, 0, 0, 40.0], [0, 0, 1.0, -70.0], [0, -1.0, 0, 55.0], [0, 0, 0, 1]])
+    image = nib.MGHImage(np.zeros((64, 64, 64), dtype=np.float32), affine)
+    path = tmp_path / "t1.mgz"
+    nib.save(image, str(path))
+    voxel = np.array([10.0, 20.0, 30.0, 1.0])
+    scanner = (image.affine @ voxel)[:3]
+    surface = (image.header.get_vox2ras_tkr() @ voxel)[:3]
+    assert np.allclose(surface + rep.surface_centre(path), scanner, atol=1e-4)
