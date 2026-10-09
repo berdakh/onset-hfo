@@ -1212,7 +1212,7 @@ class ProvenancePanel(QTextBrowser):
         if session.citation:
             parts.append(f"<h3>Source</h3><p>{session.citation}</p>")
         parts.append(
-            "<h3>Status</h3><p><b>Research prototype — not a medical "
+            "<h3>Status</h3><p><b>Research tool — not a medical "
             "device.</b> Not CE-marked, not FDA-cleared, not validated for "
             "clinical use. The cohort evidence, including what it fails to "
             "show, is in <code>docs/EVALUATION.md</code> and "

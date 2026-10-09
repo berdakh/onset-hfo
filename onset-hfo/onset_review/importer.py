@@ -103,7 +103,7 @@ class ImportDialog(QDialog):
         layout.setSpacing(SPACING)
 
         banner = QLabel(
-            "<b>Research prototype — not a medical device.</b> If this file "
+            "<b>Research tool — not a medical device.</b> If this file "
             "holds patient data, de-identification, ethics approval and data "
             "governance are yours; nothing here checks them, and nothing is "
             "sent anywhere.")

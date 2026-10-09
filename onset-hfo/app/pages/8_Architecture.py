@@ -1,4 +1,4 @@
-"""Every component, and which ones this prototype includes."""
+"""Every component, and which ones this release includes."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from app.common import banner  # noqa: E402
 st.set_page_config(page_title="Onset-HFO · Architecture", layout="wide")
 banner()
 
-st.title("Architecture: the full system and what this prototype includes")
+st.title("Architecture: the full system and what this release includes")
 
 st.graphviz_chart("""
 digraph G { rankdir=LR; node [shape=box, style="rounded,filled", fillcolor="#F7F6F2",
@@ -41,9 +41,9 @@ a second reader is where a project usually grows a second source of truth, and
 here it structurally cannot.
 """)
 
-st.subheader("Full system versus this prototype")
+st.subheader("Full system versus this release")
 st.markdown("""
-| Component | Full system | This prototype |
+| Component | Full system | This release |
 |---|---|---|
 | Data | BIDS ingest, de-identification, Postgres | two public archives, byte-range slices, on disk |
 | Preprocessing | versioned, manifested | same definitions, config stamped into every result |
@@ -73,6 +73,6 @@ st.markdown("""
 """)
 
 st.caption(
-    "The prototype keeps every rule that matters to a clinician — cited evidence, "
+    "This release keeps every rule that matters to a clinician — cited evidence, "
     "disagreements stated, uncertainty shown, no recommendation — and leaves out "
     "everything that only matters once real users and identifiable data exist.")

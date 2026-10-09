@@ -23,8 +23,8 @@ Two halves, kept deliberately separate:
    analyses to run and at what thresholds, with every claim resolved back to the
    run that produced it.
 
-It is a **prototype**. Not a medical device, no clinical claim, no
-recommendation anywhere in the schema.
+It is a **research tool**, AI-assisted, for public recordings or your own. Not
+a medical device, no clinical claim, no recommendation anywhere in the schema.
 
 ### The culture is the part that takes longest to absorb
 

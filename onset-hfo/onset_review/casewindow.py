@@ -2130,6 +2130,9 @@ class CaseWindow(QMainWindow):
         split.addWidget(body)
         split.setStretchFactor(1, 1)
         self.setCentralWidget(split)
+        from onset_review import credit
+
+        self.statusBar().showMessage(credit())
         self.refresh()
         self.steps.setCurrentRow(0)
 

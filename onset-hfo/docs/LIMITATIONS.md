@@ -4,15 +4,24 @@ Read this before quoting any number from this repository to anyone.
 
 ## What this is
 
-A **first prototype**, written to be readable and checkable, running classical
-detectors on one minute of one public recording, plus an agent that can read
-the results and is prevented from inventing them.
+An **AI-assisted research tool** for intracranial EEG, written to be readable
+and checkable. It runs classical detectors and the Epileptogenicity Index on
+public recordings or your own — from one minute to a patient's whole
+monitoring, through a case workflow ending in a signed report. An assistant on
+a local open-weight model can read the results and is prevented from inventing
+them. Its methods are tested on public archives (`EVALUATION.md`,
+`OUTCOME.md`, `ICTAL.md`, `TEMPLATE_MAP.md`); on anyone else's recordings, those
+numbers are what to expect, not what is guaranteed.
 
 ## What it is not
 
 * **Not a medical device.** Not certified, not validated, not suitable for any
   clinical decision.
-* **Not a diagnosis, and not a seizure-onset-zone finder.** High event rate is
+* **Not a diagnosis, and not a seizure-onset-zone finder.** The ictal index
+  ranks channels by how early and how strongly they change at a seizure a
+  person marked; whether they are the onset zone is the clinical team's
+  judgement (`ICTAL.md`: AUC 0.80 against clinicians' zones, top channel in the
+  zone in 15 of 28 patients). High event rate is
   a measurement. Physiological ripples occur in healthy tissue — mesial
   temporal structures and occipital cortex particularly — and a channel with a
   high rate may simply be healthy tissue that ripples. On the real recording

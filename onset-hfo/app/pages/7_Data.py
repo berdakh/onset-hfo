@@ -1,4 +1,4 @@
-"""The two public archives this prototype runs on — and what each one carries."""
+"""The two public archives its methods are tested on — and what each one carries."""
 
 from __future__ import annotations
 
@@ -93,7 +93,7 @@ Both archives are **CC0**. Work using them is asked to cite:
   *Neural fragility as an EEG marker of the seizure onset zone*, doi:10.1101/862797.
 
 **Your own recordings.** De-identification, ethics approval and data governance
-are entirely your responsibility — see `docs/DATA.md`. This prototype has no
+are entirely your responsibility — see `docs/DATA.md`. This release has no
 security model, no authentication and no audit log, and must not be pointed at
 identifiable data.
 """)

@@ -31,7 +31,7 @@ STUDIES = (
     ("outcome", "Outcome", "did the map point at the tissue whose removal cured the patient?"),
     ("patients", "Patients", "the same study one patient at a time, with the caveats"),
     ("data", "Data", "the two archives, and what each one carries"),
-    ("architecture", "Architecture", "every component, and which ones this prototype includes"),
+    ("architecture", "Architecture", "every component, and which ones this release includes"),
     ("research", "Research", "the measured state of the work, and what is open"),
 )
 
@@ -1247,7 +1247,7 @@ Both archives are **CC0**. Work using them is asked to cite:
   *Neural fragility as an EEG marker of the seizure onset zone*, doi:10.1101/862797.
 
 **Your own recordings.** De-identification, ethics approval and data governance
-are entirely your responsibility — see `docs/DATA.md`. This prototype has no
+are entirely your responsibility — see `docs/DATA.md`. This release has no
 security model, no authentication and no audit log, and must not be pointed at
 identifiable data.
 """)
@@ -1255,7 +1255,7 @@ identifiable data.
 
 
 def _architecture(**_) -> str:
-    return """# Architecture: the full system and what this prototype includes
+    return """# Architecture: the full system and what this release includes
 
 ```
 Public archive (OpenNeuro, BIDS, byte-range slices) ─┐
@@ -1275,9 +1275,9 @@ Both readers — the agent and the interface — go through the same read-only
 a second reader is where a project usually grows a second source of truth, and
 here it structurally cannot.
 
-## Full system versus this prototype
+## Full system versus this release
 
-| Component | Full system | This prototype |
+| Component | Full system | This release |
 |---|---|---|
 | Data | BIDS ingest, de-identification, Postgres | two public archives, byte-range slices, on disk |
 | Preprocessing | versioned, manifested | same definitions, config stamped into every result |
@@ -1304,7 +1304,7 @@ here it structurally cannot.
    shown; neither is preferred.
 5. **There is no recommendation field.** Not empty — absent from the schema.
 
-*The prototype keeps every rule that matters to a clinician — cited evidence,
+*This release keeps every rule that matters to a clinician — cited evidence,
 disagreements stated, uncertainty shown, no recommendation — and leaves out
 everything that only matters once real users and identifiable data exist.*
 """

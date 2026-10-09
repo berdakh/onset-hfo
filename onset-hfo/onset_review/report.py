@@ -32,12 +32,12 @@ from onset_review.session import DETECTOR_LABELS, ReviewSession
 
 __all__ = ["review_markdown", "write_review", "DISCLAIMER"]
 
-#: Carried on every export. The software is a research prototype that has never
+#: Carried on every export. The software is a research tool that has never
 #: been through a clinical trial or a regulatory submission, and a document that
 #: leaves a hospital without saying so is the one failure mode of this whole
 #: project that would matter to a patient.
 DISCLAIMER = (
-    "**Research prototype — not a medical device.** This software is not "
+    "**Research tool — not a medical device.** This software is not "
     "CE-marked, not FDA-cleared, and has not been validated for clinical use. "
     "Nothing in this document is a diagnosis or a surgical recommendation. The "
     "cohort evidence behind the method, including what it fails to show, is in "
@@ -81,6 +81,12 @@ def _table(frame: pd.DataFrame, columns: list[str], limit: int | None = None) ->
     return "\n".join(lines) + "\n"
 
 
+def _credit() -> str:
+    from onset_review import credit
+
+    return credit()
+
+
 def _header(session: ReviewSession, reviewer: str | None) -> list[str]:
     request = session.request
     now = _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
@@ -112,6 +118,7 @@ def _header(session: ReviewSession, reviewer: str | None) -> list[str]:
         ("Montage", f"{session.montage}, {len(session.findings)} channels"),
         ("Sampling rate", f"{session.sfreq:g} Hz"),
         ("Reviewed on", now),
+        ("Software", _credit()),
     ]
     named = reviewer or ", ".join(session.read.readers) or session.read.reader
     if named:

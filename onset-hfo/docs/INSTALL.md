@@ -5,7 +5,7 @@ the detector's marks on the signal, the archive annotators' marks beside them,
 and the tables that say whether any of it means anything. It is the same
 pipeline the rest of this repository documents, with a face on it.
 
-> **Research prototype — not a medical device.** Not CE-marked, not FDA-cleared,
+> **Research tool — not a medical device.** Not CE-marked, not FDA-cleared,
 > and never validated for clinical use. It reads public research recordings.
 > Read [`LIMITATIONS.md`](LIMITATIONS.md) before quoting any number it shows.
 
