@@ -1557,6 +1557,11 @@ class MapPage(QWidget):
         self.view.addItem("from above", "top")
         self.view.addItem("from the side", "side")
         self.view.currentIndexChanged.connect(lambda _i: self._draw())
+        self.view3d_button = QPushButton("Open in 3D")
+        self.view3d_button.setToolTip("The placed channels on the template in a rotatable 3D "
+                                      "page (nilearn), opened in your browser; written to "
+                                      "derivatives/onset/map/.")
+        self.view3d_button.clicked.connect(lambda _=False: self.open_3d())
         self.done_button = QPushButton("Map done")
         self.done_button.clicked.connect(lambda _=False: self.window_.complete("map"))
         top = QHBoxLayout()
@@ -1610,6 +1615,7 @@ class MapPage(QWidget):
         view_row = QHBoxLayout()
         view_row.addWidget(self.statement, 1)
         view_row.addWidget(self.view)
+        view_row.addWidget(self.view3d_button)
         right_box.addLayout(view_row)
         right_box.addWidget(self.canvas, 1)
         right_box.addWidget(self.combined, 1)
@@ -1710,8 +1716,14 @@ class MapPage(QWidget):
         self._draw()
 
     def _draw(self) -> None:
+        from onset_review import templatebrain
         from onset_review.casemap import draw_combined
 
+        glass = templatebrain.available()
+        placed = bool(len(self._table) and self._table["placed"].any())
+        self.view.setVisible(not glass)
+        self.view3d_button.setVisible(glass)
+        self.view3d_button.setEnabled(placed)
         if len(self._table):
             draw_combined(self.figure, self._table, self.atlas,
                           view=self.view.currentData() or "top")
@@ -1720,6 +1732,21 @@ class MapPage(QWidget):
         self.canvas.draw_idle()
 
     # -- actions ---------------------------------------------------------------------------------
+    def write_3d(self):
+        from onset_review.templatebrain import write_3d_view
+
+        target = Path(self.window_.case.derivatives) / "map" / "contacts-3d.html"
+        return write_3d_view(target, self._table)
+
+    def open_3d(self):
+        from qtpy.QtCore import QUrl
+        from qtpy.QtGui import QDesktopServices
+
+        path = self.write_3d()
+        if path is not None:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+        return path
+
     def _store(self, frame, action: str, detail: str) -> None:
         from onset_hfo.case.electrodes import add_labels, load_electrodes, merge, save_electrodes
 

@@ -1057,10 +1057,23 @@ def test_the_template_surface_is_both_hemispheres_in_metres_and_cached(tmp_path)
 def test_a_missing_template_says_how_to_fetch_it(tmp_path, monkeypatch):
     from onset_review import anatomy
 
-    # Whatever this machine has configured in MNE, the template is not found.
+    # Whatever this machine has configured in MNE, the template is not found,
+    # and nilearn's bundled one is not installed.
     monkeypatch.setattr(anatomy, "template_dir", lambda _subjects_dir=None: None)
+    monkeypatch.setattr(anatomy, "nilearn_surface", lambda: None)
     with pytest.raises(FileNotFoundError, match="fetch_fsaverage"):
         anatomy.template_surface(tmp_path, cache_dir=tmp_path)
+
+
+def test_without_a_fetch_nilearns_bundled_template_is_drawn(tmp_path, monkeypatch):
+    pytest.importorskip("nilearn")
+    from onset_review import anatomy
+
+    monkeypatch.setattr(anatomy, "template_dir", lambda _subjects_dir=None: None)
+    vertices, faces = anatomy.template_surface(tmp_path, cache_dir=tmp_path)
+    assert vertices.shape == (2 * 10242, 3) and faces.max() == len(vertices) - 1
+    assert vertices[:, 0].min() < -0.06 and vertices[:, 0].max() > 0.06, "both hemispheres"
+    assert np.abs(vertices).max() < 0.12, "metres"
 
 
 def test_the_coordinate_space_is_read_from_the_sidecar_and_never_guessed(tmp_path):

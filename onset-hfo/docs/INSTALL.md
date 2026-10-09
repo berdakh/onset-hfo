@@ -137,7 +137,9 @@ each marked seizure starts (the Epileptogenicity Index), and places the
 contacts on a template brain (imported in MNI152 or fsaverage, or planned
 there) with probable atlas labels, to set the two side by side with the
 onset zone you mark. The atlas is fetched once, about 0.6 MB, from
-TemplateFlow. The last step checks the case for anything identifying, takes
+TemplateFlow. The brain template itself comes with the app: nilearn (part of
+the `review` extra) ships the MNI152 glass brain and fsaverage5's surface,
+so nothing has to be downloaded to see contacts on a brain. The last step checks the case for anything identifying, takes
 reviewers' sign-offs against the content they approve, and produces numbered
 PDF reports, all recorded in a tamper-evident log. `onset-review
 /path/to/case` opens a case from the terminal. The clinical guide's section

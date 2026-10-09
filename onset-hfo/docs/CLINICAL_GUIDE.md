@@ -1625,7 +1625,7 @@ before the seizure (0.52, over the 27 seizures where that could be tested),
 barely better than the energy ratio alone (0.73),
 and its single top channel was in the zone in 15 of 28 patients.
 
-![One real patient's map: interictal rate against ictal index with the archive's onset-zone channels filled, the contacts on the template from above, and the combined table](images/onset-review-case-map.png)
+![One real patient's map: interictal rate against ictal index with the archive's onset-zone channels filled, the contacts on nilearn's glass brain, and the combined table](images/onset-review-case-map.png)
 
 *Above: a real patient (ds004100 sub-HUP139). The case holds the archive's
 own recordings: three seizures and five minutes of interictal recording. The
@@ -1666,9 +1666,18 @@ channel at its pair's midpoint, with both contacts' probable structures);
 and whether it is in the marked zone. The statement says, for this patient,
 which channel each measure puts highest and whether it is in the zone, the
 AUC of each measure for the zone's channels, and which channels both single
-out. The chart plots rate against index, zone channels filled, beside the
-contacts on the template from above or the side, sized by rate and shaded by
-index. One patient's agreement is an observation, not a validation; the
+out. The chart plots rate against index, with the zone's channels filled.
+Beside it are the contacts on **nilearn's glass brain**: the MNI152 template
+seen from the left, from above and from the right, the view iEEG papers use.
+Each contact is sized by its interictal rate and shaded by its ictal index,
+and the onset-zone contacts are ringed. **Open in 3D** writes the same
+contacts as a rotatable page, labelled with each channel's rate, index and
+probable structure, and opens it in the browser. The page is
+self-contained, so it needs no network. Each report folder carries a copy
+(`contacts-3d.html`). Without nilearn the map shows the contacts from above
+or the side over the atlas brain's outline instead. Nilearn also ships a
+coarser copy of the fsaverage template. Where MNE's has not been fetched,
+the Contacts page's 3D view draws that one, with no download. One patient's agreement is an observation, not a validation; the
 studies in [`OUTCOME.md`](OUTCOME.md) and [`ICTAL.md`](ICTAL.md) test the
 methods.
 

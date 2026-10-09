@@ -82,6 +82,10 @@ review = [
     "qtpy>=2.4",
     "scikit-learn>=1.3",
     "qtconsole>=5.5",
+    # The template brain without a download: the glass brain and 3D view of a
+    # case's contacts, and fsaverage5's surface when MNE's fsaverage has not
+    # been fetched (onset_review.templatebrain, anatomy.nilearn_surface).
+    "nilearn>=0.10",
 ]
 
 [project.scripts]

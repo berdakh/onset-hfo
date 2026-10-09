@@ -221,6 +221,40 @@ def test_the_combined_table_puts_both_analyses_place_and_zone_together(tmp_path,
     assert "Singled out by both: LA1-LA2." in text and "2 of 4 channels placed" in text
 
 
+def test_nilearns_glass_brain_and_3d_view(tmp_path):
+    pytest.importorskip("nilearn")
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    from matplotlib.figure import Figure
+
+    from onset_review import casemap, templatebrain
+
+    table = pd.DataFrame({
+        "channel": ["LA1-LA2", "LA2-LA3", "LB1-LB2"], "rate_per_min": [9.0, 4.0, np.nan],
+        "rate_ci_low": np.nan, "rate_ci_high": np.nan, "tied": [True, False, False],
+        "segments_tied": np.nan, "segments_analysed": np.nan, "median_ei": [1.0, np.nan, 0.2],
+        "seizures_high": np.nan, "seizures": np.nan, "x": [-22.0, -28.0, np.nan],
+        "y": [-20.0, -20.0, np.nan], "z": [-10.0, -10.0, np.nan],
+        "placed": [True, True, False], "where": ["left hippocampus", "", ""],
+        "soz": [True, False, False]})
+    figure = Figure(figsize=(7, 3))
+    FigureCanvasAgg(figure)
+    display = templatebrain.draw_glass(figure, table)
+    assert display is not None and len(figure.axes) >= 3, "left, above and right"
+    casemap.draw_combined(figure, table)
+    assert any(templatebrain.GLASS_CAPTION in t.get_text() for t in figure.texts)
+    casemap.draw_combined(figure, table, glass=False)
+    assert not figure.texts and len(figure.axes) == 2, "the outline drawing without it"
+    path = templatebrain.write_3d_view(tmp_path / "view.html", table)
+    import html
+
+    text = html.unescape(html.unescape(path.read_text()))
+    assert "LA1-LA2: rate 9.0/min, index 1.00, probably left hippocampus" in text
+    assert "onset zone" in text
+    assert "LB1-LB2" not in text, "a channel not placed is not drawn"
+    assert '<script src="http' not in text, "self-contained: works without a network"
+    assert templatebrain.draw_glass(figure, table.assign(placed=False)) is None
+
+
 def test_the_planner_study_arithmetic_on_a_known_shaft(atlas):
     from onset_hfo import template_study as ts
 
@@ -290,6 +324,12 @@ def test_the_window_places_labels_zones_and_maps(qapp, tmp_path, monkeypatch, at
         page.contacts.selectRow(1)
         assert page.remove_selected() == ["LB2"]
         page.view.setCurrentIndex(1)
+        from onset_review import templatebrain
+
+        if templatebrain.available():
+            assert page.view3d_button.isEnabled() and not page.view.isVisibleTo(page)
+            written = page.write_3d()
+            assert written.name == "contacts-3d.html" and written.exists()
         page.done_button.click()
         assert case.step_done("map")
         actions = [entry["action"] for entry in case.log]

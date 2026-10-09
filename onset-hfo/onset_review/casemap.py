@@ -150,17 +150,26 @@ def statement(table: pd.DataFrame, found: dict) -> str:
     return " ".join(parts) if parts else "Nothing analysed yet."
 
 
-def draw_combined(figure, table: pd.DataFrame, atlas=None, view: str = "top") -> dict:
+def draw_combined(figure, table: pd.DataFrame, atlas=None, view: str = "top",
+                  glass: bool = True) -> dict:
     """Left: interictal rate against ictal index, one dot per channel, filled
     when in the marked onset zone. Right: where those channels are on the
-    template, seen from above or the side, sized by rate and shaded by index,
-    over the atlas brain's outline when the atlas is here."""
+    template, sized by rate and shaded by index -- on nilearn's glass brain
+    (left, above, right) when nilearn is installed and `glass`, otherwise seen
+    from above or the side over the atlas brain's outline."""
     from onset_hfo.ictal import EI_CUTOFF
+    from onset_review import templatebrain
     from onset_review.studycharts import GRID, MUTED, SERIES, _quiet
 
     figure.clear()
-    left = figure.add_subplot(1, 2, 1)
-    right = figure.add_subplot(1, 2, 2)
+    use_glass = glass and templatebrain.available() and bool(table["placed"].any()) \
+        if len(table) else False
+    if use_glass:
+        left = figure.add_axes([0.08, 0.15, 0.23, 0.66])
+        right = None
+    else:
+        left = figure.add_subplot(1, 2, 1)
+        right = figure.add_subplot(1, 2, 2)
     _quiet(left)
     left.grid(True, color=GRID, linewidth=0.8)
     both = table.dropna(subset=["rate_per_min", "median_ei"], how="all")
@@ -182,8 +191,17 @@ def draw_combined(figure, table: pd.DataFrame, atlas=None, view: str = "top") ->
     left.set_ylim(-0.03, 1.05)
     left.set_xlim(left=0)
     if soz.any():
-        left.legend(fontsize=7, frameon=False, loc="upper right", bbox_to_anchor=(1.0, 1.12),
-                    ncol=2)
+        if use_glass:
+            left.legend(fontsize=7, frameon=False, loc="lower left", bbox_to_anchor=(-0.05, 1.0),
+                        ncol=1)
+        else:
+            left.legend(fontsize=7, frameon=False, loc="upper right",
+                        bbox_to_anchor=(1.0, 1.12), ncol=2)
+    if use_glass:
+        templatebrain.draw_glass(figure, table, rect=(0.35, 0.02, 0.65, 0.86))
+        figure.text(0.675, 0.93, templatebrain.GLASS_CAPTION, ha="center", va="top",
+                    fontsize=7, color=MUTED)
+        return points
     _quiet(right)
     right.set_aspect("equal")
     axes = (0, 1) if view == "top" else (1, 2)

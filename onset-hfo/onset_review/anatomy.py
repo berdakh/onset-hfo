@@ -603,6 +603,9 @@ def template_surface(subjects_dir=None, cell_mm: float = TEMPLATE_CELL_MM,
             return loaded["vertices"], loaded["faces"]
     root = template_dir(subjects_dir)
     if root is None:
+        bundled = nilearn_surface()
+        if bundled is not None:
+            return bundled
         raise FileNotFoundError(
             "The fsaverage template is not on this machine. Fetch it once with "
             "mne.datasets.fetch_fsaverage() (a few hundred megabytes), or the button "
@@ -623,6 +626,27 @@ def template_surface(subjects_dir=None, cell_mm: float = TEMPLATE_CELL_MM,
             np.savez_compressed(cache, vertices=vertices, faces=faces)
         except OSError:
             pass
+    return vertices, faces
+
+
+def nilearn_surface() -> tuple[np.ndarray, np.ndarray] | None:
+    """The same template at lower resolution -- fsaverage5's pial surface,
+    10,242 vertices a hemisphere -- from nilearn's own package data: no
+    download, so the template can be drawn where MNE's fetch is not possible.
+    None when nilearn is not installed. Metres, both hemispheres."""
+    try:
+        from nilearn import datasets
+    except ImportError:
+        return None
+    try:
+        mesh = datasets.load_fsaverage("fsaverage5")["pial"]
+        parts = [mesh.parts["left"], mesh.parts["right"]]
+    except Exception:       # noqa: BLE001 - an unexpected nilearn: fall back to fetching
+        return None
+    vertices = np.vstack([np.asarray(p.coordinates, dtype=float) for p in parts]) / 1000.0
+    offset = len(parts[0].coordinates)
+    faces = np.vstack([np.asarray(parts[0].faces, dtype=int),
+                       np.asarray(parts[1].faces, dtype=int) + offset])
     return vertices, faces
 
 
