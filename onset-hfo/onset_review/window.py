@@ -804,6 +804,7 @@ def decorate_start(*, cached=None, on_open_cached=None, on_import=None,
                       cached=cached, on_open_cached=on_open_cached,
                       on_import=on_import, on_open_path=on_open_path)
     host.setWindowTitle("Onset Review")
+    host.on_choose = on_choose          # the guide's and the previews' "Open a recording…"
     menubar = host.menuBar()
     file_menu = menubar.addMenu("&File")
     choose = file_menu.addAction("Open a &recording…")
@@ -825,6 +826,9 @@ def decorate_start(*, cached=None, on_open_cached=None, on_import=None,
     view.addSeparator()
     reset = view.addAction("&Restore the default layout")
     reset.triggered.connect(lambda _=False: host.reset_layout())
+    from onset_review import guide
+
+    guide.add_size_menu(view, host)
     help_menu = menubar.addMenu("&Help")
     help_menu.addAction(
         "What am I looking at?",
@@ -913,6 +917,9 @@ def about_dialog(host):
 def _support_menu(help_menu, host) -> None:
     """Help's last two entries in every window: the model check, and a
     problem report to send (`onset_review.helpdialogs`)."""
+    from onset_review import guide
+
+    guide.add_help_entries(help_menu, host)
     help_menu.addSeparator()
 
     def open_dialog(name: str):
@@ -1606,6 +1613,9 @@ def _window_actions(view, host: QMainWindow, docks: dict,
 
     view.aboutToShow.connect(sync)
     sync()
+    from onset_review import guide
+
+    guide.add_size_menu(view, host)
 
 
 def _apply_marks(figure, session: ReviewSession, scope: str,

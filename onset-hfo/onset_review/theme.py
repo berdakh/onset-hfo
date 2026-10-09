@@ -88,7 +88,7 @@ class Palette:
 LIGHT = Palette(
     name="light",
     window="#F5F5F7", surface="#FFFFFF", sidebar="#EBEBEF", surface_alt="#F0F0F3",
-    text="#1D1D1F", text_muted="#6E6E73", separator="#D8D8DE",
+    text="#1D1D1F", text_muted="#5F5F64", separator="#D8D8DE",
     accent="#0B6BCB", accent_text="#FFFFFF",
     good="#1D7A33", warn="#8A5300", bad="#B3261E",
     warn_surface="#FFF6E5", bad_surface="#FDECEA", info_surface="#EDF4FD",

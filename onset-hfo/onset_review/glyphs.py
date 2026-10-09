@@ -21,7 +21,7 @@ from qtpy.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap
 __all__ = ["glyph", "icon", "NAMES"]
 
 #: The glyphs there are, by the sidebar key they are drawn beside.
-NAMES = ("home", "recording", "analysis", "contacts", "map", "quality", "report",
+NAMES = ("home", "quickstart", "case", "recording", "analysis", "contacts", "map", "quality", "report",
          "assistant",
          "detectors", "outcome", "patients", "ictal", "template", "data", "architecture",
          "research",
@@ -160,6 +160,19 @@ def _template(p: QPainter, c: QColor) -> None:
     p.drawLine(QPointF(4.5, 8), QPointF(11.5, 8))
 
 
+def _quickstart(p: QPainter, c: QColor) -> None:
+    # A signpost: where to go from here.
+    p.drawLine(QPointF(8, 2), QPointF(8, 14.5))
+    _polyline(p, [(3, 4), (12, 4), (14, 5.75), (12, 7.5), (3, 7.5), (3, 4)])
+    _polyline(p, [(13, 9), (4, 9), (2, 10.75), (4, 12.5), (13, 12.5), (13, 9)])
+
+
+def _case(p: QPainter, c: QColor) -> None:
+    # A folder: one patient's case.
+    _polyline(p, [(1.5, 4), (6, 4), (7.5, 5.5), (14.5, 5.5), (14.5, 13), (1.5, 13), (1.5, 4)])
+    p.drawLine(QPointF(1.5, 7.5), QPointF(14.5, 7.5))
+
+
 def _workspace(p: QPainter, c: QColor) -> None:
     p.drawRect(QRectF(2, 3, 12, 10))
     p.drawLine(QPointF(2, 6.5), QPointF(14, 6.5))
@@ -184,7 +197,7 @@ def _chat(p: QPainter, c: QColor) -> None:
 
 
 _DRAW = {
-    "home": _home, "recording": _recording, "analysis": _analysis,
+    "home": _home, "quickstart": _quickstart, "case": _case, "recording": _recording, "analysis": _analysis,
     "contacts": _contacts, "map": _map, "quality": _quality, "report": _report, "assistant": _assistant,
     "detectors": _detectors, "outcome": _outcome, "patients": _patients,
     "ictal": _ictal, "template": _template,

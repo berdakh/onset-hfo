@@ -12,6 +12,34 @@ Thirty minutes of reading. The last section is the one that matters.
 
 ---
 
+## Finding your way
+
+You don't need to know the menus to start.
+
+- **Quick start** (sidebar, *Help → Quick start guide*, or **F1**) lays the
+  program out as the jobs people come with:
+  - look at a recording;
+  - work up a patient, step by step;
+  - read the evidence behind the numbers;
+  - ask the local model;
+  - write your own analysis.
+
+  Every step is a link that does it. Below that is every menu entry with its
+  shortcut, read from the menus themselves.
+- **Find a command** (**Ctrl+K**, *Help → Find a command…*) searches every
+  menu entry and page by any word and runs the one you pick, from the keyboard.
+- **Nothing is greyed out.** Before a recording is open, every page in the
+  sidebar can still be visited. A page that needs a recording says what it
+  shows, with a picture of it, and offers the ways to open one.
+- **Patient case** in the sidebar explains a case and its ten steps, with
+  *New case…* and *Open a case…*.
+- **View → Interface size** (100% to 200%) enlarges text, icons and spacing
+  together, from the next start. Setting `QT_SCALE_FACTOR` in the environment
+  overrides it.
+- **Contrast.** Text and muted text meet WCAG AA contrast (4.5:1) on every
+  background in both themes, and a test keeps it so.
+- **Keyboard.** **Alt+1** … **Alt+9** open the first nine pages.
+
 ## 1. What the software is trying to do
 
 High-frequency oscillations — **ripples**, 80–250 Hz, and **fast ripples**,

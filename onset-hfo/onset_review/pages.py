@@ -27,7 +27,7 @@ import html
 import importlib.util
 
 from qtpy.QtCore import QByteArray, QEvent, QSize, Qt, QTimer, Signal
-from qtpy.QtGui import QKeySequence
+from qtpy.QtGui import QColor, QKeySequence
 from qtpy.QtWidgets import (
     QCheckBox,
     QFrame,
@@ -65,6 +65,10 @@ PAGES = (
     ("report", "Report"),
     ("assistant", "Assistant"),
 )
+
+#: Pages for finding your way, open in every state: the quick start guide
+#: and a patient case's front door (`onset_review.guide`).
+GUIDE_PAGES = (("quickstart", "Quick start"), ("case", "Patient case"))
 
 #: The site's cohort pages, read-only, built from the committed tables by
 #: `onset_review.studies` and shown by `onset_review.studypages`. They need
@@ -292,6 +296,11 @@ class PageWindow(QMainWindow):
             shortcut = QShortcut(QKeySequence(f"Alt+{index}"), self)
             shortcut.setContext(Qt.WindowShortcut)
             shortcut.activated.connect(lambda key=key: self.show_page(key))
+        # F1 and Ctrl+K belong to Help's entries (`guide.add_help_entries`):
+        # a second shortcut on the same keys would make both ambiguous.
+        self.nav.setAccessibleName("Pages")
+        self.nav.setAccessibleDescription("Every page of the program; Alt+1 to Alt+9 for the "
+                                          "first nine, Ctrl+K to search everything")
         self.show_page("home")
 
     # -- the sidebar ------------------------------------------------------
@@ -364,26 +373,44 @@ class PageWindow(QMainWindow):
             font.setPointSize(max(7, font.pointSize() - 2))
             font.setBold(True)
             item.setFont(font)
-            item.setForeground(Qt.gray)
+            # The theme's muted text, not Qt's grey: 2.2:1 on the light
+            # sidebar, where WCAG asks 4.5:1 of text this small.
+            item.setForeground(QColor(tokens.text_muted))
             self.nav.addItem(item)
             return item
 
         # What each page is for, as its tooltip: the sidebar is the table of
         # contents, and a reader who hovers gets the line Home prints.
         what = dict(HOW_TO_READ)
-        heading("This recording")
-        for key, label in PAGES:
+        guide_about = {
+            "quickstart": "Everything this program does, as the jobs people come with, "
+                          "and every menu entry (F1)",
+            "case": "One patient's recordings worked up step by step, in a case window"}
+
+        def entry(key: str, label: str, about: str) -> None:
             item = QListWidgetItem(glyphs.icon(key, tokens), label)
             item.setData(Qt.UserRole, key)
             self._labels[key] = label
-            about = what.get(key, "")
-            item.setToolTip(about[0].upper() + about[1:] if about else "")
-            if key != "home" and not self.loaded:
-                item.setFlags(Qt.NoItemFlags)
-                item.setToolTip("Open a recording first: Home, or File → Open")
+            tip = about[0].upper() + about[1:] if about else ""
+            if key in dict(PAGES) and key != "home" and not self.loaded:
+                tip += (" — open a recording to fill it in" if tip
+                        else "Open a recording to fill it in")
+            item.setToolTip(tip)
+            item.setData(Qt.AccessibleDescriptionRole, tip)
             self.nav.addItem(item)
-            if key == "home" or self.loaded:
-                self._items[key] = item
+            self._items[key] = item
+
+        # Nothing is greyed out: a page that needs a recording shows what it
+        # is for and how to open one, so the sidebar is the whole program
+        # from the first screen.
+        heading("Start")
+        entry("home", dict(PAGES)["home"], what.get("home", ""))
+        for key, label in GUIDE_PAGES:
+            entry(key, label, guide_about[key])
+        heading("This recording")
+        for key, label in PAGES:
+            if key != "home":
+                entry(key, label, what.get(key, ""))
         self._study_heading = heading("The study", fold=True)
         self._study_heading.setToolTip("Click to fold or unfold the study's pages")
         from onset_review.studies import STUDIES
@@ -489,10 +516,21 @@ class PageWindow(QMainWindow):
             "quality": self._quality_page,
             "report": self._report_page, "assistant": self._assistant_page,
         }
-        for key, _label in PAGES:
+        from onset_review import guide
+
+        what = dict(HOW_TO_READ)
+        for key, label in PAGES:
             if key != "home" and not self.loaded:
-                continue
-            page = builders[key]()
+                page = guide.PreviewPage(self, key, label, what.get(key, ""))
+            else:
+                page = builders[key]()
+            page.setObjectName(f"page_{key}")
+            self._pages[key] = page
+            self.stack.addWidget(page)
+        self.quickstart = guide.QuickStartPage(self)
+        self.case_page = guide.CasePage(self)
+        for (key, _label), page in zip(GUIDE_PAGES, (self.quickstart, self.case_page),
+                                       strict=True):
             page.setObjectName(f"page_{key}")
             self._pages[key] = page
             self.stack.addWidget(page)
@@ -563,11 +601,40 @@ class PageWindow(QMainWindow):
                             "press Open, or use <b>File → Open a recording…</b> to "
                             "choose the band and the detectors as well, or "
                             "<b>File → Open a file…</b> for a recording of your own. "
-                            "<b>Help → How to read the pages</b> says what each page is for.")
+                            "<b>New here?</b> <a href='quickstart'>The quick start guide</a> "
+                            "(F1) shows everything the program does; every page in the "
+                            "sidebar can be looked at before anything is open.")
+            opener.setTextFormat(Qt.RichText)
+            opener.linkActivated.connect(lambda _link: self.show_page("quickstart"))
             opener.setObjectName("onset_nothing_open")
             opener.setWordWrap(True)
             opener.setStyleSheet(theme.card("info"))
             box.addWidget(opener)
+            # The first moves, as buttons: what a new reader is most likely
+            # to want, without opening a menu to find it.
+            from onset_review import guide
+
+            starts = QHBoxLayout()
+            starts.setSpacing(theme.SPACING)
+            self.start_buttons: dict[str, QPushButton] = {}
+            for target, text, tip in (
+                    ("do:open-file", "Open a file of your own…",
+                     "EDF, BrainVision, FIF, Nihon Kohden and more"),
+                    ("do:open-recording", "Open a public recording…",
+                     "Choose a patient, a window, the band and the detectors"),
+                    ("do:new-case", "Start a patient case…",
+                     "One patient's recordings, step by step to a signed report"),
+                    ("page:quickstart", "Quick start guide",
+                     "Everything the program does (F1)")):
+                button = QPushButton(text)
+                button.setObjectName(f"onset_start_{target.split(':')[1]}")
+                button.setToolTip(tip)
+                button.clicked.connect(lambda _=False, t=target: guide.run_target(self, t))
+                starts.addWidget(button)
+                self.start_buttons[target] = button
+            self.start_buttons["do:open-file"].setProperty("primary", True)
+            starts.addStretch(1)
+            box.addLayout(starts)
             box.addWidget(self._continue_card())
 
         shelf = QWidget()
@@ -588,6 +655,12 @@ class PageWindow(QMainWindow):
         self.cached_tree.itemDoubleClicked.connect(lambda _item, _col: self._open_selected())
         self.cached_tree.itemSelectionChanged.connect(self._selection_changed)
         shelf_box.addWidget(self.cached_tree, 1)
+        self.cached_empty = theme.muted(
+            "No windows on this machine yet. Open a file of your own, open a public "
+            "recording (it is fetched once and kept), or start a patient case.", size=10)
+        self.cached_empty.setObjectName("onset_cached_empty")
+        self.cached_empty.setWordWrap(True)
+        shelf_box.addWidget(self.cached_empty, 0, Qt.AlignTop)
         buttons = QHBoxLayout()
         self.open_button = QPushButton("Open the selected window")
         self.open_button.setObjectName("onset_open_cached")
@@ -698,6 +771,12 @@ class PageWindow(QMainWindow):
             group.setText(0, f"{group.text(0)}  ·  {group.childCount()} "
                              f"window{'s' if group.childCount() != 1 else ''}")
         self.cached_tree.expandAll()
+        if hasattr(self, "cached_empty"):
+            # Empty, the shelf says so in a line instead of a blank table, and
+            # its buttons give way to the ones above that do the same.
+            self.cached_empty.setVisible(not groups)
+            for widget in (self.cached_tree, self.open_button, self.import_button):
+                widget.setVisible(bool(groups))
         for column in range(self.cached_tree.columnCount()):
             self.cached_tree.resizeColumnToContents(column)
         self._selection_changed()
@@ -1769,7 +1848,8 @@ class PageWindow(QMainWindow):
     def page_keys(self) -> list[str]:
         from onset_review.studies import STUDIES
 
-        return [key for key, _label in PAGES] + [key for key, _, _ in STUDIES] + [CHAT_PAGE[0]]
+        return ([key for key, _label in PAGES] + [key for key, _, _ in STUDIES]
+                + [CHAT_PAGE[0]] + [key for key, _label in GUIDE_PAGES])
 
     def current_page(self) -> str:
         widget = self.stack.currentWidget()
