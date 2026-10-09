@@ -32,7 +32,8 @@ from onset_hfo.case.atlas import ATLAS_SPACE, fsaverage_to_mni152
 
 __all__ = ["ELECTRODE_COLUMNS", "SPACES", "read_coordinate_file", "plan_depth", "plan_sheet",
            "add_labels", "electrodes_path", "load_electrodes", "save_electrodes",
-           "channel_positions", "contacts_of", "TEMPLATE_NOTE", "merge"]
+           "channel_positions", "contacts_of", "TEMPLATE_NOTE", "merge",
+           "PATIENT_NOTE", "CAPTIONS", "positions_kind", "positions_note"]
 
 ELECTRODE_COLUMNS = ("name", "x", "y", "z", "size", "group", "source", "space_from",
                      "label", "label_how", "label_mm")
@@ -40,6 +41,14 @@ ELECTRODE_COLUMNS = ("name", "x", "y", "z", "size", "group", "source", "space_fr
 SPACES = ("MNI152", "fsaverage")
 TEMPLATE_NOTE = ("Template positions: approximate, not this patient's anatomy; atlas labels "
                  "are probable structures, not findings.")
+#: The same, for contacts localised in the patient's own MRI (`onset_hfo.case.imaging`).
+PATIENT_NOTE = ("Contacts from the patient's own MRI: placed in MNI by an affine "
+                "registration of the whole head, so atlas labels are still probable "
+                "structures, not findings.")
+#: The short form figures carry, by where the positions came from.
+CAPTIONS = {"template": "template positions, approximate",
+            "patient": "the patient's MRI, registered to MNI (affine)",
+            "mixed": "the patient's MRI and template positions"}
 _NAME_COLUMNS = ("name", "label", "electrode", "contact", "channel", "ch_name")
 
 
@@ -173,6 +182,24 @@ def load_electrodes(case) -> pd.DataFrame:
     return frame[list(ELECTRODE_COLUMNS)]
 
 
+def positions_kind(frame: pd.DataFrame) -> str:
+    """"patient" when every contact came from the patient's own imaging,
+    "mixed" when some did, "template" otherwise."""
+    if frame is None or not len(frame) or "source" not in frame:
+        return "template"
+    patient = frame["source"].astype(str) == "patient"
+    return "patient" if patient.all() else "mixed" if patient.any() else "template"
+
+
+def positions_note(frame: pd.DataFrame) -> str:
+    kind = positions_kind(frame)
+    if kind == "patient":
+        return PATIENT_NOTE
+    if kind == "mixed":
+        return f"{PATIENT_NOTE} The others: {TEMPLATE_NOTE[0].lower()}{TEMPLATE_NOTE[1:]}"
+    return TEMPLATE_NOTE
+
+
 def save_electrodes(case, frame: pd.DataFrame, action: str, detail: str = "",
                     by: str = "") -> Path:
     path = electrodes_path(case)
@@ -184,8 +211,7 @@ def save_electrodes(case, frame: pd.DataFrame, action: str, detail: str = "",
         "iEEGCoordinateSystem": ATLAS_SPACE, "iEEGCoordinateUnits": "mm",
         "iEEGCoordinateSystemDescription": "ICBM 152 Nonlinear Asymmetrical 2009c template",
         "iEEGCoordinateProcessingDescription": (
-            "Template positions, not this patient's anatomy: "
-            + ", ".join(sources) + ". " + TEMPLATE_NOTE)}
+            "Positions from: " + ", ".join(sources) + ". " + positions_note(frame))}
     coord_path = path.with_name(path.name.replace("_electrodes.tsv", "_coordsystem.json"))
     coord_path.write_text(json.dumps(coordsystem, indent=1) + "\n")
     case.record(action, detail or f"{len(frame)} contact(s) now placed", by)

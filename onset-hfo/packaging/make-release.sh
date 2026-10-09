@@ -32,13 +32,20 @@ cp README.md LICENSE "${STAGE}/"
 mkdir -p "${STAGE}/docs"
 cp docs/INSTALL.md docs/CLINICAL_GUIDE.md docs/AGENT.md docs/LIMITATIONS.md \
    docs/GLOSSARY.md docs/METHODS.md docs/EVALUATION.md docs/OUTCOME.md docs/ICTAL.md \
-   docs/TEMPLATE_MAP.md "${STAGE}/docs/"
+   docs/TEMPLATE_MAP.md docs/IMAGING.md "${STAGE}/docs/"
+# The pictures the pages show before a recording is open (onset_review.guide).
+mkdir -p "${STAGE}/docs/images"
+cp docs/images/onset-review.png docs/images/onset-review-analysis.png \
+   docs/images/onset-review-3d.png docs/images/onset-review-map.png \
+   docs/images/onset-review-quality.png docs/images/onset-review-report.png \
+   docs/images/onset-review-assistant-answer.png docs/images/onset-review-case.png \
+   "${STAGE}/docs/images/"
 # The study pages: the site's loaders, the committed tables they read, and
 # the two figures the Outcome page shows. install.sh copies site/ next to the
 # environment and the reviewer finds it there (onset_review.studies.site_root).
 mkdir -p "${STAGE}/site/app" "${STAGE}/site/data" "${STAGE}/site/docs/img"
 cp app/panels.py "${STAGE}/site/app/"
-for table in benchmark outcome stability cohort; do
+for table in benchmark outcome stability cohort ictal template hup imaging; do
   cp -R "data/${table}" "${STAGE}/site/data/"
 done
 cp docs/img/window_stability.png docs/img/run_stability.png "${STAGE}/site/docs/img/"

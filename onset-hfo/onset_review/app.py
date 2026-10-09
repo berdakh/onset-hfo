@@ -255,6 +255,11 @@ def main(argv: list[str] | None = None) -> int:
 
     from onset_review import launcher
 
+    if QApplication.instance() is None:
+        # View → Interface size, remembered: Qt reads it as the application starts.
+        from onset_review.guide import apply_interface_scale
+
+        apply_interface_scale()
     app = QApplication.instance() or QApplication(sys.argv[:1])
     from onset_review import applog
 

@@ -23,10 +23,24 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-__all__ = ["available", "draw_glass", "write_3d_view", "GLASS_CAPTION"]
+__all__ = ["available", "draw_glass", "write_3d_view", "GLASS_CAPTION", "glass_caption"]
 
 GLASS_CAPTION = ("glass brain (MNI152, nilearn) · template positions, approximate\n"
                  "size: rate · shade: ictal index · ring: onset zone")
+
+
+_3D_TITLES = {"template": "Template positions, approximate — not this patient's anatomy",
+              "patient": "The patient's MRI positions, registered to MNI (affine), shown on "
+                         "the template",
+              "mixed": "The patient's MRI positions and template positions, shown on the "
+                       "template"}
+
+
+def glass_caption(kind: str = "template") -> str:
+    """The caption, saying where the positions came from (`electrodes.CAPTIONS`)."""
+    from onset_hfo.case.electrodes import CAPTIONS
+
+    return GLASS_CAPTION.replace(CAPTIONS["template"], CAPTIONS.get(kind, CAPTIONS["template"]))
 
 
 def available() -> bool:
@@ -67,7 +81,7 @@ def draw_glass(figure, table: pd.DataFrame, rect=(0.0, 0.0, 1.0, 1.0)):
     return display
 
 
-def write_3d_view(path, table: pd.DataFrame) -> Path | None:
+def write_3d_view(path, table: pd.DataFrame, positions: str = "template") -> Path | None:
     """The placed channels as a rotatable 3D page, labelled with each
     channel's name, rate, index and probable structure. None when there is
     nothing to show or no nilearn."""
@@ -92,8 +106,7 @@ def write_3d_view(path, table: pd.DataFrame) -> Path | None:
     view = plotting.view_markers(placed[["x", "y", "z"]].to_numpy(float),
                                  marker_color=colours, marker_size=list(np.round(sizes, 1)),
                                  marker_labels=labels,
-                                 title="Template positions, approximate — not this patient's "
-                                       "anatomy")
+                                 title=_3D_TITLES.get(positions, _3D_TITLES["template"]))
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     view.save_as_html(str(path))

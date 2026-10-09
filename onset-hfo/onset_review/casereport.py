@@ -222,7 +222,7 @@ def _fmt(value, spec="{:.2f}"):
 
 def build_html(case, version: int, folder: Path, by: str) -> str:
     from onset_hfo.case.atlas import Atlas
-    from onset_hfo.case.electrodes import TEMPLATE_NOTE, load_electrodes
+    from onset_hfo.case.electrodes import load_electrodes, positions_kind, positions_note
     from onset_hfo.case.segments import load_segments
     from onset_review.caseictal import draw_ictal, latest_ictal
     from onset_review.caseinterictal import draw_pooled, latest_result
@@ -322,15 +322,18 @@ def build_html(case, version: int, folder: Path, by: str) -> str:
     electrodes = load_electrodes(case)
     if len(table):
         parts.append("<h2>Map</h2>")
-        parts.append(f"<p class='warn'>{_esc(TEMPLATE_NOTE)} {len(electrodes)} contact(s) "
+        parts.append(f"<p class='warn'>{_esc(positions_note(electrodes))} "
+                     f"{len(electrodes)} contact(s) "
                      f"placed: " + _esc(", ".join(f"{n} {s}" for s, n in
                                                   electrodes["source"].value_counts().items()))
                      + ".</p>")
         atlas = Atlas.load() if Atlas.available() else None
-        parts.append(_figure(folder / "map.png", lambda f: draw_combined(f, table, atlas)))
+        parts.append(_figure(folder / "map.png", lambda f: draw_combined(
+            f, table, atlas, positions=positions_kind(electrodes))))
         from onset_review.templatebrain import write_3d_view
 
-        if write_3d_view(folder / "contacts-3d.html", table) is not None:
+        if write_3d_view(folder / "contacts-3d.html", table,
+                         positions_kind(electrodes)) is not None:
             parts.append("<p class='small'>A rotatable 3D view of these contacts is "
                          "contacts-3d.html, in this report's folder.</p>")
         rows = [{"channel": r.channel, "rate": _fmt(r.rate_per_min), "tied": "yes" if r.tied

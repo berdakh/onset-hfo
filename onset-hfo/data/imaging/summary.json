@@ -1,0 +1,74 @@
+{
+ "dataset": "ds003688",
+ "when": "2026-10-09",
+ "template": "MNI152NLin2009cAsym T1w, 2 mm (TemplateFlow)",
+ "pipeline": [
+  "translation",
+  "rigid",
+  "affine"
+ ],
+ "patients": 51,
+ "patients_failed": 0,
+ "contacts": 4665,
+ "correlation": {
+  "median": 0.468,
+  "min": 0.092,
+  "max": 0.597
+ },
+ "scale": {
+  "min": 0.775,
+  "max": 1.703
+ },
+ "near_brain_registered": {
+  "contacts": 0.8711682743837085,
+  "patients_median": 0.984
+ },
+ "near_brain_identity": {
+  "contacts": 0.772347266881029,
+  "patients_median": 0.864
+ },
+ "targeted": {
+  "patients": 5,
+  "contacts": 34,
+  "registered": {
+   "agree": 23,
+   "share": 0.6764705882352942,
+   "by_target": {
+    "left amygdala": "3/4",
+    "left hippocampus": "8/10",
+    "right amygdala": "2/6",
+    "right hippocampus": "10/14"
+   },
+   "labels": {
+    "right hippocampus": 10,
+    "left hippocampus": 8,
+    "right parahippocampal gyrus, anterior": 8,
+    "left amygdala": 3,
+    "right amygdala": 2,
+    "left parahippocampal gyrus, anterior": 1,
+    "left parahippocampal gyrus, posterior": 1,
+    "left temporal fusiform cortex, posterior": 1
+   }
+  },
+  "identity": {
+   "agree": 2,
+   "share": 0.058823529411764705,
+   "by_target": {
+    "left amygdala": "0/4",
+    "left hippocampus": "0/10",
+    "right amygdala": "0/6",
+    "right hippocampus": "2/14"
+   },
+   "labels": {
+    "right frontal orbital cortex": 8,
+    "left temporal pole": 5,
+    "right temporal pole": 4,
+    "left putamen": 3,
+    "right hippocampus": 2,
+    "right putamen": 2,
+    "left parahippocampal gyrus, anterior": 2,
+    "right parahippocampal gyrus, anterior": 2
+   }
+  }
+ }
+}

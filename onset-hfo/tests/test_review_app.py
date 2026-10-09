@@ -2219,7 +2219,7 @@ def test_the_page_window_is_its_own_window_and_holds_every_panel(paged):
 
 
 def test_the_sidebar_lists_the_sites_pages_in_order(paged):
-    from onset_review.pages import PAGES, STUDY_PAGES
+    from onset_review.pages import GUIDE_PAGES, PAGES, STUDY_PAGES
     from onset_review.studies import STUDIES
 
     nav = paged.pages.nav
@@ -2227,14 +2227,17 @@ def test_the_sidebar_lists_the_sites_pages_in_order(paged):
     # to fold its pages away, but it is not a page and is never selected.
     enabled = [nav.item(i) for i in range(nav.count())
                if nav.item(i).flags() & Qt.ItemIsEnabled and nav.item(i).data(Qt.UserRole)]
+    # Start (Home, the guide, a patient case), then this recording's pages.
     assert [i.data(Qt.UserRole) for i in enabled] == \
-        [k for k, _ in PAGES] + [k for k, _, _ in STUDIES] + ["chat"]
+        ["home"] + [k for k, _ in GUIDE_PAGES] + [k for k, _ in PAGES if k != "home"] \
+        + [k for k, _, _ in STUDIES] + ["chat"]
     heading = paged.pages._study_heading
     assert heading.flags() & Qt.ItemIsEnabled and not heading.flags() & Qt.ItemIsSelectable
     labels = [nav.item(i).text() for i in range(nav.count())]
     for study in STUDY_PAGES:
         assert study in labels, "the study pages are listed, in the site's order"
-    assert paged.pages.page_keys() == [k for k, _ in PAGES] + [k for k, _, _ in STUDIES] + ["chat"]
+    assert paged.pages.page_keys() == [k for k, _ in PAGES] + [k for k, _, _ in STUDIES] \
+        + ["chat"] + [k for k, _ in GUIDE_PAGES]
 
 
 def test_a_window_opens_on_home_and_switches_pages(paged):
@@ -2419,8 +2422,9 @@ def test_the_view_menu_toggles_the_trace_window(paged):
 
 
 def test_the_application_opens_on_home_with_nothing_loaded(qapp):
-    """The window first, the data from inside it: Home is the only page that
-    works, the others wait, and the File menu is where the data comes from."""
+    """The window first, the data from inside it: every page can be looked at,
+    a page that needs a recording says so and offers the ways to open one,
+    and the File menu is where the data comes from."""
     import pandas as pd
 
     from onset_review import window
@@ -2437,9 +2441,13 @@ def test_the_application_opens_on_home_with_nothing_loaded(qapp):
     try:
         assert not host.loaded and host.current_page() == "home"
         assert host.page_keys()[:len(PAGES)] == [k for k, _ in PAGES]
+        from onset_review.guide import PreviewPage
+
         for key, _label in PAGES:
             if key != "home":
-                assert host.show_page(key) is False, f"{key} must wait for a recording"
+                assert host.show_page(key), f"{key} is never greyed out"
+                assert isinstance(host._pages[key], PreviewPage), f"{key} previews"
+                assert host._items[key].flags() & Qt.ItemIsEnabled
         host.show_page("home")
         assert host.findChild(qt.QLabel, "onset_nothing_open") is not None
         assert host.where.text() == "No recording open"

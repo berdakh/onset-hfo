@@ -196,7 +196,7 @@ def window(qapp, recording, tmp_path, monkeypatch):
         pass
 
 
-def test_the_page_comes_after_recording_and_needs_a_recording(qapp, window, tmp_path,
+def test_the_page_comes_after_recording_and_previews_without_one(qapp, window, tmp_path,
                                                               monkeypatch):
     from onset_review import window as window_module
 
@@ -206,7 +206,12 @@ def test_the_page_comes_after_recording_and_needs_a_recording(qapp, window, tmp_
     monkeypatch.setenv("ONSET_REVIEW_CONFIG_DIR", str(tmp_path / "start"))
     start = window_module.decorate_start(cached=lambda: pd.DataFrame())
     try:
-        assert not start.show_page("analysis"), "no recording, no Analysis page"
+        from onset_review.guide import PreviewPage
+
+        assert start.show_page("analysis"), "never greyed out"
+        assert isinstance(start._pages["analysis"], PreviewPage), \
+            "no recording: what the page is for, and how to open one"
+        assert not start.panes_lent, "a preview borrows no panes"
     finally:
         start.close()
 

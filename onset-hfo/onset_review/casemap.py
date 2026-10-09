@@ -151,12 +151,14 @@ def statement(table: pd.DataFrame, found: dict) -> str:
 
 
 def draw_combined(figure, table: pd.DataFrame, atlas=None, view: str = "top",
-                  glass: bool = True) -> dict:
+                  glass: bool = True, positions: str = "template") -> dict:
     """Left: interictal rate against ictal index, one dot per channel, filled
     when in the marked onset zone. Right: where those channels are on the
     template, sized by rate and shaded by index -- on nilearn's glass brain
     (left, above, right) when nilearn is installed and `glass`, otherwise seen
-    from above or the side over the atlas brain's outline."""
+    from above or the side over the atlas brain's outline. `positions` says
+    where the positions came from (`electrodes.positions_kind`), for the caption."""
+    from onset_hfo.case.electrodes import CAPTIONS
     from onset_hfo.ictal import EI_CUTOFF
     from onset_review import templatebrain
     from onset_review.studycharts import GRID, MUTED, SERIES, _quiet
@@ -199,7 +201,7 @@ def draw_combined(figure, table: pd.DataFrame, atlas=None, view: str = "top",
                         bbox_to_anchor=(1.0, 1.12), ncol=2)
     if use_glass:
         templatebrain.draw_glass(figure, table, rect=(0.35, 0.02, 0.65, 0.86))
-        figure.text(0.675, 0.93, templatebrain.GLASS_CAPTION, ha="center", va="top",
+        figure.text(0.675, 0.93, templatebrain.glass_caption(positions), ha="center", va="top",
                     fontsize=7, color=MUTED)
         return points
     _quiet(right)
@@ -222,7 +224,8 @@ def draw_combined(figure, table: pd.DataFrame, atlas=None, view: str = "top",
                      fontsize=8, color=MUTED)
     right.set_ylabel(("back ← y → front (mm)" if view == "top" else "down ← z → up (mm)"),
                      fontsize=8, color=MUTED)
-    right.set_title("template positions, approximate\nsize: rate · shade: index · ring: zone",
+    right.set_title(f"{CAPTIONS.get(positions, CAPTIONS['template'])}\n"
+                    "size: rate · shade: index · ring: zone",
                     fontsize=8, color=MUTED)
     figure.tight_layout()
     return points

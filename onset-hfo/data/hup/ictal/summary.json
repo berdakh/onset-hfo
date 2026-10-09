@@ -1,0 +1,67 @@
+{
+ "when": "2026-10-09",
+ "method": "energy ratio 12.4\u201397 Hz over 3.5\u201312.4 Hz in 1 s windows every 0.25 s, against a baseline from 30 to 5 s before the marked onset; Page\u2013Hinkley bias 0.5, threshold 15; change looked for from 10 s before to 30 s after the onset; index over 5 s, tau 1 s",
+ "seizures_analysed": 151,
+ "seizures_skipped": 5,
+ "patients": 55,
+ "ei_all": {
+  "n": 54,
+  "median": 0.7850393653965082,
+  "ci_low": 0.7246637977407209,
+  "ci_high": 0.8499287749287749,
+  "share_above_half": 0.7962962962962963,
+  "wilcoxon_p": 1.8349642421363555e-08
+ },
+ "er_all": {
+  "n": 54,
+  "median": 0.7362206881437651,
+  "ci_low": 0.6716346153846153,
+  "ci_high": 0.7863636363636364,
+  "share_above_half": 0.8888888888888888,
+  "wilcoxon_p": 6.336753112370194e-09
+ },
+ "ei_seizure_free": {
+  "n": 36,
+  "median": 0.7850393653965082,
+  "ci_low": 0.7065088757396449,
+  "ci_high": 0.875,
+  "share_above_half": 0.7777777777777778,
+  "wilcoxon_p": 2.20548827201128e-07
+ },
+ "ei_not_seizure_free": {
+  "n": 18,
+  "median": 0.8005464832197505,
+  "ci_low": 0.6402369560264297,
+  "ci_high": 0.8588888888888889,
+  "share_above_half": 0.8333333333333334,
+  "wilcoxon_p": 0.001174975839731714
+ },
+ "ei_per_seizure": {
+  "n": 148,
+  "median": 0.7759081196581197,
+  "ci_low": 0.7364409628832707,
+  "ci_high": 0.8113207547169812,
+  "share_above_half": 0.8513513513513513,
+  "wilcoxon_p": 1.1140352655372016e-20
+ },
+ "top_in_zone_patients": 0.43636363636363634,
+ "by_site": {
+  "ECOG": {
+   "n": 20,
+   "median": 0.7349375932709266,
+   "ci_low": 0.5878808691308691,
+   "ci_high": 0.8630698005698005,
+   "share_above_half": 0.75,
+   "wilcoxon_p": 0.0007787676862143366
+  },
+  "SEEG": {
+   "n": 34,
+   "median": 0.8208566268168918,
+   "ci_low": 0.756198347107438,
+   "ci_high": 0.8611111111111112,
+   "share_above_half": 0.8235294117647058,
+   "wilcoxon_p": 2.0244624465703964e-07
+  }
+ },
+ "dataset": "ds004100"
+}
