@@ -70,8 +70,11 @@ Read in this order:
    per-contact model, calibration and conformal prediction sets, and the
    measured gap between a subject-specific model and one that has to work on
    a new patient.
-9. [**LIMITATIONS.md**](LIMITATIONS.md) — read before quoting any number from
-   this repository to anyone.
+9. [**ICTAL.md**](ICTAL.md) — the ictal half: does the Epileptogenicity
+   Index find the clinicians' onset zone on 28 patients, against a control
+   40 s before each seizure, and what the archive's onset marks do to it.
+10. [**LIMITATIONS.md**](LIMITATIONS.md) — read before quoting any number from
+    this repository to anyone.
 
 ## "I am joining the project and need to do something useful"
 

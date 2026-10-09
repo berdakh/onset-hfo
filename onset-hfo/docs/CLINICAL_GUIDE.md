@@ -1617,9 +1617,13 @@ combined table, every seizure's table, which seizures were analysed and why
 not, the settings and a summary.
 
 This is a research measure, and it needs a person to mark the electrographic
-onset. How well it finds the clinicians' onset zone on 35 patients of the
+onset. How well it finds the clinicians' onset zone on 28 patients of the
 same archive — with intervals, and where it does not — is in
-[`ICTAL.md`](ICTAL.md).
+[`ICTAL.md`](ICTAL.md). In short: it ranks the zone's channels above the rest
+(median AUC 0.80, interval 0.70–0.87), near chance on the same channels 40 s
+before the seizure (0.52, over the 27 seizures where that could be tested),
+barely better than the energy ratio alone (0.73),
+and its single top channel was in the zone in 15 of 28 patients.
 
 What comes next — template localisation, the combined map and the report —
 arrives phase by phase.

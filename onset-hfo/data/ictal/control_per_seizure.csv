@@ -1,0 +1,84 @@
+subject,run,acq,site,seizure_free,engel,onset_s,marker,status,analysed_onset_s,sfreq,n_channels,n_soz,n_detected,auc_ei,auc_er,top_in_zone,seconds
+sub-jh101,01,ecog,JHH,False,4.0,58.95,electrographic,too little recording before the seizure for the control,,,,,,,,,
+sub-jh101,02,ecog,JHH,False,4.0,66.825,electrographic,too little recording before the seizure for the control,,,,,,,,,
+sub-jh101,03,ecog,JHH,False,4.0,58.95,electrographic,too little recording before the seizure for the control,,,,,,,,,
+sub-jh102,01,ecog,JHH,,,54.834,unspecified,too little recording before the seizure for the control,,,,,,,,,
+sub-jh102,02,ecog,JHH,,,59.774,pushbutton,too little recording before the seizure for the control,,,,,,,,,
+sub-jh102,03,ecog,JHH,,,59.774,pushbutton,too little recording before the seizure for the control,,,,,,,,,
+sub-jh103,01,ecog,JHH,False,4.0,59.89200000000001,pushbutton,too little recording before the seizure for the control,,,,,,,,,
+sub-jh103,02,ecog,JHH,False,4.0,59.89200000000001,pushbutton,too little recording before the seizure for the control,,,,,,,,,
+sub-jh103,03,ecog,JHH,False,4.0,59.89200000000001,pushbutton,too little recording before the seizure for the control,,,,,,,,,
+sub-jh104,01,ecog,JHH,,,58.99499999999999,pushbutton,too little recording before the seizure for the control,,,,,,,,,
+sub-jh104,02,ecog,JHH,,,58.99499999999999,pushbutton,too little recording before the seizure for the control,,,,,,,,,
+sub-jh104,03,ecog,JHH,,,58.99499999999999,pushbutton,too little recording before the seizure for the control,,,,,,,,,
+sub-jh105,01,ecog,JHH,True,1.0,62.909,pushbutton,too little recording before the seizure for the control,,,,,,,,,
+sub-jh105,02,ecog,JHH,True,1.0,58.996,pushbutton,too little recording before the seizure for the control,,,,,,,,,
+sub-jh105,03,ecog,JHH,True,1.0,58.996,pushbutton,too little recording before the seizure for the control,,,,,,,,,
+sub-jh108,01,ecog,JHH,False,4.0,59.823,pushbutton,too little recording before the seizure for the control,,,,,,,,,
+sub-jh108,02,ecog,JHH,False,4.0,59.823,pushbutton,too little recording before the seizure for the control,,,,,,,,,
+sub-jh108,03,ecog,JHH,False,4.0,59.823,pushbutton,too little recording before the seizure for the control,,,,,,,,,
+sub-pt01,01,ecog,NIH,True,1.0,75.95,unspecified,ok,35.95,1000.0,71.0,8.0,12.0,0.4781746031746032,0.4642857142857143,False,5.7
+sub-pt01,02,ecog,NIH,True,1.0,93.0,unspecified,ok,53.0,1000.0,71.0,8.0,6.0,0.4523809523809524,0.4523809523809524,False,4.1
+sub-pt01,03,ecog,NIH,True,1.0,108.81,unspecified,ok,68.81,1000.0,71.0,8.0,11.0,0.4126984126984127,0.4126984126984127,False,4.0
+sub-pt10,01,ecog,NIH,False,2.0,44.330000000000005,unspecified,too little recording before the seizure for the control,,,,,,,,,
+sub-pt10,02,ecog,NIH,False,2.0,56.26500000000001,unspecified,too little recording before the seizure for the control,,,,,,,,,
+sub-pt10,03,ecog,NIH,False,2.0,96.503,unspecified,ok,56.503,1000.0,44.0,9.0,11.0,0.6095238095238096,0.6253968253968254,True,3.3
+sub-pt11,01,ecog,NIH,True,1.0,60.26,unspecified,too little recording before the seizure for the control,,,,,,,,,
+sub-pt11,02,ecog,NIH,True,1.0,75.67,unspecified,ok,35.67,1000.0,70.0,23.0,5.0,0.4791859389454209,0.47733580018501387,False,4.4
+sub-pt11,03,ecog,NIH,True,1.0,67.62,unspecified,too little recording before the seizure for the control,,,,,,,,,
+sub-pt12,01,ecog,NIH,False,2.0,73.005,unspecified,too little recording before the seizure for the control,,,,,,,,,
+sub-pt12,02,ecog,NIH,False,2.0,76.725,unspecified,ok,36.724999999999994,1000.0,45.0,9.0,4.0,0.5092592592592593,0.5154320987654321,False,3.3
+sub-pt13,01,ecog,NIH,True,1.0,68.08,unspecified,too little recording before the seizure for the control,,,,,,,,,
+sub-pt13,02,ecog,NIH,True,1.0,71.07,unspecified,too little recording before the seizure for the control,,,,,,,,,
+sub-pt13,03,ecog,NIH,True,1.0,77.74,unspecified,ok,37.739999999999995,1000.0,102.0,8.0,72.0,0.2393617021276596,0.2566489361702128,False,6.2
+sub-pt14,01,ecog,NIH,False,4.0,80.784,electrographic,ok,40.784000000000006,1000.0,42.0,7.0,9.0,0.7224489795918367,0.7551020408163265,True,4.0
+sub-pt14,02,ecog,NIH,False,4.0,90.508,electrographic,ok,50.507999999999996,1000.0,42.0,7.0,4.0,0.44285714285714284,0.44285714285714284,False,3.3
+sub-pt14,03,ecog,NIH,False,4.0,86.02,unspecified,ok,46.019999999999996,1000.0,42.0,7.0,10.0,0.5326530612244897,0.5244897959183673,True,3.5
+sub-pt15,01,ecog,NIH,True,1.0,150.849,unspecified,ok,110.84899999999999,1000.0,55.0,14.0,17.0,0.5923344947735192,0.5627177700348432,False,3.5
+sub-pt15,02,ecog,NIH,True,1.0,135.198,unspecified,ok,95.19800000000001,1000.0,55.0,14.0,24.0,0.48257839721254353,0.4843205574912892,False,3.2
+sub-pt15,03,ecog,NIH,True,1.0,115.218,unspecified,ok,75.218,1000.0,55.0,14.0,20.0,0.6411149825783972,0.6236933797909407,True,3.7
+sub-pt16,01,ecog,NIH,True,1.0,82.995,unspecified,ok,42.995000000000005,1000.0,37.0,6.0,18.0,0.7849462365591398,0.8064516129032258,False,2.5
+sub-pt16,02,ecog,NIH,True,1.0,92.049,unspecified,ok,52.04900000000001,1000.0,37.0,6.0,7.0,0.6801075268817204,0.6801075268817204,True,3.2
+sub-pt16,03,ecog,NIH,True,1.0,140.84,unspecified,ok,100.84,1000.0,37.0,6.0,20.0,0.5161290322580645,0.5483870967741935,False,2.5
+sub-pt17,01,ecog,NIH,True,1.0,,none,no usable onset mark,,,,,,,,,
+sub-pt17,02,ecog,NIH,True,1.0,67.592,unspecified,too little recording before the seizure for the control,,,,,,,,,
+sub-pt17,03,ecog,NIH,True,1.0,,none,no usable onset mark,,,,,,,,,
+sub-pt2,01,ecog,NIH,True,1.0,105.9,unspecified,ok,65.9,1000.0,51.0,7.0,11.0,0.4577922077922078,0.4512987012987013,False,4.2
+sub-pt2,02,ecog,NIH,True,1.0,89.662,unspecified,ok,49.662000000000006,1000.0,51.0,7.0,5.0,0.4431818181818182,0.4431818181818182,False,3.2
+sub-pt2,03,ecog,NIH,True,1.0,139.788,unspecified,ok,99.78800000000001,1000.0,51.0,7.0,25.0,0.4366883116883117,0.349025974025974,False,4.5
+sub-pt3,01,ecog,NIH,True,1.0,107.775,unspecified,ok,67.775,1000.0,76.0,37.0,33.0,0.6098406098406098,0.6070686070686071,True,6.2
+sub-pt3,02,ecog,NIH,True,1.0,109.575,pushbutton,ok,69.575,1000.0,76.0,37.0,59.0,0.8551628551628552,0.7920997920997921,False,5.6
+sub-pt6,01,ecog,NIH,False,2.0,120.958,unspecified,ok,80.958,1000.0,63.0,9.0,42.0,0.6481481481481481,0.49794238683127573,False,5.2
+sub-pt6,02,ecog,NIH,False,2.0,169.464,pushbutton,ok,129.464,1000.0,63.0,9.0,38.0,0.9423868312757202,0.9094650205761317,True,3.8
+sub-pt6,03,ecog,NIH,False,2.0,122.186,unspecified,ok,82.186,1000.0,63.0,9.0,34.0,0.6584362139917695,0.5946502057613169,False,4.5
+sub-pt7,01,ecog,NIH,False,3.0,88.77600000000001,unspecified,ok,48.77600000000001,1000.0,83.0,23.0,9.0,0.6090579710144928,0.606159420289855,True,4.8
+sub-pt7,02,ecog,NIH,False,3.0,80.83000000000001,unspecified,ok,40.83000000000001,1000.0,83.0,23.0,56.0,0.32753623188405795,0.3644927536231884,False,5.0
+sub-pt7,03,ecog,NIH,False,3.0,150.42600000000002,unspecified,ok,110.42600000000002,1000.0,83.0,23.0,23.0,0.46594202898550724,0.45072463768115945,False,4.6
+sub-pt8,01,ecog,NIH,True,1.0,44.722,unspecified,too little recording before the seizure for the control,,,,,,,,,
+sub-pt8,02,ecog,NIH,True,1.0,44.722,unspecified,too little recording before the seizure for the control,,,,,,,,,
+sub-pt8,03,ecog,NIH,True,1.0,44.722,unspecified,too little recording before the seizure for the control,,,,,,,,,
+sub-umf001,01,ecog,UMF,True,1.0,60.00027352941176,electrographic,too little recording before the seizure for the control,,,,,,,,,
+sub-umf002,01,ecog,UMF,False,2.0,87.00014647058823,electrographic,RuntimeError: HTTP 416 for https://s3.amazonaws.com/openneuro.org/ds003029/sub-umf002/ses-presurgery/ieeg/sub-umf002_ses-presurgery_task-ictal_acq-ecog_run-01_ieeg.eeg,47.000146470588234,,,,,,,,
+sub-umf003,01,ecog,UMF,False,3.0,59.99914696638656,electrographic,too little recording before the seizure for the control,,,,,,,,,
+sub-umf004,01,seeg,UMF,True,1.0,135.00036529411764,electrographic,RuntimeError: HTTP 416 for https://s3.amazonaws.com/openneuro.org/ds003029/sub-umf004/ses-presurgery/ieeg/sub-umf004_ses-presurgery_task-ictal_acq-seeg_run-01_ieeg.eeg,95.00036529411764,,,,,,,,
+sub-umf005,01,ecog,UMF,True,1.0,116.00041359633028,electrographic,RuntimeError: HTTP 416 for https://s3.amazonaws.com/openneuro.org/ds003029/sub-umf005/ses-presurgery/ieeg/sub-umf005_ses-presurgery_task-ictal_acq-ecog_run-01_ieeg.eeg,76.00041359633028,,,,,,,,
+sub-ummc002,01,ecog,UMMC,True,1.0,59.99914696638656,unspecified,too little recording before the seizure for the control,,,,,,,,,
+sub-ummc002,02,ecog,UMMC,True,1.0,49.000704176470585,unspecified,too little recording before the seizure for the control,,,,,,,,,
+sub-ummc002,03,ecog,UMMC,True,1.0,8.000686731092436,unspecified,no usable onset mark,,,,,,,,,
+sub-ummc003,01,ecog,UMMC,True,1.0,59.99914696638656,unspecified,too little recording before the seizure for the control,,,,,,,,,
+sub-ummc003,02,ecog,UMMC,True,1.0,45.99894577310924,unspecified,too little recording before the seizure for the control,,,,,,,,,
+sub-ummc003,03,ecog,UMMC,True,1.0,56.000804773109245,unspecified,too little recording before the seizure for the control,,,,,,,,,
+sub-ummc004,01,ecog,UMMC,True,1.0,66.99924756302521,unspecified,too little recording before the seizure for the control,,,,,,,,,
+sub-ummc004,02,ecog,UMMC,True,1.0,30.99815844537815,unspecified,no usable onset mark,,,,,,,,,
+sub-ummc004,03,ecog,UMMC,True,1.0,37.998259042016805,unspecified,too little recording before the seizure for the control,,,,,,,,,
+sub-ummc005,01,ecog,UMMC,True,1.0,46.00004294117647,unspecified,too little recording before the seizure for the control,,,,,,,,,
+sub-ummc005,02,ecog,UMMC,True,1.0,60.00027352941176,unspecified,too little recording before the seizure for the control,,,,,,,,,
+sub-ummc006,01,ecog,UMMC,True,1.0,48.00011804201681,unspecified,too little recording before the seizure for the control,,,,,,,,,
+sub-ummc006,02,ecog,UMMC,True,1.0,26.99981625210084,unspecified,no usable onset mark,,,,,,,,,
+sub-ummc006,03,ecog,UMMC,True,1.0,22.000887924369746,unspecified,no usable onset mark,,,,,,,,,
+sub-ummc008,01,ecog,UMMC,True,1.0,64.99807529411764,unspecified,too little recording before the seizure for the control,,,,,,,,,
+sub-ummc008,02,ecog,UMMC,True,1.0,51.99957,unspecified,too little recording before the seizure for the control,,,,,,,,,
+sub-ummc008,03,ecog,UMMC,True,1.0,60.00027352941176,unspecified,too little recording before the seizure for the control,,,,,,,,,
+sub-ummc009,01,ecog,UMMC,True,1.0,60.99986117647058,unspecified,too little recording before the seizure for the control,,,,,,,,,
+sub-ummc009,02,ecog,UMMC,True,1.0,60.99986117647058,unspecified,too little recording before the seizure for the control,,,,,,,,,
+sub-ummc009,03,ecog,UMMC,True,1.0,60.00027352941176,unspecified,too little recording before the seizure for the control,,,,,,,,,
