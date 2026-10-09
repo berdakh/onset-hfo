@@ -187,6 +187,21 @@ def variables(session, console: dict | None = None) -> list[Variable]:
     return _session_variables(session) + extra
 
 
+def console_namespace(session) -> dict:
+    """The names a console starts with: every name the Workspace lists (and
+    `session` itself), plus the libraries an analysis reaches for. Qt-free:
+    the console and the Analysis page's templates both start from it."""
+    import matplotlib.pyplot as plt
+    import mne
+
+    import onset_hfo
+
+    names = {"np": np, "pd": pd, "mne": mne, "plt": plt, "onset_hfo": onset_hfo, "Path": Path}
+    names["session"] = session
+    names.update(session_names(session))
+    return names
+
+
 def session_names(session) -> dict:
     """Every name the Workspace lists for `session`, bound to its object: the
     console's view of the same workspace, so a name read in one is the name

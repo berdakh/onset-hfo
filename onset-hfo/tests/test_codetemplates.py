@@ -24,8 +24,8 @@ import pytest
 matplotlib.use("Agg")
 
 from onset_review import codetemplates  # noqa: E402
-from onset_review.console import namespace  # noqa: E402
 from onset_review.session import ReviewRequest, session_from_recording  # noqa: E402
+from onset_review.variables import console_namespace as namespace  # noqa: E402
 
 TEMPLATES = codetemplates.templates()
 
