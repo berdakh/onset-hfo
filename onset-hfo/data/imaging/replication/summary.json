@@ -1,0 +1,379 @@
+{
+ "when": "2026-10-09",
+ "fade_mm": 10.0,
+ "excluded": [
+  {
+   "dataset": "ds004696",
+   "subject": "sub-06",
+   "status": "frame mismatch"
+  },
+  {
+   "dataset": "ds004696",
+   "subject": "sub-07",
+   "status": "frame mismatch"
+  }
+ ],
+ "all": {
+  "patients": 23,
+  "contacts": 3384,
+  "correlation_median": 0.454,
+  "correlation_warped_median": 0.696,
+  "warp_shift_mm_median": 3.32,
+  "near_brain_registered": 0.988,
+  "to_author_mm_registered": 5.66,
+  "near_brain_warped": 0.987,
+  "patients_worse_warped": [
+   "ds005574/sub-04"
+  ],
+  "to_author_mm_warped": 5.35,
+  "near_brain_blended": 0.988,
+  "patients_worse_blended": [],
+  "to_author_mm_blended": 4.99,
+  "near_brain_identity": 0.809,
+  "patients_worse_identity": [
+   "ds004696/sub-01",
+   "ds004696/sub-03",
+   "ds004696/sub-05",
+   "ds005574/sub-01",
+   "ds005574/sub-03",
+   "ds005574/sub-04",
+   "ds005574/sub-06",
+   "ds005574/sub-07",
+   "ds005574/sub-09"
+  ],
+  "to_author_mm_identity": 27.8,
+  "primary": {
+   "contacts": 154,
+   "patients": 14,
+   "registered": {
+    "agree": 87,
+    "share": 0.565,
+    "by_structure": {
+     "amygdala": "32/55",
+     "hippocampus": "55/99"
+    }
+   },
+   "warped": {
+    "agree": 101,
+    "share": 0.656,
+    "by_structure": {
+     "amygdala": "32/55",
+     "hippocampus": "69/99"
+    }
+   },
+   "blended": {
+    "agree": 101,
+    "share": 0.656,
+    "by_structure": {
+     "amygdala": "33/55",
+     "hippocampus": "68/99"
+    }
+   },
+   "identity": {
+    "agree": 79,
+    "share": 0.513,
+    "by_structure": {
+     "amygdala": "32/55",
+     "hippocampus": "47/99"
+    }
+   }
+  },
+  "deep": {
+   "contacts": 194,
+   "patients": 14,
+   "registered": {
+    "agree": 102,
+    "share": 0.526,
+    "by_structure": {
+     "amygdala": "32/55",
+     "hippocampus": "55/99",
+     "putamen": "9/32",
+     "thalamus": "6/8"
+    }
+   },
+   "warped": {
+    "agree": 119,
+    "share": 0.613,
+    "by_structure": {
+     "amygdala": "32/55",
+     "hippocampus": "69/99",
+     "putamen": "10/32",
+     "thalamus": "8/8"
+    }
+   },
+   "blended": {
+    "agree": 119,
+    "share": 0.613,
+    "by_structure": {
+     "amygdala": "33/55",
+     "hippocampus": "68/99",
+     "putamen": "10/32",
+     "thalamus": "8/8"
+    }
+   },
+   "identity": {
+    "agree": 102,
+    "share": 0.526,
+    "by_structure": {
+     "amygdala": "32/55",
+     "hippocampus": "47/99",
+     "putamen": "15/32",
+     "thalamus": "8/8"
+    }
+   }
+  }
+ },
+ "ds004473": {
+  "patients": 8,
+  "contacts": 978,
+  "correlation_median": 0.4255,
+  "correlation_warped_median": 0.6884999999999999,
+  "warp_shift_mm_median": 3.495,
+  "near_brain_registered": 0.984,
+  "near_brain_warped": 0.994,
+  "patients_worse_warped": [],
+  "near_brain_blended": 0.984,
+  "patients_worse_blended": [],
+  "near_brain_identity": 0.994,
+  "patients_worse_identity": [],
+  "primary": {
+   "contacts": 91,
+   "patients": 8,
+   "registered": {
+    "agree": 41,
+    "share": 0.451,
+    "by_structure": {
+     "amygdala": "9/25",
+     "hippocampus": "32/66"
+    }
+   },
+   "warped": {
+    "agree": 49,
+    "share": 0.538,
+    "by_structure": {
+     "amygdala": "8/25",
+     "hippocampus": "41/66"
+    }
+   },
+   "blended": {
+    "agree": 49,
+    "share": 0.538,
+    "by_structure": {
+     "amygdala": "8/25",
+     "hippocampus": "41/66"
+    }
+   },
+   "identity": {
+    "agree": 48,
+    "share": 0.527,
+    "by_structure": {
+     "amygdala": "15/25",
+     "hippocampus": "33/66"
+    }
+   }
+  },
+  "deep": {
+   "contacts": 102,
+   "patients": 8,
+   "registered": {
+    "agree": 48,
+    "share": 0.471,
+    "by_structure": {
+     "amygdala": "9/25",
+     "hippocampus": "32/66",
+     "putamen": "7/11"
+    }
+   },
+   "warped": {
+    "agree": 59,
+    "share": 0.578,
+    "by_structure": {
+     "amygdala": "8/25",
+     "hippocampus": "41/66",
+     "putamen": "10/11"
+    }
+   },
+   "blended": {
+    "agree": 59,
+    "share": 0.578,
+    "by_structure": {
+     "amygdala": "8/25",
+     "hippocampus": "41/66",
+     "putamen": "10/11"
+    }
+   },
+   "identity": {
+    "agree": 58,
+    "share": 0.569,
+    "by_structure": {
+     "amygdala": "15/25",
+     "hippocampus": "33/66",
+     "putamen": "10/11"
+    }
+   }
+  }
+ },
+ "ds004696": {
+  "patients": 6,
+  "contacts": 1076,
+  "correlation_median": 0.29,
+  "correlation_warped_median": 0.55,
+  "warp_shift_mm_median": 3.635,
+  "near_brain_registered": 0.995,
+  "to_author_mm_registered": 8.12,
+  "near_brain_warped": 0.992,
+  "patients_worse_warped": [],
+  "to_author_mm_warped": 6.83,
+  "near_brain_blended": 0.995,
+  "patients_worse_blended": [],
+  "to_author_mm_blended": 6.85,
+  "near_brain_identity": 0.707,
+  "patients_worse_identity": [
+   "ds004696/sub-01",
+   "ds004696/sub-03",
+   "ds004696/sub-05"
+  ],
+  "to_author_mm_identity": 16.42,
+  "primary": {
+   "contacts": 63,
+   "patients": 6,
+   "registered": {
+    "agree": 46,
+    "share": 0.73,
+    "by_structure": {
+     "amygdala": "23/30",
+     "hippocampus": "23/33"
+    }
+   },
+   "warped": {
+    "agree": 52,
+    "share": 0.825,
+    "by_structure": {
+     "amygdala": "24/30",
+     "hippocampus": "28/33"
+    }
+   },
+   "blended": {
+    "agree": 52,
+    "share": 0.825,
+    "by_structure": {
+     "amygdala": "25/30",
+     "hippocampus": "27/33"
+    }
+   },
+   "identity": {
+    "agree": 31,
+    "share": 0.492,
+    "by_structure": {
+     "amygdala": "17/30",
+     "hippocampus": "14/33"
+    }
+   }
+  },
+  "deep": {
+   "contacts": 92,
+   "patients": 6,
+   "registered": {
+    "agree": 54,
+    "share": 0.587,
+    "by_structure": {
+     "amygdala": "23/30",
+     "hippocampus": "23/33",
+     "putamen": "2/21",
+     "thalamus": "6/8"
+    }
+   },
+   "warped": {
+    "agree": 60,
+    "share": 0.652,
+    "by_structure": {
+     "amygdala": "24/30",
+     "hippocampus": "28/33",
+     "putamen": "0/21",
+     "thalamus": "8/8"
+    }
+   },
+   "blended": {
+    "agree": 60,
+    "share": 0.652,
+    "by_structure": {
+     "amygdala": "25/30",
+     "hippocampus": "27/33",
+     "putamen": "0/21",
+     "thalamus": "8/8"
+    }
+   },
+   "identity": {
+    "agree": 44,
+    "share": 0.478,
+    "by_structure": {
+     "amygdala": "17/30",
+     "hippocampus": "14/33",
+     "putamen": "5/21",
+     "thalamus": "8/8"
+    }
+   }
+  }
+ },
+ "ds005574": {
+  "patients": 9,
+  "contacts": 1330,
+  "correlation_median": 0.528,
+  "correlation_warped_median": 0.741,
+  "warp_shift_mm_median": 2.92,
+  "near_brain_registered": 0.986,
+  "to_author_mm_registered": 4.64,
+  "near_brain_warped": 0.979,
+  "patients_worse_warped": [
+   "ds005574/sub-04"
+  ],
+  "to_author_mm_warped": 4.87,
+  "near_brain_blended": 0.986,
+  "patients_worse_blended": [],
+  "to_author_mm_blended": 4.3,
+  "near_brain_identity": 0.754,
+  "patients_worse_identity": [
+   "ds005574/sub-01",
+   "ds005574/sub-03",
+   "ds005574/sub-04",
+   "ds005574/sub-06",
+   "ds005574/sub-07",
+   "ds005574/sub-09"
+  ],
+  "to_author_mm_identity": 28.14,
+  "primary": {
+   "contacts": 0,
+   "patients": 0
+  },
+  "deep": {
+   "contacts": 0,
+   "patients": 0
+  }
+ },
+ "check_warn": 0.25,
+ "low_check": [
+  "ds004473/sub-5",
+  "ds004473/sub-11",
+  "ds004696/sub-01",
+  "ds004696/sub-02",
+  "ds004696/sub-04"
+ ],
+ "primary_by_check": {
+  "flagged": {
+   "patients": 5,
+   "contacts": 74,
+   "registered": 27,
+   "warped": 39,
+   "blended": 39,
+   "identity": 36
+  },
+  "not_flagged": {
+   "patients": 9,
+   "contacts": 80,
+   "registered": 60,
+   "warped": 62,
+   "blended": 62,
+   "identity": 43
+  }
+ }
+}

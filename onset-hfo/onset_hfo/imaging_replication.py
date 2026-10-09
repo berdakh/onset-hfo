@@ -23,7 +23,12 @@ from other hospitals, with nothing changed:
   finds out whether they fit.
 * **ds005574** ("Podcast" ECoG, Zada et al., NYU; 9 patients, surface grids):
   the contacts in the patient's own space and the authors' positions in
-  MNI152NLin2009aSym.
+  MNI152NLin2009aSym. The "native" positions are FreeSurfer's surface RAS
+  (``tkr``), not the T1's scanner millimetres, so the study adds the T1's
+  centre (FreeSurfer's ``c_ras``). (The first run read them as scanner
+  millimetres; the frame check excluded 8 of the 9. Read as surface RAS,
+  sub-01 and sub-05 came within 6.1 and 4.6 mm of the authors' positions,
+  against 23.1 and 11.4 mm.)
 
 Fixed before the run:
 
@@ -71,7 +76,7 @@ FREESURFER_DEEP = {10: "left thalamus", 11: "left caudate", 12: "left putamen",
                    54: "right amygdala", 58: "right accumbens"}
 PRIMARY = ("hippocampus", "amygdala")
 
-__all__ = ["run_replication", "summarise", "freesurfer_name", "ARCHIVES"]
+__all__ = ["run_replication", "summarise", "freesurfer_name", "surface_centre", "ARCHIVES"]
 
 
 def _get(path: str) -> bytes:
@@ -97,6 +102,15 @@ def freesurfer_name(text) -> str:
                  "pallidum": "pallidum", "hippocampus": "hippocampus",
                  "amygdala": "amygdala", "accumbens": "accumbens"}.get(words[1], "")
     return f"{words[0]} {structure}" if structure else ""
+
+
+def surface_centre(path) -> np.ndarray:
+    """FreeSurfer's ``c_ras`` for a T1: the scanner millimetres of the volume's
+    centre, which carries surface RAS (``tkr``) to scanner RAS by addition."""
+    import nibabel as nib
+
+    image = nib.load(str(path))
+    return (image.affine @ np.r_[np.array(image.shape[:3]) / 2.0, 1.0])[:3]
 
 
 # -- the three archives -----------------------------------------------------------------------
@@ -166,7 +180,7 @@ def _ds005574():
             t1 = scratch / "t1.nii.gz"
             t1.write_bytes(_get(f"ds005574/{subject}/anat/{subject}_T1w.nii.gz"))
             return {"names": native["name"].astype(str).tolist(),
-                    "native": native[["x", "y", "z"]].to_numpy(float),
+                    "native": native[["x", "y", "z"]].to_numpy(float) + surface_centre(t1),
                     "truth": [""] * len(native), "in_own_brain": np.nan, "t1": t1,
                     "author_mni": author}
         yield "ds005574", subject, load
@@ -286,7 +300,7 @@ def _agreement(rows: pd.DataFrame) -> dict:
 
 
 def summarise(patients: pd.DataFrame, contacts: pd.DataFrame) -> dict:
-    from onset_hfo.case.imaging import WARP_FADE_MM
+    from onset_hfo.case.imaging import CHECK_WARN, WARP_FADE_MM
 
     out = {"when": time.strftime("%Y-%m-%d"), "fade_mm": WARP_FADE_MM,
            "excluded": patients.loc[patients["status"] != "ok",
@@ -305,7 +319,8 @@ def summarise(patients: pd.DataFrame, contacts: pd.DataFrame) -> dict:
                 c[f"{way}_depth_mm"] > -NEAR_BRAIN_MM)), 3)
             if way != "registered":
                 drop = p[f"near_brain_{way}"] < p["near_brain_registered"] - 0.05
-                block[f"patients_worse_{way}"] = p.loc[drop, "subject"].tolist()
+                block[f"patients_worse_{way}"] = (p.loc[drop, "dataset"] + "/"
+                                                  + p.loc[drop, "subject"]).tolist()
             column = f"{way}_to_author_mm"
             if column in c and c[column].notna().any():
                 block[f"to_author_mm_{way}"] = round(float(c[column].median()), 2)
@@ -313,6 +328,16 @@ def summarise(patients: pd.DataFrame, contacts: pd.DataFrame) -> dict:
         block["primary"] = _agreement(deep[deep["truth"].str.endswith(PRIMARY)])
         block["deep"] = _agreement(deep)
         out[name] = block
+    # The primary contacts split by the registration's own check (`CHECK_WARN`).
+    low = ok["correlation"] < CHECK_WARN
+    out["check_warn"] = CHECK_WARN
+    out["low_check"] = (ok.loc[low, "dataset"] + "/" + ok.loc[low, "subject"]).tolist()
+    targeted = ok[ok["n_primary"] > 0]
+    out["primary_by_check"] = {
+        name: {"patients": int(len(part)), "contacts": int(part["n_primary"].sum()),
+               **{way: int(part[f"agree_{way}"].sum()) for way in WAYS}}
+        for name, part in [("flagged", targeted[targeted["correlation"] < CHECK_WARN]),
+                           ("not_flagged", targeted[targeted["correlation"] >= CHECK_WARN])]}
     return out
 
 

@@ -57,7 +57,8 @@ def test_the_summary_counts_each_way_and_leaves_out_a_mismatched_frame():
         _contact("sub-1", "", {}, off),
         _contact("sub-2", "left hippocampus", good, on, excluded=True)])
     patients = pd.DataFrame([
-        {"dataset": "dsX", "subject": "sub-1", "status": "ok", "n_contacts": 4,
+        {"dataset": "dsX", "subject": "sub-1", "status": "ok", "n_contacts": 4, "n_primary": 2,
+         "agree_registered": 1, "agree_warped": 2, "agree_blended": 2, "agree_identity": 0,
          "correlation": 0.5, "correlation_warped": 0.7, "warp_shift_mm": 3.0,
          "near_brain_registered": 1.0, "near_brain_warped": 0.75, "near_brain_blended": 1.0,
          "near_brain_identity": 1.0},
@@ -74,6 +75,26 @@ def test_the_summary_counts_each_way_and_leaves_out_a_mismatched_frame():
                                                           "hippocampus": "1/1"}
     assert block["deep"]["contacts"] == 3 and block["deep"]["warped"]["agree"] == 3
     assert block["near_brain_warped"] == 0.75 and block["near_brain_blended"] == 1.0
-    assert block["patients_worse_warped"] == ["sub-1"]
+    assert block["patients_worse_warped"] == ["dsX/sub-1"]
     assert block["patients_worse_blended"] == []
     assert summary["dsX"]["primary"]["contacts"] == 2
+    assert summary["low_check"] == [] and summary["primary_by_check"]["flagged"]["contacts"] == 0
+    assert summary["primary_by_check"]["not_flagged"] == {
+        "patients": 1, "contacts": 2, "registered": 1, "warped": 2, "blended": 2, "identity": 0}
+
+
+def test_surface_ras_plus_the_centre_is_scanner_ras(tmp_path):
+    import numpy as np
+    import pytest
+
+    nib = pytest.importorskip("nibabel")
+
+    # A conformed (LIA, 1 mm) volume with its centre away from the origin, as FreeSurfer has it.
+    affine = np.array([[-1.0, 0, 0, 40.0], [0, 0, 1.0, -70.0], [0, -1.0, 0, 55.0], [0, 0, 0, 1]])
+    image = nib.MGHImage(np.zeros((64, 64, 64), dtype=np.float32), affine)
+    path = tmp_path / "t1.mgz"
+    nib.save(image, str(path))
+    voxel = np.array([10.0, 20.0, 30.0, 1.0])
+    scanner = (image.affine @ voxel)[:3]
+    surface = (image.header.get_vox2ras_tkr() @ voxel)[:3]
+    assert np.allclose(surface + rep.surface_centre(path), scanner, atol=1e-4)
