@@ -7,16 +7,26 @@ to hand, the case can use it (`onset_hfo/case/imaging.py`):
 
 1. **Add the patient's MRI…** copies the T1 into the case
    (`sub-*/ses-implant01/anat/`) and registers it to the MNI152 template with
-   MNE's volume registration (dipy): translation, then rigid, then affine.
+   MNE's volume registration (dipy). The steps are translation, rigid and
+   affine, then a non-linear warp (symmetric diffeomorphic registration, 3 mm).
    - The template is MNI152NLin2009cAsym at 2 mm *with its skull*, from
      TemplateFlow, fetched once (1.8 MB). It is the same space as the atlas.
-   - The transform and a check are kept in
+   - The affine and a check are kept in
      `derivatives/onset/imaging/t1_to_mni.json`.
+   - The warp is kept in `t1_to_mni_warp.npz` beside it (about 6.5 MB, plain
+     arrays, never pickled).
 2. **Import contacts in the MRI's space…** takes positions in the patient's
    own scanner or ACPC millimetres, as planning or localisation software
    exports them.
    - They are kept as they are (BIDS `space-T1w`).
    - They are also carried to MNI by the registration, marked `source = patient`.
+   - The affine places every contact.
+   - The warp then moves each one by a share that grows with depth:
+     - outside the template brain, by none of it;
+     - in the first 10 mm inside, by a share proportional to the depth;
+     - deeper, by all of it.
+
+     Results below show why.
 3. **Place contacts on a CT…** is for when there is a CT with the electrodes
    in it but no positions yet.
    - The CT is rigidly aligned to the T1 and opened in MNE's iEEG contact
@@ -35,6 +45,17 @@ the patient's (registered) or the template's.
 
 - A head that is the template turned 8° and shifted 12 mm registers back
   within 3 mm.
+- A head whose tissue near one point was pushed 6 mm by a smooth bump comes
+  back:
+  - affine alone: 5.5–5.9 mm off;
+  - with the warp: 0.7–1.3 mm off on the TemplateFlow template, under 2 mm on
+    average on the bundled one the tests use.
+- The warp's direction is easy to get backwards, and the test pins it:
+  - MNE's `apply_volume_registration_points` leaves points where they were;
+  - dipy's forward point transform doubles the error;
+  - the inverse transform, in world millimetres, is right.
+- Outside the brain the fade leaves a contact alone. At the brain's edge it
+  moves it by its share, and deep inside it moves it by the whole warp.
 - A registration 25 mm off scores far lower on the check.
 - Contacts round-trip through the case's files.
 - The conversion from the locator's surface RAS to scanner millimetres matches
@@ -59,41 +80,71 @@ compare with, so the checks are anatomical.
 - **The registration's own check**: the intensity correlation of the
   registered head with the template, inside the template's brain.
 
-Each is compared with the shortcut of reading the patient's ACPC millimetres
-as if they were MNI. Run it with
+Each is reported four ways:
+- **affine:** the affine alone;
+- **warp, in full:** the affine and then the whole warp;
+- **warp, faded:** the warp faded in from the brain's edge, as the Map step
+  applies it;
+- **ACPC as MNI:** the shortcut of reading the patient's ACPC millimetres as if
+  they were MNI. Run it with
 `python -m onset_hfo.imaging_study artifacts/results/imaging_ds003688`. It
 downloads about 30 MB of MRI per patient and deletes each after use. The
 tables are in [`data/imaging/`](../data/imaging).
 
 ## Results
 
-51 patients, 4,665 contacts, none failed; a median of 21 s of registration
-each.
+51 patients, 4,665 contacts, none failed. Each took a median of 26 s,
+download included. The warp moved contacts a median 3.5 mm from where the
+affine put them.
 
-| | registered | ACPC read as MNI |
-|---|---|---|
-| Targeted contacts in the intended structure (5 patients, 34 contacts) | **23 of 34 (68%)** | 2 of 34 (6%) |
-| Contacts within 5 mm of the template brain | 87% | 77% |
-| Per patient, median share near the brain | 98% | 86% |
-| Patients with ≥ 90% of contacts near the brain | 34 of 51 | 23 of 51 |
+| | affine | warp, in full | **warp, faded** | ACPC as MNI |
+|---|---|---|---|---|
+| Targeted contacts in the intended structure (5 patients, 34 contacts) | 23 of 34 | 30 of 34 | **29 of 34** | 2 of 34 |
+| Contacts within 5 mm of the template brain | 87% | 84% | **87%** | 77% |
+| Per patient, median share near the brain | 98% | 92% | **98%** | 86% |
+| Patients with ≥ 90% of contacts near the brain | 34 of 51 | 29 of 51 | **34 of 51** | 23 of 51 |
+| Intensity correlation with the template (median) | 0.47 | 0.68 | | |
 
 The targeted contacts, patient by patient:
 
-| patient | registered | ACPC as MNI | check |
-|---|---|---|---|
-| sub-01 | 8/8 | 2/8 | 0.25 |
-| sub-09 | 4/6 | 0/6 | 0.51 |
-| sub-21 | 2/6 | 0/6 | 0.32 |
-| sub-23 | 5/8 | 0/8 | 0.42 |
-| sub-42 | 4/6 | 0/6 | 0.43 |
+| patient | affine | warp, in full | warp, faded | ACPC as MNI | check |
+|---|---|---|---|---|---|
+| sub-01 | 8/8 | 8/8 | 8/8 | 2/8 | 0.25 |
+| sub-09 | 4/6 | 5/6 | 5/6 | 0/6 | 0.51 |
+| sub-21 | 2/6 | 4/6 | 4/6 | 0/6 | 0.32 |
+| sub-23 | 5/8 | 8/8 | 8/8 | 0/8 | 0.42 |
+| sub-42 | 4/6 | 5/6 | 4/6 | 0/6 | 0.43 |
 
-Where registered contacts missed, they mostly landed next door: 10 of the 11
-misses were in the parahippocampal gyrus, beside the hippocampus and amygdala. The
-amygdala is the hardest: 2 of 6 on the right, 3 of 4 on the left. Read as MNI
-without registration, the same contacts land in orbitofrontal cortex, the
-temporal pole or the putamen. The two spaces are offset by centimetres.
+**The warp helps deep contacts.** With the affine alone, 10 of the 11 misses
+were next door, in the parahippocampal gyrus. The warp moves them into the
+hippocampus:
+- hippocampus: 24 of 24 with the faded warp, against 18 of 24 with the affine;
+- amygdala: still the hardest, 5 of 10;
+- all five misses that remain are amygdala contacts labelled the adjacent
+  anterior parahippocampal gyrus.
 
-**The check.** The correlation ran from 0.09 to 0.60, median 0.47.
+Read as MNI without registration, the same contacts land in orbitofrontal
+cortex, the temporal pole or the putamen. The two spaces are offset by
+centimetres.
+
+**The warp in full hurts surface grids, so it is faded in.** Applied to every
+contact, the warp left fewer of them near the template brain in 15 of 51
+patients, by more than 5 percentage points. For example, sub-06 fell from
+99% to 74%. At the brain's edge the warp follows the skull and the scalp,
+not the cortex.
+
+Faded in over the first 10 mm inside the brain, the warp:
+- leaves every surface contact where the affine put it, with not one patient
+  changing by more than 5 points;
+- keeps 29 of the full warp's 30 deep contacts.
+
+The 10 mm fade was chosen among five (0–10, 5–15, 5–20, 10–20 and 10–25 mm)
+on this same data. The deeper fades kept only 25 of 34, because the
+amygdala and hippocampus lie close to the brain's lower surface. So the gain
+is measured on the data that picked the rule; a second archive would test it.
+
+**The check** is computed after the affine. Its correlation ran from 0.09 to
+0.60, median 0.47.
 
 - Of the 51 heads, 12 had fewer than 80% of their contacts near the template
   brain once registered.
@@ -111,12 +162,14 @@ those three are among the poor registrations.
 ## What this does and does not support
 
 - **Registering the patient's MRI is far better than reading their
-  coordinates as MNI.** For targeted contacts it was 68% against 6%. Do not
-  import native coordinates as MNI.
-- **It is an affine, not a nonlinear registration.** It aligns the head as a
-  whole and does not bend one brain into another. A third of the targeted
-  contacts landed a structure away. The atlas names stay "probably" for
-  patient contacts as for template ones.
+  coordinates as MNI.** For targeted contacts it was 85% against 6% (68% with
+  the affine alone). Do not import native coordinates as MNI.
+- **The warp helps contacts deep in the brain, and only those.** Faded in from
+  the brain's edge, it took the targeted contacts from 68% to 85% in their
+  structure, without moving surface contacts off the brain. It is still a
+  registration to a template, not a segmentation of this patient's brain. A
+  contact can land a structure away (the amygdala most of all), so the atlas
+  names stay "probably" for patient contacts as for template ones.
 - **Look at it.** The correlation catches about half of the poor
   registrations. **Show on the MRI** shows where the contacts really are, and
   the 3D view shows where they landed on the template.
