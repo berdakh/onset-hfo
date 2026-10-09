@@ -21,6 +21,8 @@ page beside it.
 * **Preprocess** sets how every segment is analysed.
 * **Interictal** analyses each segment by the review window's own path and
   pools them (`onset_review.caseinterictal`).
+* **Ictal onset** computes the Epileptogenicity Index of every marked seizure
+  and how consistently each channel leads (`onset_review.caseictal`).
 * **Review** opens each segment in the review window and counts the verdicts.
 """
 
@@ -1196,6 +1198,170 @@ class InterictalPage(QWidget):
                 self.table.setItem(r, c, QTableWidgetItem(value))
 
 
+class IctalPage(QWidget):
+    changed = Signal()
+
+    def __init__(self, window, parent=None):
+        super().__init__(parent)
+        self.window_ = window
+        self._job = None
+        self.result = None
+        self.run_button = QPushButton("Run over the seizures")
+        self.run_button.setObjectName("onset_case_run_ictal")
+        self.run_button.clicked.connect(lambda _=False: self.run())
+        self.stop_button = QPushButton("Stop")
+        self.stop_button.setEnabled(False)
+        self.stop_button.clicked.connect(lambda _=False: self._job and self._job.stop())
+        self.progress = QProgressBar()
+        self.progress.setVisible(False)
+        self.done_button = QPushButton("Ictal done")
+        self.done_button.clicked.connect(lambda _=False: self.window_.complete("ictal"))
+        self.what = _muted("")
+        self.seizures = QTableWidget(0, 5)
+        self.seizures.setObjectName("onset_case_seizures")
+        self.seizures.setHorizontalHeaderLabels(["Seizure", "Run", "Onset", "Marked as",
+                                                 "Status"])
+        self.seizures.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.seizures.verticalHeader().setVisible(False)
+        self.seizures.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        self.seizures.horizontalHeader().setStretchLastSection(True)
+        self.seizures.setMaximumHeight(150)
+        self.statement = QLabel("")
+        self.statement.setObjectName("onset_case_ictal_statement")
+        self.statement.setWordWrap(True)
+        self.statement.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+        from matplotlib.figure import Figure
+
+        self.figure = Figure(figsize=(5.0, 4.6), dpi=100)
+        self.canvas = FigureCanvasQTAgg(self.figure)
+        self.canvas.setMinimumWidth(360)
+        self.table = QTableWidget(0, 5)
+        self.table.setObjectName("onset_case_ictal")
+        self.table.setHorizontalHeaderLabels(["Rank", "Channel", "Median index",
+                                              "Seizures at or above 0.3",
+                                              "Median change (s)"])
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table.verticalHeader().setVisible(False)
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        self.table.horizontalHeader().setStretchLastSection(True)
+        top = QHBoxLayout()
+        top.addWidget(self.run_button)
+        top.addWidget(self.stop_button)
+        top.addWidget(self.progress, 1)
+        top.addStretch(1)
+        top.addWidget(self.done_button)
+        split = QSplitter(Qt.Horizontal)
+        split.addWidget(self.canvas)
+        split.addWidget(self.table)
+        split.setSizes([480, 620])
+        box = QVBoxLayout(self)
+        box.addLayout(top)
+        box.addWidget(self.what)
+        box.addWidget(self.seizures)
+        box.addWidget(self.statement)
+        box.addWidget(split, 1)
+
+    def refresh(self) -> None:
+        from onset_hfo.ictal import IctalSettings
+        from onset_review.caseictal import latest_ictal, seizures_of
+
+        case = self.window_.case
+        frame = seizures_of(case)
+        usable = int(frame["usable"].sum()) if len(frame) else 0
+        self.run_button.setEnabled(usable > 0)
+        self.what.setText(
+            (f"{len(frame)} seizure(s) marked, {usable} with an electrographic onset to "
+             "analyse" if len(frame) else "No seizure is marked yet: mark each seizure's "
+             "electrographic onset on the Annotate step")
+            + ". Per seizure, per channel: the Epileptogenicity Index — "
+            + IctalSettings().describe()
+            + ". A research measure; it needs the electrographic onset marked by a person.")
+        if self.result is None:
+            self.result = latest_ictal(case)
+        self._show_seizures(frame)
+        self._show()
+
+    def _show_seizures(self, frame) -> None:
+        states = {}
+        if self.result is not None and len(self.result.seizures):
+            states = {(str(r.run), round(float(r.onset), 3)): str(r.status)
+                      for r in self.result.seizures.itertuples()}
+        self.seizures.setRowCount(len(frame))
+        for r, row in enumerate(frame.itertuples()):
+            state = states.get((str(row.run), round(float(row.onset), 3)))
+            if state is None:
+                state = "to analyse" if row.usable else f"left out: {row.note}"
+            elif state == "ok":
+                state = "analysed"
+            values = (row.seizure, row.run, clock(row.onset), row.marker, state)
+            for c, value in enumerate(values):
+                self.seizures.setItem(r, c, QTableWidgetItem(str(value)))
+
+    def run(self, wait: bool = False):
+        from onset_review.caseictal import run_ictal
+        from onset_review.workers import track
+
+        case = self.window_.case
+
+        def work(progress, should_stop):
+            return run_ictal(case, progress=progress, should_stop=should_stop)
+
+        self._job = _Job(work, self)
+        self._job.progressed.connect(lambda f: self.progress.setValue(int(f * 100)))
+        self._job.finished.connect(self._ran)
+        self.progress.setValue(0)
+        self.progress.setVisible(True)
+        self.run_button.setEnabled(False)
+        self.stop_button.setEnabled(True)
+        track(self._job).start()
+        if wait:
+            self._job.wait()
+            self._ran()
+        return self._job
+
+    def _ran(self) -> None:
+        from onset_review.caseictal import seizures_of
+
+        job = self._job
+        if job is None or job.isRunning():
+            return
+        self._job = None
+        self.progress.setVisible(False)
+        self.run_button.setEnabled(True)
+        self.stop_button.setEnabled(False)
+        if job.error is not None:
+            self.statement.setText(f"Not finished: {job.error}")
+            return
+        self.result = job.result
+        self._show_seizures(seizures_of(self.window_.case))
+        self._show()
+        self.changed.emit()
+
+    def _show(self) -> None:
+        from onset_review.caseictal import draw_ictal
+
+        result = self.result
+        self.figure.clear()
+        if result is None:
+            self.statement.setText("")
+            self.table.setRowCount(0)
+            self.canvas.draw_idle()
+            return
+        self.statement.setText(result.statement() + f" (Results: {result.folder.name}.)")
+        if len(result.combined):
+            draw_ictal(self.figure, self.figure.add_subplot(111), result)
+        self.canvas.draw_idle()
+        rows = result.combined.to_dict("records")
+        self.table.setRowCount(len(rows))
+        for r, row in enumerate(rows):
+            change = "–" if pd.isna(row["median_change_s"]) else f"{row['median_change_s']:+.1f}"
+            values = (str(int(row["rank"])), row["channel"], f"{row['median_ei']:.2f}",
+                      f"{int(row['seizures_high'])} of {int(row['seizures'])}", change)
+            for c, value in enumerate(values):
+                self.table.setItem(r, c, QTableWidgetItem(value))
+
+
 class ReviewPage(QWidget):
     changed = Signal()
 
@@ -1298,11 +1464,12 @@ class CaseWindow(QMainWindow):
         self.segments_page = SegmentsPage(self)
         self.settings_page = AnalysisSettingsPage(self)
         self.interictal_page = InterictalPage(self)
+        self.ictal_page = IctalPage(self)
         self.review_page = ReviewPage(self)
         own = {"import": self.import_page, "channels": self.channels_page,
                "annotate": self.annotate_page, "segments": self.segments_page,
                "preprocess": self.settings_page, "interictal": self.interictal_page,
-               "review": self.review_page}
+               "ictal": self.ictal_page, "review": self.review_page}
         self.page_for: dict[str, QWidget] = {}
         for key, title, phase in STEPS:
             page = own.get(key) or LaterPage(title, phase)

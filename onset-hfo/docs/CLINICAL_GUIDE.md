@@ -1575,8 +1575,54 @@ have been recorded on it; double-click to open it in the review window,
 analysed as it was in the pooled run, where verdicts are given as on any
 window and counted back here.
 
-What comes next — ictal onset mapping, template localisation, the combined
-map and the report — arrives phase by phase.
+![Three real seizures of one patient: each channel's median Epileptogenicity Index, each seizure's as a dot, and how often each reached 0.3](images/onset-review-case-ictal.png)
+
+*Above: three seizures of a real patient (ds003029 sub-pt01, the archive's
+own onset marks), each recording a minute either side of the onset, as three
+recordings in a case.*
+
+**Ictal onset.** Where each seizure starts, by the **Epileptogenicity
+Index** (Bartolomei, Chauvel & Wendling, *Brain* 2008). At a seizure's onset
+the contacts that start it change first and change most: slow rhythms give
+way to fast ones. Per channel, in 1 s windows every 0.25 s, the energy at
+12.4–97 Hz over the energy at 3.5–12.4 Hz, divided by the channel's own
+median from 30 to 5 s before the onset; a Page–Hinkley test dates when that
+ratio rose and stayed risen (looked for from 10 s before to 30 s after the
+onset); the index is the ratio summed over the 5 s after the change, divided
+by how long after the *first* channel's change it came (plus 1 s), then
+scaled so the highest channel is 1. Early and strong scores near 1; late or
+weak near 0; never, 0.
+
+The seizures are the case's marks: each **electrographic seizure onset**, or
+the start of a *seizure* span (an onset and a span starting within 10 s of it
+are one seizure). A **clinical onset alone** is listed and left out, with
+why: the index dates the change against the electrographic onset, and the
+first clinical sign usually comes seconds later, inside the seizure. A
+seizure with less than half a minute of recording before it is left out too.
+Each seizure is read from 35 s before to 35 s after its onset and
+preprocessed as the Preprocess step says, its bad contacts left out; a
+low-pass below 97 Hz is refused rather than applied, since it removes the
+fast band.
+
+*Run over the seizures* gives, per channel, the **median index** over the
+seizures and **in how many it reached 0.3** — the cutoff the method's
+authors used — and the median time of its change from the marked onset. The
+statement names the highest channel and those at or above 0.3 in at least
+half the seizures: a channel that leads every seizure is a different finding
+from one that led once, and one seizure's onset zone is not necessarily the
+patient's (with one seizure it says so). The chart shows the medians, filled
+for those channels, each seizure's index as a dot, and the cutoff as a line.
+Each run writes a dated folder under `derivatives/onset/ictal/`: the
+combined table, every seizure's table, which seizures were analysed and why
+not, the settings and a summary.
+
+This is a research measure, and it needs a person to mark the electrographic
+onset. How well it finds the clinicians' onset zone on 35 patients of the
+same archive — with intervals, and where it does not — is in
+[`ICTAL.md`](ICTAL.md).
+
+What comes next — template localisation, the combined map and the report —
+arrives phase by phase.
 
 ## 6. What this has actually been measured to do
 
