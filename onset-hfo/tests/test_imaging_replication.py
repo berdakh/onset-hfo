@@ -84,8 +84,10 @@ def test_the_summary_counts_each_way_and_leaves_out_a_mismatched_frame():
 
 
 def test_surface_ras_plus_the_centre_is_scanner_ras(tmp_path):
-    import nibabel as nib
     import numpy as np
+    import pytest
+
+    nib = pytest.importorskip("nibabel")
 
     # A conformed (LIA, 1 mm) volume with its centre away from the origin, as FreeSurfer has it.
     affine = np.array([[-1.0, 0, 0, 40.0], [0, 0, 1.0, -70.0], [0, -1.0, 0, 55.0], [0, 0, 0, 1]])
