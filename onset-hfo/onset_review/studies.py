@@ -30,6 +30,8 @@ STUDIES = (
     ("detectors", "Detectors", "how the detectors score against expert markings"),
     ("outcome", "Outcome", "did the map point at the tissue whose removal cured the patient?"),
     ("patients", "Patients", "the same study one patient at a time, with the caveats"),
+    ("ictal", "Ictal onset", "does the Epileptogenicity Index find the clinicians' onset zone?"),
+    ("template", "Template map", "how far a planned contact lands, and what a label is worth"),
     ("data", "Data", "the two archives, and what each one carries"),
     ("architecture", "Architecture", "every component, and which ones this release includes"),
     ("research", "Research", "the measured state of the work, and what is open"),
@@ -263,9 +265,12 @@ def key_message(key: str, **choices) -> dict:
     through the same loaders, so the message cannot drift from the page. With
     the tables absent the message says so rather than invent a figure.
     """
+    from onset_review import studypages_clinic as clinic
+
     builders = {"detectors": _key_detectors, "outcome": _key_outcome,
                 "patients": _key_patients, "data": _key_data,
-                "architecture": _key_architecture, "research": _key_research}
+                "architecture": _key_architecture, "research": _key_research,
+                "ictal": clinic.key_ictal, "template": clinic.key_template}
     if key not in builders:
         raise KeyError(f"no study page {key!r}")
     try:
@@ -473,8 +478,11 @@ def build(key: str, session=None, **choices) -> str:
     and the Detectors and Outcome charts mark it. A reader's own re-run and
     cohort (`onset_review.yourstudy`) are added under *Yours* when there are
     any. The published text and tables are the same either way."""
+    from onset_review import studypages_clinic as clinic
+
     builders = {"detectors": _detectors, "outcome": _outcome, "patients": _patients,
-                "data": _data, "architecture": _architecture, "research": _research}
+                "data": _data, "architecture": _architecture, "research": _research,
+                "ictal": clinic.ictal_page, "template": clinic.template_page}
     if key not in builders:
         raise KeyError(f"no study page {key!r}; one of {[k for k, _, _ in STUDIES]}")
     if key in ("detectors", "outcome"):
@@ -922,6 +930,11 @@ each, pooled by subject mean.
             out.append(table(meas.round(1), rename={
                 "median": "median events / window", "q1": "lower quartile",
                 "maximum": "max", "windows_under_5": "windows with <5 events"}))
+    from onset_review.studypages_clinic import hup_interictal_section
+
+    second = hup_interictal_section()
+    if second:
+        out.append(second)
     out.append("## What it cannot support\n")
     out.append(note("bad", """
 **Nothing here survives correction.** One of the study's 36 comparisons reaches
@@ -1185,8 +1198,9 @@ def _data(**_) -> str:
     import pandas as pd
 
     out = ["# The data — real recordings, real patients\n", """
-No simulator behind these pages. Two public, CC0, BIDS-formatted archives of
-intracranial recordings from people who had epilepsy surgery.
+No simulator behind these pages. Three public, CC0, BIDS-formatted archives of
+intracranial recordings from people who had epilepsy surgery. The software
+runs on your own recordings too; these are where its methods were tested.
 """]
     out.append(table(pd.DataFrame([
         ("ds003498", "Zurich interictal slow-wave sleep", "20", "2000 Hz",
@@ -1194,7 +1208,10 @@ intracranial recordings from people who had epilepsy surgery.
          "everything measured in this project"),
         ("ds003029", "Epilepsy-iEEG multicentre", "35+", "250–1000 Hz",
          "clinician seizure markers · curated SOZ contacts",
-         "the ictal quickstart and the learned per-contact model")],
+         "the ictal study, the ictal quickstart and the learned per-contact model"),
+        ("ds004100", "HUP iEEG epilepsy", "58", "256–1024 Hz",
+         "seizure marks · onset-zone and resected contacts · outcome · contact positions",
+         "the template-map study and the replication on a second archive")],
         columns=["archive", "what it is", "subjects", "sampling", "what it carries",
                  "used for"])))
     out.append("""
@@ -1247,9 +1264,9 @@ Both archives are **CC0**. Work using them is asked to cite:
   *Neural fragility as an EEG marker of the seizure onset zone*, doi:10.1101/862797.
 
 **Your own recordings.** De-identification, ethics approval and data governance
-are entirely your responsibility — see `docs/DATA.md`. This release has no
-security model, no authentication and no audit log, and must not be pointed at
-identifiable data.
+are entirely your responsibility — see `docs/DATA.md`. A case keeps a
+tamper-evident log and checks for identifying text, but this release has no
+access control or authentication, and a check is not a guarantee.
 """)
     return "\n".join(out)
 

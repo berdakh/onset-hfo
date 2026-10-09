@@ -38,7 +38,7 @@ cp docs/INSTALL.md docs/CLINICAL_GUIDE.md docs/AGENT.md docs/LIMITATIONS.md \
 # environment and the reviewer finds it there (onset_review.studies.site_root).
 mkdir -p "${STAGE}/site/app" "${STAGE}/site/data" "${STAGE}/site/docs/img"
 cp app/panels.py "${STAGE}/site/app/"
-for table in benchmark outcome stability cohort; do
+for table in benchmark outcome stability cohort ictal template hup; do
   cp -R "data/${table}" "${STAGE}/site/data/"
 done
 cp docs/img/window_stability.png docs/img/run_stability.png "${STAGE}/site/docs/img/"

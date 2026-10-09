@@ -23,7 +23,8 @@ __all__ = ["glyph", "icon", "NAMES"]
 #: The glyphs there are, by the sidebar key they are drawn beside.
 NAMES = ("home", "recording", "analysis", "contacts", "map", "quality", "report",
          "assistant",
-         "detectors", "outcome", "patients", "data", "architecture", "research",
+         "detectors", "outcome", "patients", "ictal", "template", "data", "architecture",
+         "research",
          "chat")
 
 #: Stroke weight on the sixteen-point grid; the same for every glyph.
@@ -146,6 +147,19 @@ def _research(p: QPainter, c: QColor) -> None:
     p.drawLine(QPointF(8, 4), QPointF(8, 13.5))
 
 
+def _ictal(p: QPainter, c: QColor) -> None:
+    # A seizure's onset: a flat line that breaks into fast activity.
+    _polyline(p, [(1.5, 8), (5.5, 8), (6.5, 4), (7.5, 12), (8.5, 3), (9.5, 13),
+                  (10.5, 4.5), (11.5, 11.5), (12.5, 6.5), (14.5, 8)])
+
+
+def _template(p: QPainter, c: QColor) -> None:
+    # A head outline with a crosshair: a position on a template.
+    p.drawEllipse(QRectF(2, 2.5, 12, 11))
+    p.drawLine(QPointF(8, 4.5), QPointF(8, 11.5))
+    p.drawLine(QPointF(4.5, 8), QPointF(11.5, 8))
+
+
 def _workspace(p: QPainter, c: QColor) -> None:
     p.drawRect(QRectF(2, 3, 12, 10))
     p.drawLine(QPointF(2, 6.5), QPointF(14, 6.5))
@@ -173,6 +187,7 @@ _DRAW = {
     "home": _home, "recording": _recording, "analysis": _analysis,
     "contacts": _contacts, "map": _map, "quality": _quality, "report": _report, "assistant": _assistant,
     "detectors": _detectors, "outcome": _outcome, "patients": _patients,
+    "ictal": _ictal, "template": _template,
     "data": _data, "architecture": _architecture, "research": _research,
     "chat": _chat, "workspace": _workspace,
 }

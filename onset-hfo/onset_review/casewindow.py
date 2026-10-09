@@ -1570,6 +1570,7 @@ class MapPage(QWidget):
             top.addWidget(widget)
         top.addStretch(1)
         top.addWidget(self.done_button)
+        imaging_row = self._imaging_row()
         from onset_hfo.case.electrodes import TEMPLATE_NOTE
 
         self.note = _muted(TEMPLATE_NOTE)
@@ -1625,10 +1626,219 @@ class MapPage(QWidget):
         split.setSizes([420, 760])
         box = QVBoxLayout(self)
         box.addLayout(top)
+        box.addLayout(imaging_row)
         box.addWidget(self.note)
         box.addWidget(split, 1)
         self._table = pd.DataFrame()
         self._names: list[str] = []
+        self._locator = None
+
+    def _imaging_row(self) -> QVBoxLayout:
+        """The patient's own imaging: their MRI, registered to MNI; contacts in
+        it from a file or placed on their CT (`onset_hfo.case.imaging`)."""
+        self.mri_button = QPushButton("Add the patient's MRI…")
+        self.mri_button.setToolTip("Their T1-weighted MRI (NIfTI). It is registered to the "
+                                   "MNI152 template (affine) so contacts in it can be mapped.")
+        self.mri_button.clicked.connect(lambda _=False: self.mri_dialog())
+        self.native_button = QPushButton("Import contacts in the MRI's space…")
+        self.native_button.setToolTip("Positions in the patient's own MRI (scanner or ACPC "
+                                      "millimetres), as planning or localisation software "
+                                      "exports them (BIDS space-T1w).")
+        self.native_button.clicked.connect(lambda _=False: self.native_dialog())
+        self.ct_button = QPushButton("Place contacts on a CT…")
+        self.ct_button.setToolTip("The CT with the electrodes in, aligned to the MRI, opened "
+                                  "in MNE's contact locator (the imaging extra).")
+        self.ct_button.clicked.connect(lambda _=False: self.ct_dialog())
+        self.take_button = QPushButton("Use the placed contacts")
+        self.take_button.setToolTip("Bring the contacts placed in the locator into the case.")
+        self.take_button.clicked.connect(lambda _=False: self.take_located())
+        self.take_button.setVisible(False)
+        self.on_mri_button = QPushButton("Show on the MRI")
+        self.on_mri_button.setToolTip("The contacts on the patient's own MRI, in three planes.")
+        self.on_mri_button.clicked.connect(lambda _=False: self.show_on_mri())
+        self.imaging_status = QLabel("")
+        self.imaging_status.setObjectName("onset_case_imaging")
+        self.imaging_status.setWordWrap(True)
+        self.imaging_status.setStyleSheet(
+            f"color:{theme.current().text_muted};font-size:9pt;")
+        row = QHBoxLayout()
+        for widget in (self.mri_button, self.native_button, self.ct_button, self.take_button,
+                       self.on_mri_button):
+            row.addWidget(widget)
+        row.addStretch(1)
+        column = QVBoxLayout()
+        column.addLayout(row)
+        column.addWidget(self.imaging_status)
+        return column
+
+    def _show_imaging(self, electrodes) -> None:
+        from onset_hfo.case import imaging
+
+        case = self.window_.case
+        t1 = imaging.t1_path(case)
+        registered = imaging.load_registration(case) is not None
+        native = imaging.load_native(case)
+        self.native_button.setEnabled(registered)
+        self.ct_button.setEnabled(t1 is not None)
+        self.on_mri_button.setEnabled(t1 is not None and len(native) > 0)
+        self.take_button.setVisible(self._locator is not None)
+        if t1 is None:
+            status = "No MRI of this patient: contacts are placed on the template."
+        elif not registered:
+            status = "MRI added, not yet registered to MNI."
+        else:
+            check = imaging.registration_check_saved(case)
+            status = (f"MRI registered to MNI (affine; correlation with the template "
+                      f"{check.get('correlation', float('nan')):.2f}). "
+                      f"{len(native)} contact(s) in the MRI's space.")
+        self.imaging_status.setText(status)
+        from onset_hfo.case.electrodes import positions_kind, positions_note
+
+        self._positions = positions_kind(electrodes)
+        self.note.setText(positions_note(electrodes))
+
+    def add_mri(self, path, wait: bool = False):
+        """Copy the MRI into the case and register it to MNI, off the window's thread."""
+        from onset_hfo.case import imaging
+
+        imaging.add_t1(self.window_.case, path, by=self.window_.reader())
+        return self.register_mri(wait=wait)
+
+    def register_mri(self, wait: bool = False):
+        from onset_hfo.case import imaging
+
+        case, reader = self.window_.case, self.window_.reader()
+        def work(progress, should_stop):
+            if not imaging.template_available():
+                imaging.fetch_template()      # the MNI152 head, about 1.8 MB, once
+            return imaging.register_t1(case, by=reader)
+
+        self._job = _Job(work, self)
+        self._job.finished.connect(self._registered)
+        self.mri_button.setEnabled(False)
+        self.imaging_status.setText("Registering the MRI to MNI…")
+        self._job.start()
+        if wait:
+            self._job.wait()
+            self._registered()
+        return self._job
+
+    def _registered(self) -> None:
+        job, self._job = self._job, None
+        self.mri_button.setEnabled(True)
+        if job is None:
+            return
+        if job.error is not None:
+            QMessageBox.warning(self, "Register the MRI", f"Not registered: {job.error}")
+        self.refresh()
+        self.changed.emit()
+
+    def mri_dialog(self):
+        path, _ = QFileDialog.getOpenFileName(self, "The patient's T1-weighted MRI",
+                                              str(Path.home()),
+                                              "NIfTI (*.nii *.nii.gz);;All files (*)")
+        if not path:
+            return None
+        try:
+            return self.add_mri(path)
+        except (OSError, ValueError) as error:
+            QMessageBox.warning(self, "Add the patient's MRI", str(error))
+            return None
+
+    def import_native(self, path_or_table, what: str = ""):
+        from onset_hfo.case import imaging
+
+        frame = imaging.import_native(self.window_.case, path_or_table, self._load_atlas(),
+                                      by=self.window_.reader(), what=what)
+        self.refresh()
+        self.changed.emit()
+        return frame
+
+    def native_dialog(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Contact positions in the patient's MRI",
+                                              str(Path.home()),
+                                              "Coordinates (*.tsv *.csv *.txt);;All files (*)")
+        if not path:
+            return None
+        try:
+            return self.import_native(path)
+        except (OSError, ValueError) as error:
+            QMessageBox.warning(self, "Import contacts", str(error))
+            return None
+
+    def open_locator(self, ct_path, show: bool = True):
+        """Align the CT to the MRI and open MNE's locator on it for the case's contacts."""
+        from onset_hfo.case import imaging
+
+        aligned = imaging.ct_to_t1(self.window_.case, ct_path, by=self.window_.reader())
+        gui, info = imaging.open_locator(aligned, self._names, show=show)
+        self._locator = (gui, info, aligned)
+        self.take_button.setVisible(True)
+        return gui
+
+    def ct_dialog(self):
+        from onset_hfo.case import imaging
+
+        if not imaging.locator_available():
+            QMessageBox.information(
+                self, "Place contacts on a CT",
+                "Placing contacts on a CT uses MNE's contact locator, which is not "
+                "installed. Install the imaging extra:\n\n"
+                "    pip install \"onset-hfo[imaging]\"\n\n"
+                "Or import positions your localisation software exported, with "
+                "\"Import contacts in the MRI's space…\".")
+            return None
+        if imaging.load_registration(self.window_.case) is None:
+            QMessageBox.information(self, "Place contacts on a CT",
+                                    "Add the patient's MRI first: the CT is aligned to it, "
+                                    "and it is what carries the contacts to MNI.")
+            return None
+        if not self._names:
+            QMessageBox.information(self, "Place contacts on a CT",
+                                    "The case has no intracranial channels to place yet.")
+            return None
+        path, _ = QFileDialog.getOpenFileName(self, "The patient's CT with the electrodes",
+                                              str(Path.home()),
+                                              "NIfTI (*.nii *.nii.gz);;All files (*)")
+        if not path:
+            return None
+        try:
+            return self.open_locator(path)
+        except (OSError, ValueError, RuntimeError) as error:
+            QMessageBox.warning(self, "Place contacts on a CT", str(error))
+            return None
+
+    def take_located(self):
+        from onset_hfo.case import imaging
+
+        if self._locator is None:
+            return None
+        gui, info, aligned = self._locator
+        placed = imaging.positions_from_locator(info, aligned)
+        if not len(placed):
+            QMessageBox.information(self, "Use the placed contacts",
+                                    "No contact has been placed in the locator yet.")
+            return None
+        frame = self.import_native(placed, what=f"{len(placed)} contact(s) placed on the CT "
+                                   "with MNE's locator")
+        self._locator = None
+        try:
+            gui.close()
+        except RuntimeError:
+            pass
+        self.take_button.setVisible(False)
+        return frame
+
+    def show_on_mri(self, show: bool = True):
+        dialog = MriDialog(self.window_.case, self._selected_names(), self)
+        if show:
+            dialog.show()
+        return dialog
+
+    def _selected_names(self) -> list[str]:
+        rows = sorted({i.row() for i in self.contacts.selectionModel().selectedRows()}) \
+            if self.contacts.selectionModel() else []
+        return [self._names[r] for r in rows if r < len(self._names)]
 
     # -- data ------------------------------------------------------------------------------------
     def _load_atlas(self):
@@ -1666,6 +1876,7 @@ class MapPage(QWidget):
         self._load_atlas()
         electrodes = load_electrodes(case)
         self._names = self._contact_names(electrodes)
+        self._show_imaging(electrodes)
         placed = {str(r.name).upper(): r for r in electrodes.itertuples()}
         zone = set(case.zone("soz"))
         self.contacts.blockSignals(True)
@@ -1726,7 +1937,8 @@ class MapPage(QWidget):
         self.view3d_button.setEnabled(placed)
         if len(self._table):
             draw_combined(self.figure, self._table, self.atlas,
-                          view=self.view.currentData() or "top")
+                          view=self.view.currentData() or "top",
+                          positions=getattr(self, "_positions", "template"))
         else:
             self.figure.clear()
         self.canvas.draw_idle()
@@ -1736,7 +1948,7 @@ class MapPage(QWidget):
         from onset_review.templatebrain import write_3d_view
 
         target = Path(self.window_.case.derivatives) / "map" / "contacts-3d.html"
-        return write_3d_view(target, self._table)
+        return write_3d_view(target, self._table, getattr(self, "_positions", "template"))
 
     def open_3d(self):
         from qtpy.QtCore import QUrl
@@ -1857,6 +2069,50 @@ class MapPage(QWidget):
                                 "labelled contacts with the atlas",
                                 f"{len(electrodes)} contact(s)", by=self.window_.reader())
         self.refresh()
+
+
+class MriDialog(QDialog):
+    """The contacts on the patient's own MRI, in three planes through one of them."""
+
+    def __init__(self, case, selected: list[str] | None = None, parent=None):
+        super().__init__(parent)
+        from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+        from matplotlib.figure import Figure
+
+        from onset_hfo.case import imaging
+
+        self.setWindowTitle("Contacts on the patient's MRI")
+        self.resize(980, 460)
+        self.case = case
+        native = imaging.load_native(case)
+        self.centre = QComboBox()
+        self.centre.setObjectName("onset_case_mri_centre")
+        for name in native["name"].astype(str):
+            self.centre.addItem(name)
+        if selected:
+            index = self.centre.findText(selected[0], Qt.MatchFixedString)
+            if index >= 0:
+                self.centre.setCurrentIndex(index)
+        self.centre.currentIndexChanged.connect(lambda _i: self.draw())
+        self.figure = Figure(figsize=(9.6, 3.8), dpi=100)
+        self.canvas = FigureCanvasQTAgg(self.figure)
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Through"))
+        row.addWidget(self.centre)
+        row.addStretch(1)
+        box = QVBoxLayout(self)
+        box.addLayout(row)
+        box.addWidget(self.canvas, 1)
+        box.addWidget(_muted("Where the contacts were localised in this patient's MRI; "
+                             "the atlas names on the Map step come from the template."))
+        self.draw()
+
+    def draw(self) -> None:
+        from onset_hfo.case import imaging
+
+        self.figure.clear()
+        imaging.draw_on_mri(self.figure, self.case, centre=self.centre.currentText() or None)
+        self.canvas.draw_idle()
 
 
 class ReportPage(QWidget):
