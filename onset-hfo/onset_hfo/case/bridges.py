@@ -331,5 +331,5 @@ def convert(path: str | Path, case: Case, *, channel_types: dict | None = None,
         converted_at=time.strftime("%Y-%m-%dT%H:%M:%S"),
         converted_by=case.log[-1]["by"] if case.log else "", note=note))
     if not case.step_done("import"):
-        case.mark_step("import", True, f"first recording: {path.name}")
+        case.mark_step("import", True, f"first recording: run {run}")
     return report

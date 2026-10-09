@@ -1458,8 +1458,8 @@ growing a step at a time; seven of its ten steps work today.
 patient's name). **File → Open case…**, or `onset-review /path/to/case`,
 opens one again. The case window has the steps on the left — *Import*,
 *Channels & electrodes*, *Annotate*, then *Segments*, *Preprocess*,
-*Interictal*, *Ictal onset*, *Review*, *Map* and *Report*, greyed until the
-phase that brings them — and a tick beside each one done.
+*Interictal*, *Ictal onset*, *Review*, *Map* and *Report* — and a tick
+beside each one done.
 
 **The layout is BIDS-iEEG**, the open standard for intracranial recordings:
 the signal as BrainVision (32-bit, microvolts, at the recording's own
@@ -1679,7 +1679,83 @@ import, plan, removal and onset-zone change goes into the case's log. If the
 patient's own imaging turns up later, its coordinates in MNI152 import the
 same way and replace the template ones contact by contact.
 
-What comes next — the signed, versioned report — arrives in the last phase.
+![The Report step: what must hold before a report, the de-identification check, sign-off against the content, and the numbered versions](images/onset-review-case-report.png)
+
+**Report.** The one thing from a case that leaves the department, so it is
+produced under rules rather than on request.
+
+- **Not before the work is done.** The checklist at the top must be all ✓:
+  - the recordings are converted and the channels checked;
+  - an analysis has been run, and when it is interictal, its detections have
+    been reviewed (*Review done*);
+  - a **de-identification check** has passed;
+  - the **audit log** is intact.
+
+  *Produce the report* stays disabled until then, and says what is missing.
+- **De-identification.** The check reads every field of the case that
+  carries outside text: the case's and recordings' notes, the source file
+  names (in `case.json` and in the conversion reports), each step's note,
+  every mark, channel description, sidecar text and contact name, and the
+  log entries that copy any of them. It looks for dates, runs of six or
+  more digits (record numbers), e-mail addresses, phone numbers and **the
+  names you type**. The names are matched and never written anywhere; only
+  how many were looked for goes in the log. What it finds is shown masked
+  (`S***h`). *Redact what was found* replaces it with `[removed]` in place
+  and logs that it did, without the text. It is a check, not a guarantee: a
+  name nobody typed, in a form no pattern knows, passes.
+- **The audit log is a chain.** Every entry carries the hash of the one
+  before it and its own. An entry edited, removed, reordered or slipped in
+  afterwards breaks the chain, and the checklist says which entry. A
+  redacted entry keeps its original hash and is reported as *redacted*, not
+  hidden. Entries from a case made before this version are counted as
+  "before the chain".
+- **A sign-off is for content.** *Sign off* records who, in what role,
+  saying what (the default statement is editable), against a
+  **fingerprint**: one checksum of every result, setting, contact position
+  and zone the report draws on. Change any of them (re-run an analysis, move
+  a contact, edit the onset zone) and the sign-off shows as *superseded*. A
+  report made then says **"Not signed off for this content. A draft."** at
+  the top. The same person cannot sign the same content twice.
+- **Versions are kept.** Each report is a new numbered folder,
+  `derivatives/onset/reports/report-vN/`. It holds the PDF (A4, written by
+  Qt's PDF writer), the HTML it was made from, the figures, and a
+  `manifest.json` with the fingerprint, the sign-offs it carries and every
+  file's SHA-256. Nothing is overwritten, and producing one is logged. The
+  *Report* step is ticked when a signed-off version exists. Double-click a
+  version to open it.
+
+The report reads every number from the steps' own result folders, so it
+cannot disagree with the screen:
+- a summary (the map's statement, the interictal and ictal statements, and
+  the clinician's onset zone with who set it);
+- the recordings with their source checksums (not their file names), and
+  the steps with who did each and when;
+- the interictal and ictal results with their figures and tables;
+- the combined map, under the template caveat;
+- what each method was measured to do on the archives, with intervals;
+- the checks, the sign-offs and the fingerprint.
+
+![Page 1 of the dry run's report](images/onset-review-case-report-page1.png)
+
+**A dry run, end to end.** The whole path was run on one real patient
+(ds004100 sub-HUP139), from the archive's own EDF files to a signed PDF:
+- three seizure recordings and five minutes of interictal recording
+  converted into a case (100 channels at 1024 Hz, 0.3 h in all);
+- the archive's seizure marks imported, and five one-minute interictal
+  segments chosen by rule;
+- 5 minutes of interictal recording analysed and pooled (18 s on this
+  machine), and 3 seizures analysed (3 s);
+- the archive's contact positions imported from fsaverage and labelled;
+- the archive's onset-zone contacts set as the zone;
+- the de-identification check run, which found nothing in this already
+  de-identified archive;
+- a sign-off recorded, and report v1 produced: 5 pages, with the log's 27
+  entries chained and intact.
+
+In the dry run the steps were ticked by the script and the sign-off is
+marked "dry run — not a clinical sign-off". No person reviewed the
+detections. It shows the path works end to end; it says nothing of whether
+the findings are right. That is what the studies are for.
 
 ## 6. What this has actually been measured to do
 

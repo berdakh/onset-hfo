@@ -202,7 +202,10 @@ def test_the_case_window_converts_types_marks_and_analyses(qapp, clinical_edf, t
     window = CaseWindow(case, reader="dr test")
     try:
         assert window.current_step() == "import"
-        assert not window.show_step("report"), "a later phase's step is not open yet"
+        from onset_hfo.case.model import STEPS
+
+        assert all(window.show_step(key) for key, _title, _phase in STEPS), "every step opens"
+        assert window.show_step("import")
         dialog = ConvertDialog(clinical_edf, window)
         assert dialog.table.rowCount() == 18 and dialog.marks_table.rowCount() == 4
         dialog.set_brain_type("ecog")

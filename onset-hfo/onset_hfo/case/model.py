@@ -18,6 +18,7 @@ the table from pseudonym to patient stays with the clinic.
 from __future__ import annotations
 
 import getpass
+import hashlib
 import json
 import time
 from dataclasses import dataclass, field
@@ -50,6 +51,11 @@ STEPS = (
 
 def _now() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%S")
+
+
+def _entry_hash(entry: dict) -> str:
+    body = {k: entry.get(k, "") for k in ("at", "by", "action", "detail", "prev")}
+    return hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()
 
 
 def _user() -> str:
@@ -103,6 +109,9 @@ class Case:
     #: "at": ..}}: the seizure onset zone as they judged it, for the Map step's
     #: agreement. Never computed by the software.
     zones: dict = field(default_factory=dict)
+    #: Reviewers' sign-offs, each against a fingerprint of the content it
+    #: approves (`onset_review.casereport.sign_off`).
+    signoffs: list = field(default_factory=list)
 
     # -- making and opening ----------------------------------------------------------
     @classmethod
@@ -132,7 +141,8 @@ class Case:
                    recordings=[Recording.from_json(r) for r in data.get("recordings", [])],
                    steps=dict(data.get("steps", {})), log=list(data.get("log", [])),
                    analysis=dict(data.get("analysis", {})),
-                   zones=dict(data.get("zones", {})))
+                   zones=dict(data.get("zones", {})),
+                   signoffs=list(data.get("signoffs", [])))
 
     @staticmethod
     def is_case(folder: str | Path) -> bool:
@@ -143,7 +153,7 @@ class Case:
                 "created_by": self.created_by, "note": self.note,
                 "recordings": [r.to_json() for r in self.recordings],
                 "steps": self.steps, "log": self.log, "analysis": self.analysis,
-                "zones": self.zones}
+                "zones": self.zones, "signoffs": self.signoffs}
         path = self.root / CASE_FILE
         partial = path.with_suffix(".json.partial")
         partial.write_text(json.dumps(data, indent=1) + "\n", encoding="utf-8")
@@ -152,10 +162,50 @@ class Case:
 
     # -- the audit log and the steps -------------------------------------------------------
     def record(self, action: str, detail: str = "", by: str = "") -> None:
-        """Append to the log and save. The log is never rewritten."""
-        self.log.append({"at": _now(), "by": by or _user(), "action": action,
-                         "detail": detail})
+        """Append to the log and save. Each entry carries the hash of the one
+        before it and its own, so an entry edited, removed or slipped in
+        afterwards breaks the chain (`verify_log`)."""
+        previous = next((e["hash"] for e in reversed(self.log) if "hash" in e), "")
+        entry = {"at": _now(), "by": by or _user(), "action": action, "detail": detail,
+                 "prev": previous}
+        entry["hash"] = _entry_hash(entry)
+        self.log.append(entry)
         self.save()
+
+    def verify_log(self) -> dict:
+        """Walk the chain. Entries from before the chain began are counted, not
+        checked; a redacted entry keeps its original hash and is reported as
+        redacted rather than as broken."""
+        previous, checked, redacted, before = "", 0, [], 0
+        for i, entry in enumerate(self.log):
+            if "hash" not in entry:
+                if checked:
+                    return {"ok": False, "broken_at": i, "checked": checked,
+                            "redacted": redacted, "before_chain": before,
+                            "summary": f"entry {i + 1} has no hash inside the chain"}
+                before += 1
+                continue
+            if entry.get("prev", "") != previous:
+                return {"ok": False, "broken_at": i, "checked": checked, "redacted": redacted,
+                        "before_chain": before,
+                        "summary": f"entry {i + 1} does not follow the one before it: an "
+                                   "entry was removed, reordered or inserted"}
+            if entry.get("redacted"):
+                redacted.append(i)
+            elif _entry_hash(entry) != entry["hash"]:
+                return {"ok": False, "broken_at": i, "checked": checked, "redacted": redacted,
+                        "before_chain": before,
+                        "summary": f"entry {i + 1} ({entry.get('action', '')}) was changed "
+                                   "after it was written"}
+            previous = entry["hash"]
+            checked += 1
+        summary = f"{checked} entries checked, chain intact"
+        if redacted:
+            summary += f"; {len(redacted)} redacted"
+        if before:
+            summary += f"; {before} from before the chain"
+        return {"ok": True, "broken_at": None, "checked": checked, "redacted": redacted,
+                "before_chain": before, "summary": summary}
 
     def mark_step(self, step: str, done: bool = True, note: str = "", by: str = "") -> None:
         if step not in {key for key, _, _ in STEPS}:

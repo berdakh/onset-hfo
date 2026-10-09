@@ -29,6 +29,10 @@ page beside it.
   as *probable* structures, takes the clinician's onset zone, and puts the
   interictal rate, the ictal index and the zone side by side
   (`onset_hfo.case.electrodes`, `onset_review.casemap`).
+* **Report** checks the case is ready (analyses run and reviewed,
+  de-identification checked, the audit log intact), takes reviewers'
+  sign-offs against the content they approve, and produces numbered PDF
+  versions (`onset_review.casereport`, `onset_hfo.case.deid`).
 """
 
 from __future__ import annotations
@@ -1828,6 +1832,207 @@ class MapPage(QWidget):
         self.refresh()
 
 
+class ReportPage(QWidget):
+    """Report: what must hold first, the de-identification check, sign-off,
+    and the numbered versions (`onset_review.casereport`)."""
+
+    changed = Signal()
+
+    def __init__(self, window, parent=None):
+        super().__init__(parent)
+        self.window_ = window
+        self.findings = []
+        self.checks = QTableWidget(0, 3)
+        self.checks.setObjectName("onset_case_checks")
+        self.checks.setHorizontalHeaderLabels(["Before a report", "Met", "Detail"])
+        self.checks.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.checks.verticalHeader().setVisible(False)
+        self.checks.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        self.checks.horizontalHeader().setStretchLastSection(True)
+        self.checks.setMaximumHeight(190)
+        self.names = QLineEdit()
+        self.names.setPlaceholderText("the patient's names, comma-separated — looked for, "
+                                     "never stored")
+        self.check_button = QPushButton("Check de-identification")
+        self.check_button.clicked.connect(lambda _=False: self.check())
+        self.redact_button = QPushButton("Redact what was found")
+        self.redact_button.setEnabled(False)
+        self.redact_button.clicked.connect(lambda _=False: self.redact())
+        self.found = QTableWidget(0, 3)
+        self.found.setObjectName("onset_case_deid")
+        self.found.setHorizontalHeaderLabels(["Where", "Looks like", "Text (masked)"])
+        self.found.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.found.verticalHeader().setVisible(False)
+        self.found.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        self.found.horizontalHeader().setStretchLastSection(True)
+        self.found.setMaximumHeight(150)
+        self.role = QLineEdit()
+        self.role.setPlaceholderText("your role, e.g. consultant neurophysiologist")
+        self.statement = QLineEdit()
+        from onset_review.casereport import SIGNOFF_STATEMENT
+
+        self.statement.setText(SIGNOFF_STATEMENT)
+        self.sign_button = QPushButton("Sign off")
+        self.sign_button.clicked.connect(lambda _=False: self.sign())
+        self.signoffs = QTableWidget(0, 4)
+        self.signoffs.setObjectName("onset_case_signoffs")
+        self.signoffs.setHorizontalHeaderLabels(["By", "Role", "At", "For this content"])
+        self.signoffs.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.signoffs.verticalHeader().setVisible(False)
+        self.signoffs.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        self.signoffs.horizontalHeader().setStretchLastSection(True)
+        self.signoffs.setMaximumHeight(130)
+        self.produce_button = QPushButton("Produce the report")
+        self.produce_button.setObjectName("onset_case_produce")
+        self.produce_button.clicked.connect(lambda _=False: self.produce())
+        self.versions = QTableWidget(0, 5)
+        self.versions.setObjectName("onset_case_versions")
+        self.versions.setHorizontalHeaderLabels(["Version", "Made", "By", "Signed off",
+                                                 "Content"])
+        self.versions.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.versions.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.versions.verticalHeader().setVisible(False)
+        self.versions.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        self.versions.horizontalHeader().setStretchLastSection(True)
+        self.versions.itemDoubleClicked.connect(lambda _item: self.open_selected())
+        self.status = QLabel("")
+        self.status.setObjectName("onset_case_report_status")
+        self.status.setWordWrap(True)
+        self.status.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        deid_row = QHBoxLayout()
+        deid_row.addWidget(self.names, 1)
+        deid_row.addWidget(self.check_button)
+        deid_row.addWidget(self.redact_button)
+        sign_row = QHBoxLayout()
+        sign_row.addWidget(self.role, 1)
+        sign_row.addWidget(self.sign_button)
+        produce_row = QHBoxLayout()
+        produce_row.addWidget(self.produce_button)
+        produce_row.addStretch(1)
+        box = QVBoxLayout(self)
+        box.addWidget(self.checks)
+        box.addWidget(_muted("De-identification: the case's notes, source names, marks, "
+                             "channel descriptions, sidecars, contact names and log are "
+                             "searched for dates, record numbers, e-mail addresses, phone "
+                             "numbers and the names you type."))
+        box.addLayout(deid_row)
+        box.addWidget(self.found)
+        box.addWidget(_muted("A sign-off is for the content as it is now — every result, "
+                             "setting, contact position and zone the report draws on. Change "
+                             "any of them and it is superseded."))
+        box.addWidget(self.statement)
+        box.addLayout(sign_row)
+        box.addWidget(self.signoffs)
+        box.addLayout(produce_row)
+        box.addWidget(self.status)
+        box.addWidget(self.versions, 1)
+
+    def refresh(self) -> None:
+        from onset_review.casereport import readiness, report_versions, signoff_status
+
+        case = self.window_.case
+        rows = readiness(case)
+        self.checks.setRowCount(len(rows))
+        for r, (what, ok, detail) in enumerate(rows):
+            for c, value in enumerate((what, "✓" if ok else "✗", detail)):
+                self.checks.setItem(r, c, QTableWidgetItem(value))
+        ready = all(ok for _w, ok, _d in rows)
+        self.produce_button.setEnabled(ready)
+        self.sign_button.setText(f"Sign off as {self.window_.reader() or '…'}")
+        status = signoff_status(case)
+        self.signoffs.setRowCount(len(status))
+        for r, s in enumerate(status):
+            values = (s["by"], s.get("role", ""), s["at"].replace("T", " "),
+                      "yes" if s["current"] else "superseded")
+            for c, value in enumerate(values):
+                self.signoffs.setItem(r, c, QTableWidgetItem(value))
+        versions = report_versions(case)
+        self.versions.setRowCount(len(versions))
+        for r, v in enumerate(versions):
+            values = (f"v{v['version']}", v["made_at"].replace("T", " "), v["made_by"],
+                      "yes" if v["signed"] else "no", v["fingerprint"][:12])
+            for c, value in enumerate(values):
+                self.versions.setItem(r, c, QTableWidgetItem(value))
+        current = any(s["current"] for s in status)
+        self.status.setText(
+            ("Ready. " if ready else "Not ready: " + "; ".join(
+                w for w, ok, _d in rows if not ok) + ". ")
+            + ("Signed off for this content." if current else
+               "Not signed off for this content: a report made now is a draft."))
+
+    def _names(self) -> list[str]:
+        return [n.strip() for n in self.names.text().replace(";", ",").split(",") if n.strip()]
+
+    def check(self) -> list:
+        from onset_hfo.case.deid import check_case
+
+        case = self.window_.case
+        names = self._names()
+        self.findings = check_case(case, names)
+        self.found.setRowCount(len(self.findings))
+        for r, f in enumerate(self.findings):
+            for c, value in enumerate((f"{f.file} — {f.where}", f.what, f.excerpt)):
+                self.found.setItem(r, c, QTableWidgetItem(value))
+        self.redact_button.setEnabled(bool(self.findings))
+        case.record("checked de-identification",
+                    f"{len(self.findings)} finding(s); {len(names)} name(s) looked for",
+                    self.window_.reader())
+        self.refresh()
+        return self.findings
+
+    def redact(self) -> int:
+        from onset_hfo.case.deid import redact
+
+        changed = redact(self.window_.case, self.findings, self._names(),
+                         by=self.window_.reader())
+        self.check()
+        self.changed.emit()
+        return changed
+
+    def sign(self) -> dict | None:
+        from onset_review.casereport import sign_off
+
+        try:
+            entry = sign_off(self.window_.case, self.window_.reader(), self.role.text(),
+                             self.statement.text())
+        except ValueError as error:
+            QMessageBox.warning(self, "Sign off", str(error))
+            return None
+        self.refresh()
+        return entry
+
+    def produce(self):
+        from onset_review.casereport import html_to_pdf, produce
+
+        try:
+            result = produce(self.window_.case, self.window_.reader(), render_pdf=html_to_pdf)
+        except ValueError as error:
+            QMessageBox.warning(self, "Produce the report", str(error))
+            return None
+        self.refresh()
+        self.status.setText(self.status.text() + f" Made v{result.version}: "
+                            f"{result.pdf.name if result.pdf else result.html.name}.")
+        self.window_.refresh()
+        self.changed.emit()
+        return result
+
+    def open_selected(self):
+        from qtpy.QtCore import QUrl
+        from qtpy.QtGui import QDesktopServices
+
+        from onset_review.casereport import report_versions
+
+        rows = self.versions.selectionModel().selectedRows() if self.versions.selectionModel() \
+            else []
+        versions = report_versions(self.window_.case)
+        if not rows or rows[0].row() >= len(versions):
+            return None
+        folder = Path(versions[rows[0].row()]["folder"])
+        target = next(iter(sorted(folder.glob("*.pdf"))), folder / "report.html")
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(target)))
+        return target
+
+
 class LaterPage(QWidget):
     def __init__(self, title: str, phase: int, parent=None):
         super().__init__(parent)
@@ -1866,11 +2071,12 @@ class CaseWindow(QMainWindow):
         self.ictal_page = IctalPage(self)
         self.review_page = ReviewPage(self)
         self.map_page = MapPage(self)
+        self.report_page = ReportPage(self)
         own = {"import": self.import_page, "channels": self.channels_page,
                "annotate": self.annotate_page, "segments": self.segments_page,
                "preprocess": self.settings_page, "interictal": self.interictal_page,
                "ictal": self.ictal_page, "review": self.review_page,
-               "map": self.map_page}
+               "map": self.map_page, "report": self.report_page}
         self.page_for: dict[str, QWidget] = {}
         for key, title, phase in STEPS:
             page = own.get(key) or LaterPage(title, phase)
