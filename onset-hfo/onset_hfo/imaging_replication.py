@@ -300,7 +300,7 @@ def _agreement(rows: pd.DataFrame) -> dict:
 
 
 def summarise(patients: pd.DataFrame, contacts: pd.DataFrame) -> dict:
-    from onset_hfo.case.imaging import WARP_FADE_MM
+    from onset_hfo.case.imaging import CHECK_WARN, WARP_FADE_MM
 
     out = {"when": time.strftime("%Y-%m-%d"), "fade_mm": WARP_FADE_MM,
            "excluded": patients.loc[patients["status"] != "ok",
@@ -319,7 +319,8 @@ def summarise(patients: pd.DataFrame, contacts: pd.DataFrame) -> dict:
                 c[f"{way}_depth_mm"] > -NEAR_BRAIN_MM)), 3)
             if way != "registered":
                 drop = p[f"near_brain_{way}"] < p["near_brain_registered"] - 0.05
-                block[f"patients_worse_{way}"] = p.loc[drop, "subject"].tolist()
+                block[f"patients_worse_{way}"] = (p.loc[drop, "dataset"] + "/"
+                                                  + p.loc[drop, "subject"]).tolist()
             column = f"{way}_to_author_mm"
             if column in c and c[column].notna().any():
                 block[f"to_author_mm_{way}"] = round(float(c[column].median()), 2)
@@ -327,6 +328,16 @@ def summarise(patients: pd.DataFrame, contacts: pd.DataFrame) -> dict:
         block["primary"] = _agreement(deep[deep["truth"].str.endswith(PRIMARY)])
         block["deep"] = _agreement(deep)
         out[name] = block
+    # The primary contacts split by the registration's own check (`CHECK_WARN`).
+    low = ok["correlation"] < CHECK_WARN
+    out["check_warn"] = CHECK_WARN
+    out["low_check"] = (ok.loc[low, "dataset"] + "/" + ok.loc[low, "subject"]).tolist()
+    targeted = ok[ok["n_primary"] > 0]
+    out["primary_by_check"] = {
+        name: {"patients": int(len(part)), "contacts": int(part["n_primary"].sum()),
+               **{way: int(part[f"agree_{way}"].sum()) for way in WAYS}}
+        for name, part in [("flagged", targeted[targeted["correlation"] < CHECK_WARN]),
+                           ("not_flagged", targeted[targeted["correlation"] >= CHECK_WARN])]}
     return out
 
 

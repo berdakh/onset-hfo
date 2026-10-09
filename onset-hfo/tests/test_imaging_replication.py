@@ -57,7 +57,8 @@ def test_the_summary_counts_each_way_and_leaves_out_a_mismatched_frame():
         _contact("sub-1", "", {}, off),
         _contact("sub-2", "left hippocampus", good, on, excluded=True)])
     patients = pd.DataFrame([
-        {"dataset": "dsX", "subject": "sub-1", "status": "ok", "n_contacts": 4,
+        {"dataset": "dsX", "subject": "sub-1", "status": "ok", "n_contacts": 4, "n_primary": 2,
+         "agree_registered": 1, "agree_warped": 2, "agree_blended": 2, "agree_identity": 0,
          "correlation": 0.5, "correlation_warped": 0.7, "warp_shift_mm": 3.0,
          "near_brain_registered": 1.0, "near_brain_warped": 0.75, "near_brain_blended": 1.0,
          "near_brain_identity": 1.0},
@@ -74,9 +75,12 @@ def test_the_summary_counts_each_way_and_leaves_out_a_mismatched_frame():
                                                           "hippocampus": "1/1"}
     assert block["deep"]["contacts"] == 3 and block["deep"]["warped"]["agree"] == 3
     assert block["near_brain_warped"] == 0.75 and block["near_brain_blended"] == 1.0
-    assert block["patients_worse_warped"] == ["sub-1"]
+    assert block["patients_worse_warped"] == ["dsX/sub-1"]
     assert block["patients_worse_blended"] == []
     assert summary["dsX"]["primary"]["contacts"] == 2
+    assert summary["low_check"] == [] and summary["primary_by_check"]["flagged"]["contacts"] == 0
+    assert summary["primary_by_check"]["not_flagged"] == {
+        "patients": 1, "contacts": 2, "registered": 1, "warped": 2, "blended": 2, "identity": 0}
 
 
 def test_surface_ras_plus_the_centre_is_scanner_ras(tmp_path):
