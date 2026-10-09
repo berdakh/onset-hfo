@@ -38,7 +38,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-__all__ = ["t1_path", "add_t1", "register_t1", "register_image", "fetch_template",
+__all__ = ["t1_path", "add_t1", "register_t1", "register_image", "register_image_warped", "Warp", "load_warp", "patient_to_mni", "blend_warp", "template_depth", "WARP_FADE_MM",
+           "NONLINEAR", "fetch_template",
            "template_available", "TEMPLATE_FILES", "load_registration", "native_to_mni",
            "import_native", "native_electrodes_path", "load_native", "draw_on_mri",
            "ct_to_t1", "ct_in_t1_path", "open_locator", "tkr_to_scanner",
@@ -145,30 +146,192 @@ def register_image(moving) -> tuple[np.ndarray, dict]:
     return np.linalg.inv(np.asarray(reg, dtype=float)), check
 
 
-def register_t1(case, progress=None, by: str = "") -> np.ndarray:
-    """Register the case's T1 to MNI152 (affine); keep and return the 4x4
-    that carries the patient's scanner millimetres to MNI millimetres."""
+#: The non-linear step after the affine: dipy's symmetric diffeomorphic
+#: registration (SDR), at this voxel size. It bends the patient's head onto
+#: the template locally, where the affine can only stretch it as a whole.
+WARP_ZOOM_MM = 3.0
+
+
+class Warp:
+    """The non-linear part of a registration: a displacement field that takes
+    a point the affine has put in MNI to where the patient's anatomy says it
+    belongs. Kept as plain arrays (``.npz``), never pickled, so a case folder
+    read from elsewhere cannot run code.
+
+    The direction was settled against a known deformation (tests): MNE's
+    registration returns the map as its own inverse, so patient-to-MNI is the
+    map's *inverse* point transform, in world millimetres. (MNE's
+    ``apply_volume_registration_points`` passes the grid affines and leaves
+    points where they were.)"""
+
+    _FIELDS = ("forward", "backward", "disp_shape", "disp_grid2world", "domain_shape",
+               "domain_grid2world", "codomain_shape", "codomain_grid2world", "prealign",
+               "is_inverse")
+
+    def __init__(self, arrays: dict):
+        self.arrays = {k: np.asarray(v) for k, v in arrays.items()}
+        self._map = None
+
+    @classmethod
+    def from_dipy(cls, morph) -> Warp:
+        arrays = {}
+        for name in cls._FIELDS:
+            value = getattr(morph, name)
+            arrays[name] = np.eye(4) if value is None and name.endswith(("world", "align")) \
+                else np.asarray(value)
+        return cls(arrays)
+
+    def _dipy(self):
+        if self._map is None:
+            from dipy.align.imwarp import DiffeomorphicMap
+
+            a = self.arrays
+            shape = tuple(int(n) for n in a["disp_shape"])
+            morph = DiffeomorphicMap(
+                3, shape, disp_grid2world=a["disp_grid2world"],
+                domain_shape=tuple(int(n) for n in a["domain_shape"]),
+                domain_grid2world=a["domain_grid2world"],
+                codomain_shape=tuple(int(n) for n in a["codomain_shape"]),
+                codomain_grid2world=a["codomain_grid2world"], prealign=a["prealign"])
+            morph.forward = np.ascontiguousarray(a["forward"], dtype=np.float32)
+            morph.backward = np.ascontiguousarray(a["backward"], dtype=np.float32)
+            morph.is_inverse = bool(a["is_inverse"])
+            self._map = morph
+        return self._map
+
+    def apply(self, points_mni) -> np.ndarray:
+        """Points the affine put in MNI (mm), moved by the warp (mm)."""
+        points = np.atleast_2d(np.asarray(points_mni, dtype=float))
+        return np.asarray(self._dipy().transform_points_inverse(points), dtype=float)
+
+    def save(self, path) -> Path:
+        path = Path(path)
+        np.savez_compressed(path, **self.arrays)
+        return path
+
+    @classmethod
+    def load(cls, path) -> Warp:
+        with np.load(path, allow_pickle=False) as data:
+            return cls({k: data[k] for k in data.files})
+
+
+def register_image_warped(moving) -> tuple[np.ndarray, Warp, dict]:
+    """The affine registration and then the non-linear one: the 4x4 that
+    carries the patient's millimetres to MNI, the `Warp` that refines it, and
+    `registration_check` of the warped head."""
+    import mne
+
+    moving = _as_float(moving)
+    static = _as_float(_template("head"))
+    reg, morph = mne.transforms.compute_volume_registration(
+        moving, static, pipeline=(*REGISTRATION_PIPELINE, "sdr"),
+        zooms={**ZOOMS, "sdr": WARP_ZOOM_MM}, verbose=False)
+    check = registration_check(moving, static, reg, _template("brain_mask"), morph=morph)
+    return np.linalg.inv(np.asarray(reg, dtype=float)), Warp.from_dipy(morph), check
+
+
+#: Whether a case's MRI is warped onto the template after the affine (see
+#: docs/IMAGING.md for what that bought on ds003688).
+NONLINEAR = True
+#: The warp is applied in full to contacts the affine places at least this
+#: deep inside the template brain, faded in linearly from its edge, and not
+#: at all outside it. Deep, it is driven by the brain's own contrast and put
+#: 29 of 34 targeted contacts in their structure against the affine's 23;
+#: at the edge it follows the skull and scalp and pushed surface grids off
+#: the brain in 15 of 51 patients. Chosen among five fades on ds003688
+#: itself, so the gain is measured on the data that picked it.
+WARP_FADE_MM = 10.0
+WARP_FILE = "t1_to_mni_warp.npz"
+
+
+def register_t1(case, progress=None, by: str = "", nonlinear: bool | None = None) -> np.ndarray:
+    """Register the case's T1 to MNI152: the affine, and then (`NONLINEAR`)
+    the non-linear warp. Keeps both and returns the affine's 4x4, which
+    carries the patient's scanner millimetres to MNI millimetres; the warp,
+    when there is one, refines it (`patient_to_mni`)."""
     import nibabel as nib
 
+    nonlinear = NONLINEAR if nonlinear is None else bool(nonlinear)
     path = t1_path(case)
     if path is None:
         raise FileNotFoundError("the case has no MRI: add the patient's T1 first")
-    to_mni, check = register_image(nib.load(str(path)))
+    image = nib.load(str(path))
     folder = Path(case.derivatives) / "imaging"
     folder.mkdir(parents=True, exist_ok=True)
+    warp_path = folder / WARP_FILE
+    if nonlinear:
+        to_mni, warp, check_warped = register_image_warped(image)
+        check = registration_check(_as_float(image), _as_float(_template("head")),
+                                   np.linalg.inv(to_mni), _template("brain_mask"))
+        warp.save(warp_path)
+    else:
+        to_mni, check = register_image(image)
+        check_warped = None
+        warp_path.unlink(missing_ok=True)
     (folder / "t1_to_mni.json").write_text(json.dumps({
         "patient_to_mni": to_mni.tolist(), "template": TEMPLATE_NAME,
-        "pipeline": list(REGISTRATION_PIPELINE), "zooms_mm": ZOOMS, "t1": path.name,
-        "check": check}, indent=1) + "\n")
-    case.record("registered the MRI to MNI", f"affine; intensity correlation with the template "
-                f"{check['correlation']:.2f} inside its brain, "
-                f"{check['brain_covered']:.0%} of the brain covered"
+        "pipeline": list(REGISTRATION_PIPELINE) + (["sdr"] if nonlinear else []),
+        "zooms_mm": {**ZOOMS, **({"sdr": WARP_ZOOM_MM} if nonlinear else {})},
+        "t1": path.name, "warp": WARP_FILE if nonlinear else None,
+        "check": check, "check_warped": check_warped}, indent=1) + "\n")
+    how = "affine, then non-linear" if nonlinear else "affine"
+    case.record("registered the MRI to MNI", f"{how}; intensity correlation with the template "
+                f"{check['correlation']:.2f} inside its brain after the affine"
+                + (f", {check_warped['correlation']:.2f} after the warp" if check_warped else "")
+                + f", {check['brain_covered']:.0%} of the brain covered"
                 + ("; LOW -- check the contacts on the MRI" if check["correlation"] < CHECK_WARN
                    else ""), by)
     return to_mni
 
 
-def registration_check(moving, static, reg, mask=None) -> dict:
+def load_warp(case) -> Warp | None:
+    path = Path(case.derivatives) / "imaging" / WARP_FILE
+    return Warp.load(path) if path.exists() else None
+
+
+def patient_to_mni(case, points) -> np.ndarray:
+    """Points in the patient's MRI (mm) carried to MNI by the case's
+    registration: the affine, and the warp when there is one."""
+    to_mni = load_registration(case)
+    if to_mni is None:
+        raise ValueError("register the patient's MRI to MNI first")
+    placed = native_to_mni(points, to_mni)
+    warp = load_warp(case)
+    return blend_warp(placed, warp) if warp is not None else placed
+
+
+def template_depth(points_mni) -> np.ndarray:
+    """Millimetres inside (positive) or outside (negative) the template's
+    brain, at each MNI point."""
+    from scipy import ndimage
+
+    mask_image = _template("brain_mask")
+    mask = np.asarray(mask_image.get_fdata()) > 0.5
+    zooms = np.asarray(mask_image.header.get_zooms()[:3], dtype=float)
+    inside = ndimage.distance_transform_edt(mask, sampling=zooms)
+    outside = ndimage.distance_transform_edt(~mask, sampling=zooms)
+    points = np.atleast_2d(np.asarray(points_mni, dtype=float))
+    voxels = np.rint(np.c_[points, np.ones(len(points))]
+                     @ np.linalg.inv(mask_image.affine).T)[:, :3].astype(int)
+    valid = np.all((voxels >= 0) & (voxels < np.array(mask.shape)), axis=1)
+    depth = np.full(len(points), -np.inf)
+    v = voxels[valid].T
+    depth[valid] = np.where(mask[tuple(v)], inside[tuple(v)], -outside[tuple(v)])
+    return depth
+
+
+def blend_warp(placed_mni, warp: Warp, fade_mm: float | None = None) -> np.ndarray:
+    """The warp applied to points the affine placed, in full from `fade_mm`
+    inside the template brain, faded in from its edge, not at all outside it
+    (`WARP_FADE_MM`)."""
+    fade = WARP_FADE_MM if fade_mm is None else float(fade_mm)
+    placed = np.atleast_2d(np.asarray(placed_mni, dtype=float))
+    warped = warp.apply(placed)
+    weight = np.clip(template_depth(placed) / max(fade, 1e-9), 0.0, 1.0)
+    return placed + weight[:, None] * (warped - placed)
+
+
+def registration_check(moving, static, reg, mask=None, morph=None) -> dict:
     """How well the registered head matches the template: the correlation of
     their intensities inside the template's brain (`mask`, or the template's
     brightest voxels), and the share of that brain the head covers, after
@@ -178,7 +341,8 @@ def registration_check(moving, static, reg, mask=None) -> dict:
     below that of other patients means: look at it."""
     import mne
 
-    moved = mne.transforms.apply_volume_registration(moving, static, reg, verbose=False)
+    moved = mne.transforms.apply_volume_registration(moving, static, reg, sdr_morph=morph,
+                                                     verbose=False)
     template = np.asarray(static.get_fdata(), dtype=float)
     head = np.asarray(moved.get_fdata(), dtype=float)
     if mask is not None:
@@ -261,13 +425,15 @@ def import_native(case, path, atlas=None, by: str = "", what: str = "") -> pd.Da
     from onset_hfo.case.electrodes import ELECTRODE_COLUMNS, _group_of
 
     mni = native.copy()
-    mni[["x", "y", "z"]] = native_to_mni(native[["x", "y", "z"]].to_numpy(float), to_mni)
+    mni[["x", "y", "z"]] = patient_to_mni(case, native[["x", "y", "z"]].to_numpy(float))
+    warped = load_warp(case) is not None
     for column in ELECTRODE_COLUMNS:
         if column not in mni:
             mni[column] = np.nan if column in ("size", "label_mm") else ""
     mni["group"] = [_group_of(n) for n in mni["name"]]
     mni["source"] = "patient"
-    mni["space_from"] = "T1w (registered, affine)"
+    mni["space_from"] = ("T1w (registered, affine + non-linear)" if warped
+                         else "T1w (registered, affine)")
     mni = mni[list(ELECTRODE_COLUMNS)]
     if atlas is not None:
         mni = add_labels(mni, atlas)

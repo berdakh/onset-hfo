@@ -19,7 +19,21 @@
   "min": 0.775,
   "max": 1.703
  },
+ "correlation_warped": {
+  "median": 0.681,
+  "min": 0.251,
+  "max": 0.823
+ },
+ "warp_shift_mm_median": 3.45,
  "near_brain_registered": {
+  "contacts": 0.8711682743837085,
+  "patients_median": 0.984
+ },
+ "near_brain_warped": {
+  "contacts": 0.8403001071811361,
+  "patients_median": 0.923
+ },
+ "near_brain_blended": {
   "contacts": 0.8711682743837085,
   "patients_median": 0.984
  },
@@ -48,6 +62,42 @@
     "left parahippocampal gyrus, anterior": 1,
     "left parahippocampal gyrus, posterior": 1,
     "left temporal fusiform cortex, posterior": 1
+   }
+  },
+  "warped": {
+   "agree": 30,
+   "share": 0.8823529411764706,
+   "by_target": {
+    "left amygdala": "3/4",
+    "left hippocampus": "10/10",
+    "right amygdala": "3/6",
+    "right hippocampus": "14/14"
+   },
+   "labels": {
+    "right hippocampus": 14,
+    "left hippocampus": 10,
+    "right amygdala": 3,
+    "left amygdala": 3,
+    "right parahippocampal gyrus, anterior": 3,
+    "left parahippocampal gyrus, anterior": 1
+   }
+  },
+  "blended": {
+   "agree": 29,
+   "share": 0.8529411764705882,
+   "by_target": {
+    "left amygdala": "3/4",
+    "left hippocampus": "10/10",
+    "right amygdala": "2/6",
+    "right hippocampus": "14/14"
+   },
+   "labels": {
+    "right hippocampus": 14,
+    "left hippocampus": 10,
+    "right parahippocampal gyrus, anterior": 4,
+    "left amygdala": 3,
+    "right amygdala": 2,
+    "left parahippocampal gyrus, anterior": 1
    }
   },
   "identity": {
