@@ -350,6 +350,56 @@ def test_the_batch_window_runs_shows_and_adds_to_the_cohort(qapp, analyse, confi
         window.close()
 
 
+def test_a_batch_run_before_opens_again_with_rows_that_work(qapp, analyse, config,
+                                                            monkeypatch):
+    from onset_review import session as session_module
+    from onset_review.batchwindow import BatchWindow
+
+    monkeypatch.setattr(session_module, "load_session", analyse)
+    template = ReviewRequest(detectors=("rms", "line_length"), band="fast_ripple",
+                             threshold_sd=4.0)
+    first = BatchWindow(template, folder=config / "out")
+    items = [batchreview.BatchItem(dataset="d", subject="sub-01", t_start=0, t_stop=30),
+             batchreview.BatchItem(dataset="d", subject="broken")]
+    first.add_items(items)
+    first.run(wait=True)
+    _settle(qapp)
+    folder = first.result.folder
+    first.close()
+    assert [f for f, _ in batchreview.recent_batches()] == [folder.resolve()]
+
+    again = BatchWindow(ReviewRequest(), folder=config / "elsewhere")
+    try:
+        result = again.open_batch(folder)
+        assert result is not None and again.table.rowCount() == 2
+        assert again.items == items, "each recording as it was asked for"
+        assert again.template.band == "fast_ripple" and again.template.threshold_sd == 4.0
+        assert "fast ripple" in again.settings_line.text().lower()
+        assert again.across_view.summary.text().startswith("1 of 2 recordings analysed")
+        emitted = []
+        again.openRequested.connect(emitted.append)
+        again.table.selectRow(0)
+        request = again.open_selected()
+        assert emitted == [request]
+        assert (request.subject, request.band, request.threshold_sd, request.t_stop) == \
+            ("sub-01", "fast_ripple", 4.0, 30.0)
+        channels = str(result.rows.iloc[0]["channel_names"]).split("|")
+        entry = again.add_to_cohort(0, "seizure-free", yourstudy.contacts_of(channels[:1]))
+        assert entry is not None
+        # A batch from before batches kept their recordings: shown, not openable.
+        settings = json.loads((folder / "settings.json").read_text())
+        for key in ("items", "template", "rule"):
+            settings.pop(key)
+        (folder / "settings.json").write_text(json.dumps(settings))
+        assert again.open_batch(folder) is not None
+        assert again.table.rowCount() == 2 and again.items == []
+        assert not again.open_button.isEnabled() and again.cohort_button.isEnabled()
+        assert again.list.count() == 2
+        assert again.open_batch(config) is None and "not a batch folder" in again.status.text()
+    finally:
+        again.close()
+
+
 def test_every_window_offers_the_batch_and_projects(qapp, config):
     from onset_review import window as window_module
 
@@ -361,6 +411,9 @@ def test_every_window_offers_the_batch_and_projects(qapp, config):
         assert entries["Analyse many recordings…"].isEnabled()
         assert entries["Open project…"].isEnabled()
         assert not entries["Save project…"].isEnabled(), "nothing to save before a recording"
+        assert not entries["Compare with"].isEnabled(), "nothing to compare yet"
+        compare = [a.text().replace("&", "") for a in entries["Compare with"].menu().actions()]
+        assert compare == ["This recording with other settings…", "A saved project…"]
     finally:
         start.close()
 

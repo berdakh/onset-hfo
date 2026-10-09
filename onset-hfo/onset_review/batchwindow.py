@@ -36,6 +36,7 @@ from qtpy.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
+    QMenu,
     QProgressBar,
     QPushButton,
     QScrollArea,
@@ -308,17 +309,18 @@ class BatchWindow(QWidget):
         for widget in (add_cached, add_files, remove):
             buttons.addWidget(widget)
         buttons.addStretch(1)
+        self.reopen_button = QPushButton("Open a batch…")
+        self.reopen_button.setObjectName("onset_batch_reopen")
+        self.reopen_button.setToolTip("A batch run before: its table, its charts, and its rows "
+                                      "to open or add to your cohort")
+        self.reopen_menu = QMenu(self.reopen_button)
+        self.reopen_menu.aboutToShow.connect(self._fill_reopen_menu)
+        self.reopen_button.setMenu(self.reopen_menu)
+        buttons.addWidget(self.reopen_button)
         list_box.addLayout(buttons)
 
         # -- how --------------------------------------------------------------------
-        request = template
-        threshold = (f"{request.threshold_sd:g} SD" if request.threshold_sd is not None
-                     else "each detector's own threshold")
-        self.settings_line = QLabel(
-            f"Analysed alike, as the window that opened this: detectors "
-            f"{', '.join(request.detectors)}; {request.band_label()}; {threshold}; "
-            f"preprocessing {'as set there' if request.preprocess else 'the defaults'}; "
-            f"quality stage {'on' if request.check_quality else 'off'}.")
+        self.settings_line = QLabel(self._describe(template))
         self.settings_line.setWordWrap(True)
         self.all_as = QComboBox()
         self.all_as.addItem("SEEG", "seeg")
@@ -392,6 +394,7 @@ class BatchWindow(QWidget):
         self.table.itemDoubleClicked.connect(lambda _item: self.open_selected())
         self.open_button = button("Open in the window", "Open the selected recording in the "
                                   "main window, analysed the same way", self.open_selected)
+        self._open_tip = self.open_button.toolTip()
         self.cohort_button = button("Add to your cohort…", "Measure the selected recording "
                                     "the way the Outcome study measures a patient",
                                     self.add_to_cohort_dialog)
@@ -434,6 +437,81 @@ class BatchWindow(QWidget):
         box.addWidget(split)
         if paths:
             self.add_paths(paths)
+
+    @staticmethod
+    def _describe(request, when: str = "") -> str:
+        threshold = (f"{request.threshold_sd:g} SD" if request.threshold_sd is not None
+                     else "each detector's own threshold")
+        lead = (f"Analysed alike on {when}:" if when
+                else "Analysed alike, as the window that opened this:")
+        return (f"{lead} detectors {', '.join(request.detectors)}; {request.band_label()}; "
+                f"{threshold}; preprocessing "
+                f"{'as set there' if request.preprocess else 'the defaults'}; "
+                f"quality stage {'on' if request.check_quality else 'off'}.")
+
+    # -- a batch run before ----------------------------------------------------------------
+    def _fill_reopen_menu(self) -> None:
+        self.reopen_menu.clear()
+        recent = batchreview.recent_batches()
+        for folder, settings in recent:
+            count = len(settings.get("recordings") or [])
+            action = self.reopen_menu.addAction(
+                f"{settings.get('when', '?')} — {count} recording(s) — {folder.name}")
+            action.setToolTip(str(folder))
+            action.triggered.connect(lambda _=False, f=folder: self.open_batch(f))
+        if recent:
+            self.reopen_menu.addSeparator()
+        choose = self.reopen_menu.addAction("Choose a batch folder…")
+        choose.triggered.connect(lambda _=False: self.open_batch_dialog())
+
+    def open_batch_dialog(self):
+        start = str(self.base_folder or Path.home())
+        folder = QFileDialog.getExistingDirectory(self, "Open a batch", start)
+        return self.open_batch(folder) if folder else None
+
+    def open_batch(self, folder):
+        """Show a batch written before: its table and its charts, and, when it
+        kept how each recording was asked for, rows that open and join the
+        cohort as they did when it ran."""
+        if self._worker is not None and self._worker.isRunning():
+            self.status.setText("Wait for this batch to finish, or stop it, first.")
+            return None
+        folder = Path(folder)
+        if not (folder / "summary.csv").exists() or not (folder / "settings.json").exists():
+            self.status.setText(f"{folder} is not a batch folder: it has no summary.csv and "
+                                "settings.json.")
+            return None
+        result = batchreview.load_batch(folder)
+        again = batchreview.reopenable(result)
+        self.list.clear()
+        self.items = []
+        if again is not None:
+            items, template, rule = again
+            self.template = template
+            self._set_rule(rule)
+            self.add_items(items)
+        else:
+            for label in result.settings.get("recordings") or []:
+                self.list.addItem(QListWidgetItem(str(label)))
+        when = str(result.settings.get("when", ""))
+        if again is not None:
+            self.settings_line.setText(self._describe(self.template, when))
+        self.show_result(result)
+        if again is None:
+            self.open_button.setEnabled(False)
+            self.open_button.setToolTip("This batch was written before batches kept how each "
+                                        "recording was asked for; run it again to open its rows")
+        batchreview.remember_batch(folder)
+        self.status.setText(f"The batch of {when}, from {folder}. "
+                            + self.status.text().split("; written to")[0] + ".")
+        return result
+
+    def _set_rule(self, rule: batchreview.FileRule) -> None:
+        self.all_as.setCurrentIndex(max(0, self.all_as.findData(rule.all_as)))
+        self.exceptions.setText(", ".join(p for p, _ in rule.exceptions))
+        self.t_start.setValue(rule.t_start)
+        self.t_stop.setValue(rule.t_stop)
+        self.mains.setCurrentIndex(max(0, self.mains.findData(rule.line_freq)))
 
     # -- the list ------------------------------------------------------------------------
     def add_items(self, items) -> int:
@@ -535,6 +613,7 @@ class BatchWindow(QWidget):
             return
         self.result = worker.result
         self.show_result(self.result)
+        batchreview.remember_batch(self.result.folder)
 
     def show_result(self, result: batchreview.BatchResult) -> None:
         self.result = result
@@ -562,6 +641,7 @@ class BatchWindow(QWidget):
             self.across_view.summary.setText(f"Could not read the batch across: {error}")
         for widget in (self.open_button, self.cohort_button, self.folder_button):
             widget.setEnabled(True)
+        self.open_button.setToolTip(self._open_tip)
 
     # -- a row ------------------------------------------------------------------------------
     def _selected(self) -> int | None:

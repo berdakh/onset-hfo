@@ -604,6 +604,35 @@ def _electrodes_for(record: Recording):
     return frame
 
 
+def laplacian_positions(request) -> tuple[dict | None, str]:
+    """Contact positions from the reader's electrode file, for a Laplacian's
+    neighbours: (name -> x, y, z, the file's name), or (None, "") when the
+    reference is not the Laplacian or there is no readable file. A file is
+    read without a session: the Laplacian matches names itself, lead by
+    lead, and a lead the file does not cover falls back to the columns or
+    the contacts either side."""
+    from onset_hfo.preprocess import effective_reference
+
+    path = getattr(request, "electrodes_path", None)
+    if not path:
+        return None, ""
+    try:
+        if effective_reference(request.pipeline_config().preprocess) != "laplacian":
+            return None, ""
+    except ValueError:
+        return None, ""
+    from onset_review.coordinates import read_coordinates
+
+    read = read_coordinates(path)
+    if read.problems or not len(read.frame):
+        return None, ""
+    frame = read.frame
+    positions = {str(name).upper(): (float(x), float(y), float(z))
+                 for name, x, y, z in zip(frame["name"], frame["x"], frame["y"], frame["z"],
+                                          strict=True)}
+    return positions, Path(path).name
+
+
 def _electrodes_from_file(path, session_like):
     """Coordinates a reviewer pointed the software at, or None.
 
@@ -789,16 +818,18 @@ def streamed_session(request: ReviewRequest, cache_dir: Path | None = None,
             if channel not in reviewed:
                 reviewed.append(channel)
 
+    positions, positions_from = laplacian_positions(request)
     analysis = analyse_span(
         source, span_start, span_stop, cfg,
         detectors=tuple(request.detectors), with_spikes=request.with_spikes,
         check_quality=request.check_quality,
         progress=lambda fraction, message: say(0.03 + 0.80 * fraction, message),
-        collect=harvest)
+        collect=harvest, positions=positions, positions_from=positions_from)
 
     say(0.86, f"Loading {request.t_start:g}–{request.t_stop:g} s to look at")
     record = source(request.t_start, request.t_stop)
-    prep = prepare(record, cfg.preprocess, verbose=False)
+    prep = prepare(record, cfg.preprocess, verbose=False, positions=positions,
+                   positions_from=positions_from)
     raw = _to_raw(prep.data, list(prep.ch_names), prep.sfreq)
 
     events = analysis.events
@@ -879,7 +910,9 @@ def reload_trace(session: ReviewSession, t_start: float, t_stop: float,
     request = dataclasses.replace(session.request, t_start=start, t_stop=stop,
                                   span_start=span_start, span_stop=span_stop)
     record = source_for(request, cache_dir)(start, stop)
-    prep = prepare(record, request.pipeline_config().preprocess, verbose=False)
+    positions, positions_from = laplacian_positions(request)
+    prep = prepare(record, request.pipeline_config().preprocess, verbose=False,
+                   positions=positions, positions_from=positions_from)
     raw = _to_raw(prep.data, list(prep.ch_names), prep.sfreq)
     raw.set_annotations(annotations_for(session.events, prep.t_offset,
                                         window_s=prep.duration))
@@ -904,7 +937,9 @@ def session_from_recording(record: Recording, request: ReviewRequest,
 
     say(0.3, "Preprocessing: high-pass, notch, bipolar montage")
     cfg = request.pipeline_config()
-    prep = prepare(record, cfg.preprocess, verbose=False)
+    positions, positions_from = laplacian_positions(request)
+    prep = prepare(record, cfg.preprocess, verbose=False, positions=positions,
+                   positions_from=positions_from)
 
     band = request.band_hz
     if not BANDS.usable(prep.sfreq, band):

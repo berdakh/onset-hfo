@@ -636,6 +636,23 @@ class _Review:
         import dataclasses
 
         self.request = dataclasses.replace(self.request, electrodes_path=path)
+        from onset_review.session import laplacian_positions
+
+        positions, _name = laplacian_positions(self.request)
+        if positions and self.parts is not None and self._ask_reanalyse_for_positions():
+            # The Laplacian's neighbours come from positions: the window on
+            # screen was referenced without these, so the analysis follows
+            # the file rather than the view alone.
+            self._rerun()
+
+    def _ask_reanalyse_for_positions(self) -> bool:
+        from qtpy.QtWidgets import QMessageBox
+
+        return QMessageBox.question(
+            self._host(), "Re-analyse with these positions?",
+            "The Laplacian takes each contact's neighbours from the contacts' positions. "
+            "This window was referenced without this file's. Re-analyse now so the "
+            "neighbours come from it?") == QMessageBox.Yes
 
     def import_file(self) -> None:
         """Open a recording from this machine, replacing this window.
@@ -656,6 +673,8 @@ class _Review:
         host.on_batch = self.batch
         host.on_save_project = self.save_project
         host.on_open_project = self.open_project
+        host.on_compare_settings = self.compare_settings
+        host.on_compare_project = self.compare_project
 
     def batch(self, paths=None):
         """File → Analyse many recordings: the batch window, analysing alike
@@ -675,6 +694,79 @@ class _Review:
             window.add_paths(paths)
         window.show()
         window.raise_()
+        return window
+
+    # -- two analyses side by side -----------------------------------------------------------
+    def compare_settings(self, request=None):
+        """File → Compare with → other settings: this recording analysed again
+        as asked, beside the window."""
+        from qtpy.QtWidgets import QDialog
+
+        from onset_review import launcher
+        from onset_review.comparewindow import OtherSettingsDialog
+
+        if self.parts is None:
+            return None
+        if request is None:
+            dialog = OtherSettingsDialog(self.parts.session.request, self._host())
+            if dialog.exec() != QDialog.Accepted:
+                return None
+            request = dialog.other()
+        other = launcher.load_with_progress(request, self.args.cache_dir,
+                                            parent=self._host())
+        if other is None:
+            return None
+        return self._show_comparison(other)
+
+    def compare_project(self, path=None):
+        """File → Compare with → a saved project: its analysis, run again from
+        its request, with its own read, beside the window."""
+        from qtpy.QtWidgets import QFileDialog, QMessageBox
+
+        from onset_review import launcher, project
+        from onset_review.files import current_folder
+
+        if self.parts is None:
+            return None
+        host = self._host()
+        if path is None:
+            path, _ = QFileDialog.getOpenFileName(host, "Compare with a project",
+                                                  str(current_folder()),
+                                                  f"Projects (*{project.SUFFIX})")
+            if not path:
+                return None
+        state = project.open_project(path, locate=self._locate_recording)
+        if state.request is None:
+            QMessageBox.warning(host, "Compare with a project",
+                                "The project's recording was not found: "
+                                + "; ".join(state.missing or ["nothing to analyse"]) + ".")
+            return None
+        other = launcher.load_with_progress(state.request, self.args.cache_dir, parent=host)
+        if other is None:
+            return None
+        if state.read is not None:
+            other.read = state.read
+        return self._show_comparison(other, b_label="B")
+
+    def _locate_recording(self, entry):
+        """Ask where a project's recording is, when it is not where it was."""
+        from qtpy.QtWidgets import QFileDialog
+
+        from onset_review.files import current_folder
+
+        chosen, _ = QFileDialog.getOpenFileName(
+            self._host(), f"Where is {entry.get('name')}? (it was at {entry.get('path')})",
+            str(current_folder()))
+        return chosen or None
+
+    def _show_comparison(self, other, b_label: str = "B"):
+        from onset_review.comparewindow import CompareWindow
+
+        window = CompareWindow(self.parts.session, other, "A", b_label)
+        window.openRequested.connect(self._open_request)
+        self.compare_windows = [w for w in getattr(self, "compare_windows", [])
+                                if w.isVisible()] + [window]
+        window.show()
         return window
 
     def save_project(self, path=None, include_recording=None):
@@ -747,14 +839,7 @@ class _Review:
             if not path:
                 return None
 
-        def locate(entry):
-            if not ask:
-                return None
-            chosen, _ = QFileDialog.getOpenFileName(
-                host, f"Where is {entry.get('name')}? (it was at {entry.get('path')})",
-                str(current_folder()))
-            return chosen or None
-
+        locate = self._locate_recording if ask else (lambda _entry: None)
         try:
             state = project.open_project(path, locate=locate)
         except Exception as error:      # noqa: BLE001 - a broken file is reported

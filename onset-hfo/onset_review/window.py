@@ -864,6 +864,18 @@ def _project_menu(file_menu, host, loaded: bool) -> None:
     saver.setToolTip("This recording, its settings, your verdicts, the editor's scripts, the "
                      "console's variables and your cohort, in one file")
     saver.triggered.connect(lambda _=False: call("on_save_project"))
+    file_menu.addSeparator()
+    compare = file_menu.addMenu("&Compare with")
+    compare.setToolTipsVisible(True)
+    compare.setEnabled(loaded)
+    other = compare.addAction("This recording with other &settings…")
+    other.setToolTip("Analyse this window again with another reference, band or threshold, "
+                     "and see what moved")
+    other.triggered.connect(lambda _=False: call("on_compare_settings"))
+    saved = compare.addAction("A saved &project…")
+    saved.setToolTip("An analysis kept as a project: its ranking, its events and its verdicts "
+                     "beside this window's")
+    saved.triggered.connect(lambda _=False: call("on_compare_project"))
 
 
 def _support_menu(help_menu, host) -> None:
