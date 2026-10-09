@@ -409,6 +409,7 @@ def test_every_window_offers_the_batch_and_projects(qapp, config):
             if action.text().replace("&", "") == "File":
                 entries = {a.text().replace("&", ""): a for a in action.menu().actions()}
         assert entries["Analyse many recordings…"].isEnabled()
+        assert entries["New case…"].isEnabled() and entries["Open case…"].isEnabled()
         assert entries["Open project…"].isEnabled()
         assert not entries["Save project…"].isEnabled(), "nothing to save before a recording"
         assert not entries["Compare with"].isEnabled(), "nothing to compare yet"

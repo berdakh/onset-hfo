@@ -1442,6 +1442,92 @@ one way to produce a folder of confident reviews of the wrong channels.
 
 ---
 
+## 5a. A case: one patient's recordings, step by step
+
+![A case on the Annotate step: two hours at a glance, a seizure, sleep and a disconnection](images/onset-review-case.png)
+
+*The picture is a synthetic two-hour recording (16 contacts, 1 kHz) made to
+show the overview; no patient's data.*
+
+Opening a file looks at one minute. A **case** holds a patient's whole
+monitoring: every recording, converted once into one open layout, with the
+channels, the marks and every change made to them. It is the start of the
+clinic edition, and grows a step at a time; the steps it has today are the
+first three.
+
+**File → New case…** asks for a folder and a **pseudonym** (P017, never the
+patient's name). **File → Open case…**, or `onset-review /path/to/case`,
+opens one again. The case window has the steps on the left — *Import*,
+*Channels & electrodes*, *Annotate*, then *Segments*, *Preprocess*,
+*Interictal*, *Ictal onset*, *Review*, *Map* and *Report*, greyed until the
+phase that brings them — and a tick beside each one done.
+
+**The layout is BIDS-iEEG**, the open standard for intracranial recordings:
+the signal as BrainVision (32-bit, microvolts, at the recording's own
+sampling rate), a channels table, an events table and a sidecar per
+recording, with results under `derivatives/onset/`. Other groups' tools and
+MNE read it as it is, so the clinic's data is not locked into this software.
+A `case.json` beside it lists the recordings, the steps and an **audit
+log**: every conversion and every change to channels or marks, with who and
+when, never rewritten.
+
+**Import.** *Add a recording…* picks a file from the clinical system. Its
+**bridge** reads it — EDF and EDF+, BDF, BrainVision, Nihon Kohden, Nicolet,
+Persyst, Blackrock, Neuralynx, MEF3, EEGLAB and the other formats MNE reads;
+Micromed through the `neo` package when it is installed; Natus/XLTEK from its
+EDF+ export — and the window shows what the file is before anything is
+written: its rate and length, the time of day it started, each channel as the
+file declares it and as it will be converted (*every brain channel SEEG* or
+*ECoG* in one click; mark any bad), and every mark the clinical system made,
+with the kind it will be read as. Conversion then:
+
+- checksums the file (SHA-256) and refuses one already in the case;
+- writes **nothing that names the patient** — name, identifier, birth date
+  and the recording's date are left behind, and the report lists which the
+  file had; the time of day is kept, because night and day matter;
+- maps the system's marks onto a small vocabulary (*seizure*, *seizure
+  onset*, *clinical onset*, *seizure offset*, *artefact*, the five sleep
+  stages, *stimulation*, *button*, *medication*, *note*) and keeps the text
+  typed, so "Sz onset ?" is a seizure onset that still says "?". Free-text
+  notes are counted in the report: read them for names before the case
+  leaves the building;
+- writes a **conversion report** (what was done, what was retyped, what was
+  left out, warnings such as "at 1000 Hz fast ripples cannot be analysed").
+
+**Channels & electrodes.** Each channel's type and whether it is bad, with
+the reason. Only SEEG and ECoG contacts are analysed; a bad contact is left
+out of every analysis, and the review window says so.
+
+**Annotate.** *Draw the overview* shows hours at a glance: the line length of
+the busiest tenth of the contacts (a seizure starting on four contacts of a
+hundred moves the median not at all), with stretches where most contacts are
+flat in grey, and tracks for seizures, sleep (a hypnogram) and artefacts
+underneath. It **samples** — 2 s of every 30 s — and says so; it is drawn once
+and kept with the case. Click to choose a time; the time is shown from the
+start and on the clock. Then:
+
+- **Add at this time** a mark of any kind, with a duration and a note;
+- **Open the trace here** opens **MNE's own browser** at that time, every
+  channel, the case's marks shown and its vocabulary ready in the annotation
+  list: press *A*, choose a kind, drag to mark. Closing the browser brings
+  its marks back — added, moved and removed — and a mark left alone keeps
+  who made it and its text;
+- **Analyse this minute** opens the minute from that time in the review
+  window, analysed with the channel types and bad contacts of the case.
+
+Many files at once convert from a terminal, typed by one rule:
+
+```bash
+python -m onset_hfo.case new /data/cases/P017 P017
+python -m onset_hfo.case convert /data/cases/P017 night1.edf night2.edf --all-as seeg --mains 50
+python -m onset_hfo.case list /data/cases/P017
+```
+
+*Channels checked* and *Marks complete* tick the steps. What comes next —
+choosing segments by sleep stage and distance from seizures, analysing them
+together, ictal onset mapping, template localisation, the report — arrives
+phase by phase.
+
 ## 6. What this has actually been measured to do
 
 Cohort figures from [`EVALUATION.md`](EVALUATION.md), 20 patients, against the

@@ -850,6 +850,14 @@ def _project_menu(file_menu, host, loaded: bool) -> None:
             handler()
 
     file_menu.addSeparator()
+    new_case = file_menu.addAction("New &case…")
+    new_case.setToolTip("One patient's recordings, converted from the clinical system and "
+                        "worked through step by step")
+    new_case.triggered.connect(lambda _=False: call("on_new_case"))
+    open_case = file_menu.addAction("Open c&ase…")
+    open_case.setToolTip("A case folder made here before")
+    open_case.triggered.connect(lambda _=False: call("on_open_case"))
+    file_menu.addSeparator()
     batch = file_menu.addAction("Analyse &many recordings…")
     batch.setShortcut("Ctrl+Shift+A")
     batch.setToolTip("Cached windows and files of your own, analysed alike, into one table")
