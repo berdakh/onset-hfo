@@ -31,7 +31,8 @@ cp README.md LICENSE "${STAGE}/"
 # copies docs/ next to the environment, and the reviewer looks there.
 mkdir -p "${STAGE}/docs"
 cp docs/INSTALL.md docs/CLINICAL_GUIDE.md docs/AGENT.md docs/LIMITATIONS.md \
-   docs/GLOSSARY.md docs/METHODS.md docs/EVALUATION.md "${STAGE}/docs/"
+   docs/GLOSSARY.md docs/METHODS.md docs/EVALUATION.md docs/OUTCOME.md docs/ICTAL.md \
+   docs/TEMPLATE_MAP.md "${STAGE}/docs/"
 # The study pages: the site's loaders, the committed tables they read, and
 # the two figures the Outcome page shows. install.sh copies site/ next to the
 # environment and the reviewer finds it there (onset_review.studies.site_root).
