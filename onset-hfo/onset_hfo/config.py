@@ -581,8 +581,17 @@ class PreprocessConfig:
     #: faulty contact cannot drag), ``"shaft"`` (each contact minus the mean
     #: of its own electrode shaft, the usual choice for SEEG) or ``"none"``.
     #: ``None`` keeps the older two flags deciding, so saved configurations
-    #: read as they did.
+    #: read as they did. ``"laplacian"`` is each contact minus the mean of its
+    #: neighbours: on an ECoG grid its four neighbours (from the contacts'
+    #: positions, or from `grid_columns`), on a strip or shaft the contacts
+    #: either side.
     reference: str | None = None
+    #: How many columns each ECoG grid has, by its name: ``(("G", 8),)`` for a
+    #: grid G numbered 1-8 along its first row, 9-16 along the next. Only the
+    #: Laplacian reads it, and only for a recording without contact
+    #: positions; a grid of more than `LAPLACIAN_STRIP_MAX` contacts with no
+    #: columns and no positions is left as recorded rather than guessed at.
+    grid_columns: tuple[tuple[str, int], ...] = ()
 
     # -- artifact annotation ----------------------------------------------------
     #: Mark seconds where broadband high-frequency power rises across the

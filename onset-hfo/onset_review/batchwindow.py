@@ -7,7 +7,11 @@ background with the settings of the window that opened it, into one table
 stated once, above the list, because a batch cannot stop to ask about each
 file. Stop ends the batch between recordings; what finished is kept. A row
 can be opened in the main window, or added to *Your cohort* with the
-resection and outcome the reader enters.
+resection and outcome the reader enters. *Across the batch* reads the finished
+table down its columns (`onset_review.batchresults`): each recording's
+busiest channel on one chart, each detector's agreement with the experts
+across the recordings that have markings, and the recordings that differ
+from the rest.
 """
 
 from __future__ import annotations
@@ -34,14 +38,16 @@ from qtpy.QtWidgets import (
     QListWidgetItem,
     QProgressBar,
     QPushButton,
+    QScrollArea,
     QSplitter,
     QTableWidget,
     QTableWidgetItem,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
 
-from onset_review import batchreview, theme
+from onset_review import batchresults, batchreview, theme
 
 __all__ = ["BatchWindow"]
 
@@ -51,6 +57,133 @@ SHOWN = (("recording", "Recording"), ("events", "Accepted events"), ("leader", "
          ("stands_out", "Stands out"), ("n_tied", "Tied"), ("quality_set_aside", "Set aside"),
          ("expert_f1", "F1 vs experts"), ("expert_rho", "ρ vs experts"),
          ("seconds", "Took (s)"), ("error", "Not analysed because"))
+
+
+class BatchResultsView(QWidget):
+    """*Across the batch*: what the table says read down its columns."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("onset_batch_across")
+        self.across: batchresults.Across | None = None
+        self._canvases: list = []
+        tokens = theme.current()
+        body = QWidget()
+        self._box = QVBoxLayout(body)
+        self._box.setContentsMargins(8, 8, 8, 8)
+        self._box.setSpacing(10)
+        self.summary = QLabel("Run the batch; what it says across its recordings shows here.")
+        self.summary.setObjectName("onset_batch_summary")
+        self.summary.setWordWrap(True)
+        self.summary.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self._box.addWidget(self.summary)
+        self.leaders_title = QLabel("<b>The busiest channel in each recording</b>")
+        self.leaders_note = QLabel("A filled dot stands out from the rest; an open one is "
+                                   "tied with others and is only the busiest.")
+        self.agreement_title = QLabel("<b>Agreement with the experts, by detector</b>")
+        self.agreement_note = QLabel("Each dot is one recording with expert markings; the bar "
+                                     "is the median.")
+        self.outliers_title = QLabel("<b>Recordings that differ from the rest</b>")
+        for note in (self.leaders_note, self.agreement_note):
+            note.setWordWrap(True)
+            note.setStyleSheet(f"color:{tokens.text_muted};font-size:9pt;")
+        self.leaders_host = QVBoxLayout()
+        self.agreement_host = QVBoxLayout()
+        self.outliers = QTableWidget(0, 5)
+        self.outliers.setObjectName("onset_batch_outliers")
+        self.outliers.setHorizontalHeaderLabels(["Recording", "Measure", "Value",
+                                                 "Batch median", "Robust z"])
+        self.outliers.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.outliers.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        self.outliers.horizontalHeader().setStretchLastSection(True)
+        self.outliers_note = QLabel("")
+        self.outliers_note.setWordWrap(True)
+        self.outliers_note.setStyleSheet(f"color:{tokens.text_muted};font-size:9pt;")
+        for widget in (self.leaders_title, self.leaders_note):
+            self._box.addWidget(widget)
+        self._box.addLayout(self.leaders_host)
+        for widget in (self.agreement_title, self.agreement_note):
+            self._box.addWidget(widget)
+        self._box.addLayout(self.agreement_host)
+        for widget in (self.outliers_title, self.outliers_note, self.outliers):
+            self._box.addWidget(widget)
+        self._box.addStretch(1)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.NoFrame)
+        scroll.setWidget(body)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(scroll)
+        self._sections(False)
+
+    def _sections(self, shown: bool) -> None:
+        for widget in (self.leaders_title, self.leaders_note, self.agreement_title,
+                       self.agreement_note, self.outliers_title, self.outliers_note,
+                       self.outliers):
+            widget.setVisible(shown)
+
+    @staticmethod
+    def _clear(host) -> None:
+        while host.count():
+            item = host.takeAt(0)
+            if item.widget() is not None:
+                item.widget().deleteLater()
+
+    def _canvas(self, host, width: float, height: float, draw):
+        from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+        from matplotlib.figure import Figure
+
+        self._clear(host)
+        figure = Figure(figsize=(width, height), dpi=100)
+        canvas = FigureCanvasQTAgg(figure)
+        canvas.setMinimumHeight(int(height * 100))
+        draw(figure, figure.add_subplot(111))
+        host.addWidget(canvas)
+        self._canvases.append(canvas)
+        return canvas
+
+    def show_result(self, result) -> batchresults.Across:
+        across = batchresults.across(result.rows, getattr(result, "scores", None))
+        self.across = across
+        self.summary.setText("\n".join(across.sentences))
+        self._canvases = []
+        have = len(across.leaders) > 0
+        self._sections(have)
+        if not have:
+            self._clear(self.leaders_host)
+            self._clear(self.agreement_host)
+            return across
+        height = 1.1 + 0.32 * len(across.leaders)
+        self.leaders_canvas = self._canvas(
+            self.leaders_host, 7.5, height,
+            lambda figure, axis: batchresults.draw_leaders(figure, axis, across.leaders))
+        marked = len(across.scores) > 0
+        self.agreement_note.setText(
+            "Each dot is one recording with expert markings; the bar is the median."
+            if marked else "None of these recordings carries expert markings.")
+        if marked:
+            self.agreement_canvas = self._canvas(
+                self.agreement_host, 6.0, 2.8,
+                lambda figure, axis: batchresults.draw_agreement(figure, axis,
+                                                                 across.scores))
+        else:
+            self._clear(self.agreement_host)
+        rows = across.outliers.to_dict("records")
+        self.outliers.setRowCount(len(rows))
+        for r, row in enumerate(rows):
+            for c, key in enumerate(("recording", "measure", "value", "median", "z")):
+                self.outliers.setItem(r, c, QTableWidgetItem(str(row[key])))
+        self.outliers.setVisible(bool(rows))
+        self.outliers_note.setText(
+            f"More than {batchresults.OUTLIER_Z:g} robust z (from the median absolute "
+            "deviation) from the batch's median, on events per minute, the share of contacts "
+            "set aside, the busiest channel's rate, or the agreement with the experts. "
+            + ("None does." if across.can_flag and not rows else
+               f"Needs {batchresults.MIN_FOR_OUTLIERS} analysed recordings; this batch has "
+               f"{len(across.leaders)}." if not across.can_flag else
+               "Different is not wrong: open the recording and look."))
+        return across
 
 
 class _BatchWorker(QThread):
@@ -277,8 +410,21 @@ class BatchWindow(QWidget):
         bottom_box.setContentsMargins(0, 0, 0, 0)
         bottom_box.addLayout(run_row)
         bottom_box.addWidget(self.status)
-        bottom_box.addWidget(self.table, 1)
-        bottom_box.addLayout(result_row)
+        table_page = QWidget()
+        table_box = QVBoxLayout(table_page)
+        table_box.setContentsMargins(0, 0, 0, 0)
+        table_box.addWidget(self.table, 1)
+        table_box.addLayout(result_row)
+        self.across_view = BatchResultsView()
+        self.tabs = QTabWidget()
+        self.tabs.setObjectName("onset_batch_tabs")
+        self.tabs.setDocumentMode(True)
+        self.tabs.addTab(table_page, "Table")
+        self.tabs.addTab(self.across_view, "Across the batch")
+        self.tabs.setTabToolTip(1, "Each recording's busiest channel on one chart, each "
+                                   "detector's agreement with the experts, and the "
+                                   "recordings that differ from the rest")
+        bottom_box.addWidget(self.tabs, 1)
 
         split = QSplitter(Qt.Vertical)
         split.addWidget(top_host)
@@ -410,6 +556,10 @@ class BatchWindow(QWidget):
                 self.table.setItem(r, c, cell)
         done = sum(1 for row in rows if not row.get("error"))
         self.status.setText(f"{done} of {len(rows)} analysed; written to {result.folder}.")
+        try:
+            self.across_view.show_result(result)
+        except Exception as error:      # noqa: BLE001 - the table stands without it
+            self.across_view.summary.setText(f"Could not read the batch across: {error}")
         for widget in (self.open_button, self.cohort_button, self.folder_button):
             widget.setEnabled(True)
 

@@ -2792,6 +2792,31 @@ def test_the_preprocessing_panel_carries_the_design_the_reference_and_the_annota
 
 
 
+def test_the_laplacian_takes_grid_columns_and_refuses_what_it_cannot_read(built):
+    panel = built.panels["preprocess"]
+    assert not panel.grid_columns.isEnabled()
+    panel.laplacian.setChecked(True)
+    assert panel.grid_columns.isEnabled()
+    panel.grid_columns.setText("G:8, lt:4")
+    cfg = panel.config()
+    assert cfg.reference == "laplacian" and not cfg.bipolar
+    assert cfg.grid_columns == (("G", 8), ("LT", 4))
+    assert "on grid G (8 columns), LT (4 columns)" in panel.summary.text()
+    applied = []
+    panel.applied.connect(applied.append)
+    panel.grid_columns.setText("G eight")
+    assert "Grid columns:" in panel.warnings.text()
+    panel._apply()
+    assert applied == [] and "Fix this before applying" in panel.warnings.text()
+    panel.grid_columns.setText("G:8")
+    panel._apply()
+    assert applied and applied[0].grid_columns == (("G", 8),)
+    panel.shaft.setChecked(True)
+    assert panel.config().grid_columns == ()
+    panel.reset_to_defaults()
+    assert panel.grid_columns.text() == "" and not panel.grid_columns.isEnabled()
+
+
 def test_the_spectrum_panel_follows_the_chosen_channel_and_picks_back(built, review):
     from onset_review import spectrum
 

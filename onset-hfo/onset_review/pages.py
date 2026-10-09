@@ -944,6 +944,9 @@ class PageWindow(QMainWindow):
         self.analysis_tabs.setDocumentMode(True)
         self.analysis_tabs.addTab(self._slots["workspace"], "Workspace")
         self.analysis_tabs.addTab(self._slots["files"], "Files")
+        # Plots and History are the console's, put here once the console is
+        # built (`_attach_console_panes`): it may be carried in from the last
+        # window, or made with the panes after the pages.
         console = theme.card_frame(self._slots["console"], "Console", padding=4)
         side = self._split("analysis_side", Qt.Vertical, [self.analysis_tabs, console],
                            [360, 420])
@@ -957,6 +960,31 @@ class PageWindow(QMainWindow):
         box.setContentsMargins(0, 0, 0, 0)
         box.addWidget(body, 1)
         return page
+
+    def _attach_console_panes(self) -> None:
+        """The console's Plots and History as tabs beside the Workspace and
+        Files; a figure drawn while the page is up shows there rather than in
+        a window of its own."""
+        console = self.panels.get("console")
+        tabs = getattr(self, "analysis_tabs", None)
+        if console is None or tabs is None:
+            return
+        for pane, title, tip in (
+                (console.plots, "Plots", "Every figure the console or the editor drew"),
+                (console.history, "History", "Every command run in the console, "
+                                             "searchable; send any to the editor")):
+            if tabs.indexOf(pane) < 0:
+                index = tabs.addTab(pane, title)
+                tabs.setTabToolTip(index, tip)
+        console.plots_shown = self._show_plots
+
+    def _show_plots(self) -> bool:
+        console = self.panels.get("console")
+        if (console is None or self.current_page() != "analysis"
+                or console.plots.window() is not self):
+            return False
+        self.analysis_tabs.setCurrentWidget(console.plots)
+        return True
 
     # -- lending the panes to the Analysis page ------------------------------
     @property
@@ -1428,6 +1456,7 @@ class PageWindow(QMainWindow):
                 lambda on, dock=dock: on and self._fit_pane(dock))
             self.docks[key] = dock
         self.docks["console"].visibilityChanged.connect(self._size_console)
+        self._attach_console_panes()
         self._place_panes()
 
     def _place_panes(self) -> None:
