@@ -30,7 +30,7 @@ GLASS_CAPTION = ("glass brain (MNI152, nilearn) · template positions, approxima
 
 
 _3D_TITLES = {"template": "Template positions, approximate — not this patient's anatomy",
-              "patient": "The patient's MRI positions, registered to MNI (affine), shown on "
+              "patient": "The patient's MRI positions, registered to MNI, shown on "
                          "the template",
               "mixed": "The patient's MRI positions and template positions, shown on the "
                        "template"}

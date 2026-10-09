@@ -42,12 +42,12 @@ SPACES = ("MNI152", "fsaverage")
 TEMPLATE_NOTE = ("Template positions: approximate, not this patient's anatomy; atlas labels "
                  "are probable structures, not findings.")
 #: The same, for contacts localised in the patient's own MRI (`onset_hfo.case.imaging`).
-PATIENT_NOTE = ("Contacts from the patient's own MRI: placed in MNI by an affine "
-                "registration of the whole head, so atlas labels are still probable "
-                "structures, not findings.")
+PATIENT_NOTE = ("Contacts from the patient's own MRI: placed in MNI by registering the "
+                "whole head (an affine, then a non-linear warp inside the brain), so atlas "
+                "labels are still probable structures, not findings.")
 #: The short form figures carry, by where the positions came from.
 CAPTIONS = {"template": "template positions, approximate",
-            "patient": "the patient's MRI, registered to MNI (affine)",
+            "patient": "the patient's MRI, registered to MNI",
             "mixed": "the patient's MRI and template positions"}
 _NAME_COLUMNS = ("name", "label", "electrode", "contact", "channel", "ch_name")
 

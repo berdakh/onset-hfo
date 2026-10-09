@@ -233,3 +233,94 @@ def test_the_map_step_takes_the_patients_mri_and_contacts(qapp, tmp_path, monkey
         assert page.ct_dialog() is None and "imaging extra" in told[-1]
     finally:
         window.close()
+
+
+def _deformed_head(tmp_path):
+    """The template with a smooth local bump: tissue near CENTRE pushed 6 mm
+    along x. A patient point p sits at p + bump(p) in MNI."""
+    from scipy import ndimage
+
+    template = imaging._template("head")
+    data = np.asarray(template.get_fdata(), dtype=np.float32)
+    affine = template.affine
+    grid = np.indices(data.shape).reshape(3, -1).T
+    world = (np.c_[grid, np.ones(len(grid))] @ affine.T)[:, :3]
+    source = world + _bump(world)
+    voxels = (np.c_[source, np.ones(len(source))] @ np.linalg.inv(affine).T)[:, :3].T
+    moved = ndimage.map_coordinates(data, voxels, order=1).reshape(data.shape)
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    path = tmp_path / "deformed.nii.gz"
+    nib.save(nib.Nifti1Image(moved.astype(np.float32), affine), path)
+    return path
+
+
+CENTRE = np.array([30.0, -20.0, 0.0])
+
+
+def _bump(points):
+    weight = np.exp(-np.sum((points - CENTRE) ** 2, axis=1) / (2 * 18.0 ** 2))
+    return np.c_[6.0 * weight, np.zeros(len(points)), np.zeros(len(points))]
+
+
+def test_the_warp_takes_contacts_where_a_local_deformation_put_them(tmp_path):
+    """The warp's direction is easy to get backwards (MNE's own point helper
+    leaves points unmoved; dipy's forward transform doubles the error): a
+    head deformed by a known bump must come back within about 2 mm on
+    average, every contact well closer than the affine alone, which is 5-6 mm
+    off."""
+    case = Case.create(tmp_path / "case", "P73")
+    imaging.add_t1(case, _deformed_head(tmp_path / "head"))
+    to_mni = imaging.register_t1(case, nonlinear=True)
+    points = CENTRE + np.array([[0.0, 0, 0], [5, 5, 0], [-5, 0, 5], [0, -6, -4]])
+    truth = points + _bump(points)
+    affine_only = imaging.native_to_mni(points, to_mni)
+    assert np.linalg.norm(affine_only - truth, axis=1).min() > 4.0
+    table = pd.DataFrame({"name": ["LT1", "LT2", "LT3", "LT4"], "x": points[:, 0],
+                          "y": points[:, 1], "z": points[:, 2]})
+    mni = imaging.import_native(case, table)
+    warped_error = np.linalg.norm(mni[["x", "y", "z"]].to_numpy(float) - truth, axis=1)
+    affine_error = np.linalg.norm(affine_only - truth, axis=1)
+    assert warped_error.mean() < 2.0 and (warped_error < affine_error - 2.5).all(), \
+        (warped_error, affine_error)
+    assert set(mni["space_from"]) == {"T1w (registered, affine + non-linear)"}
+    warp_file = case.derivatives / "imaging" / imaging.WARP_FILE
+    with np.load(warp_file, allow_pickle=False) as stored:
+        assert "forward" in stored.files and "backward" in stored.files
+    again = imaging.Warp.load(warp_file).apply(affine_only)
+    assert np.allclose(again, mni[["x", "y", "z"]].to_numpy(float), atol=1e-6)
+    import json
+
+    saved = json.loads((case.derivatives / "imaging" / "t1_to_mni.json").read_text())
+    assert saved["warp"] == imaging.WARP_FILE and saved["check_warped"]["correlation"] > 0.9
+    assert "non-linear" in case.log[-2]["detail"]
+
+
+def test_an_affine_only_registration_leaves_no_warp(tmp_path):
+    case = Case.create(tmp_path / "case", "P74")
+    imaging.add_t1(case, _patient_head(tmp_path / "head"))
+    imaging.register_t1(case, nonlinear=False)
+    assert imaging.load_warp(case) is None
+    native = imaging.native_to_mni(MNI_POINTS, MOVE)
+    assert np.allclose(imaging.patient_to_mni(case, native),
+                       imaging.native_to_mni(native, imaging.load_registration(case)))
+
+
+def test_the_warp_fades_in_from_the_brains_edge():
+    """Deep contacts take the whole warp, contacts outside the brain none of
+    it, and in between a share that grows with depth (`WARP_FADE_MM`)."""
+    class Shift:
+        def apply(self, points):
+            return np.atleast_2d(points) + np.array([5.0, 0.0, 0.0])
+
+    points = np.array([[-20.0, -10.0, 10.0],      # deep, by the thalamus
+                       [0.0, 0.0, 120.0]])        # above the head
+    depth = imaging.template_depth(points)
+    assert depth[0] > imaging.WARP_FADE_MM and depth[1] < 0
+    moved = imaging.blend_warp(points, Shift()) - points
+    assert np.allclose(moved[0], [5, 0, 0]) and np.allclose(moved[1], 0)
+    edge = np.array([[0.0, -20.0, 0.0]])
+    while imaging.template_depth(edge)[0] > imaging.WARP_FADE_MM / 2:
+        edge[0, 0] += 1.0                          # walk out towards the surface
+    share = (imaging.blend_warp(edge, Shift()) - edge)[0, 0] / 5.0
+    expected = imaging.template_depth(edge)[0] / imaging.WARP_FADE_MM
+    assert 0 < share < 1 and share == pytest.approx(expected)

@@ -1638,7 +1638,8 @@ class MapPage(QWidget):
         it from a file or placed on their CT (`onset_hfo.case.imaging`)."""
         self.mri_button = QPushButton("Add the patient's MRI…")
         self.mri_button.setToolTip("Their T1-weighted MRI (NIfTI). It is registered to the "
-                                   "MNI152 template (affine) so contacts in it can be mapped.")
+                                   "MNI152 template (affine, then a non-linear warp inside "
+                                   "the brain) so contacts in it can be mapped.")
         self.mri_button.clicked.connect(lambda _=False: self.mri_dialog())
         self.native_button = QPushButton("Import contacts in the MRI's space…")
         self.native_button.setToolTip("Positions in the patient's own MRI (scanner or ACPC "
@@ -1689,8 +1690,11 @@ class MapPage(QWidget):
         else:
             check = imaging.registration_check_saved(case)
             correlation = check.get("correlation", float("nan"))
-            status = (f"MRI registered to MNI (affine; correlation with the template "
-                      f"{correlation:.2f}). {len(native)} contact(s) in the MRI's space.")
+            warped = (Path(case.derivatives) / "imaging" / imaging.WARP_FILE).exists()
+            how = "affine, then non-linear" if warped else "affine"
+            status = (f"MRI registered to MNI ({how}; correlation with the template "
+                      f"{correlation:.2f} after the affine). "
+                      f"{len(native)} contact(s) in the MRI's space.")
             if correlation < imaging.CHECK_WARN:
                 status += (" The correlation is low: the registration may have missed. "
                            "Check the contacts on the MRI before relying on the map.")
