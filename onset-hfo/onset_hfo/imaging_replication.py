@@ -5,10 +5,15 @@ Utrecht), and the warp's 10 mm fade (`imaging.WARP_FADE_MM`) was chosen on
 those same patients. This study asks the same questions of three archives
 from other hospitals, with nothing changed:
 
-* **ds004473** (Rockhill et al., OHSU; 8 sEEG patients): each patient's T1,
-  their contacts in its scanner space (``space-ScanRAS``, metres), and their
-  own FreeSurfer segmentation (``aparc+aseg.mgz``). The structure that
-  segmentation gives a contact is the truth.
+* **ds004473** (Rockhill et al., OHSU; 8 sEEG patients): each patient's
+  contacts and their own FreeSurfer segmentation (``aparc+aseg.mgz``). The
+  structure that segmentation gives a contact is the truth. The FreeSurfer
+  run was on an ACPC-aligned copy of the T1, so the contacts are its
+  ``space-ACPC`` ones (metres, ``IntendedFor`` FreeSurfer's T1) and the image
+  registered is FreeSurfer's defaced ``orig`` in that frame. (The first run
+  used the ``space-ScanRAS`` contacts and the raw T1; the frame check caught
+  it, with 41% of sub-1's contacts inside its own segmented brain against
+  92% in ACPC.)
 * **ds004696** (Ojeda Valencia et al. 2023, Mayo Clinic; 8 sEEG patients): the
   contacts in the patient's own space, each with the label of the patient's
   own FreeSurfer segmentation (``Destrieux_label_text``), and the authors'
@@ -101,7 +106,7 @@ def _ds004473():
         def load(scratch, subject=subject):
             import nibabel as nib
 
-            table = _table(f"ds004473/{subject}/ieeg/{subject}_space-ScanRAS_electrodes.tsv")
+            table = _table(f"ds004473/{subject}/ieeg/{subject}_space-ACPC_electrodes.tsv")
             table = table.dropna(subset=["x", "y", "z"])
             native = table[["x", "y", "z"]].to_numpy(float) * 1000.0
             path = scratch / "seg.mgz"
@@ -115,8 +120,9 @@ def _ds004473():
             codes = np.zeros(len(native), dtype=int)
             codes[valid] = values[tuple(ijk[valid].T)]
             path.unlink()
-            t1 = scratch / "t1.nii.gz"
-            t1.write_bytes(_get(f"ds004473/{subject}/anat/{subject}_T1w.nii.gz"))
+            t1 = scratch / "t1.mgz"
+            t1.write_bytes(_get(f"ds004473/derivatives/freesurfer-7.3.2/{subject}/mri/"
+                                "orig_defaced.mgz"))
             return {"names": table["name"].astype(str).tolist(), "native": native,
                     "truth": [FREESURFER_DEEP.get(int(c), "") for c in codes],
                     "in_own_brain": float(np.mean(codes > 0)), "t1": t1, "author_mni": None}
