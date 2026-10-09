@@ -886,6 +886,28 @@ def _project_menu(file_menu, host, loaded: bool) -> None:
     saved.triggered.connect(lambda _=False: call("on_compare_project"))
 
 
+def about_text() -> str:
+    from onset_review import DEVELOPER, HOMEPAGE, __version__
+
+    return (f"<h3>Onset Review {__version__}</h3>"
+            f"<p>Developed by <b>{DEVELOPER}</b>.</p>"
+            "<p>A desktop reviewer for high-frequency oscillations and seizure onset in "
+            "intracranial EEG, built on MNE-Python, with nilearn for the template brain.</p>"
+            "<p><b>Research prototype — not a medical device.</b> Not CE-marked, not "
+            "FDA-cleared, and not validated for clinical use.</p>"
+            f"<p>MIT License · <a href='{HOMEPAGE}'>{HOMEPAGE}</a></p>")
+
+
+def about_dialog(host):
+    box = QMessageBox(host)
+    box.setWindowTitle("About Onset Review")
+    box.setTextFormat(Qt.RichText)
+    box.setText(about_text())
+    box.setObjectName("onset_about")
+    box.show()
+    return box
+
+
 def _support_menu(help_menu, host) -> None:
     """Help's last two entries in every window: the model check, and a
     problem report to send (`onset_review.helpdialogs`)."""
@@ -904,6 +926,9 @@ def _support_menu(help_menu, host) -> None:
         dialog.raise_()
         return dialog
 
+    about = help_menu.addAction("About Onset Review…")
+    about.triggered.connect(lambda _=False: about_dialog(host))
+    help_menu.addSeparator()
     check = help_menu.addAction("Test the local model…")
     check.setToolTip("Put the Assistant page's model through the assistant and Write code, "
                      "graded, and save the result to send")

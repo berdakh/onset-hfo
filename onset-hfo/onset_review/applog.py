@@ -148,6 +148,7 @@ def about() -> dict:
         PIPELINE_VERSION = "?"     # noqa: N806
     out = {
         "onset-review": __version__, "pipeline": PIPELINE_VERSION,
+        "developer": __import__("onset_review").DEVELOPER,
         "python": sys.version.split()[0], "executable": sys.executable,
         "platform": platform.platform(), "machine": platform.machine(),
         "cpus": os.cpu_count(),

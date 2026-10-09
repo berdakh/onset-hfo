@@ -81,6 +81,12 @@ def _table(frame: pd.DataFrame, columns: list[str], limit: int | None = None) ->
     return "\n".join(lines) + "\n"
 
 
+def _credit() -> str:
+    from onset_review import credit
+
+    return credit()
+
+
 def _header(session: ReviewSession, reviewer: str | None) -> list[str]:
     request = session.request
     now = _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
@@ -112,6 +118,7 @@ def _header(session: ReviewSession, reviewer: str | None) -> list[str]:
         ("Montage", f"{session.montage}, {len(session.findings)} channels"),
         ("Sampling rate", f"{session.sfreq:g} Hz"),
         ("Reviewed on", now),
+        ("Software", _credit()),
     ]
     named = reviewer or ", ".join(session.read.readers) or session.read.reader
     if named:

@@ -525,6 +525,11 @@ class PageWindow(QMainWindow):
         box.setSpacing(theme.SPACING)
         title = QLabel("<h2>Onset Review</h2>")
         box.addWidget(title)
+        from onset_review import credit
+
+        byline = theme.muted(credit(), size=9)
+        byline.setObjectName("onset_credit")
+        box.addWidget(byline)
         lead = QLabel(WHAT_THIS_IS)
         lead.setWordWrap(True)
         box.addWidget(lead)

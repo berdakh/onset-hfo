@@ -34,6 +34,9 @@ def build_parser() -> argparse.ArgumentParser:
         prog="onset-review",
         description="Review high-frequency oscillations in public intracranial "
                     "EEG. Research prototype — not a medical device.")
+    from onset_review import credit
+
+    parser.add_argument("--version", action="version", version=credit())
     parser.add_argument("--subject", help="e.g. sub-01. Skips the open dialog.")
     parser.add_argument("--open", dest="open_path", type=Path, default=None,
                         metavar="FILE",

@@ -357,6 +357,9 @@ def build_html(case, version: int, folder: Path, by: str) -> str:
     parts.append(f"<p class='small'>Content fingerprint {print_}. Every result, setting, "
                  "contact position and zone this report draws on is in it; a sign-off is "
                  "for one fingerprint.</p>")
+    from onset_review import credit
+
+    parts.append(f"<p class='small'>Made with {_esc(credit())}.</p>")
     style = ("body{font-family:sans-serif;font-size:9pt;} h1{font-size:15pt;} "
              "h2{font-size:11.5pt;margin-top:14pt;} table{border-collapse:collapse;} "
              "td,th{border:1px solid gray;padding:2px 5px;font-size:8pt;} "
@@ -418,6 +421,8 @@ def html_to_pdf(text: str, folder: Path, path: Path) -> Path:
                                      QMarginsF(15, 15, 15, 15), QPageLayout.Millimeter))
     writer.setResolution(110)
     writer.setTitle(Path(path).stem)
-    writer.setCreator("onset-review")
+    from onset_review import credit
+
+    writer.setCreator(credit())
     document.print_(writer)
     return Path(path)

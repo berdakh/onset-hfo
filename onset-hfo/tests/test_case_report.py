@@ -154,6 +154,7 @@ def test_signoffs_are_for_content_and_versions_are_kept(case):
     text = first.html.read_text()
     assert "Not signed off for this content" in text and "Case P61" in text
     assert "LA1-LA2" in text and "smith" not in text.lower()
+    assert "developed by Berdakh Abibullaev" in text
     with pytest.raises(ValueError):
         casereport.sign_off(case, "  ", "role")
     casereport.sign_off(case, "dr test", "neurophysiologist")

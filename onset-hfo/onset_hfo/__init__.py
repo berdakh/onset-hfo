@@ -14,4 +14,5 @@ Start with ``docs/README.md`` or ``notebooks/01_hfo_detection_quickstart.ipynb``
 from onset_hfo.config import BANDS, PIPELINE_VERSION, PipelineConfig  # noqa: F401
 
 __version__ = PIPELINE_VERSION
+__author__ = "Berdakh Abibullaev"
 __all__ = ["BANDS", "PipelineConfig", "PIPELINE_VERSION"]
