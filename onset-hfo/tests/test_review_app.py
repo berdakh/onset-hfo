@@ -2299,7 +2299,7 @@ def test_the_caveat_and_the_reader_are_on_the_page_window(paged, review):
     from onset_review import window
 
     assert paged.host.statusBar().findChild(qt.QLabel, "onset_caveat") is not None
-    assert paged.pages.banner.text().startswith("Research prototype")
+    assert paged.pages.banner.text().startswith("Research tool")
     review.read.reader = "BO"
     window._set_reader_status(paged.host, review)
     assert "BO" in paged.pages.reader.text()

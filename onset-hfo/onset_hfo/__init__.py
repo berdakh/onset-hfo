@@ -1,5 +1,6 @@
-"""Onset-HFO: a first prototype for detecting high-frequency oscillations and
-interictal epileptiform discharges in public intracranial EEG.
+"""Onset-HFO: an AI-assisted research tool for intracranial EEG -- detecting
+high-frequency oscillations and interictal epileptiform discharges, and finding
+where seizures start, in public recordings or your own.
 
 Two deliberately separate halves:
 

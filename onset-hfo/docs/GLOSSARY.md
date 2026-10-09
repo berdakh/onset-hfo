@@ -33,8 +33,10 @@ shortly before one.
 marked by a reviewer. It may precede the *clinical* onset (visible symptoms).
 
 **SOZ (seizure onset zone)** — the tissue where seizures begin, as judged by
-the clinical team. Often the target of surgery. **This prototype does not
-identify it and does not claim to.**
+the clinical team. Often the target of surgery. **This software does not
+identify it and does not claim to.** Its ictal index ranks channels by how
+early and strongly they change at a marked seizure; the zone is the clinical
+team's call (`ICTAL.md`).
 
 **Engel / ILAE score** — outcome scales after epilepsy surgery. Engel I ≈
 seizure free. Present in this dataset's `participants.tsv`, unused here so

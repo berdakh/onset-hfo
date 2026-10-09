@@ -891,9 +891,11 @@ def about_text() -> str:
 
     return (f"<h3>Onset Review {__version__}</h3>"
             f"<p>Developed by <b>{DEVELOPER}</b>.</p>"
-            "<p>A desktop reviewer for high-frequency oscillations and seizure onset in "
-            "intracranial EEG, built on MNE-Python, with nilearn for the template brain.</p>"
-            "<p><b>Research prototype — not a medical device.</b> Not CE-marked, not "
+            "<p>An AI-assisted research tool for intracranial EEG: high-frequency "
+            "oscillations, interictal discharges and seizure onset, from a patient's "
+            "recordings to a signed report. Built on MNE-Python, with nilearn for the "
+            "template brain.</p>"
+            "<p><b>Research tool — not a medical device.</b> Not CE-marked, not "
             "FDA-cleared, and not validated for clinical use.</p>"
             f"<p>MIT License · <a href='{HOMEPAGE}'>{HOMEPAGE}</a></p>")
 
@@ -1761,7 +1763,7 @@ def _about(host: QMainWindow, session: ReviewSession) -> None:
         "trace goes there. <b>Findings</b> ranks channels by rate and tints the "
         "ones that cannot be told apart from the busiest. <b>Events</b> walks "
         "the window one event at a time.</p>"
-        "<p><b>Research prototype — not a medical device.</b> Not CE-marked, "
+        "<p><b>Research tool — not a medical device.</b> Not CE-marked, "
         "not FDA-cleared, not validated for clinical use.</p>")
 
 

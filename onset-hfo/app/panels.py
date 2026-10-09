@@ -78,11 +78,11 @@ BENCHMARK = DATA_ROOT / "benchmark"
 # a browser library to read it.
 
 #: Fixed. Names the thing and refuses the category, in that order.
-DISCLAIMER_LEAD = "Research prototype — not a medical device."
+DISCLAIMER_LEAD = "Research tool — not a medical device."
 
 #: The one line that legitimately differs between the two apps.
-DATA_SENTENCE = ("Real public recordings, real expert markings, real surgical "
-                 "outcomes — and nothing here is validated for clinical use.")
+DATA_SENTENCE = ("Methods tested on real recordings with expert markings and "
+                 "surgical outcomes — and nothing here is validated for clinical use.")
 
 #: Fixed. The evidence rule, then the sentence that matters most: the product
 #: contains no recommendation, as against containing one that is hedged.

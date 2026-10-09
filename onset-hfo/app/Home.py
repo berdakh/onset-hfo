@@ -25,16 +25,17 @@ st.set_page_config(page_title="Onset-HFO", page_icon="🧠", layout="wide")
 banner()
 
 st.title("Onset-HFO")
-st.subheader("Detecting HFOs and epileptiform discharges in real intracranial EEG — prototype")
+st.subheader("An AI-assisted research tool for intracranial EEG")
 
 st.markdown("""
-**What this is.** A working prototype built on **two public archives of real
-patients**, not a simulator. It detects high-frequency oscillations (ripples
-80–250 Hz, fast ripples 250–500 Hz) and interictal discharges, scores itself
-against **expert HFO markings on 20 patients**, and tests its map against
-**what happened to those patients after surgery**. An agent on an open-weight
-model reads the results, must cite them, and is refused by code when it
-strays.
+**What this is.** An **AI-assisted research tool** for intracranial EEG. It
+detects high-frequency oscillations (ripples 80–250 Hz, fast ripples 250–500
+Hz) and interictal discharges, and the desktop app runs it on your own
+recordings as well as public ones. These pages show it on **two public
+archives of real patients**: it scores itself against **expert HFO markings
+on 20 patients** and tests its map against **what happened to those patients
+after surgery**. An agent on an open-weight model reads the results, must cite
+them, and is refused by code when it strays.
 
 **What it is not.** Not a diagnostic device, not validated on patients, not a
 seizure-onset-zone finder. A high event rate is a measurement; physiological
@@ -50,7 +51,7 @@ decides. **There is no recommendation anywhere in this product.**
 5. **Outcome** — did the HFO map point at the tissue whose removal cured the patient? Including the two results that did *not* hold up.
 6. **Patients** — the same outcome study one patient at a time, with the caveats that apply to each of them.
 7. **Data** — the two archives, what each one carries, and how 24 MB is downloaded instead of 105 MB.
-8. **Architecture** — every component, and which ones this prototype includes.
+8. **Architecture** — every component, and which ones this release includes.
 9. **Research** — the lab, the measured state of the work, and what is open.
 """)
 

@@ -32,8 +32,10 @@ EXIT_OK, EXIT_CANCELLED, EXIT_NO_QT, EXIT_FAILED = 0, 1, 2, 3
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="onset-review",
-        description="Review high-frequency oscillations in public intracranial "
-                    "EEG. Research prototype — not a medical device.")
+        description="An AI-assisted research tool for intracranial EEG: "
+                    "high-frequency oscillations, interictal discharges and seizure "
+                    "onset, in public recordings or your own. Research tool — not a "
+                    "medical device.")
     from onset_review import credit
 
     parser.add_argument("--version", action="version", version=credit())

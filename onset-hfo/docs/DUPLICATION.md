@@ -40,7 +40,7 @@ Measured, not guessed.
 2. **The theme.** `.streamlit/config.toml` is byte-identical in both
    repositories apart from a comment. Nothing keeps it that way.
 
-3. **The standing disclaimer.** The same principle — research prototype, every
+3. **The standing disclaimer.** The same principle — research tool, every
    number cites its evidence, no recommendation exists in the product — is
    written out twice, in two wordings, in two `banner()` functions.
 
@@ -146,7 +146,7 @@ so a test can read it where Streamlit is not installed. Structure is fixed;
 exactly one line differs between the two apps.
 
 ```python
-DISCLAIMER_LEAD = "Research prototype — not a medical device."
+DISCLAIMER_LEAD = "Research tool — not a medical device."
 DISCLAIMER_TAIL = ("Every number cites the window it came from. There is no "
                    "recommendation anywhere in this product; the clinician "
                    "decides.")
@@ -156,7 +156,7 @@ The line that differs, because only one of the two runs on real recordings:
 
 | repository | `DATA_SENTENCE` |
 |---|---|
-| `onset-hfo` | Real public recordings, real expert markings, real surgical outcomes — and nothing here is validated for clinical use. |
+| `onset-hfo` | Methods tested on real recordings with expert markings and surgical outcomes — and nothing here is validated for clinical use. |
 | `onset` | A **synthetic** five-patient cohort, generated at startup — there is no patient data here, and nothing here is validated for clinical use. |
 
 The teaching prototype's wording is the one place the disclaimer must *not*

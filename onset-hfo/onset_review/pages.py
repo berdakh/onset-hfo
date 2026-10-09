@@ -75,25 +75,27 @@ STUDY_PAGES = ("Detectors", "Outcome", "Patients", "Data", "Architecture",
 #: The site's disclaimer, word for word (`app/panels.py`). A test pins the
 #: two copies to each other; it is duplicated rather than imported because the
 #: wheel does not ship the Streamlit app.
-DISCLAIMER = ("Research prototype — not a medical device. "
-              "Real public recordings, real expert markings, real surgical "
-              "outcomes — and nothing here is validated for clinical use. "
+DISCLAIMER = ("Research tool — not a medical device. "
+              "Methods tested on real recordings with expert markings and "
+              "surgical outcomes — and nothing here is validated for clinical use. "
               "Every number cites the window it came from. There is no "
               "recommendation anywhere in this product; the clinician decides.")
 
 #: The one line of it that is always showing; the rest opens on a click.
-DISCLAIMER_LINE = ("Research prototype — not a medical device. Nothing here is "
+DISCLAIMER_LINE = ("Research tool — not a medical device. Nothing here is "
                    "validated for clinical use; the clinician decides.")
 
 #: The site's front door, trimmed to what applies on the desktop.
 WHAT_THIS_IS = (
-    "<b>What this is.</b> A working prototype built on two public archives of "
-    "real patients. It detects high-frequency oscillations (ripples 80–250 Hz, "
-    "fast ripples 250–500 Hz) and interictal discharges, scores itself against "
-    "expert HFO markings on 20 patients, and tests its map against what "
-    "happened to those patients after surgery. An assistant on an open-weight "
-    "model reads the results, must cite them, and is refused by code when it "
-    "strays.")
+    "<b>What this is.</b> An AI-assisted research tool for intracranial EEG, "
+    "for your own recordings as well as public ones. It detects high-frequency "
+    "oscillations (ripples 80–250 Hz, fast ripples 250–500 Hz) and interictal "
+    "discharges, finds where seizures start, places contacts on a template brain, "
+    "and carries a patient's recordings from the clinical system's files to a "
+    "signed report. Its methods are tested on public archives against expert "
+    "markings, clinicians' onset zones and surgical outcomes. An assistant on a "
+    "local open-weight model reads the results, must cite them, and is refused by "
+    "code when it strays.")
 WHAT_IT_IS_NOT = (
     "<b>What it is not.</b> Not a diagnostic device, not validated on patients, "
     "not a seizure-onset-zone finder. A high event rate is a measurement; "

@@ -6,7 +6,7 @@ you know what a robust standard deviation is.
 
 Thirty minutes of reading. The last section is the one that matters.
 
-> **Research prototype — not a medical device.** Not CE-marked, not
+> **Research tool — not a medical device.** Not CE-marked, not
 > FDA-cleared, never validated for clinical use. It opens public research
 > recordings. Nothing it shows is a diagnosis or a surgical recommendation.
 

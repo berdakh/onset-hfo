@@ -32,12 +32,12 @@ from onset_review.session import DETECTOR_LABELS, ReviewSession
 
 __all__ = ["review_markdown", "write_review", "DISCLAIMER"]
 
-#: Carried on every export. The software is a research prototype that has never
+#: Carried on every export. The software is a research tool that has never
 #: been through a clinical trial or a regulatory submission, and a document that
 #: leaves a hospital without saying so is the one failure mode of this whole
 #: project that would matter to a patient.
 DISCLAIMER = (
-    "**Research prototype — not a medical device.** This software is not "
+    "**Research tool — not a medical device.** This software is not "
     "CE-marked, not FDA-cleared, and has not been validated for clinical use. "
     "Nothing in this document is a diagnosis or a surgical recommendation. The "
     "cohort evidence behind the method, including what it fails to show, is in "

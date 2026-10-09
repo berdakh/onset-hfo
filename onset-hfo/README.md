@@ -1,4 +1,4 @@
-# Onset-HFO — a first prototype for HFO and epileptiform-discharge detection
+# Onset-HFO — an AI-assisted research tool for intracranial EEG
 
 **Two halves, deliberately separate.**
 
@@ -12,8 +12,10 @@
    choosing which analyses to run and at what thresholds, then being made to
    resolve every claim it writes back to the run that produced it.
 
-It is a **prototype**: small, readable, measured, and honest about what it
-cannot do. It is not a medical device and it makes no clinical claim. It is
+It is a **research tool**: readable, measured, and honest about what it
+cannot do. It runs on your own recordings — most clinical formats, through
+MNE-Python's readers — as well as on the public archives its methods were
+tested on. It is not a medical device and it makes no clinical claim. It is
 the smallest thing that is genuinely *useful to argue with*, built so that the
 next person can extend it — see [`docs/ROADMAP.md`](docs/ROADMAP.md).
 

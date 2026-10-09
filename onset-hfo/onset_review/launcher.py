@@ -156,7 +156,7 @@ class LauncherDialog(QDialog):
         self.import_button.clicked.connect(self.open_file)
 
         banner = QLabel(
-            "<b>Research prototype — not a medical device.</b> Public research "
+            "<b>Research tool — not a medical device.</b> Public research "
             "recordings only; nothing here is a diagnosis.")
         banner.setWordWrap(True)   # or it is clipped, which is the one label
                                    # in this dialog that must not be

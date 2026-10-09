@@ -81,7 +81,7 @@ Printed small on the board, and said out loud when asked:
 - **Not** that reproducibility implies correctness. A detector that returns the
   same wrong channel every minute is perfectly reproducible. The experts remain
   the arm closer to outcome; ours is the arm that agrees with itself more.
-- **Not** a clinical tool. Research prototype, public de-identified data, no
+- **Not** a clinical tool. Research tool, tested on public de-identified data, no
   diagnosis and no treatment recommendation anywhere in the system.
 
 ---

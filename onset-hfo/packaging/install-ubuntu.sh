@@ -360,4 +360,4 @@ network is available, run:"
   echo "  You can also open a recording of your own without any of this:"
   echo "    ${LAUNCH} --open /path/to/recording.edf"
 fi
-echo "Research prototype — not a medical device. See docs/LIMITATIONS.md."
+echo "Research tool — not a medical device. See docs/LIMITATIONS.md."
