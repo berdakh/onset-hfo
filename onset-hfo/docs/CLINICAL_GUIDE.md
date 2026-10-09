@@ -39,6 +39,21 @@ You don't need to know the menus to start.
 - **Contrast.** Text and muted text meet WCAG AA contrast (4.5:1) on every
   background in both themes, and a test keeps it so.
 - **Keyboard.** **Alt+1** … **Alt+9** open the first nine pages.
+- **By code instead of pages.** On the **Analysis** page, the editor's
+  **Templates** menu (or *Browse all templates…*, with a description and a
+  preview of each) opens a ready-made script for every analysis this window
+  does, against the open recording:
+  - the ranking reproduced step by step, checked against the window's own
+    numbers;
+  - rates with their intervals, the detectors compared, the rate over time;
+  - channel and segment quality, the spectrum, another preprocessing;
+  - one event in detail, the average event, the threshold check;
+  - the Epileptogenicity Index;
+  - where the busiest channels are, and the resection;
+  - saving everything as CSV.
+
+  Each runs a cell at a time with **Ctrl+Enter**. A test runs every one
+  against an analysed recording, so they stay in step with the code.
 
 ## 1. What the software is trying to do
 

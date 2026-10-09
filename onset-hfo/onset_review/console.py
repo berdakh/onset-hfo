@@ -79,18 +79,11 @@ def _session_names(session) -> dict:
 
 def namespace(session) -> dict:
     """The names a console starts with: the session's objects and the
-    libraries an analysis reaches for. Qt-free."""
-    import matplotlib.pyplot as plt
-    import mne
-    import numpy as np
-    import pandas as pd
+    libraries an analysis reaches for. Kept in `onset_review.variables`, which
+    imports no Qt, so the template library's tests run without a display."""
+    from onset_review.variables import console_namespace
 
-    import onset_hfo
-
-    names = {"np": np, "pd": pd, "mne": mne, "plt": plt, "onset_hfo": onset_hfo,
-             "Path": Path}
-    names.update(_session_names(session))
-    return names
+    return console_namespace(session)
 
 
 def user_variables(ns: dict, injected: dict, hidden=()) -> dict:
