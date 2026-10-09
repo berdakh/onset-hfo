@@ -77,6 +77,11 @@ def _fif(tmp_path) -> bytes:
 
 @pytest.fixture
 def archive(tmp_path, monkeypatch):
+    return serve_archive(tmp_path, monkeypatch)
+
+
+def serve_archive(tmp_path, monkeypatch) -> dict:
+    """Serve a small BIDS archive from memory through the package's one HTTP call."""
     bv = f"{DS}/sub-01/ses-1/ieeg/sub-01_ses-1_task-ictal_run-01_ieeg"
     edf = f"{DS}/sub-02/ieeg/sub-02_task-rest_ieeg"
     files = {
@@ -219,3 +224,18 @@ def test_a_bunch_is_a_dict_with_attributes():
     assert bunch.a == 1 and bunch["b"] == 2 and set(dir(bunch)) == {"a", "b"}
     with pytest.raises(AttributeError):
         _ = bunch.c
+
+
+def test_the_command_line_lists_describes_and_fetches(archive, capsys):
+    from onset_hfo.cli import main
+
+    home = str(archive["home"])
+    assert main(["openneuro", "list", DS, "--data-home", home]) == 0
+    listed = capsys.readouterr().out
+    assert "BrainVision" in listed and "sub-03" in listed
+    assert main(["openneuro", "describe", DS, "--data-home", home]) == 0
+    assert "A test archive" in capsys.readouterr().out
+    assert main(["openneuro", "fetch", DS, "--subject", "01", "--t-start", "1",
+                 "--t-stop", "2", "--data-home", home]) == 0
+    assert capsys.readouterr().out.strip().endswith("_ieeg.vhdr")
+    assert main(["openneuro", "list", "nope", "--data-home", home]) == 1

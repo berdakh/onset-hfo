@@ -853,6 +853,10 @@ def _project_menu(file_menu, host, loaded: bool) -> None:
         if callable(handler):
             handler()
 
+    neuro = file_menu.addAction("Open from Open&Neuro…")
+    neuro.setToolTip("Any recording on openneuro.org, by dataset id: a window of it is "
+                     "downloaded, kept on this machine, and opened as a file of your own")
+    neuro.triggered.connect(lambda _=False: call("on_openneuro"))
     file_menu.addSeparator()
     new_case = file_menu.addAction("New &case…")
     new_case.setToolTip("One patient's recordings, converted from the clinical system and "

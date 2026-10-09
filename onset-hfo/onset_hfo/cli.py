@@ -437,6 +437,34 @@ def _cmd_runs(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_openneuro(args: argparse.Namespace) -> int:
+    """List, describe or fetch any OpenNeuro dataset (`onset_hfo.openneuro`)."""
+    import pandas as pd
+
+    from onset_hfo import openneuro
+
+    try:
+        if args.action == "describe":
+            print(openneuro.describe_openneuro(args.dataset, data_home=args.data_home).DESCR)
+        elif args.action == "list":
+            table = openneuro.list_openneuro(args.dataset, subject=args.subject,
+                                             data_home=args.data_home)
+            with pd.option_context("display.max_rows", None, "display.width", 200):
+                print(table.drop(columns="path").to_string(index=False) if len(table)
+                      else "no continuous recordings found")
+        else:
+            bunch = openneuro.fetch_openneuro(
+                args.dataset, args.subject, session=args.session, task=args.task,
+                acq=args.acq, run=args.run, t_start=args.t_start,
+                t_stop=None if args.t_stop < 0 else args.t_stop,
+                data_home=args.data_home, max_mb=args.max_mb)
+            print(bunch.local_path)
+    except (ValueError, OSError, RuntimeError) as problem:
+        print(f"[onset-hfo] {problem}", file=sys.stderr)
+        return 1
+    return 0
+
+
 def _cmd_report(args: argparse.Namespace) -> int:
     from onset_hfo.store import ResultStore
 
@@ -606,6 +634,27 @@ def build_parser() -> argparse.ArgumentParser:
     runs = sub.add_parser("runs", help="list the runs available for a subject in the archive")
     runs.add_argument("--subject", default=DEFAULT_SUBJECT)
     runs.set_defaults(func=_cmd_runs)
+
+    neuro = sub.add_parser(
+        "openneuro", help="list, describe or fetch any OpenNeuro dataset's recordings")
+    neuro.add_argument("action", choices=("list", "describe", "fetch"))
+    neuro.add_argument("dataset", help="an OpenNeuro id, such as ds004100")
+    neuro.add_argument("--subject", default=None)
+    neuro.add_argument("--session", default=None)
+    neuro.add_argument("--task", default=None)
+    neuro.add_argument("--acq", default=None)
+    neuro.add_argument("--run", default=None)
+    neuro.add_argument("--t-start", type=float, default=0.0,
+                       help="seconds into the recording (default: %(default)s)")
+    neuro.add_argument("--t-stop", type=float, default=60.0,
+                       help="seconds into the recording, or -1 for its end "
+                            "(default: %(default)s)")
+    neuro.add_argument("--max-mb", type=float, default=500.0,
+                       help="refuse a download larger than this (default: %(default)s)")
+    neuro.add_argument("--data-home", default=None,
+                       help="where downloads are kept (default: $ONSET_HFO_DATA or the "
+                            "package's data cache)")
+    neuro.set_defaults(func=_cmd_openneuro)
 
     rep = sub.add_parser("report", help="print a saved report")
     rep.add_argument("results", help="a results directory written by 'run'")

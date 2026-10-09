@@ -36,7 +36,8 @@ def start(qapp, tmp_path, monkeypatch):
     from onset_review import window
 
     monkeypatch.setenv("ONSET_REVIEW_CONFIG_DIR", str(tmp_path / "config"))
-    calls = {"chosen": 0, "imported": 0, "new_case": 0, "open_case": 0, "batch": 0}
+    calls = {"chosen": 0, "imported": 0, "new_case": 0, "open_case": 0, "batch": 0,
+             "openneuro": 0}
     host = window.decorate_start(
         cached=lambda: None,
         on_import=lambda: calls.__setitem__("imported", calls["imported"] + 1),
@@ -44,6 +45,7 @@ def start(qapp, tmp_path, monkeypatch):
     host.on_new_case = lambda: calls.__setitem__("new_case", calls["new_case"] + 1)
     host.on_open_case = lambda: calls.__setitem__("open_case", calls["open_case"] + 1)
     host.on_batch = lambda: calls.__setitem__("batch", calls["batch"] + 1)
+    host.on_openneuro = lambda: calls.__setitem__("openneuro", calls["openneuro"] + 1)
     host.calls = calls
     yield host
     host.close()
@@ -78,12 +80,12 @@ def test_the_guides_links_do_what_they_say(start):
     text = page.browser.toPlainText()
     for words in ("Look at a recording", "Work up a patient", "Read the evidence",
                   "Ask the local model", "Your own analysis", "Every menu entry",
-                  "Ictal onset", "Open a file…"):
+                  "Ictal onset", "Open a file…", "Open from OpenNeuro…"):
         assert words in text, words
     assert page.run("page:detectors") and start.current_page() == "detectors"
     for target, counter in (("do:open-recording", "chosen"), ("do:open-file", "imported"),
                             ("do:new-case", "new_case"), ("do:open-case", "open_case"),
-                            ("do:batch", "batch")):
+                            ("do:batch", "batch"), ("do:openneuro", "openneuro")):
         assert page.run(target)
         assert start.calls[counter] == 1, target
 

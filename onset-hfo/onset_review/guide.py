@@ -223,7 +223,8 @@ any word.</p>
 <li>{_link('page:home', 'Home')} lists the windows already on this machine;
 select one and press <b>Open</b>. Or {_link('do:open-recording', 'open a recording')}
 to choose the band and the detectors as well, or
-{_link('do:open-file', 'open a file of your own')} (EDF, BrainVision, FIF, …).</li>
+{_link('do:open-file', 'open a file of your own')} (EDF, BrainVision, FIF, …), or
+{_link('do:openneuro', 'any recording on OpenNeuro')} by its dataset id.</li>
 <li>{_link('page:recording', 'Recording')} ranks the channels by event rate, both
 detectors side by side. Click a channel for its events; click an event for its
 raw, filtered and time-frequency views.</li>
@@ -327,6 +328,7 @@ def run_target(window, target: str) -> bool:
         "find": lambda: open_palette(window),
         "open-recording": getattr(window, "on_choose", None),
         "open-file": getattr(window, "_on_import", None),
+        "openneuro": getattr(window, "on_openneuro", None),
         "new-case": getattr(window, "on_new_case", None),
         "open-case": getattr(window, "on_open_case", None),
         "batch": getattr(window, "on_batch", None),

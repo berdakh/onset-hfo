@@ -355,6 +355,97 @@ edge, where anti-alias filtering and noise make any measurement untrustworthy.
 report says so. Studies that want fast ripples record at 2000 Hz or more — the
 simulator defaults to 2000 Hz for exactly that reason.
 
+## Any recording on OpenNeuro
+
+The archives above are described by hand in `onset_hfo/config.py`.
+`onset_hfo.openneuro` reaches the rest of OpenNeuro by dataset id, the way
+`sklearn.datasets` fetches a dataset:
+
+```python
+from onset_hfo import openneuro
+
+about = openneuro.describe_openneuro("ds004100")   # name, licence, authors, DOI, README
+print(about.DESCR)
+runs = openneuro.list_openneuro("ds004100")        # one row per continuous recording
+bunch = openneuro.fetch_openneuro("ds004100", subject="HUP060", task="ictal",
+                                  t_start=100, t_stop=130)
+bunch.data, bunch.times, bunch.ch_names, bunch.sfreq  # channels x samples, volts;
+                                                      # original-recording seconds
+bunch.recording                                       # the package's Recording
+bunch.channels, bunch.events, bunch.electrodes        # the dataset's own sidecars
+bunch.line_freq, bunch.license, bunch.citation
+```
+
+**What comes down.**
+- **BrainVision and EDF/BDF:** only the window, by byte range. A window of an
+  EDF is cut from its data records, which are a second or so long, and then
+  trimmed to the exact seconds asked for.
+- **EEGLAB, FIF and other formats:** whole files, refused above `max_mb`
+  (500 MB by default) rather than started.
+- **NWB and MEF3:** listed but not fetched. Download them with the OpenNeuro
+  client and open them with *File → Open a file*.
+
+**The sidecars.** The window comes with the dataset's own `channels.tsv`,
+`events.tsv`, `*_ieeg.json`, `electrodes.tsv` and `coordsystem.json`, so these
+are the dataset's:
+- channel types;
+- bad channels;
+- mains frequency;
+- events;
+- electrode positions.
+
+They are found by BIDS inheritance, so a sidecar at the dataset's top level
+counts.
+- **No stated mains frequency:** 50 Hz is assumed, and the recording's notes
+  say so.
+- **Seizure markers:** `events.tsv` is read for them only when the task is
+  ictal or a marker names a seizure. Otherwise a task block's "start" or a
+  stimulus "onset" would be taken for one, as it was in the first test on
+  ds003688 and ds004473.
+
+**Where it is kept.**
+- Everything is kept under a data home: the `data_home` argument, else
+  `$ONSET_HFO_DATA`, else the package's data cache.
+- The next fetch of the same window reads it from there with no network.
+- `download_if_missing=False` refuses to download.
+- `clear_data_home()` deletes it all.
+
+**Tested formats.** It was tried on windows of seven datasets, covering
+BrainVision, EDF, BDF and EEGLAB, intracranial and scalp:
+
+| dataset | what it is | format |
+|---|---|---|
+| ds003029 | multicentre epilepsy iEEG | BrainVision |
+| ds003688 | Utrecht film-watching iEEG | BrainVision |
+| ds004100 | HUP | EDF |
+| ds004473 | OHSU sEEG | EDF |
+| ds002778 | scalp EEG | BDF |
+| ds004504 | scalp EEG | EEGLAB |
+| ds002718 | scalp EEG; refused whole above `max_mb` | EEGLAB |
+
+**From the command line:**
+
+```bash
+python -m onset_hfo.cli openneuro describe ds004100
+python -m onset_hfo.cli openneuro list ds004100 --subject HUP060
+python -m onset_hfo.cli openneuro fetch ds004100 --subject HUP060 --task ictal \
+       --t-start 100 --t-stop 130       # prints the window's local file
+```
+
+**In the desktop app**, *File → Open from OpenNeuro…*:
+1. Type a dataset id and list its recordings.
+2. Pick one and a window.
+3. The window goes through the usual import confirmation, with the dataset's
+   channel types and mains frequency filled in. A channel the dataset marks
+   bad comes up as not analysed: HUP types its scalp and EKG leads SEEG and
+   marks them bad.
+
+The window opens as a file of your own, so its trace counts from 0. Its label
+says where it starts in the original recording.
+
+**Ripples need more than 500 Hz.** Many archives record at 500 or 512 Hz,
+HUP among them. Check `bunch.sfreq` before running the detectors.
+
 ## Using your own data
 
 **The desktop reviewer does this with a file dialog.** *File → Open a file…*

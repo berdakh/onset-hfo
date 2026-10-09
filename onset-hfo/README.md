@@ -138,6 +138,10 @@ python -m onset_hfo.cli run --synthetic --figures
 python -m onset_hfo.cli run --subject sub-pt01 --task ictal --run 01 \
        --start 50 --stop 110 --figures
 
+# 2b. any recording on OpenNeuro, by dataset id, the way sklearn.datasets fetches data
+python -m onset_hfo.cli openneuro list ds003029
+python -m onset_hfo.cli openneuro fetch ds003029 --subject jh101 --t-start 0 --t-stop 60
+
 # 3. ask the agent about the results (no model needed for the scripted policy)
 python -m onset_agent.cli --results artifacts/results/sub-pt01_ictal_run-01 --demo
 

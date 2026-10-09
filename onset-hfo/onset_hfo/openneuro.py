@@ -637,7 +637,8 @@ def _load(folder: Path, meta: dict, data_home, verbose: bool) -> Bunch:
         sidecar=sidecar, participant=participant, line_freq=line_freq,
         dataset_id=dataset_id, subject=meta["subject"], session=meta["session"],
         task=meta["task"], acq=meta["acq"], run=meta["run"], modality=meta["modality"],
-        format=meta["format"], file=meta["path"], t_start=record.t_offset,
+        format=meta["format"], file=meta["path"], local_offset=offset,
+        t_start=record.t_offset,
         t_stop=record.t_offset + record.duration, license=description.license,
         citation=description.citation, url=f"{description.url}/file-display/"
         + meta["path"].replace("/", ":"), local_path=folder / meta["local"],
