@@ -122,6 +122,29 @@ approval or data governance either; those stay yours.
 
 ---
 
+### Or a patient's whole monitoring, as a case
+
+**File → New case…** makes a case: a folder, a pseudonym, then the clinical
+system's files converted into it one by one (BIDS-iEEG; EDF/EDF+, BDF,
+BrainVision, Nihon Kohden, Nicolet, Persyst, Blackrock, Neuralynx, MEF3,
+EEGLAB; Micromed with `pip install neo`; Natus from its EDF+ export). Nothing
+that names the patient is written. The case window then takes the channels
+and the marks — hours at a glance, MNE's browser to mark seizures, sleep and
+artefacts — chooses segments by rule (sleep stage, away from seizures and
+artefacts), analyses them alike and pools them into one ranking with
+intervals, and opens any minute in the review window. It then finds where
+each marked seizure starts (the Epileptogenicity Index), and places the
+contacts on a template brain (imported in MNI152 or fsaverage, or planned
+there) with probable atlas labels, to set the two side by side with the
+onset zone you mark. The atlas is fetched once, about 0.6 MB, from
+TemplateFlow. The brain template itself comes with the app: nilearn (part of
+the `review` extra) ships the MNI152 glass brain and fsaverage5's surface,
+so nothing has to be downloaded to see contacts on a brain. The last step checks the case for anything identifying, takes
+reviewers' sign-offs against the content they approve, and produces numbered
+PDF reports, all recorded in a tamper-evident log. `onset-review
+/path/to/case` opens a case from the terminal. The clinical guide's section
+5a has the whole of it.
+
 ## Starting it
 
 | | |

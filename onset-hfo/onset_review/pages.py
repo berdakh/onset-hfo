@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import contextlib
 import html
+import importlib.util
 
 from qtpy.QtCore import QByteArray, QEvent, QSize, Qt, QTimer, Signal
 from qtpy.QtGui import QKeySequence
@@ -1136,6 +1137,10 @@ class PageWindow(QMainWindow):
             self.fetch_status.setText(f"On this machine: {root}")
             self.fetch_button.setText("Template brain is fetched")
             self.fetch_button.setEnabled(False)
+        elif importlib.util.find_spec("nilearn") is not None:
+            self.fetch_status.setText(
+                "Drawn from nilearn's fsaverage5, installed with the app (a coarser mesh "
+                "of the same template). Fetch MNE's for the full resolution.")
         else:
             self.fetch_status.setText("Not on this machine yet.")
 

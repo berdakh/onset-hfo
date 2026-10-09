@@ -1442,6 +1442,330 @@ one way to produce a folder of confident reviews of the wrong channels.
 
 ---
 
+## 5a. A case: one patient's recordings, step by step
+
+![A case on the Annotate step: two hours at a glance, a seizure, sleep and a disconnection](images/onset-review-case.png)
+
+*The picture is a synthetic two-hour recording (16 contacts, 1 kHz) made to
+show the overview; no patient's data.*
+
+Opening a file looks at one minute. A **case** holds a patient's whole
+monitoring: every recording, converted once into one open layout, with the
+channels, the marks and every change made to them. It is the clinic edition,
+growing a step at a time; seven of its ten steps work today.
+
+**File → New case…** asks for a folder and a **pseudonym** (P017, never the
+patient's name). **File → Open case…**, or `onset-review /path/to/case`,
+opens one again. The case window has the steps on the left — *Import*,
+*Channels & electrodes*, *Annotate*, then *Segments*, *Preprocess*,
+*Interictal*, *Ictal onset*, *Review*, *Map* and *Report* — and a tick
+beside each one done.
+
+**The layout is BIDS-iEEG**, the open standard for intracranial recordings:
+the signal as BrainVision (32-bit, microvolts, at the recording's own
+sampling rate), a channels table, an events table and a sidecar per
+recording, with results under `derivatives/onset/`. Other groups' tools and
+MNE read it as it is, so the clinic's data is not locked into this software.
+A `case.json` beside it lists the recordings, the steps and an **audit
+log**: every conversion and every change to channels or marks, with who and
+when, never rewritten.
+
+**Import.** *Add a recording…* picks a file from the clinical system. Its
+**bridge** reads it — EDF and EDF+, BDF, BrainVision, Nihon Kohden, Nicolet,
+Persyst, Blackrock, Neuralynx, MEF3, EEGLAB and the other formats MNE reads;
+Micromed through the `neo` package when it is installed; Natus/XLTEK from its
+EDF+ export — and the window shows what the file is before anything is
+written: its rate and length, the time of day it started, each channel as the
+file declares it and as it will be converted (*every brain channel SEEG* or
+*ECoG* in one click; mark any bad), and every mark the clinical system made,
+with the kind it will be read as. Conversion then:
+
+- checksums the file (SHA-256) and refuses one already in the case;
+- writes **nothing that names the patient** — name, identifier, birth date
+  and the recording's date are left behind, and the report lists which the
+  file had; the time of day is kept, because night and day matter;
+- maps the system's marks onto a small vocabulary (*seizure*, *seizure
+  onset*, *clinical onset*, *seizure offset*, *artefact*, the five sleep
+  stages, *stimulation*, *button*, *medication*, *note*) and keeps the text
+  typed, so "Sz onset ?" is a seizure onset that still says "?". Free-text
+  notes are counted in the report: read them for names before the case
+  leaves the building;
+- writes a **conversion report** (what was done, what was retyped, what was
+  left out, warnings such as "at 1000 Hz fast ripples cannot be analysed").
+
+**Channels & electrodes.** Each channel's type and whether it is bad, with
+the reason. Only SEEG and ECoG contacts are analysed; a bad contact is left
+out of every analysis, and the review window says so.
+
+**Annotate.** *Draw the overview* shows hours at a glance: the line length of
+the busiest tenth of the contacts (a seizure starting on four contacts of a
+hundred moves the median not at all), with stretches where most contacts are
+flat in grey, and tracks for seizures, sleep (a hypnogram) and artefacts
+underneath. It **samples** — 2 s of every 30 s — and says so; it is drawn once
+and kept with the case. Click to choose a time; the time is shown from the
+start and on the clock. Then:
+
+- **Add at this time** a mark of any kind, with a duration and a note;
+- **Open the trace here** opens **MNE's own browser** at that time, every
+  channel, the case's marks shown and its vocabulary ready in the annotation
+  list: press *A*, choose a kind, drag to mark. Closing the browser brings
+  its marks back — added, moved and removed — and a mark left alone keeps
+  who made it and its text;
+- **Analyse this minute** opens the minute from that time in the review
+  window, analysed with the channel types and bad contacts of the case.
+
+Many files at once convert from a terminal, typed by one rule:
+
+```bash
+python -m onset_hfo.case new /data/cases/P017 P017
+python -m onset_hfo.case convert /data/cases/P017 night1.edf night2.edf --all-as seeg --mains 50
+python -m onset_hfo.case list /data/cases/P017
+```
+
+*Channels checked* and *Marks complete* tick the steps.
+
+![Five real minutes of slow-wave sleep, pooled: the busiest channels with their intervals and each segment's rate](images/onset-review-case-interictal.png)
+
+*Above: five consecutive minutes of a real interictal sleep recording
+(ds003498 sub-01), as one recording in a case, in five one-minute segments.*
+
+**Segments.** Interictal rates come from stretches chosen by **rule**, not
+from whatever minute was open: rates differ by sleep stage, rise and fall
+around seizures, and an artefact or a disconnection turns into events or into
+silence. The rule says which **sleep stages** (default non-REM N2 and N3;
+none ticked means any time), how far from **any seizure** (default one hour
+either side; a seizure is a *seizure* mark, an onset paired with the next
+offset within half an hour, or two minutes from an onset with no offset),
+away from **artefacts** (with a 5 s margin) and from stretches the overview
+found **flat**, and how long each segment is (5 minutes) and how much in all
+(30 minutes). *Choose segments* cuts what qualifies into segments **spread
+evenly in time** across the recordings, lists them with their stage and the
+distance to the nearest seizure, and says how much time each rule took out
+("0.8 h not in the chosen stages; 0.9 h near a seizure"). With no sleep
+scored and stages ticked it says so rather than choosing nothing quietly.
+The defaults are starting points to state, not established constants; the
+rule is saved with the segments and written into the log.
+
+**Preprocess.** How every segment is analysed, the same for all of them:
+the reference (bipolar, per-shaft, Laplacian with grid columns, median,
+average, none), the band, the detectors (the first ticked ranks), the
+threshold, the quality stage. Saved with the case and written into every
+result.
+
+**Interictal.** *Run over the segments* analyses each segment **by the
+review window's own path** — the same request the window would make, with the
+case's channel types and its bad contacts left out — so a segment here and
+the same minutes opened in the window are one analysis, not two (a test holds
+this: one segment pooled alone gives the window's rates, intervals, busiest
+channel and tied set exactly). Then it **pools**: per channel, the accepted
+events over the clean minutes of all segments, with the Poisson interval the
+window prints, and a channel tied with the busiest when its interval overlaps
+the busiest's — the window's own rule. Beside each pooled rate, **in how many
+segments it was tied with the busiest**: a channel tied in five of five is a
+different finding from one tied in one of five at the same pooled rate. The
+chart shows the busiest channels with their intervals, filled when tied, and
+each segment's rate as a small dot. Analysed segments are kept, so adding
+segments or running again costs only what is new; a different setting is a
+different analysis and runs again. Each run writes a dated folder under
+`derivatives/onset/interictal/`: the pooled table, the counts per segment,
+every detection with its time in the recording, the settings and a summary.
+
+**Review.** Each segment, with its accepted events and how many verdicts
+have been recorded on it; double-click to open it in the review window,
+analysed as it was in the pooled run, where verdicts are given as on any
+window and counted back here.
+
+![Three real seizures of one patient: each channel's median Epileptogenicity Index, each seizure's as a dot, and how often each reached 0.3](images/onset-review-case-ictal.png)
+
+*Above: three seizures of a real patient (ds003029 sub-pt01, the archive's
+own onset marks), each recording a minute either side of the onset, as three
+recordings in a case.*
+
+**Ictal onset.** Where each seizure starts, by the **Epileptogenicity
+Index** (Bartolomei, Chauvel & Wendling, *Brain* 2008). At a seizure's onset
+the contacts that start it change first and change most: slow rhythms give
+way to fast ones. Per channel, in 1 s windows every 0.25 s, the energy at
+12.4–97 Hz over the energy at 3.5–12.4 Hz, divided by the channel's own
+median from 30 to 5 s before the onset; a Page–Hinkley test dates when that
+ratio rose and stayed risen (looked for from 10 s before to 30 s after the
+onset); the index is the ratio summed over the 5 s after the change, divided
+by how long after the *first* channel's change it came (plus 1 s), then
+scaled so the highest channel is 1. Early and strong scores near 1; late or
+weak near 0; never, 0.
+
+The seizures are the case's marks: each **electrographic seizure onset**, or
+the start of a *seizure* span (an onset and a span starting within 10 s of it
+are one seizure). A **clinical onset alone** is listed and left out, with
+why: the index dates the change against the electrographic onset, and the
+first clinical sign usually comes seconds later, inside the seizure. A
+seizure with less than half a minute of recording before it is left out too.
+Each seizure is read from 35 s before to 35 s after its onset and
+preprocessed as the Preprocess step says, its bad contacts left out; a
+low-pass below 97 Hz is refused rather than applied, since it removes the
+fast band.
+
+*Run over the seizures* gives, per channel, the **median index** over the
+seizures and **in how many it reached 0.3** — the cutoff the method's
+authors used — and the median time of its change from the marked onset. The
+statement names the highest channel and those at or above 0.3 in at least
+half the seizures: a channel that leads every seizure is a different finding
+from one that led once, and one seizure's onset zone is not necessarily the
+patient's (with one seizure it says so). The chart shows the medians, filled
+for those channels, each seizure's index as a dot, and the cutoff as a line.
+Each run writes a dated folder under `derivatives/onset/ictal/`: the
+combined table, every seizure's table, which seizures were analysed and why
+not, the settings and a summary.
+
+This is a research measure, and it needs a person to mark the electrographic
+onset. How well it finds the clinicians' onset zone on 28 patients of the
+same archive — with intervals, and where it does not — is in
+[`ICTAL.md`](ICTAL.md). In short: it ranks the zone's channels above the rest
+(median AUC 0.80, interval 0.70–0.87), near chance on the same channels 40 s
+before the seizure (0.52, over the 27 seizures where that could be tested),
+barely better than the energy ratio alone (0.73),
+and its single top channel was in the zone in 15 of 28 patients.
+
+![One real patient's map: interictal rate against ictal index with the archive's onset-zone channels filled, the contacts on nilearn's glass brain, and the combined table](images/onset-review-case-map.png)
+
+*Above: a real patient (ds004100 sub-HUP139). The case holds the archive's
+own recordings: three seizures and five minutes of interictal recording. The
+contact positions are the archive's own, imported from fsaverage, and the
+onset-zone contacts are the ones its `channels.tsv` marks `soz`.*
+
+**Map.** Where the contacts are, on a **template brain** (MNI152), when the
+patient's own CT and MRI are not to hand. Every position on this step is a
+template position: approximate, and labelled so on the page, in the files
+and in the coordinate system written with them.
+
+- **Import coordinates…** reads a planning or navigation system's export
+  (TSV, CSV or plain text: a name and x, y, z) in **MNI152** or **fsaverage**
+  space. fsaverage is moved to MNI152 by FreeSurfer's published linear
+  transform. Metres are recognised and turned into millimetres.
+- **Plan an electrode…** places one. A **depth** electrode is a straight line
+  with contact 1 at the target (the deepest point) and the rest towards the
+  entry. A **strip** or **grid** is a flat sheet from its first contact. Each
+  point is typed in millimetres or taken from the centre of an atlas
+  structure. Set the spacing **on the template**: on real implants the
+  template spacing was 5.0–6.4 mm for most shafts. A plan at a 3.5 mm
+  catalogue pitch put contacts a median 10 mm off, where the right spacing
+  gave 2.5 mm ([`TEMPLATE_MAP.md`](TEMPLATE_MAP.md)).
+- **Fetch the atlas** (0.6 MB, once) gives each contact a **probable**
+  structure: Harvard-Oxford cortical and subcortical, so the hippocampus and
+  amygdala are named. A label is *in* a structure, *near* one (within 5 mm,
+  with the distance), *white matter*, or *outside the brain*. Even at real
+  positions only half the contacts were inside a named structure, so read
+  each one as "probably".
+- Tick the **Onset zone** contacts as you judge them and **Save the onset
+  zone**. The software never computes this set. It is stored with who set it
+  and when, and logged.
+
+The **combined map** then puts, per analysed channel: the pooled interictal
+rate with its interval and whether it is tied with the busiest; the median
+ictal index and in how many seizures it reached 0.3; where it is (a bipolar
+channel at its pair's midpoint, with both contacts' probable structures);
+and whether it is in the marked zone. The statement says, for this patient,
+which channel each measure puts highest and whether it is in the zone, the
+AUC of each measure for the zone's channels, and which channels both single
+out. The chart plots rate against index, with the zone's channels filled.
+Beside it are the contacts on **nilearn's glass brain**: the MNI152 template
+seen from the left, from above and from the right, the view iEEG papers use.
+Each contact is sized by its interictal rate and shaded by its ictal index,
+and the onset-zone contacts are ringed. **Open in 3D** writes the same
+contacts as a rotatable page, labelled with each channel's rate, index and
+probable structure, and opens it in the browser. The page is
+self-contained, so it needs no network. Each report folder carries a copy
+(`contacts-3d.html`). Without nilearn the map shows the contacts from above
+or the side over the atlas brain's outline instead. Nilearn also ships a
+coarser copy of the fsaverage template. Where MNE's has not been fetched,
+the Contacts page's 3D view draws that one, with no download. One patient's agreement is an observation, not a validation; the
+studies in [`OUTCOME.md`](OUTCOME.md) and [`ICTAL.md`](ICTAL.md) test the
+methods.
+
+Positions are saved as BIDS-iEEG
+(`sub-*/ses-implant01/ieeg/*_space-MNI152NLin2009cAsym_electrodes.tsv` and
+its `coordsystem.json`), each with where it came from and its label. Every
+import, plan, removal and onset-zone change goes into the case's log. If the
+patient's own imaging turns up later, its coordinates in MNI152 import the
+same way and replace the template ones contact by contact.
+
+![The Report step: what must hold before a report, the de-identification check, sign-off against the content, and the numbered versions](images/onset-review-case-report.png)
+
+**Report.** The one thing from a case that leaves the department, so it is
+produced under rules rather than on request.
+
+- **Not before the work is done.** The checklist at the top must be all ✓:
+  - the recordings are converted and the channels checked;
+  - an analysis has been run, and when it is interictal, its detections have
+    been reviewed (*Review done*);
+  - a **de-identification check** has passed;
+  - the **audit log** is intact.
+
+  *Produce the report* stays disabled until then, and says what is missing.
+- **De-identification.** The check reads every field of the case that
+  carries outside text: the case's and recordings' notes, the source file
+  names (in `case.json` and in the conversion reports), each step's note,
+  every mark, channel description, sidecar text and contact name, and the
+  log entries that copy any of them. It looks for dates, runs of six or
+  more digits (record numbers), e-mail addresses, phone numbers and **the
+  names you type**. The names are matched and never written anywhere; only
+  how many were looked for goes in the log. What it finds is shown masked
+  (`S***h`). *Redact what was found* replaces it with `[removed]` in place
+  and logs that it did, without the text. It is a check, not a guarantee: a
+  name nobody typed, in a form no pattern knows, passes.
+- **The audit log is a chain.** Every entry carries the hash of the one
+  before it and its own. An entry edited, removed, reordered or slipped in
+  afterwards breaks the chain, and the checklist says which entry. A
+  redacted entry keeps its original hash and is reported as *redacted*, not
+  hidden. Entries from a case made before this version are counted as
+  "before the chain".
+- **A sign-off is for content.** *Sign off* records who, in what role,
+  saying what (the default statement is editable), against a
+  **fingerprint**: one checksum of every result, setting, contact position
+  and zone the report draws on. Change any of them (re-run an analysis, move
+  a contact, edit the onset zone) and the sign-off shows as *superseded*. A
+  report made then says **"Not signed off for this content. A draft."** at
+  the top. The same person cannot sign the same content twice.
+- **Versions are kept.** Each report is a new numbered folder,
+  `derivatives/onset/reports/report-vN/`. It holds the PDF (A4, written by
+  Qt's PDF writer), the HTML it was made from, the figures, and a
+  `manifest.json` with the fingerprint, the sign-offs it carries and every
+  file's SHA-256. Nothing is overwritten, and producing one is logged. The
+  *Report* step is ticked when a signed-off version exists. Double-click a
+  version to open it.
+
+The report reads every number from the steps' own result folders, so it
+cannot disagree with the screen:
+- a summary (the map's statement, the interictal and ictal statements, and
+  the clinician's onset zone with who set it);
+- the recordings with their source checksums (not their file names), and
+  the steps with who did each and when;
+- the interictal and ictal results with their figures and tables;
+- the combined map, under the template caveat;
+- what each method was measured to do on the archives, with intervals;
+- the checks, the sign-offs and the fingerprint.
+
+![Page 1 of the dry run's report](images/onset-review-case-report-page1.png)
+
+**A dry run, end to end.** The whole path was run on one real patient
+(ds004100 sub-HUP139), from the archive's own EDF files to a signed PDF:
+- three seizure recordings and five minutes of interictal recording
+  converted into a case (100 channels at 1024 Hz, 0.3 h in all);
+- the archive's seizure marks imported, and five one-minute interictal
+  segments chosen by rule;
+- 5 minutes of interictal recording analysed and pooled (18 s on this
+  machine), and 3 seizures analysed (3 s);
+- the archive's contact positions imported from fsaverage and labelled;
+- the archive's onset-zone contacts set as the zone;
+- the de-identification check run, which found nothing in this already
+  de-identified archive;
+- a sign-off recorded, and report v1 produced: 5 pages, with the log's 27
+  entries chained and intact.
+
+In the dry run the steps were ticked by the script and the sign-off is
+marked "dry run — not a clinical sign-off". No person reviewed the
+detections. It shows the path works end to end; it says nothing of whether
+the findings are right. That is what the studies are for.
+
 ## 6. What this has actually been measured to do
 
 Cohort figures from [`EVALUATION.md`](EVALUATION.md), 20 patients, against the

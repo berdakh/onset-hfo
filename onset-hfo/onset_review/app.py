@@ -201,9 +201,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.file is not None and args.open_path is None:
         args.open_path = args.file
     # A saved project opens in the window, not through the import dialog.
-    project_path = None
+    project_path = case_path = None
     if args.open_path is not None and str(args.open_path).endswith(".onsetproj"):
         project_path, args.open_path = Path(args.open_path), None
+    elif args.open_path is not None and (Path(args.open_path) / "case.json").exists():
+        case_path, args.open_path = Path(args.open_path), None
 
     # Set before the loader is imported, so the refusal is in place from the
     # first fetch rather than checked later and hopefully honoured.
@@ -285,6 +287,10 @@ def main(argv: list[str] | None = None) -> int:
             from qtpy.QtCore import QTimer
 
             QTimer.singleShot(0, lambda: review.open_project(project_path))
+        if case_path is not None:
+            from qtpy.QtCore import QTimer
+
+            QTimer.singleShot(0, lambda: review.open_case(case_path))
         return _finish(app.exec_() if hasattr(app, "exec_") else app.exec())
     else:
         request, overlay = launcher.choose_request(args.cache_dir)
@@ -673,6 +679,8 @@ class _Review:
         host.on_batch = self.batch
         host.on_save_project = self.save_project
         host.on_open_project = self.open_project
+        host.on_new_case = self.new_case
+        host.on_open_case = self.open_case
         host.on_compare_settings = self.compare_settings
         host.on_compare_project = self.compare_project
 
@@ -694,6 +702,32 @@ class _Review:
             window.add_paths(paths)
         window.show()
         window.raise_()
+        return window
+
+    # -- cases: one patient, step by step -------------------------------------------------------
+    def new_case(self, case=None):
+        """File → New case: a folder and a pseudonym, then the case window."""
+        from onset_review.casewindow import new_case_dialog
+
+        case = case or new_case_dialog(self._host())
+        return self._show_case(case) if case is not None else None
+
+    def open_case(self, folder=None):
+        """File → Open case (or a case folder given on the command line)."""
+        from onset_hfo.case.model import Case
+        from onset_review.casewindow import open_case_dialog
+
+        case = Case.open(folder) if folder is not None else open_case_dialog(self._host())
+        return self._show_case(case) if case is not None else None
+
+    def _show_case(self, case):
+        from onset_review.casewindow import CaseWindow
+
+        window = CaseWindow(case)
+        window.openRequested.connect(self._open_request)
+        self.case_windows = [w for w in getattr(self, "case_windows", [])
+                             if w.isVisible()] + [window]
+        window.show()
         return window
 
     # -- two analyses side by side -----------------------------------------------------------
