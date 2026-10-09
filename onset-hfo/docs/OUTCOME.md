@@ -524,6 +524,39 @@ like the first. The full run says the second: expert 0.71 and ours 0.67, both
 null, intervals almost entirely overlapping. A control that changes the
 conclusion when you give it more data has earned its place.
 
+## A second archive: HUP (ds004100)
+
+The same question was put to HUP's five-minute interictal recordings
+(`python -m onset_hfo.hup interictal`; tables in [`data/hup/`](../data/hup)):
+
+- the same RMS detector, at this study's operating point;
+- the resected contacts and the onset zone from the archive's `channels.tsv`;
+- the outcome from its `participants.tsv`.
+
+**Most of HUP cannot carry ripples.** Of 56 interictal recordings:
+
+- 27 are sampled at 512 Hz, 12 at 500 Hz and 2 at 256 Hz, too slowly for the
+  80–250 Hz ripple band with the filter margin this project requires;
+- the other 15, at 1024 Hz (14 SEEG, 1 ECoG), are analysable for ripples;
+- none is analysable for fast ripples, which need more than 1000 Hz.
+
+On those 15:
+
+- **Against the onset zone**, the ripple rate ranks the zone's channels above
+  the rest: median per-patient AUC **0.76 (0.55–0.82)**, above 0.5 in 13 of 15.
+- **Against outcome** (10 seizure-free, 5 with recurrence), nothing separates:
+
+| metric | AUC | 95% interval | p (permutation) |
+|---|---|---|---|
+| share of events in the resection | 0.48 | 0.18–0.78 | 0.95 |
+| busiest channel resected | 0.60 | 0.50–0.75 | 0.52 |
+| top three resected | 0.61 | 0.35–0.80 | 0.53 |
+
+That is the same place this study reached on ds003498, with even fewer
+patients. Five against ten cannot detect anything short of a very large
+effect. What HUP adds is that the ripple rate ranks the clinicians' onset
+zone above the rest on a second archive.
+
 ## What this cannot support
 
 - **Thirteen versus seven is a very small study.** `min_detectable_auc(13, 7)`

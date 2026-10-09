@@ -86,7 +86,14 @@ review = [
     # case's contacts, and fsaverage5's surface when MNE's fsaverage has not
     # been fetched (onset_review.templatebrain, anatomy.nilearn_surface).
     "nilearn>=0.10",
+    # Registering a patient's MRI to MNI in the Map step: MNE's
+    # compute_volume_registration is dipy's affine registration.
+    "dipy>=1.6",
 ]
+# Placing contacts on a patient's CT in the Map step: MNE's iEEG contact
+# locator, and the VTK view it draws in (a few hundred MB). Without it the
+# Map step still takes contact positions exported in the patient's MRI space.
+imaging = ["mne-gui-addons>=0.1", "pyvistaqt>=0.11", "pyvista>=0.42"]
 
 [project.scripts]
 onset-hfo = "onset_hfo.cli:main"

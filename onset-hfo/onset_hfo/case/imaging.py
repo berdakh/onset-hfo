@@ -42,7 +42,7 @@ __all__ = ["t1_path", "add_t1", "register_t1", "register_image", "fetch_template
            "template_available", "TEMPLATE_FILES", "load_registration", "native_to_mni",
            "import_native", "native_electrodes_path", "load_native", "draw_on_mri",
            "ct_to_t1", "ct_in_t1_path", "open_locator", "tkr_to_scanner",
-           "positions_from_locator", "registration_check", "REGISTRATION_PIPELINE",
+           "positions_from_locator", "registration_check", "REGISTRATION_PIPELINE", "CHECK_WARN",
            "locator_available", "registration_check_saved"]
 
 REGISTRATION_PIPELINE = ("translation", "rigid", "affine")
@@ -52,6 +52,11 @@ REGISTRATION_PIPELINE = ("translation", "rigid", "affine")
 TEMPLATE_NAME = "MNI152NLin2009cAsym T1w, 2 mm (TemplateFlow)"
 TEMPLATE_FILES = {"head": "tpl-MNI152NLin2009cAsym_res-02_T1w.nii.gz",
                   "brain_mask": "tpl-MNI152NLin2009cAsym_res-02_desc-brain_mask.nii.gz"}
+#: Below this intensity correlation with the template, look at the registration
+#: before relying on it. On 51 patients of ds003688 (docs/IMAGING.md) it flagged
+#: 6 of the 12 whose contacts mostly missed the template brain, and 2 of the 39
+#: whose did not.
+CHECK_WARN = 0.25
 #: Voxel size, in mm, each registration step works at: coarse first.
 ZOOMS = {"translation": 6.0, "rigid": 4.0, "affine": 3.0}
 
@@ -157,7 +162,9 @@ def register_t1(case, progress=None, by: str = "") -> np.ndarray:
         "check": check}, indent=1) + "\n")
     case.record("registered the MRI to MNI", f"affine; intensity correlation with the template "
                 f"{check['correlation']:.2f} inside its brain, "
-                f"{check['brain_covered']:.0%} of the brain covered", by)
+                f"{check['brain_covered']:.0%} of the brain covered"
+                + ("; LOW -- check the contacts on the MRI" if check["correlation"] < CHECK_WARN
+                   else ""), by)
     return to_mni
 
 

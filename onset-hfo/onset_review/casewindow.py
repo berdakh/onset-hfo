@@ -1688,9 +1688,12 @@ class MapPage(QWidget):
             status = "MRI added, not yet registered to MNI."
         else:
             check = imaging.registration_check_saved(case)
+            correlation = check.get("correlation", float("nan"))
             status = (f"MRI registered to MNI (affine; correlation with the template "
-                      f"{check.get('correlation', float('nan')):.2f}). "
-                      f"{len(native)} contact(s) in the MRI's space.")
+                      f"{correlation:.2f}). {len(native)} contact(s) in the MRI's space.")
+            if correlation < imaging.CHECK_WARN:
+                status += (" The correlation is low: the registration may have missed. "
+                           "Check the contacts on the MRI before relying on the map.")
         self.imaging_status.setText(status)
         from onset_hfo.case.electrodes import positions_kind, positions_note
 

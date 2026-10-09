@@ -20,8 +20,11 @@
 # prints), pulls it (a few GB, once), and records the choice so the reviewer's
 # assistant panel opens on it. No model is fetched without that flag.
 #
+# With --with-imaging it adds MNE's contact locator, for placing contacts on a
+# patient's CT in a case's Map step (mne-gui-addons and VTK, a few hundred MB).
+#
 # Usage:
-#   ./packaging/install-ubuntu.sh [--with-sample] [--with-assistant]
+#   ./packaging/install-ubuntu.sh [--with-sample] [--with-assistant] [--with-imaging]
 #                                 [--assistant-model TAG] [--no-pull]
 #                                 [--prefix DIR] [--no-apt] [--dry-run]
 #   ./packaging/install-ubuntu.sh --with-assistant --skip-install   # add it later
@@ -35,6 +38,7 @@ DESKTOP_DIR="${HOME}/.local/share/applications"
 ICON_DIR="${HOME}/.local/share/icons/hicolor/scalable/apps"
 WITH_SAMPLE=0
 WITH_ASSISTANT=0
+EXTRAS="review"
 ASSISTANT_MODEL=""
 PULL=1
 SKIP_INSTALL=0
@@ -77,6 +81,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --with-sample) WITH_SAMPLE=1; shift ;;
     --with-assistant)  WITH_ASSISTANT=1; shift ;;
+    --with-imaging)    EXTRAS="review,imaging"; shift ;;
     --assistant-model) ASSISTANT_MODEL="$2"; WITH_ASSISTANT=1; shift 2 ;;
     --no-pull)         PULL=0; shift ;;
     --skip-install)    SKIP_INSTALL=1; shift ;;
@@ -84,7 +89,7 @@ while [[ $# -gt 0 ]]; do
     --no-apt)      RUN_APT=0; shift ;;
     --prefix)      PREFIX="$2"; shift 2 ;;
     --uninstall)   UNINSTALL=1; shift ;;
-    -h|--help)     sed -n '2,30p' "$0"; exit 0 ;;
+    -h|--help)     sed -n '2,34p' "$0"; exit 0 ;;
     *)             die "unknown option: $1 (try --help)" ;;
   esac
 done
@@ -145,7 +150,7 @@ if [[ "${SKIP_INSTALL}" == "0" ]]; then
   # -- 3. the package --------------------------------------------------------
   if [[ -n "${BUNDLE_WHEEL}" && ! -f "${HERE}/pyproject.toml" ]]; then
     say "Installing the release wheel with the desktop reviewer (a few minutes)"
-    run "${VENV_PY}" -m pip install --quiet "${BUNDLE_WHEEL}[review]"
+    run "${VENV_PY}" -m pip install --quiet "${BUNDLE_WHEEL}[${EXTRAS}]"
     if [[ -d "${HERE}/site" ]]; then
       # The study pages' loaders and tables, which the wheel does not carry.
       say "Installing the study pages' tables in ${PREFIX}/site"
@@ -159,7 +164,7 @@ if [[ "${SKIP_INSTALL}" == "0" ]]; then
     fi
   else
     say "Installing onset-hfo with the desktop reviewer (a few minutes)"
-    run "${VENV_PY}" -m pip install --quiet -e "${HERE}[review]"
+    run "${VENV_PY}" -m pip install --quiet -e "${HERE}[${EXTRAS}]"
   fi
 
   if [[ "${DRY_RUN}" == "0" ]]; then

@@ -152,6 +152,42 @@ the method is only as good as the time it is anchored to.
 
 ---
 
+## A second archive: HUP (ds004100)
+
+The same index, with the same settings and no tuning, on the HUP archive
+(OpenNeuro `ds004100`):
+
+- the onset zone is the contacts the archive's own `channels.tsv` marks;
+- the onset is its electrographic onset mark;
+- up to three seizures per patient were used;
+- only the EDF records around each seizure were fetched (`onset_hfo/hup.py`).
+
+The tables are in [`data/hup/`](../data/hup).
+
+| | patients | median AUC (95% interval) | above 0.5 |
+|---|---:|---|---:|
+| at the seizure | 54 | **0.79 (0.72–0.85)** | 80% |
+| energy ratio alone, same seizures | 54 | 0.74 (0.67–0.79) | 89% |
+| seizure-free patients | 36 | 0.79 (0.71–0.88) | 78% |
+| not seizure-free | 18 | 0.80 (0.64–0.86) | 83% |
+| SEEG | 34 | 0.82 (0.76–0.86) | 82% |
+| ECoG | 20 | 0.73 (0.59–0.86) | 75% |
+| **40 s before the seizure (control)** | 54 | **0.55 (0.52–0.60)** | 65% |
+
+151 seizures from 55 patients were analysed. Five seizures of one patient
+(HUP132) had no onset-zone contacts marked. One patient's marked contacts
+(HUP112) matched none of the analysed bipolar channels, so their AUC is
+undefined. Per seizure, the median is 0.78 (0.74–0.81, 148 seizures). The top
+channel is in the zone in 24 of 55 patients at the seizure, and in 8 of 55 in
+the control.
+
+**It replicates.** On ds003029 the index gave 0.80 at the seizure and 0.52
+in the control; on HUP it gives 0.79 and 0.55. The single top channel is
+again a weaker statement than the ranking of the zone as a set. As on
+ds003029, outcome makes little difference.
+
+---
+
 ## What did not get analysed
 
 | | seizures | patients | why |
