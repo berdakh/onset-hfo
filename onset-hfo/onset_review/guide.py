@@ -255,9 +255,13 @@ model on its own. Both run on this machine; nothing leaves it.</p>
 
 <h3>5 · Your own analysis</h3>
 <p>{_link('page:analysis', 'Analysis')} is Python on the open recording, as in
-Spyder: an editor, a console that shares the Workspace, and plots.
-{_link('do:batch', 'Analyse many recordings')} runs the same settings over a
-list into one table.</p>
+Spyder: an editor, a console that shares the Workspace, and plots. Its
+<b>Templates</b> menu has a ready-made script for every analysis this window does
+-- the ranking step by step, the detectors compared, quality, the spectrum, one
+event in detail, the threshold check, the Epileptogenicity Index, anatomy, export --
+written against the open recording, so going by code gives the same numbers as
+going by the pages. {_link('do:batch', 'Analyse many recordings')} runs the same
+settings over a list into one table.</p>
 
 <h3>Seeing and reading</h3>
 <ul>

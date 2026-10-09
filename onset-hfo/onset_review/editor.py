@@ -44,15 +44,20 @@ from qtpy.QtGui import (
     QTextFormat,
 )
 from qtpy.QtWidgets import (
+    QDialog,
     QFileDialog,
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QMenu,
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
     QShortcut,
     QSizePolicy,
+    QSplitter,
     QTabWidget,
     QTextEdit,
     QToolButton,
@@ -62,7 +67,8 @@ from qtpy.QtWidgets import (
 
 from onset_review import cells, codewriter, theme
 
-__all__ = ["EditorPanel", "CodeEdit", "PythonHighlighter", "CodeAssistant", "SCRIPT_FILTER"]
+__all__ = ["EditorPanel", "CodeEdit", "PythonHighlighter", "CodeAssistant", "SCRIPT_FILTER",
+           "TemplateDialog"]
 
 SCRIPT_FILTER = "Python scripts and notebooks (*.py *.ipynb);;Python scripts (*.py);;" \
                 "Jupyter notebooks (*.ipynb);;All files (*)"
@@ -649,8 +655,15 @@ class EditorPanel(QWidget):
             "run_selection": button("Run selection", "Run the selected lines, or the line "
                                     "the cursor is on (F9)", lambda: self.run_selection()),
         }
+        # The template library: a script for each analysis this window does.
+        templates = button("Templates", "A ready-made script for each analysis this window "
+                           "does, on the open recording", lambda: None, "onset_editor_templates")
+        templates.setPopupMode(QToolButton.InstantPopup)
+        templates.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        templates.setMenu(self._template_menu())
+        self.buttons["templates"] = templates
         bar = theme.flow_layout()
-        for key in ("new", "open", "save", "save_as"):
+        for key in ("new", "open", "templates", "save", "save_as"):
             bar.addWidget(self.buttons[key])
         bar.addWidget(theme.cluster(*(self.buttons[k] for k in
                                       ("run_file", "run_cell", "run_next", "run_selection"))))
@@ -694,6 +707,44 @@ class EditorPanel(QWidget):
         self._autosave.timeout.connect(self.remember)
         if not (restore and self.restore()):
             self.new_file(STARTER, title=self.next_title("Untitled"), modified=False)
+
+    # -- the template library ---------------------------------------------------------
+    def _template_menu(self) -> QMenu:
+        from onset_review import codetemplates
+
+        menu = QMenu(self)
+        menu.setObjectName("onset_template_menu")
+        menu.setToolTipsVisible(True)
+        browse = menu.addAction("Browse all templates…")
+        browse.setToolTip("Every template with what it does and its code, before opening it")
+        browse.triggered.connect(lambda _=False: self.browse_templates())
+        for group, members in codetemplates.grouped():
+            menu.addSection(group)
+            for template in members:
+                action = menu.addAction(template.title)
+                action.setToolTip(f"{template.about}\n(Mirrors {template.mirrors}.)")
+                action.triggered.connect(lambda _=False, key=template.key: self.open_template(key))
+        return menu
+
+    def open_template(self, key: str) -> CodeEdit | None:
+        """A template in a new tab, unsaved: running it changes nothing on
+        disk, and Save as… keeps a copy of your own."""
+        from onset_review import codetemplates
+
+        template = codetemplates.find(key)
+        if template is None:
+            return None
+        self._drop_untouched_starter()
+        editor = self.new_file(template.text, title=template.title, modified=False)
+        self._tell(f"{template.title}: a template — run it a cell at a time with Ctrl+Enter; "
+                   "Save as… keeps your own copy")
+        return editor
+
+    def browse_templates(self, show: bool = True) -> TemplateDialog:
+        dialog = TemplateDialog(self)
+        if show:
+            dialog.show()
+        return dialog
 
     # -- tabs ---------------------------------------------------------------------
     def editors(self) -> list[CodeEdit]:
@@ -975,3 +1026,87 @@ def _dedent(source: str) -> str:
     import textwrap
 
     return textwrap.dedent(source)
+
+
+class TemplateDialog(QDialog):
+    """Every template: grouped on the left, what it does and its code on the right."""
+
+    def __init__(self, editor_panel: EditorPanel, parent=None):
+        super().__init__(parent or editor_panel)
+        from onset_review import codetemplates
+
+        self.setWindowTitle("Analysis templates")
+        self.setObjectName("onset_template_dialog")
+        self.resize(980, 620)
+        self.panel = editor_panel
+        self.list = QListWidget()
+        self.list.setObjectName("onset_template_list")
+        self.list.setAccessibleName("Templates")
+        for group, members in codetemplates.grouped():
+            heading = QListWidgetItem(group.upper())
+            heading.setFlags(Qt.NoItemFlags)
+            font = heading.font()
+            font.setBold(True)
+            heading.setFont(font)
+            heading.setForeground(QColor(theme.current().text_muted))
+            self.list.addItem(heading)
+            for template in members:
+                item = QListWidgetItem(template.title)
+                item.setData(Qt.UserRole, template.key)
+                item.setToolTip(template.about)
+                self.list.addItem(item)
+        self.about = QLabel("")
+        self.about.setObjectName("onset_template_about")
+        self.about.setWordWrap(True)
+        self.preview = QPlainTextEdit()
+        self.preview.setObjectName("onset_template_preview")
+        self.preview.setReadOnly(True)
+        self.preview.setFont(CodeEdit().font())
+        PythonHighlighter(self.preview.document())
+        self.open_button = QPushButton("Open in the editor")
+        self.open_button.setObjectName("onset_template_open")
+        self.open_button.setProperty("primary", True)
+        self.open_button.clicked.connect(lambda _=False: self.open_current())
+        self.list.itemDoubleClicked.connect(lambda _item: self.open_current())
+        self.list.currentItemChanged.connect(lambda item, _old: self._show(item))
+        right = QWidget()
+        column = QVBoxLayout(right)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.addWidget(self.about)
+        column.addWidget(self.preview, 1)
+        row = QHBoxLayout()
+        row.addWidget(theme.muted("Each runs on the open recording; the names it uses are "
+                                  "the Workspace's.", size=9), 1)
+        row.addWidget(self.open_button)
+        column.addLayout(row)
+        split = QSplitter(Qt.Horizontal)
+        split.addWidget(self.list)
+        split.addWidget(right)
+        split.setSizes([300, 680])
+        box = QVBoxLayout(self)
+        box.addWidget(split)
+        first = next((self.list.item(i) for i in range(self.list.count())
+                      if self.list.item(i).data(Qt.UserRole)), None)
+        if first is not None:
+            self.list.setCurrentItem(first)
+
+    def _show(self, item) -> None:
+        from onset_review import codetemplates
+
+        key = item.data(Qt.UserRole) if item is not None else None
+        template = codetemplates.find(key) if key else None
+        self.open_button.setEnabled(template is not None)
+        if template is None:
+            return
+        self.about.setText(f"<b>{template.title}</b> — mirrors {template.mirrors}.<br>"
+                           f"{template.about}")
+        self.preview.setPlainText(template.text)
+
+    def open_current(self) -> CodeEdit | None:
+        item = self.list.currentItem()
+        key = item.data(Qt.UserRole) if item is not None else None
+        if not key:
+            return None
+        editor = self.panel.open_template(key)
+        self.accept()
+        return editor

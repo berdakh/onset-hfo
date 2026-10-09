@@ -118,7 +118,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["onset_hfo", "onset_agent", "onset_review"]
+packages = ["onset_hfo", "onset_agent", "onset_review", "onset_review.templates"]
 
 [tool.hatch.build.targets.sdist]
 # The build tool sweeps up the working tree, and the working tree holds things
@@ -140,6 +140,11 @@ ignore = ["B008"]
 # them, and compact one-line plot styling.
 "notebooks/*.ipynb" = ["E401", "E402", "E701", "E702", "I001"]
 "tests/*" = ["E402"]
+# The Analysis page's templates run in the console, whose names (raw, signal,
+# findings, np, plt, ...) are there before the script starts; every one of
+# them is executed against a session by tests/test_codetemplates.py, which is
+# what catches a name that really is undefined.
+"onset_review/templates/*.py" = ["F821"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
