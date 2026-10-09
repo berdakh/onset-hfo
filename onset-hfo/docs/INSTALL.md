@@ -130,7 +130,9 @@ BrainVision, Nihon Kohden, Nicolet, Persyst, Blackrock, Neuralynx, MEF3,
 EEGLAB; Micromed with `pip install neo`; Natus from its EDF+ export). Nothing
 that names the patient is written. The case window then takes the channels
 and the marks — hours at a glance, MNE's browser to mark seizures, sleep and
-artefacts — and opens any minute in the review window. `onset-review
+artefacts — chooses segments by rule (sleep stage, away from seizures and
+artefacts), analyses them alike and pools them into one ranking with
+intervals, and opens any minute in the review window. `onset-review
 /path/to/case` opens a case from the terminal. The clinical guide's section
 5a has the whole of it.
 

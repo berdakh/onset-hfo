@@ -95,6 +95,10 @@ class Case:
     recordings: list = field(default_factory=list)
     steps: dict = field(default_factory=dict)
     log: list = field(default_factory=list)
+    #: How the case is analysed: detectors, band, threshold, quality stage
+    #: and preprocessing, as a review request's fields (`onset_review.project.
+    #: request_to_dict`). Empty until the Preprocess step saves it.
+    analysis: dict = field(default_factory=dict)
 
     # -- making and opening ----------------------------------------------------------
     @classmethod
@@ -122,7 +126,8 @@ class Case:
         return cls(root=root, case_id=str(data["case_id"]), created=data.get("created", ""),
                    created_by=data.get("created_by", ""), note=data.get("note", ""),
                    recordings=[Recording.from_json(r) for r in data.get("recordings", [])],
-                   steps=dict(data.get("steps", {})), log=list(data.get("log", [])))
+                   steps=dict(data.get("steps", {})), log=list(data.get("log", [])),
+                   analysis=dict(data.get("analysis", {})))
 
     @staticmethod
     def is_case(folder: str | Path) -> bool:
@@ -132,7 +137,7 @@ class Case:
         data = {"schema": SCHEMA, "case_id": self.case_id, "created": self.created,
                 "created_by": self.created_by, "note": self.note,
                 "recordings": [r.to_json() for r in self.recordings],
-                "steps": self.steps, "log": self.log}
+                "steps": self.steps, "log": self.log, "analysis": self.analysis}
         path = self.root / CASE_FILE
         partial = path.with_suffix(".json.partial")
         partial.write_text(json.dumps(data, indent=1) + "\n", encoding="utf-8")

@@ -16,6 +16,12 @@ page beside it.
   or drawn on the trace in MNE's own browser, which opens at the time chosen
   with the case's vocabulary ready; closing it brings its marks back. Any
   minute opens in the review window, analysed.
+* **Segments** chooses the stretches to analyse by rule (sleep stage,
+  distance from seizures, artefacts, flat stretches; `onset_hfo.case.segments`).
+* **Preprocess** sets how every segment is analysed.
+* **Interictal** analyses each segment by the review window's own path and
+  pools them (`onset_review.caseinterictal`).
+* **Review** opens each segment in the review window and counts the verdicts.
 """
 
 from __future__ import annotations
@@ -800,6 +806,463 @@ class AnnotatePage(QWidget):
         return request
 
 
+# -- phase 2: segments, the analysis, the interictal run, review ------------------------------
+def _hours(seconds: float) -> str:
+    return "–" if seconds == float("inf") else f"{seconds / 3600:.1f} h"
+
+
+class SegmentsPage(QWidget):
+    changed = Signal()
+
+    def __init__(self, window, parent=None):
+        super().__init__(parent)
+        from onset_hfo.case import segments as segments_module
+
+        self.window_ = window
+        self.stages = {}
+        stage_row = QHBoxLayout()
+        stage_row.addWidget(QLabel("Sleep stages"))
+        for stage in segments_module.STAGE_NAMES:
+            check = QCheckBox(stage.replace("sleep-", ""))
+            check.setChecked(stage in segments_module.SegmentRule().stages)
+            self.stages[stage] = check
+            stage_row.addWidget(check)
+        stage_row.addWidget(_muted("(none ticked: any time)"))
+        stage_row.addStretch(1)
+        self.from_seizure = QDoubleSpinBox()
+        self.from_seizure.setRange(0.0, 48.0)
+        self.from_seizure.setSingleStep(0.5)
+        self.from_seizure.setSuffix(" h")
+        self.from_seizure.setValue(1.0)
+        self.segment_min = QDoubleSpinBox()
+        self.segment_min.setRange(1.0, 60.0)
+        self.segment_min.setSuffix(" min")
+        self.segment_min.setValue(5.0)
+        self.total_min = QDoubleSpinBox()
+        self.total_min.setRange(1.0, 1440.0)
+        self.total_min.setSuffix(" min")
+        self.total_min.setValue(30.0)
+        self.avoid_flat = QCheckBox("Away from stretches the overview found flat")
+        self.avoid_flat.setChecked(True)
+        form = QFormLayout()
+        form.addRow(stage_row)
+        form.addRow("At least, from any seizure", self.from_seizure)
+        form.addRow("Each segment", self.segment_min)
+        form.addRow("In all", self.total_min)
+        form.addRow(self.avoid_flat)
+        self.choose_button = QPushButton("Choose segments")
+        self.choose_button.setObjectName("onset_case_choose")
+        self.choose_button.clicked.connect(lambda _=False: self.choose())
+        self.done_button = QPushButton("Segments chosen")
+        self.done_button.clicked.connect(lambda _=False: self.window_.complete("segments"))
+        self.summary = QLabel("")
+        self.summary.setWordWrap(True)
+        self.table = QTableWidget(0, 6)
+        self.table.setObjectName("onset_case_segments")
+        self.table.setHorizontalHeaderLabels(["Segment", "Run", "From", "To", "Stage",
+                                              "Nearest seizure"])
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        self.table.horizontalHeader().setStretchLastSection(True)
+        buttons = QHBoxLayout()
+        buttons.addWidget(self.choose_button)
+        buttons.addStretch(1)
+        buttons.addWidget(self.done_button)
+        box = QVBoxLayout(self)
+        box.addWidget(_muted("Interictal rates are read from stretches chosen by rule: by sleep "
+                             "stage, away from seizures, artefacts and flat recording. The "
+                             "defaults are starting points; the report states the rule."))
+        box.addLayout(form)
+        box.addLayout(buttons)
+        box.addWidget(self.summary)
+        box.addWidget(self.table, 1)
+
+    def rule(self):
+        from onset_hfo.case.segments import SegmentRule
+
+        return SegmentRule(
+            stages=tuple(s for s, check in self.stages.items() if check.isChecked()),
+            min_from_seizure_s=float(self.from_seizure.value()) * 3600,
+            segment_s=float(self.segment_min.value()) * 60,
+            total_s=float(self.total_min.value()) * 60,
+            avoid_flat=self.avoid_flat.isChecked())
+
+    def refresh(self) -> None:
+        from onset_hfo.case.segments import describe_choice, load_segments
+
+        frame, rule, info = load_segments(self.window_.case)
+        if rule is not None:
+            for stage, check in self.stages.items():
+                check.setChecked(stage in rule.stages)
+            self.from_seizure.setValue(rule.min_from_seizure_s / 3600)
+            self.segment_min.setValue(rule.segment_s / 60)
+            self.total_min.setValue(rule.total_s / 60)
+            self.avoid_flat.setChecked(rule.avoid_flat)
+            self.summary.setText(describe_choice(frame, info, rule))
+        self._fill(frame)
+
+    def _fill(self, frame) -> None:
+        self.table.setRowCount(len(frame))
+        for r, row in enumerate(frame.itertuples()):
+            values = (row.segment, row.run, clock(row.start), clock(row.stop),
+                      str(row.stage).replace("sleep-", ""),
+                      _hours(float(row.nearest_seizure_s)))
+            for c, value in enumerate(values):
+                self.table.setItem(r, c, QTableWidgetItem(str(value)))
+
+    def choose(self):
+        from onset_hfo.case import segments as segments_module
+
+        case = self.window_.case
+        recordings = []
+        for rec in case.recordings:
+            flat = []
+            cached = overview.cached_envelope(case, rec, compute=False)
+            if cached is not None and len(cached):
+                block = float(cached.attrs.get("block_s", 30.0))
+                flat = [(float(t), float(t) + block)
+                        for t in cached.loc[cached["flat_share"] > 0.5, "t"]]
+            recordings.append({"run": rec.run, "duration": rec.duration_s,
+                               "marks": case.marks(rec), "flat": flat})
+        rule = self.rule()
+        frame, info = segments_module.choose(recordings, rule)
+        segments_module.save_segments(case, frame, rule, info)
+        self.summary.setText(segments_module.describe_choice(frame, info, rule))
+        self._fill(frame)
+        self.changed.emit()
+        return frame
+
+
+class AnalysisSettingsPage(QWidget):
+    changed = Signal()
+
+    def __init__(self, window, parent=None):
+        super().__init__(parent)
+        from onset_hfo.detectors import HFO_DETECTORS
+        from onset_hfo.preprocess import REFERENCES
+
+        self.window_ = window
+        self.reference = QComboBox()
+        for name in REFERENCES:
+            self.reference.addItem(name, name)
+        self.grid = QLineEdit()
+        self.grid.setPlaceholderText("for the Laplacian, without positions: G:8")
+        self.band = QComboBox()
+        self.band.addItem("ripple (80–250 Hz)", "ripple")
+        self.band.addItem("fast ripple (250–500 Hz)", "fast_ripple")
+        self.detectors = {}
+        detector_row = QHBoxLayout()
+        for name in HFO_DETECTORS:
+            check = QCheckBox(name.replace("_", " "))
+            self.detectors[name] = check
+            detector_row.addWidget(check)
+        detector_row.addStretch(1)
+        self.threshold = QDoubleSpinBox()
+        self.threshold.setRange(0.0, 20.0)
+        self.threshold.setSingleStep(0.5)
+        self.threshold.setSuffix(" SD")
+        self.threshold.setSpecialValueText("each detector's default")
+        self.quality = QCheckBox("Quality stage: set aside bad contacts and seconds")
+        self.spikes = QCheckBox("Note which events ride on a spike")
+        self.describe = _muted("")
+        form = QFormLayout()
+        form.addRow("Reference", self.reference)
+        form.addRow("Grid columns", self.grid)
+        form.addRow("Band", self.band)
+        form.addRow("Detectors (the first ticked ranks)", detector_row)
+        form.addRow("Threshold", self.threshold)
+        form.addRow(self.quality)
+        form.addRow(self.spikes)
+        self.save_button = QPushButton("Save the settings")
+        self.save_button.clicked.connect(lambda _=False: self.save())
+        self.done_button = QPushButton("Settings set")
+        self.done_button.clicked.connect(lambda _=False: self.window_.complete("preprocess"))
+        buttons = QHBoxLayout()
+        buttons.addWidget(self.save_button)
+        buttons.addStretch(1)
+        buttons.addWidget(self.done_button)
+        box = QVBoxLayout(self)
+        box.addWidget(_muted("How every segment of the case is analysed: the same settings for "
+                             "all of them, written into the results. The rest of the "
+                             "preprocessing (filters, notch at the recording's mains) is the "
+                             "project's measured default."))
+        box.addLayout(form)
+        box.addWidget(self.describe)
+        box.addLayout(buttons)
+        box.addStretch(1)
+
+    def refresh(self) -> None:
+        from onset_hfo.config import PreprocessConfig
+        from onset_hfo.preprocess import effective_reference
+        from onset_review.caseinterictal import template_for
+
+        template = template_for(self.window_.case)
+        preprocess = template.preprocess or PreprocessConfig()
+        self.reference.setCurrentIndex(max(0, self.reference.findData(
+            effective_reference(preprocess))))
+        self.grid.setText(", ".join(f"{g}:{c}" for g, c in preprocess.grid_columns))
+        self.band.setCurrentIndex(max(0, self.band.findData(template.band)))
+        for name, check in self.detectors.items():
+            check.setChecked(name in template.detectors)
+        self.threshold.setValue(float(template.threshold_sd or 0.0))
+        self.quality.setChecked(bool(template.check_quality))
+        self.spikes.setChecked(bool(template.with_spikes))
+        self._describe(template)
+
+    def _describe(self, template) -> None:
+        from onset_hfo.config import PreprocessConfig
+        from onset_hfo.preprocess import describe
+
+        sentence, _warnings = describe(template.preprocess or PreprocessConfig(),
+                                       template.band_hz, 2000.0)
+        self.describe.setText("Each segment will " + sentence + ".")
+
+    def template(self):
+        import dataclasses
+
+        from onset_hfo.config import PreprocessConfig
+        from onset_hfo.preprocess import parse_grid_columns
+        from onset_review.caseinterictal import template_for
+
+        base = template_for(self.window_.case)
+        scheme = self.reference.currentData()
+        preprocess = dataclasses.replace(
+            base.preprocess or PreprocessConfig(), reference=scheme,
+            bipolar=scheme == "bipolar", average_reference=scheme == "average",
+            grid_columns=parse_grid_columns(self.grid.text()) if scheme == "laplacian" else ())
+        detectors = tuple(n for n, c in self.detectors.items() if c.isChecked())
+        if not detectors:
+            raise ValueError("Tick at least one detector.")
+        return dataclasses.replace(base, preprocess=preprocess, band=self.band.currentData(),
+                                   detectors=detectors,
+                                   threshold_sd=float(self.threshold.value()) or None,
+                                   check_quality=self.quality.isChecked(),
+                                   with_spikes=self.spikes.isChecked())
+
+    def save(self):
+        from onset_review.caseinterictal import save_template
+
+        try:
+            template = self.template()
+        except ValueError as error:
+            self.describe.setText(str(error))
+            return None
+        save_template(self.window_.case, template, by=self.window_.reader())
+        self._describe(template)
+        self.changed.emit()
+        return template
+
+
+class InterictalPage(QWidget):
+    changed = Signal()
+
+    def __init__(self, window, parent=None):
+        super().__init__(parent)
+        self.window_ = window
+        self._job = None
+        self.result = None
+        self.run_button = QPushButton("Run over the segments")
+        self.run_button.setObjectName("onset_case_run")
+        self.run_button.clicked.connect(lambda _=False: self.run())
+        self.stop_button = QPushButton("Stop")
+        self.stop_button.setEnabled(False)
+        self.stop_button.clicked.connect(lambda _=False: self._job and self._job.stop())
+        self.progress = QProgressBar()
+        self.progress.setVisible(False)
+        self.what = _muted("")
+        self.statement = QLabel("")
+        self.statement.setObjectName("onset_case_statement")
+        self.statement.setWordWrap(True)
+        self.statement.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+        from matplotlib.figure import Figure
+
+        self.figure = Figure(figsize=(5.0, 4.6), dpi=100)
+        self.canvas = FigureCanvasQTAgg(self.figure)
+        self.canvas.setMinimumWidth(360)
+        self.table = QTableWidget(0, 8)
+        self.table.setObjectName("onset_case_pooled")
+        self.table.setHorizontalHeaderLabels(["Rank", "Channel", "Events", "Minutes",
+                                              "Rate /min", "Interval", "Tied",
+                                              "Segments tied"])
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        self.table.horizontalHeader().setStretchLastSection(True)
+        self.done_button = QPushButton("Interictal done")
+        self.done_button.clicked.connect(lambda _=False: self.window_.complete("interictal"))
+        self.table.verticalHeader().setVisible(False)
+        top = QHBoxLayout()
+        top.addWidget(self.run_button)
+        top.addWidget(self.stop_button)
+        top.addWidget(self.progress, 1)
+        top.addStretch(1)
+        top.addWidget(self.done_button)
+        split = QSplitter(Qt.Horizontal)
+        split.addWidget(self.canvas)
+        split.addWidget(self.table)
+        split.setSizes([480, 620])
+        box = QVBoxLayout(self)
+        box.addLayout(top)
+        box.addWidget(self.what)
+        box.addWidget(self.statement)
+        box.addWidget(split, 1)
+
+    def refresh(self) -> None:
+        from onset_hfo.case.segments import load_segments
+        from onset_review.caseinterictal import latest_result, template_for
+
+        case = self.window_.case
+        frame, _rule, _info = load_segments(case)
+        template = template_for(case)
+        self.run_button.setEnabled(len(frame) > 0)
+        self.what.setText(
+            (f"{len(frame)} segment(s), {frame['duration'].sum() / 60:.0f} minutes"
+             if len(frame) else "No segments chosen yet: choose them on the Segments step")
+            + f" · detectors {', '.join(template.detectors)} (ranked by "
+              f"{template.primary}) · {template.band_label()} · threshold "
+            + (f"{template.threshold_sd:g} SD" if template.threshold_sd else "each "
+               "detector's default")
+            + ". Each segment is analysed as the review window would; analysed segments are "
+              "kept, so a second run costs only what is new.")
+        if self.result is None:
+            self.result = latest_result(case)
+        self._show()
+
+    def run(self, wait: bool = False):
+        from onset_hfo.case.segments import load_segments
+        from onset_review.caseinterictal import run_interictal
+        from onset_review.workers import track
+
+        case = self.window_.case
+        frame, _rule, _info = load_segments(case)
+        if not len(frame):
+            return None
+
+        def work(progress, should_stop):
+            return run_interictal(case, frame, progress=progress, should_stop=should_stop)
+
+        self._job = _Job(work, self)
+        self._job.progressed.connect(lambda f: self.progress.setValue(int(f * 100)))
+        self._job.finished.connect(self._ran)
+        self.progress.setValue(0)
+        self.progress.setVisible(True)
+        self.run_button.setEnabled(False)
+        self.stop_button.setEnabled(True)
+        track(self._job).start()
+        if wait:
+            self._job.wait()
+            self._ran()
+        return self._job
+
+    def _ran(self) -> None:
+        job = self._job
+        if job is None or job.isRunning():
+            return
+        self._job = None
+        self.progress.setVisible(False)
+        self.run_button.setEnabled(True)
+        self.stop_button.setEnabled(False)
+        if job.error is not None:
+            self.statement.setText(f"Not finished: {job.error}")
+            return
+        self.result = job.result
+        self._show()
+        self.changed.emit()
+
+    def _show(self) -> None:
+        from onset_review.caseinterictal import draw_pooled
+
+        result = self.result
+        self.figure.clear()
+        if result is None:
+            self.statement.setText("")
+            self.table.setRowCount(0)
+            self.canvas.draw_idle()
+            return
+        self.statement.setText(result.statement() + f" (Results: {result.folder.name}.)")
+        draw_pooled(self.figure, self.figure.add_subplot(111), result)
+        self.canvas.draw_idle()
+        rows = result.table.to_dict("records")
+        self.table.setRowCount(len(rows))
+        for r, row in enumerate(rows):
+            rank = "" if pd.isna(row["rank"]) else str(int(row["rank"]))
+            rate = "–" if pd.isna(row["rate_per_min"]) else f"{row['rate_per_min']:.2f}"
+            values = (rank, row["channel"], str(int(row["n_events"])),
+                      f"{row['minutes']:.1f}", rate,
+                      f"{row['rate_ci_low']:.2f}–{row['rate_ci_high']:.2f}",
+                      "yes" if row["tied"] else "",
+                      f"{int(row['segments_tied'])} of {int(row['segments_analysed'])}")
+            for c, value in enumerate(values):
+                self.table.setItem(r, c, QTableWidgetItem(value))
+
+
+class ReviewPage(QWidget):
+    changed = Signal()
+
+    def __init__(self, window, parent=None):
+        super().__init__(parent)
+        self.window_ = window
+        self.table = QTableWidget(0, 6)
+        self.table.setObjectName("onset_case_review")
+        self.table.setHorizontalHeaderLabels(["Segment", "Run", "From", "Stage",
+                                              "Accepted events", "Verdicts recorded"])
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.itemDoubleClicked.connect(lambda _item: self.open_selected())
+        self.open_button = QPushButton("Open in the review window")
+        self.open_button.clicked.connect(lambda _=False: self.open_selected())
+        self.done_button = QPushButton("Review done")
+        self.done_button.clicked.connect(lambda _=False: self.window_.complete("review"))
+        buttons = QHBoxLayout()
+        buttons.addWidget(self.open_button)
+        buttons.addStretch(1)
+        buttons.addWidget(self.done_button)
+        box = QVBoxLayout(self)
+        box.addWidget(_muted("Each segment opens in the review window, analysed as it was in "
+                             "the pooled run; the verdicts given there are counted here."))
+        box.addWidget(self.table, 1)
+        box.addLayout(buttons)
+        self._frame = pd.DataFrame()
+
+    def refresh(self) -> None:
+        from onset_hfo.case.segments import load_segments
+        from onset_review import adjudication
+        from onset_review.caseinterictal import latest_result, segment_request, template_for
+
+        case = self.window_.case
+        frame, _rule, _info = load_segments(case)
+        self._frame = frame
+        result = latest_result(case)
+        counts = {}
+        if result is not None and len(result.per_segment):
+            counts = result.per_segment.groupby("segment")["n_events"].sum().to_dict()
+        template = template_for(case)
+        self.table.setRowCount(len(frame))
+        for r, row in enumerate(frame.itertuples()):
+            read = adjudication.load(segment_request(case, str(row.run), float(row.start),
+                                                     float(row.stop), template))
+            verdicts = len(read.events) + len(read.channels)
+            values = (row.segment, row.run, clock(row.start),
+                      str(row.stage).replace("sleep-", ""),
+                      str(int(counts.get(row.segment, 0))) if counts else "–", str(verdicts))
+            for c, value in enumerate(values):
+                self.table.setItem(r, c, QTableWidgetItem(value))
+
+    def open_selected(self):
+        from onset_review.caseinterictal import segment_request, template_for
+
+        rows = self.table.selectionModel().selectedRows() if self.table.selectionModel() else []
+        if not rows or rows[0].row() >= len(self._frame):
+            return None
+        row = self._frame.iloc[rows[0].row()]
+        request = segment_request(self.window_.case, str(row["run"]), float(row["start"]),
+                                  float(row["stop"]), template_for(self.window_.case))
+        self.window_.openRequested.emit(request)
+        return request
+
+
 class LaterPage(QWidget):
     def __init__(self, title: str, phase: int, parent=None):
         super().__init__(parent)
@@ -832,8 +1295,14 @@ class CaseWindow(QMainWindow):
         self.import_page = ImportPage(self)
         self.channels_page = ChannelsPage(self)
         self.annotate_page = AnnotatePage(self)
+        self.segments_page = SegmentsPage(self)
+        self.settings_page = AnalysisSettingsPage(self)
+        self.interictal_page = InterictalPage(self)
+        self.review_page = ReviewPage(self)
         own = {"import": self.import_page, "channels": self.channels_page,
-               "annotate": self.annotate_page}
+               "annotate": self.annotate_page, "segments": self.segments_page,
+               "preprocess": self.settings_page, "interictal": self.interictal_page,
+               "review": self.review_page}
         self.page_for: dict[str, QWidget] = {}
         for key, title, phase in STEPS:
             page = own.get(key) or LaterPage(title, phase)

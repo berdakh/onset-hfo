@@ -1451,9 +1451,8 @@ show the overview; no patient's data.*
 
 Opening a file looks at one minute. A **case** holds a patient's whole
 monitoring: every recording, converted once into one open layout, with the
-channels, the marks and every change made to them. It is the start of the
-clinic edition, and grows a step at a time; the steps it has today are the
-first three.
+channels, the marks and every change made to them. It is the clinic edition,
+growing a step at a time; seven of its ten steps work today.
 
 **File → New case…** asks for a folder and a **pseudonym** (P017, never the
 patient's name). **File → Open case…**, or `onset-review /path/to/case`,
@@ -1523,10 +1522,61 @@ python -m onset_hfo.case convert /data/cases/P017 night1.edf night2.edf --all-as
 python -m onset_hfo.case list /data/cases/P017
 ```
 
-*Channels checked* and *Marks complete* tick the steps. What comes next —
-choosing segments by sleep stage and distance from seizures, analysing them
-together, ictal onset mapping, template localisation, the report — arrives
-phase by phase.
+*Channels checked* and *Marks complete* tick the steps.
+
+![Five real minutes of slow-wave sleep, pooled: the busiest channels with their intervals and each segment's rate](images/onset-review-case-interictal.png)
+
+*Above: five consecutive minutes of a real interictal sleep recording
+(ds003498 sub-01), as one recording in a case, in five one-minute segments.*
+
+**Segments.** Interictal rates come from stretches chosen by **rule**, not
+from whatever minute was open: rates differ by sleep stage, rise and fall
+around seizures, and an artefact or a disconnection turns into events or into
+silence. The rule says which **sleep stages** (default non-REM N2 and N3;
+none ticked means any time), how far from **any seizure** (default one hour
+either side; a seizure is a *seizure* mark, an onset paired with the next
+offset within half an hour, or two minutes from an onset with no offset),
+away from **artefacts** (with a 5 s margin) and from stretches the overview
+found **flat**, and how long each segment is (5 minutes) and how much in all
+(30 minutes). *Choose segments* cuts what qualifies into segments **spread
+evenly in time** across the recordings, lists them with their stage and the
+distance to the nearest seizure, and says how much time each rule took out
+("0.8 h not in the chosen stages; 0.9 h near a seizure"). With no sleep
+scored and stages ticked it says so rather than choosing nothing quietly.
+The defaults are starting points to state, not established constants; the
+rule is saved with the segments and written into the log.
+
+**Preprocess.** How every segment is analysed, the same for all of them:
+the reference (bipolar, per-shaft, Laplacian with grid columns, median,
+average, none), the band, the detectors (the first ticked ranks), the
+threshold, the quality stage. Saved with the case and written into every
+result.
+
+**Interictal.** *Run over the segments* analyses each segment **by the
+review window's own path** — the same request the window would make, with the
+case's channel types and its bad contacts left out — so a segment here and
+the same minutes opened in the window are one analysis, not two (a test holds
+this: one segment pooled alone gives the window's rates, intervals, busiest
+channel and tied set exactly). Then it **pools**: per channel, the accepted
+events over the clean minutes of all segments, with the Poisson interval the
+window prints, and a channel tied with the busiest when its interval overlaps
+the busiest's — the window's own rule. Beside each pooled rate, **in how many
+segments it was tied with the busiest**: a channel tied in five of five is a
+different finding from one tied in one of five at the same pooled rate. The
+chart shows the busiest channels with their intervals, filled when tied, and
+each segment's rate as a small dot. Analysed segments are kept, so adding
+segments or running again costs only what is new; a different setting is a
+different analysis and runs again. Each run writes a dated folder under
+`derivatives/onset/interictal/`: the pooled table, the counts per segment,
+every detection with its time in the recording, the settings and a summary.
+
+**Review.** Each segment, with its accepted events and how many verdicts
+have been recorded on it; double-click to open it in the review window,
+analysed as it was in the pooled run, where verdicts are given as on any
+window and counted back here.
+
+What comes next — ictal onset mapping, template localisation, the combined
+map and the report — arrives phase by phase.
 
 ## 6. What this has actually been measured to do
 
