@@ -24,4 +24,4 @@ __all__ = ["__version__"]
 
 #: Tracks `onset-hfo`'s version: the reviewer is a face on that pipeline, and
 #: two version numbers would only ever be a question about which one applies.
-__version__ = "0.3.7"
+__version__ = "0.3.8"

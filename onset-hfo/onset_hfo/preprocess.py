@@ -205,28 +205,34 @@ def parse_grid_columns(text: str) -> tuple[tuple[str, int], ...]:
 
 
 def laplacian_neighbours(names: list[str], positions: dict | None = None,
-                         grid_columns=()) -> tuple[dict[str, list[str]], list[str]]:
+                         grid_columns=(), source: dict | None = None
+                         ) -> tuple[dict[str, list[str]], list[str]]:
     """Each contact's neighbours on its own lead, and what was done per lead.
 
-    Neighbours come from the contacts' positions when every contact has one
-    (those within `NEIGHBOUR_REACH` of its nearest); else from the grid's
-    columns when given; else, for a lead of up to `LAPLACIAN_STRIP_MAX`
-    contacts, the contacts numbered either side. A contact with no neighbour
-    present is absent from the result, and is left as recorded."""
+    Neighbours come from the contacts' positions when every contact of the
+    lead has one (those within `NEIGHBOUR_REACH` of its nearest); else from
+    the grid's columns when given; else, for a lead of up to
+    `LAPLACIAN_STRIP_MAX` contacts, the contacts numbered either side. A
+    contact with no neighbour present is absent from the result, and is left
+    as recorded. Positions are matched to names without regard to case;
+    `source` names where a contact's position came from, for the notes."""
     columns = {str(k).upper(): int(v) for k, v in (grid_columns or ())}
     leads: dict[str, dict[int, str]] = {}
     for name in names:
         m = _CONTACT_RE.match(name)
         if m:
             leads.setdefault(m.group(1).upper(), {})[int(m.group(2))] = name
-    have_positions = bool(positions) and all(n in positions for n in names)
+    placed = {str(k).upper(): v for k, v in (positions or {}).items()}
+    source = {str(k).upper(): v for k, v in (source or {}).items()}
     out: dict[str, list[str]] = {}
     notes: list[str] = []
     for lead in sorted(leads):
         numbered = leads[lead]
         members = [numbered[k] for k in sorted(numbered)]
-        if have_positions and len(members) > 1:
-            xyz = np.array([positions[n] for n in members], dtype=float)
+        located = len(members) > 1 and all(
+            n.upper() in placed and np.all(np.isfinite(placed[n.upper()])) for n in members)
+        if located:
+            xyz = np.array([placed[n.upper()] for n in members], dtype=float)
             dist = np.linalg.norm(xyz[:, None, :] - xyz[None, :, :], axis=-1)
             np.fill_diagonal(dist, np.inf)
             for i, name in enumerate(members):
@@ -234,7 +240,10 @@ def laplacian_neighbours(names: list[str], positions: dict | None = None,
                 if np.isfinite(nearest) and nearest > 0:
                     near = [members[j] for j in np.flatnonzero(dist[i] <= nearest * NEIGHBOUR_REACH)]
                     out[name] = near
-            notes.append(f"{lead}: {len(members)} contacts, neighbours from their positions")
+            where = {source.get(n.upper(), "") for n in members} - {""}
+            notes.append(f"{lead}: {len(members)} contacts, neighbours from their positions"
+                         + (f" in {', '.join(sorted(where))}" if where else
+                            " in the recording"))
         elif lead in columns:
             width = columns[lead]
             for number, name in numbered.items():
@@ -756,12 +765,19 @@ def describe(cfg: PreprocessConfig, band: tuple[float, float],
             warnings.append(f"The {cfg.ica_method} solver is not installed; choose another.")
     return "; ".join(lines) + ".", warnings
 
-def prepare(rec: Recording, cfg: PreprocessConfig | None = None, verbose: bool = True) -> Prepared:
+def prepare(rec: Recording, cfg: PreprocessConfig | None = None, verbose: bool = True,
+            positions: dict | None = None, positions_from: str = "") -> Prepared:
     """Run the four preprocessing steps and return the array a detector reads.
 
     The returned data is in **microvolts**, because every threshold and plot in
     this project is expressed in µV and silent unit changes are how analyses go
     wrong.
+
+    `positions` (contact name -> x, y, z, any one unit) are contact positions
+    from outside the recording -- a reader's electrode file -- for the
+    Laplacian's neighbours; `positions_from` names where they came from for
+    the steps. Positions the recording carries itself are used when these do
+    not cover a lead. Nothing else reads them.
     """
     cfg = cfg or PreprocessConfig()
     _check(cfg, float(rec.raw.info["sfreq"]))
@@ -929,11 +945,16 @@ def prepare(rec: Recording, cfg: PreprocessConfig | None = None, verbose: bool =
                      + ")")
 
     elif scheme == "laplacian" and len(names) > 1:
-        positions = None
+        located: dict = {}
         if _has_positions(raw):
-            positions = {ch["ch_name"]: np.asarray(ch["loc"][:3], dtype=float)
-                         for ch in raw.info["chs"]}
-        neighbours, how = laplacian_neighbours(names, positions, cfg.grid_columns)
+            located.update({ch["ch_name"].upper(): np.asarray(ch["loc"][:3], dtype=float)
+                            for ch in raw.info["chs"]})
+        given = {str(k).upper(): np.asarray(v, dtype=float)
+                 for k, v in (positions or {}).items()}
+        located.update(given)      # the reader's file over the recording's own
+        neighbours, how = laplacian_neighbours(
+            names, located or None, cfg.grid_columns,
+            source={n: positions_from for n in given} if positions_from else None)
         idx = {n: i for i, n in enumerate(names)}
         referenced = data.copy()
         for name, near in neighbours.items():

@@ -892,6 +892,30 @@ opens it on the Analysis page, the starting point for a question of your own.
 The six pages fold away under their heading (click *THE STUDY* in the
 sidebar); `Alt`+number still reaches them.
 
+### Two analyses side by side
+
+![Bipolar and Laplacian on the same ECoG minute](images/onset-review-compare.png)
+
+**File → Compare with** lines up the window on screen (**A**) with a second
+analysis (**B**): *this recording with other settings…* analyses the same
+window again with another reference, band or threshold; *a saved project…*
+analyses a project from its request and brings its read. The window says what
+differs between the two, setting by setting, and then what moved: the busiest
+channel under each and whether it is the same place; Spearman's ρ between the
+two rankings and how many of the top five they share; the tied sets; and, per
+detector, the accepted events found by both, by A only and by B only, over
+the time both analysed. The chart puts every channel's rate under A against
+its rate under B — on the diagonal it did not move; filled, it is tied with
+the busiest under either — with the ranking beside it, sortable. The
+*Verdicts* tab lists the channels the two reads judge differently.
+
+Two montages name channels differently — bipolar `PD2-PD3` is two contacts,
+Laplacian `PD2` one — so when the channel names do not match, the comparison
+is **by contact**: a contact's rate is that of the busiest channel built from
+it, and two events are the same when they overlap in time (within 20 ms) and
+share a contact. The summary says which was done. *Open B in the window*
+replaces the window with B; *Save as Markdown…* keeps the comparison.
+
 ### Many recordings at once, and a project to keep
 
 ![Six patients analysed alike, one row each](images/onset-review-batch.png)
@@ -935,6 +959,13 @@ absolute deviation). It needs at least five analysed recordings; with fewer,
 nothing is called an outlier. Different is not wrong — it says which
 recording to open and look at. Nothing on the tab is a new analysis: it is
 read from the batch's `summary.csv` and `scores.csv`.
+
+**Open a batch…** in the same window brings back a batch run before — the
+recent ones are listed, or choose its folder — with its table, its charts and
+its settings. A batch keeps how each recording was asked for, so its rows
+open in the window and join your cohort as they did on the day it ran. (A
+batch written by 0.3.8 or earlier shows its table and charts, but its rows
+cannot be opened: run it again.)
 
 **File → Save project…** (`Ctrl+Shift+S`) keeps the recording and everything
 done with it in one `.onsetproj` file: the request with its preprocessing,
@@ -1019,7 +1050,11 @@ from its names, so type its columns under *Grid columns* — `G:8` for a grid G
 numbered 1–8 along its first row, 9–16 along the next; several as `G:8, LT:4`.
 A lead of more than 16 contacts with neither positions nor columns is **left as
 recorded** rather than guessed at, and the step written into the report says
-which leads were treated how. A contact the quality stage marks bad still
+which leads were treated how. Coordinates you give the window (*File → Electrode
+coordinates…*) count as positions: a lead the file covers
+takes its neighbours from it — the step says *from their positions in*
+the file's name — and applying a file while the Laplacian is in force offers
+to re-analyse, so the reference follows the file rather than only the view. A contact the quality stage marks bad still
 feeds the contacts beside it, as with any reference built from neighbours.
 
 **What is marked, not repaired.** The two annotation steps follow MNE's own

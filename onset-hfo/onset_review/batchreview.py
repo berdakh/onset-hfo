@@ -40,7 +40,11 @@ import numpy as np
 import pandas as pd
 
 __all__ = ["FileRule", "BatchItem", "request_for", "summarise", "run_batch", "load_batch",
-           "COLUMNS", "DEFAULT_EXCEPTIONS"]
+           "COLUMNS", "DEFAULT_EXCEPTIONS", "reopenable", "remember_batch", "recent_batches",
+           "MAX_RECENT"]
+
+#: Batches remembered for *Open a batch*.
+MAX_RECENT = 10
 
 #: Channels a clinical export usually carries besides the brain's, and the
 #: type each pattern gets.
@@ -212,6 +216,12 @@ def run_batch(items, template, rule: FileRule | None = None, folder: str | Path 
         "threshold_sd": template.threshold_sd, "check_quality": template.check_quality,
         "preprocess": _plain(template.preprocess), "file_rule": rule.describe(),
         "recordings": [item.label() for item in items],
+        # What it takes to open a row again later, or on another day: each
+        # recording as asked for, the window's request, and the file rule.
+        "items": [_item_dict(item) for item in items],
+        "template": _template_dict(template),
+        "rule": {"all_as": rule.all_as, "exceptions": [list(e) for e in rule.exceptions],
+                 "t_start": rule.t_start, "t_stop": rule.t_stop, "line_freq": rule.line_freq},
     }
     (folder / "settings.json").write_text(json.dumps(settings, indent=1, default=str) + "\n")
     rows: list[dict] = []
@@ -308,6 +318,88 @@ def load_batch(folder: str | Path) -> BatchResult:
     settings = json.loads((folder / "settings.json").read_text())
     scores = pd.read_csv(folder / "scores.csv") if (folder / "scores.csv").exists() else None
     return BatchResult(rows, folder, settings, scores)
+
+
+def _item_dict(item: BatchItem) -> dict:
+    return {"dataset": item.dataset, "subject": item.subject, "run": item.run,
+            "task": item.task, "t_start": item.t_start, "t_stop": item.t_stop,
+            "path": str(item.path) if item.path is not None else None}
+
+
+def _template_dict(template) -> dict | None:
+    from onset_review.project import request_to_dict
+
+    try:
+        return request_to_dict(template)
+    except Exception:       # noqa: BLE001 - a template that cannot be written is left out
+        return None
+
+
+def reopenable(result: BatchResult):
+    """What a saved batch needs to open its rows again: (items, template,
+    rule), or None for a batch written before batches kept them."""
+    from onset_review.project import request_from_dict
+
+    settings = result.settings or {}
+    if not settings.get("items") or not settings.get("template"):
+        return None
+    items = [BatchItem(dataset=str(d.get("dataset") or ""), subject=str(d.get("subject") or ""),
+                       run=str(d.get("run") or "01"), task=d.get("task"),
+                       t_start=float(d.get("t_start") or 0.0),
+                       t_stop=float(d.get("t_stop") or 60.0),
+                       path=Path(d["path"]) if d.get("path") else None)
+             for d in settings["items"]]
+    if len(items) != len(result.rows):
+        return None
+    template = request_from_dict(settings["template"])
+    raw = settings.get("rule") or {}
+    rule = FileRule(all_as=str(raw.get("all_as", "seeg")),
+                    exceptions=tuple(tuple(e) for e in raw.get("exceptions",
+                                                                DEFAULT_EXCEPTIONS)),
+                    t_start=float(raw.get("t_start", 0.0)),
+                    t_stop=float(raw.get("t_stop", 60.0)),
+                    line_freq=float(raw.get("line_freq", 50.0)))
+    return items, template, rule
+
+
+def _recent_path() -> Path:
+    from onset_review.assistant_config import config_path
+
+    return config_path().with_name("recent_batches.json")
+
+
+def remember_batch(folder: str | Path) -> None:
+    """Put a batch folder at the top of the recent list."""
+    folder = str(Path(folder).resolve())
+    known = [f for f in _read_recent() if f != folder]
+    try:
+        _recent_path().parent.mkdir(parents=True, exist_ok=True)
+        _recent_path().write_text(json.dumps([folder, *known][:MAX_RECENT], indent=1))
+    except OSError:
+        pass
+
+
+def _read_recent() -> list[str]:
+    try:
+        data = json.loads(_recent_path().read_text())
+    except (OSError, ValueError):
+        return []
+    return [str(f) for f in data if isinstance(f, str)]
+
+
+def recent_batches() -> list[tuple[Path, dict]]:
+    """The remembered batch folders still on disk, newest first, with their
+    settings (for the menu: when, how many recordings)."""
+    out = []
+    for folder in _read_recent():
+        path = Path(folder)
+        try:
+            settings = json.loads((path / "settings.json").read_text())
+        except (OSError, ValueError):
+            continue
+        if (path / "summary.csv").exists():
+            out.append((path, settings))
+    return out
 
 
 def findings_for(result: BatchResult, row: dict) -> pd.DataFrame | None:

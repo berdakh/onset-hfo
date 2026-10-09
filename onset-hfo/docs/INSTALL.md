@@ -244,7 +244,11 @@ the recording again from its request. The batch window's **Across the batch**
 tab draws each recording's busiest channel with its interval on one chart,
 each detector's agreement with the experts across the recordings that have
 markings, and names any recording that differs from the rest (more than 3.5
-robust z from the batch's median, with five or more recordings).
+robust z from the batch's median, with five or more recordings). *Open a
+batch…* brings back a batch run before, with rows that open as they did.
+*File → Compare with* lines the window up with the same recording under other
+settings, or with a saved project: what differs, where the busiest channel
+went, how far each channel moved, and the events found by both or by one.
 
 ![Analyse many recordings](images/onset-review-batch.png)
 

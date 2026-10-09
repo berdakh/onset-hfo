@@ -129,13 +129,18 @@ def analyse_span(source: Source, t_start: float, t_stop: float,
                  check_quality: bool = True,
                  progress: Callable | None = None,
                  collect: Callable | None = None,
-                 verbose: bool = False) -> SpanAnalysis:
+                 verbose: bool = False,
+                 positions: dict | None = None,
+                 positions_from: str = "") -> SpanAnalysis:
     """Detect over `[t_start, t_stop)` in chunks, holding one chunk at a time.
 
     `source(read_start, read_stop)` returns a `Recording` for that stretch.
     It is called twice per chunk, because `stream_detect` makes two passes and
     the second one needs the signal again -- the alternative is caching every
     prepared chunk, which is the memory this exists to avoid.
+
+    `positions` and `positions_from` go to `prepare`, for a Laplacian whose
+    neighbours come from a reader's electrode file.
 
     `collect(record, plan)`, if given, is called once per chunk on the third
     pass with the unprepared `Recording`. It is the seam for anything that
@@ -165,7 +170,8 @@ def analyse_span(source: Source, t_start: float, t_stop: float,
         record = source(plan.read_start, plan.read_stop)
         if keep_record and collect is not None:
             collect(record, plan)
-        prep = prepare(record, cfg.preprocess, verbose=False)
+        prep = prepare(record, cfg.preprocess, verbose=False, positions=positions,
+                       positions_from=positions_from)
         if not seen:
             seen["sfreq"] = float(prep.sfreq)
             seen["ch_names"] = list(prep.ch_names)
