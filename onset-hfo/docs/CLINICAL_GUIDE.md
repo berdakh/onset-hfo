@@ -1425,6 +1425,9 @@ assistant work on it unchanged.
 | MEF3 | any file inside the `.mefd` bundle |
 | Neuralynx | any `.ncs` in the recording's folder |
 | Curry, EEGLAB, EGI, Neuroscan, Eximia, MNE | `.cdt`, `.set`, `.mff`, `.cnt`, `.nxe`, `.fif` |
+| MEG: MEGIN (Elekta) | `.fif` |
+| MEG: CTF | any file inside the `.ds` folder, such as the `.meg4` |
+| MEG: KIT / Yokogawa | `.sqd` / `.con` |
 
 **A public recording instead: File → Open from OpenNeuro…** (also *From
 OpenNeuro…* on Home)
@@ -1465,9 +1468,31 @@ nothing anywhere says so.
 
 So the dialog shows you what the file claims, next to what it will be analysed
 as, and will not open until something is marked SEEG or ECoG. Set them all with
-one of the three buttons, then change the exceptions — the EKG, the DC
-channels, the trigger — individually. The count beside the buttons is the
-number that will actually be analysed.
+one of the buttons, then change the exceptions — the EKG, the DC channels, the
+trigger — individually. The count beside the buttons is the number that will
+actually be analysed.
+
+**This recording is…** sits above the list: intracranial EEG, scalp EEG or
+MEG. It decides which channels are analysed and in what unit, and changing it
+suggests every channel's type again.
+
+* **Intracranial EEG** is the guess for any file without MEG sensors, because
+  a clinical export declares its contacts as scalp EEG too. SEEG and ECoG
+  channels are analysed, in µV. A channel you type *Scalp EEG* here is left
+  out, and the window's preprocessing steps say so.
+* **Scalp EEG** is never guessed: say so. Channels typed scalp EEG are
+  analysed in µV, and *bipolar* means the longitudinal "double banana"
+  (Fp1-F7-T7-P7-O1 and so on; the older T3/T4/T5/T6 names work too).
+* **MEG** is the guess when the file declares MEG sensors. One sensor type is
+  analysed: the planar gradiometers, in fT/cm, when there are any, otherwise
+  the magnetometers, in fT. MEG is never re-referenced. A sensor can be typed
+  as another sensor type or as not analysed, never as EEG.
+
+The detectors were validated only on intracranial recordings. On scalp EEG
+and MEG they run the same way, and every window says first that nothing there
+has been checked against a scalp or MEG reference. The Contacts and Map pages
+lay channels out as implanted contacts, so on scalp EEG or MEG they say that
+what they draw is a diagram of the names, not where the sensors are.
 
 ### What else it asks, and why
 

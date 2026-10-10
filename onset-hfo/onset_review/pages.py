@@ -1177,6 +1177,7 @@ class PageWindow(QMainWindow):
         box = QVBoxLayout(column)
         box.setContentsMargins(0, 0, 0, 0)
         box.setSpacing(theme.SPACING)
+        self._not_implanted_note(box, "contacts")
         box.addWidget(theme.section_label("Patient"))
         box.addWidget(self.panels["patient"], 1)
         box.addWidget(theme.section_label("Coordinates"))
@@ -1284,6 +1285,7 @@ class PageWindow(QMainWindow):
         box = QVBoxLayout(column)
         box.setContentsMargins(0, 0, 0, 0)
         box.setSpacing(theme.SPACING)
+        self._not_implanted_note(box, "map")
         box.addWidget(theme.section_label("How to read it"))
         box.addWidget(theme.muted(
             "Each dot is one channel at its contacts' midpoint, coloured by the "
@@ -1312,6 +1314,32 @@ class PageWindow(QMainWindow):
                                   [1100, COLUMN_WIDTH], stretch=(1, 0)), 1)
         self.panels["map"].askRequested.connect(self._ask_about_map)
         return page
+
+    def _not_implanted_note(self, box, page: str) -> None:
+        """On a scalp EEG or MEG window, say what this page cannot show.
+
+        The 3D view and the map lay channels out as implanted contacts, by
+        shaft name and contact number. Scalp electrodes and MEG sensors have
+        no shafts, so the layout is a montage diagram at best; the page says
+        so rather than letting it pass for where the sensors sit.
+        """
+        modality = getattr(self.session, "modality", "ieeg") if self.session else "ieeg"
+        if modality == "ieeg":
+            return
+        from onset_hfo.modality import MODALITIES
+
+        label = MODALITIES.get(modality, MODALITIES["ieeg"]).label
+        note = QLabel(
+            f"<b>This is {label}.</b> This page lays channels out as implanted "
+            "contacts, by shaft name and contact number. "
+            + ("Scalp electrodes" if modality == "eeg" else "MEG sensors")
+            + " have no shafts, so what it draws is a diagram of the channel "
+            "names, not where the sensors sit on the head. The ranking on the "
+            "Recording page is unaffected.")
+        note.setObjectName(f"onset_not_implanted_{page}")
+        note.setWordWrap(True)
+        note.setStyleSheet(theme.card("warn"))
+        box.addWidget(note)
 
     def _ask_about_map(self, question: str) -> None:
         """The map's button: go to the assistant and ask, so the answer lands

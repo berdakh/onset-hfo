@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from onset_hfo.modality import trace_scale
 from onset_review import detail
 
 __all__ = ["AverageEvent", "compute", "channels_with_events", "describe", "HALF_S",
@@ -145,7 +146,7 @@ def compute(session, channel: str, detector: str | None = None,
             skipped += 1
             continue
         data = np.asarray(raw.get_data(picks=[pick], start=first, stop=last),
-                          dtype=float)[0] * 1e6
+                          dtype=float)[0] * trace_scale(raw)
         passed = detail._band_pass(data, sfreq, band)
         on = int(round(start_s * sfreq)) - first
         off = max(on + 1, int(round(stop_s * sfreq)) - first)

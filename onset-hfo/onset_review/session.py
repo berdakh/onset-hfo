@@ -112,6 +112,10 @@ class ReviewRequest:
     #: channel `eeg`, and the pipeline would analyse a scalp montage as
     #: intracranial. Only consulted for an imported file.
     channel_types: tuple[tuple[str, str], ...] = ()
+    #: What kind of recording this is: "auto" (read from the channel types),
+    #: "ieeg", "eeg" or "meg". The import dialog names it, having asked; see
+    #: `onset_hfo.modality`.
+    modality: str = "auto"
     #: Mains frequency for an imported file. The archive carries its own; a
     #: bare EDF does not, and the wrong one leaves the interference in place
     #: *and* carves a hole where there was none.
@@ -257,6 +261,8 @@ class ReviewRequest:
         cfg = PipelineConfig()
         if self.preprocess is not None:
             cfg.preprocess = self.preprocess
+        if self.modality and self.modality != "auto":
+            cfg.preprocess = replace(cfg.preprocess, modality=self.modality)
         for name in HFO_DETECTORS:
             detector_cfg = replace(getattr(cfg, name), band=self.band_hz)
             if self.threshold_sd is not None:
@@ -309,6 +315,10 @@ class ReviewSession:
     sfreq: float = 0.0
     t_offset: float = 0.0
     montage: str = "bipolar"
+    #: What kind of recording was analysed, and the unit every amplitude in
+    #: this session is in. See `onset_hfo.modality`.
+    modality: str = "ieeg"
+    unit: str = "µV"
     #: What was analysed, in original-recording seconds. Equal to the trace
     #: window unless the request asked for a longer span, in which case every
     #: rate, every rank and the trend cover this and the trace covers a slice
@@ -467,17 +477,23 @@ def cached_windows(cache_dir: Path | None = None) -> pd.DataFrame:
             .reset_index(drop=True))
 
 
-def _to_raw(data_uv: np.ndarray, ch_names: list[str], sfreq: float):
-    """Wrap the prepared array as an MNE Raw, converting microvolts to volts.
+def _to_raw(data: np.ndarray, ch_names: list[str], sfreq: float,
+            modality: str = "ieeg"):
+    """Wrap the prepared array as an MNE Raw, converting it back to SI.
 
-    The conversion is the one unit change in this file and it is explicit,
-    because MNE scales its own axes from SI and a silent factor of 1e6 is how a
-    trace ends up unreadable at a plausible-looking gain.
+    The prepared data are in the modality's unit (µV, fT/cm or fT); MNE scales
+    its own axes from SI, and a silent factor is how a trace ends up unreadable
+    at a plausible-looking gain. The channels carry the modality's own type,
+    so MNE's browser labels a MEG trace in fT/cm or fT rather than in µV.
     """
     import mne
 
-    info = mne.create_info(list(ch_names), float(sfreq), ch_types="seeg")
-    return mne.io.RawArray(np.asarray(data_uv, dtype=float) / 1e6, info,
+    from onset_hfo.modality import MODALITIES, TRACE_TYPE
+
+    kind = MODALITIES.get(modality, MODALITIES["ieeg"])
+    info = mne.create_info(list(ch_names), float(sfreq),
+                           ch_types=TRACE_TYPE.get(kind.key, "seeg"))
+    return mne.io.RawArray(np.asarray(data, dtype=float) / kind.scale, info,
                            verbose="ERROR")
 
 
@@ -831,7 +847,8 @@ def streamed_session(request: ReviewRequest, cache_dir: Path | None = None,
     record = source(request.t_start, request.t_stop)
     prep = prepare(record, cfg.preprocess, verbose=False, positions=positions,
                    positions_from=positions_from)
-    raw = _to_raw(prep.data, list(prep.ch_names), prep.sfreq)
+    raw = _to_raw(prep.data, list(prep.ch_names), prep.sfreq,
+                  getattr(prep, "modality", "ieeg"))
 
     events = analysis.events
     say(0.92, "Measuring rates over the whole span")
@@ -877,7 +894,8 @@ def streamed_session(request: ReviewRequest, cache_dir: Path | None = None,
         clean_seconds=dict(clean or {}), steps=list(analysis.steps),
         notes=notes + ica_note, citation=str(getattr(record, "citation", "")),
         sfreq=float(prep.sfreq), t_offset=float(prep.t_offset),
-        montage=prep.montage, recording=record,
+        montage=prep.montage, modality=getattr(prep, "modality", "ieeg"),
+        unit=getattr(prep, "unit", "µV"), recording=record,
         span_start=float(span_start), span_stop=float(span_stop))
     supplied = _electrodes_from_file(request.electrodes_path, session)
     if supplied is not None:
@@ -914,7 +932,8 @@ def reload_trace(session: ReviewSession, t_start: float, t_stop: float,
     positions, positions_from = laplacian_positions(request)
     prep = prepare(record, request.pipeline_config().preprocess, verbose=False,
                    positions=positions, positions_from=positions_from)
-    raw = _to_raw(prep.data, list(prep.ch_names), prep.sfreq)
+    raw = _to_raw(prep.data, list(prep.ch_names), prep.sfreq,
+                  getattr(prep, "modality", "ieeg"))
     raw.set_annotations(annotations_for(session.events, prep.t_offset,
                                         window_s=prep.duration))
     return dataclasses.replace(
@@ -1005,8 +1024,11 @@ def session_from_recording(record: Recording, request: ReviewRequest,
                                keep=request.keep_channels)
     clean = analysable_seconds(segments, quality, list(prep.ch_names),
                                prep.duration, keep=request.keep_channels)
+    # With no HFO band, the ranking is by interictal discharges instead of an
+    # all-zero HFO count, and the notes say which it is.
+    ranked_by = "spike" if hfo_skipped else request.primary
     findings = _findings_table(events, list(prep.ch_names), clean or prep.duration,
-                               request.primary, reviewed, expert,
+                               ranked_by, reviewed, expert,
                                window_s=prep.duration)
     leader = leader_separation(findings) if not findings.empty else {}
     counts = (findings.set_index("channel")["n_events"]
@@ -1015,7 +1037,8 @@ def session_from_recording(record: Recording, request: ReviewRequest,
             if len(counts) else [])
 
     say(0.95, "Building the trace")
-    raw = _to_raw(prep.data, list(prep.ch_names), prep.sfreq)
+    raw = _to_raw(prep.data, list(prep.ch_names), prep.sfreq,
+                  getattr(prep, "modality", "ieeg"))
     raw.set_annotations(annotations_for(events, prep.t_offset))
 
     say(1.0, "Ready")
@@ -1025,14 +1048,18 @@ def session_from_recording(record: Recording, request: ReviewRequest,
         reviewed_channels=reviewed, resection=resection, electrodes=electrodes,
         quality=quality, segments=segments, clean_seconds=dict(clean or {}),
         steps=list(prep.steps),
-        notes=(([hfo_skipped] if hfo_skipped else [])
+        notes=(([hfo_skipped, "Channels are ranked by interictal discharges, "
+                 "because no HFO band fits this sampling rate: the counts and "
+                 "rates on the Recording page are discharges, not HFOs."]
+                if hfo_skipped else [])
                + list(getattr(record, "notes", []))
                + ([quality_summary(quality, segments,
                                    kept=request.keep_channels)]
                   if cfg.check_quality else [])),
         citation=str(getattr(record, "citation", "")),
         sfreq=float(prep.sfreq), t_offset=float(prep.t_offset),
-        montage=prep.montage, recording=record, ica=getattr(prep, "ica", None),
+        montage=prep.montage, modality=getattr(prep, "modality", "ieeg"),
+        unit=getattr(prep, "unit", "µV"), recording=record, ica=getattr(prep, "ica", None),
     )
     # A coordinate file the reviewer supplied outranks whatever the archive
     # shipped, which for every dataset here is nothing. Applied after the

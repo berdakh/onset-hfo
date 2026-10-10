@@ -674,8 +674,13 @@ def _read_tsv(path: Path) -> pd.DataFrame | None:
 
 
 def _mne_type(bids_type: str) -> str:
+    # MEG types as BIDS names them. MNE types a CTF axial gradiometer `mag`
+    # (it reads out a field, in tesla), so only planar gradiometers are `grad`.
     return {"ECOG": "ecog", "SEEG": "seeg", "EEG": "eeg", "EKG": "ecg", "ECG": "ecg",
-            "EMG": "emg", "EOG": "eog", "MISC": "misc", "TRIG": "stim"}.get(
+            "EMG": "emg", "EOG": "eog", "HEOG": "eog", "VEOG": "eog", "MISC": "misc",
+            "TRIG": "stim", "MEGMAG": "mag", "MEGGRADAXIAL": "mag",
+            "MEGGRADPLANAR": "grad", "MEGREFMAG": "ref_meg",
+            "MEGREFGRADAXIAL": "ref_meg", "MEGREFGRADPLANAR": "ref_meg"}.get(
         str(bids_type).upper(), "misc")
 
 

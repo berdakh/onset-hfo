@@ -85,6 +85,11 @@ class AveragePanel(QWidget):
             self._clear("No accepted events on any channel, so there is nothing to average.")
 
     # -- what to draw ---------------------------------------------------------
+
+    @property
+    def _unit(self) -> str:
+        """The unit this window's amplitudes are in: µV, or fT/cm or fT for MEG."""
+        return getattr(self._session, "unit", "µV")
     def highlight(self, channel: str) -> None:
         """Follow the channel chosen elsewhere, when it has events to average."""
         index = self.channel.findData(str(channel))
@@ -145,11 +150,11 @@ class AveragePanel(QWidget):
                           avg.mean_wideband + avg.sd_wideband,
                           color=tokens.text_muted, alpha=0.18, lw=0)
         wide.plot(ms, avg.mean_wideband, lw=0.9, color=tokens.text)
-        wide.set_ylabel("wideband\nµV", fontsize=7, color=tokens.text_muted)
+        wide.set_ylabel(f"wideband\n{self._unit}", fontsize=7, color=tokens.text_muted)
         band.fill_between(ms, avg.mean_band - avg.sd_band, avg.mean_band + avg.sd_band,
                           color=tokens.accent, alpha=0.18, lw=0)
         band.plot(ms, avg.mean_band, lw=0.9, color=tokens.accent)
-        band.set_ylabel(f"{avg.band[0]:g}–{avg.band[1]:g} Hz\nµV", fontsize=7,
+        band.set_ylabel(f"{avg.band[0]:g}–{avg.band[1]:g} Hz\n{self._unit}", fontsize=7,
                         color=tokens.text_muted)
         half = avg.mean_duration_ms / 2.0 if np.isfinite(avg.mean_duration_ms) else 0.0
         for axis in (wide, band):

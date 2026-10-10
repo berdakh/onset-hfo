@@ -248,7 +248,8 @@ class PreprocessPanel(QWidget):
             "MNE's amplitude annotator, per contact. Off by default: an "
             "amplitude ceiling removes the loudest seconds, and on an "
             "epileptic contact those are the discharges.")
-        self.ptp = _spin(0.0, 20000.0, 50.0, " µV", float(start.amplitude_ptp_uv or 0.0),
+        self.ptp = _spin(0.0, 20000.0, 50.0, " " + getattr(session, "unit", "µV"),
+                         float(start.amplitude_ptp_uv or 0.0),
                          "The ceiling. 0 learns one per contact from the data by "
                          "cross-validation, as autoreject does for its global "
                          "threshold. Nothing is interpolated.")

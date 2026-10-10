@@ -106,9 +106,9 @@ Everything is cached under `artifacts/data/`, so a window is fetched once.
 **File → Open a file…**, or the *Open a file…* button in the open dialog,
 reads a file from this machine through MNE's readers — EDF, BDF, GDF,
 BrainVision, Persyst, Nihon Kohden, Nicolet, Curry, Blackrock, Neuralynx,
-MEF3, EEGLAB, EGI, Neuroscan, Eximia, FIF. There is no conversion step and no
-proprietary format; the file becomes the same recording the archive produces,
-and every panel works on it unchanged.
+MEF3, EEGLAB, EGI, Neuroscan, Eximia, FIF, and MEG from CTF and KIT. There is
+no conversion step and no proprietary format; the file becomes the same
+recording the archive produces, and every panel works on it unchanged.
 
 You will be asked to confirm which channels are intracranial before anything is
 analysed, and the dialog will not open the file until something is marked SEEG

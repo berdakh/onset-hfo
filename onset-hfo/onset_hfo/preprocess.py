@@ -794,10 +794,21 @@ def prepare(rec: Recording, cfg: PreprocessConfig | None = None, verbose: bool =
     from onset_hfo.modality import resolve
 
     types = raw.get_channel_types()
-    kind = resolve(getattr(cfg, "modality", "auto"), types)
+    requested = str(getattr(cfg, "modality", "auto") or "auto").lower()
+    kind = resolve(requested, types)
+    scalp_left_out: list[str] = []
     if kind.key == "ieeg":      # the selection this project has always made
         keep = [n for n, t in zip(raw.ch_names, types, strict=False)
                 if _is_brain_channel(n, t)]
+        # Named rather than detected -- as the import dialog does, once a
+        # reviewer has typed each channel -- a channel typed scalp EEG beside
+        # SEEG or ECoG contacts is scalp EEG, and is not analysed with them.
+        # Detected, EEG-typed channels ride along as they always have, because
+        # archives often type intracranial contacts `eeg`.
+        if requested == "ieeg" and set(types) & {"seeg", "ecog"}:
+            scalp_left_out = [n for n, t in zip(raw.ch_names, types, strict=False)
+                              if t == "eeg" and n in keep]
+            keep = [n for n in keep if n not in scalp_left_out]
     else:
         keep = [n for n, t in zip(raw.ch_names, types, strict=False)
                 if t in kind.types and not n.upper().startswith(_NON_BRAIN)]
@@ -822,6 +833,11 @@ def prepare(rec: Recording, cfg: PreprocessConfig | None = None, verbose: bool =
                  f"{len(dropped_type) - len(regress)} "
                  f"{'non-brain channels (DC/trigger/ECG/misc)' if kind.key == 'ieeg' else 'other channels'}"
                  + (f"; kept {', '.join(regress)} to regress out" if regress else ""))
+    if scalp_left_out:
+        steps.append(f"left out {len(scalp_left_out)} channels typed scalp EEG "
+                     f"({', '.join(scalp_left_out[:6])}"
+                     f"{', …' if len(scalp_left_out) > 6 else ''}): the recording was "
+                     "named intracranial, so only its SEEG and ECoG contacts are analysed")
 
     bads = [b for b in rec.bads if b in raw.ch_names]
     if cfg.drop_bads and bads:

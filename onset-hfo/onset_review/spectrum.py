@@ -18,6 +18,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from onset_hfo.modality import trace_scale
+
 __all__ = ["Spectrum", "compute", "slope_fit", "mains_lines", "band_share", "summarise"]
 
 #: Welch segment length in seconds: two gives 0.5 Hz bins, enough to see a
@@ -64,7 +66,7 @@ def compute(session, segment_s: float = SEGMENT_S) -> Spectrum:
     from mne.time_frequency import psd_array_welch
 
     sfreq = float(raw.info["sfreq"])
-    data = np.asarray(raw.get_data(), dtype=float) * 1e6
+    data = np.asarray(raw.get_data(), dtype=float) * trace_scale(raw)
     n_per_seg = int(min(data.shape[1], max(16, round(segment_s * sfreq))))
     power, freqs = psd_array_welch(data, sfreq, fmin=0.5, fmax=sfreq / 2.0,
                                    n_fft=n_per_seg, n_per_seg=n_per_seg,

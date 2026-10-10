@@ -40,7 +40,8 @@ import pandas as pd
 from onset_hfo.datasets import Recording
 
 __all__ = ["Format", "FORMATS", "detect_format", "supported_suffixes",
-           "file_filter", "channel_overview", "recording_info",
+           "file_filter", "channel_overview", "recording_info", "recording_kind",
+           "suggest_type",
            "open_recording", "recording_root", "INTRACRANIAL_TYPES"]
 
 #: Channel types the pipeline will analyse. Everything else is dropped in
@@ -76,9 +77,11 @@ class Format:
 
 
 #: The formats offered, most likely first. Not every reader MNE has: the ones
-#: an intracranial recording plausibly arrives in, plus the general-purpose
-#: interchange formats. MEG-only and fNIRS readers are left out because a file
-#: this software can do nothing useful with should not be in the dialog.
+#: an intracranial, scalp EEG or MEG recording plausibly arrives in, plus the
+#: general-purpose interchange formats. MEGIN (Elekta) MEG is FIF, read by the
+#: MNE entry; CTF and KIT/Yokogawa have their own. fNIRS readers are left out
+#: because a file this software can do nothing useful with should not be in
+#: the dialog.
 FORMATS: tuple[Format, ...] = (
     Format("BrainVision", "read_raw_brainvision", (".vhdr",),
            "header file; the .eeg and .vmrk sit beside it"),
@@ -105,6 +108,9 @@ FORMATS: tuple[Format, ...] = (
     Format("EGI", "read_raw_egi", (".mff", ".raw")),
     Format("Neuroscan", "read_raw_cnt", (".cnt",)),
     Format("Eximia", "read_raw_eximia", (".nxe",)),
+    Format("CTF MEG", "read_raw_ctf", (".ds",),
+           "a directory; pick any file inside it, such as the .meg4"),
+    Format("KIT / Yokogawa MEG", "read_raw_kit", (".sqd", ".con")),
 )
 
 
@@ -134,16 +140,20 @@ def file_filter() -> str:
 def recording_root(path: str | Path) -> Path:
     """What the reader should be given, for the path a reviewer picked.
 
-    Two of these formats are directories, and a file dialog opens files. So a
-    `.ncs` picked out of a Neuralynx folder, or anything picked out of a MEF3
-    `.mefd` bundle, resolves to the folder that *is* the recording. Everything
-    else is returned unchanged.
+    Three of these formats are directories, and a file dialog opens files. So
+    a `.ncs` picked out of a Neuralynx folder, or anything picked out of a MEF3
+    `.mefd` bundle or a CTF `.ds` folder, resolves to the folder that *is* the
+    recording. Everything else is returned unchanged.
     """
     path = Path(path)
     for parent in (path, *path.parents):
-        if parent.suffix.lower() == ".mefd":
+        if parent.suffix.lower() in _FOLDER_SUFFIXES:
             return parent
     return path
+
+
+#: Recordings that are a directory named with their format's suffix.
+_FOLDER_SUFFIXES = (".mefd", ".ds")
 
 
 def detect_format(path: str | Path) -> Format | None:
@@ -157,7 +167,7 @@ def detect_format(path: str | Path) -> Format | None:
     path = recording_root(path)
     suffix = path.suffix.lower()
 
-    if path.is_dir() and suffix != ".mefd":
+    if path.is_dir() and suffix not in _FOLDER_SUFFIXES:
         # A recording that is a folder: MEF3 names the folder `.mefd` and is
         # matched below, Neuralynx names it nothing in particular and is
         # recognised by what is inside it.
@@ -202,6 +212,26 @@ def _read(path: Path, fmt: Format, preload: bool, **extra):
         return fmt.function(path, verbose="ERROR", **kwargs)
 
 
+def recording_kind(declared_types) -> str:
+    """The kind of recording a file's own channel types suggest: ``"meg"``
+    when it has MEG sensors, else ``"ieeg"``. Scalp EEG is never the guess,
+    because clinical intracranial exports declare their contacts `eeg` too:
+    the reviewer says so when it is scalp."""
+    return "meg" if set(declared_types) & {"grad", "mag"} else "ieeg"
+
+
+def suggest_type(declared: str, kind: str = "ieeg") -> str:
+    """The type to offer for a channel the file declares `declared`, in a
+    recording of `kind` (``"ieeg"``, ``"eeg"`` or ``"meg"``)."""
+    if declared in ("eeg", "ecog", "seeg"):
+        if kind == "eeg":
+            return "eeg"
+        if kind == "meg":
+            return "eeg" if declared == "eeg" else declared
+        return "seeg" if declared == "eeg" else declared
+    return declared
+
+
 def channel_overview(path: str | Path, **reader_kwargs) -> pd.DataFrame:
     """What the file says its channels are, without reading any signal.
 
@@ -223,8 +253,9 @@ def channel_overview(path: str | Path, **reader_kwargs) -> pd.DataFrame:
     from onset_hfo.preprocess import _is_brain_channel
 
     rows = []
+    kind = recording_kind(raw.get_channel_types())
     for name, declared in zip(raw.ch_names, raw.get_channel_types(), strict=True):
-        suggested = "seeg" if declared in ("eeg", "ecog", "seeg") else declared
+        suggested = suggest_type(declared, kind)
         rows.append({
             "name": name,
             "declared": declared,
@@ -307,7 +338,11 @@ def open_recording(path: str | Path, *, t_start: float = 0.0,
         raw.crop(tmin=float(t_start), tmax=float(stop), include_tmax=False)
         raw.load_data(verbose="ERROR")
         if channel_types:
-            wanted = {n: t for n, t in channel_types.items() if n in raw.ch_names}
+            # Only what the reviewer changed: re-typing a MEG sensor as itself
+            # would be a no-op at best and a refused unit change at worst.
+            current = dict(zip(raw.ch_names, raw.get_channel_types(), strict=True))
+            wanted = {n: t for n, t in channel_types.items()
+                      if n in current and current[n] != t}
             if wanted:
                 raw.set_channel_types(wanted, verbose="ERROR")
         with raw.info._unlock():

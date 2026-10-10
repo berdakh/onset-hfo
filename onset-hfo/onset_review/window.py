@@ -272,8 +272,10 @@ def open_trace(session: ReviewSession, duration: float = DEFAULT_DURATION,
 
     figure = session.raw.plot(
         duration=duration, n_channels=min(n_channels, len(session.findings) or 1),
+        # MEG starts at MNE's own display scale (400 fT/cm, 1 pT): an
+        # unreferenced sensor carries far more than a bipolar contact does.
         scalings=dict(seeg=DEFAULT_SCALING, eeg=DEFAULT_SCALING,
-                      ecog=DEFAULT_SCALING),
+                      ecog=DEFAULT_SCALING, grad=4e-11, mag=1e-12),
         title=session.request.label(), block=False, show=show, verbose="ERROR")
     _colour_annotations(figure)
     _keep_labels_readable(figure)

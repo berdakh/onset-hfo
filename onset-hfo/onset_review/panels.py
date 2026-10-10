@@ -167,9 +167,11 @@ class DataFrameModel(QAbstractTableModel):
     """
 
     def __init__(self, frame: pd.DataFrame, columns: list[str] | None = None,
-                 highlight=None, parent=None):
+                 highlight=None, parent=None, unit: str = "µV"):
         super().__init__(parent)
         self._highlight = highlight
+        #: The unit amplitudes are in: µV, or fT/cm or fT for MEG.
+        self.unit = unit
         #: (column name, ascending). By name rather than by index so that it
         #: survives a rebuild that adds or removes a column.
         self._order = None
@@ -255,7 +257,7 @@ class DataFrameModel(QAbstractTableModel):
             return str(section + 1) if role == Qt.DisplayRole else None
         name = str(self._frame.columns[section])
         if role == Qt.DisplayRole:
-            return HEADERS.get(name, name.replace("_", " "))
+            return HEADERS.get(name, name.replace("_", " ")).replace("µV", self.unit)
         # A short header is readable and a long one is explanatory; a tooltip
         # is how a column gets to be both. Only the columns whose meaning is
         # not in their name have one.
@@ -412,7 +414,8 @@ class FindingsPanel(QWidget):
         # Compact first: four things a reader wants from a ranking, the other
         # eleven columns behind a tick. See `onset_review.compact`.
         self._compact = True
-        self.model = DataFrameModel(self._with_read(), self._columns(), highlight)
+        self.model = DataFrameModel(self._with_read(), self._columns(), highlight,
+                                    unit=getattr(session, "unit", "µV"))
         self.view = _table_view()
         self.view.setModel(self.model)
         _indicate(self.view, self.model, "rank")
@@ -653,7 +656,8 @@ class EventsPanel(QWidget):
                       theme.cluster(self.all_columns, self.count)):
             bar.addWidget(group)
 
-        self.model = DataFrameModel(self._all, self._columns(), self._tint)
+        self.model = DataFrameModel(self._all, self._columns(), self._tint,
+                                    unit=getattr(session, "unit", "µV"))
         self.view = _table_view()
         self.view.setModel(self.model)
         self.view.selectionModel().selectionChanged.connect(self._emit)
