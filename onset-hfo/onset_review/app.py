@@ -437,6 +437,9 @@ class _Review:
             # From the start window, straight to the trace: Home was only
             # ever the way in.
             page = "recording"
+        if getattr(self, "_next_page", None):
+            page = self._next_page
+        held = self._held_case()
         self._attach_read(session)
         import logging
 
@@ -465,6 +468,13 @@ class _Review:
         # into the new one with everything made in it.
         self.console = self.parts.panels.get("console")
         self.editor = self.parts.panels.get("editor")
+        if held is not None:
+            # Taken into the new window before the old one closes, so it is
+            # never closed with it.
+            if self.parts.pages is not None:
+                self.parts.pages.hold_case(held, show=False)
+            else:
+                self._keep_apart(held)
         self._install_handlers(self.parts.host)
         if page and self.parts.pages is not None:
             # The page the reviewer was on, after a re-analysis: a filter
@@ -740,14 +750,47 @@ class _Review:
         return self._show_case(case) if case is not None else None
 
     def _show_case(self, case):
+        """The case on Patient → Case, in this window; in the docked
+        arrangement, which has no pages, in a window of its own."""
         from onset_review.casewindow import CaseWindow
 
         window = CaseWindow(case)
-        window.openRequested.connect(self._open_request)
-        self.case_windows = [w for w in getattr(self, "case_windows", [])
-                             if w.isVisible()] + [window]
-        window.show()
+        window.openRequested.connect(self._open_from_case)
+        pages = self.parts.pages if self.parts is not None else self.start_window
+        if pages is not None and hasattr(pages, "hold_case"):
+            pages.hold_case(window)
+            return window
+        self._keep_apart(window)
         return window
+
+    def _keep_apart(self, window) -> None:
+        from qtpy.QtCore import Qt
+
+        window.setParent(None)
+        window.setWindowFlags(Qt.Window)
+        window.statusBar().show()
+        self.case_windows = [w for w in getattr(self, "case_windows", [])
+                             if w.isVisible() and w is not window] + [window]
+        window.show()
+
+    def _held_case(self):
+        """The case the window being replaced holds, to carry into the next."""
+        host = (self.parts.pages if self.parts is not None else self.start_window)
+        held = getattr(host, "held_case", None)
+        if held is None and self.mode == "pages":
+            # From the docked arrangement back to pages: its case window.
+            apart = [w for w in getattr(self, "case_windows", []) if w.isVisible()]
+            held = apart[-1] if apart else None
+        return held
+
+    def _open_from_case(self, request) -> None:
+        """A recording opened from the case goes to Review; the case stays
+        on Patient → Case."""
+        self._next_page = "recording"
+        try:
+            self._open_request(request)
+        finally:
+            self._next_page = None
 
     # -- two analyses side by side -----------------------------------------------------------
     def compare_settings(self, request=None):
@@ -1059,7 +1102,11 @@ def _screenshot(app, parts, path: Path) -> int:
             QThread.msleep(60)
     ok = parts.host.grab().save(str(path))
     if pages is not None and ok:
+        # The Analysis page turns Analysis mode on; every other page is taken
+        # as the reader has the window, and the mode is left as it was.
+        mode = pages.analysis_mode
         for key in pages.page_keys():
+            pages.set_analysis_mode(mode or key == "analysis", remember=False)
             pages.show_page(key)
             for _ in range(4):
                 app.processEvents()
@@ -1067,6 +1114,7 @@ def _screenshot(app, parts, path: Path) -> int:
             extra = path.with_name(f"{path.stem}-{key}{path.suffix}")
             if parts.host.grab().save(str(extra)):
                 print(extra)
+        pages.set_analysis_mode(mode, remember=False)
         pages.show_page("recording")
 
     # Close before returning. `mne-qt-browser` loads and downsamples its data on

@@ -305,6 +305,19 @@ def stylesheet(p: Palette) -> str:
         background: {p.accent}; color: {p.accent_text};
     }}
     QListWidget#onset_pages::item:hover:!selected {{ background: {p.surface_alt}; }}
+    /* A case's steps, held on Patient → Case: the same source list, on the
+       page's own surface rather than the sidebar's. */
+    QListWidget#onset_case_steps {{
+        background: {p.surface}; border: 1px solid {p.separator};
+        border-radius: {RADIUS + 2}px; outline: 0; padding: 4px;
+    }}
+    QListWidget#onset_case_steps::item {{
+        padding: 0px {SPACING}px; border-radius: {RADIUS - 3}px;
+    }}
+    QListWidget#onset_case_steps::item:selected {{
+        background: {p.accent}; color: {p.accent_text};
+    }}
+    QListWidget#onset_case_steps::item:hover:!selected {{ background: {p.surface_alt}; }}
 
     /* Tables: rules replaced by space. A grid is the most common way to make
        a clinical table hard to scan. */

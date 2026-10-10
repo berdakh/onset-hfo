@@ -42,7 +42,7 @@ __all__ = ["ChatPanel", "BANNER", "CHAT_TOKENS"]
 
 BANNER = ("<b>General chat with the local model.</b> Not connected to this recording: "
           "it sees nothing of the patient unless you type it. Nothing here is checked; it "
-          "can be wrong, including about medicine. For this window, use the Assistant page.")
+          "can be wrong, including about medicine. For this window, use Assistant › This recording.")
 #: Longer than the evidence assistant's answers: nothing here has to be
 #: checked, and a general question may want a paragraph.
 CHAT_TOKENS = 700
@@ -160,7 +160,7 @@ class ChatPanel(QWidget):
         self._model = str(getattr(defaults, "model", "") or "")
         self._base_url = str(getattr(defaults, "base_url", "") or "")
         if self._kind == "scripted":
-            self.model_line.setText("No model is loaded — choose one on the Assistant page.")
+            self.model_line.setText("No model is loaded — choose one under Assistant › This recording.")
             self.question.setEnabled(False)
             self.ask_button.setEnabled(False)
         else:
@@ -195,7 +195,7 @@ class ChatPanel(QWidget):
         if not text:
             return
         if not self.available:
-            self._say_system("No model is loaded; choose one on the Assistant page.")
+            self._say_system("No model is loaded; choose one under Assistant › This recording.")
             return
         self.question.clear()
         self._append(f"<div style='margin:6px 0 2px;'><b>You:</b> {html.escape(text)}</div>")
@@ -244,7 +244,7 @@ class ChatPanel(QWidget):
                 for i, text in enumerate(EXAMPLES))
         else:
             lead = "No model is loaded."
-            tries = ("<div style='margin:4px 0;'>Choose one on the <b>Assistant</b> page "
+            tries = ("<div style='margin:4px 0;'>Choose one under <b>Assistant › This recording</b> "
                      "— the box above its transcript — and this page talks to it.</div>")
         note = (f"<div style='font-size:{SMALL_PT}pt;margin-bottom:12px;'>"
                 f"{html.escape(self._note)}</div>" if self._note else "")

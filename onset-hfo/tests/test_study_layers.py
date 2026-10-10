@@ -456,18 +456,14 @@ def test_open_as_notebook_puts_the_page_on_the_analysis_page(qapp, pages, tmp_pa
     assert editor.current().path == path.resolve() and editor.current().is_notebook
 
 
-def test_the_study_s_pages_fold_under_their_heading_and_stay_folded(qapp, pages, window):
-    from onset_review.pages import PageWindow
+def test_the_study_s_pages_are_the_library_one_place_at_the_foot(qapp, pages, window):
+    from onset_review.studies import STUDIES
 
     host = pages.pages
-    assert not host.study_folded
-    host._heading_clicked(host._study_heading)
-    assert host.study_folded and host._items["detectors"].isHidden()
-    assert host._study_heading.text().startswith("▸")
-    assert host.show_page("outcome"), "a folded page is still reachable"
-    again = PageWindow(cached=lambda: pd.DataFrame())
-    try:
-        assert again.study_folded, "remembered"
-    finally:
-        again.close()
-    host.set_study_folded(False)
+    assert host.show_section("library") and host.current_page() == "quickstart"
+    assert list(host.segment_buttons) == ["quickstart"] + [k for k, _, _ in STUDIES]
+    host.segment_buttons["outcome"].click()
+    assert host.current_page() == "outcome" and host.title.text() == "Library"
+    host.show_page("recording")
+    assert host.show_section("library") and host.current_page() == "outcome", \
+        "a place comes back on the page last shown in it"

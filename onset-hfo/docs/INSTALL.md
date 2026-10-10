@@ -128,11 +128,11 @@ approval or data governance either; those stay yours.
 system's files converted into it one by one (BIDS-iEEG; EDF/EDF+, BDF,
 BrainVision, Nihon Kohden, Nicolet, Persyst, Blackrock, Neuralynx, MEF3,
 EEGLAB; Micromed with `pip install neo`; Natus from its EDF+ export). Nothing
-that names the patient is written. The case window then takes the channels
+that names the patient is written. The case, on Patient › Case in the same window, then takes the channels
 and the marks — hours at a glance, MNE's browser to mark seizures, sleep and
 artefacts — chooses segments by rule (sleep stage, away from seizures and
 artefacts), analyses them alike and pools them into one ranking with
-intervals, and opens any minute in the review window. It then finds where
+intervals, and opens any minute in Review. It then finds where
 each marked seizure starts (the Epileptogenicity Index), and places the
 contacts on a template brain (imported in MNI152 or fsaverage, or planned
 there) with probable atlas labels, to set the two side by side with the
@@ -155,8 +155,8 @@ PDF reports, all recorded in a tamper-evident log. `onset-review
 | Straight into your own file | `onset-review --open /data/study-001.edf` |
 | Every option | `onset-review --help` |
 
-`onset-review` on its own opens the window first, on **Home**, with nothing
-loaded. The data comes from inside it: pick a cached window on Home and press
+`onset-review` on its own opens the window first, on **Patient › Overview**,
+with nothing loaded. The data comes from inside it: pick a cached window there and press
 *Open*, or **File → Open a recording…** for the dialog below with the band,
 the detectors and the threshold, or **File → Open a file…** for a recording of
 your own. The other pages wake up once something is open.
@@ -168,33 +168,42 @@ the recording's sampling rate can actually support — the fast-ripple band is
 greyed out on a 1000 Hz recording, because a 500 Hz band on a 500 Hz Nyquist
 is not a conservative analysis, it is a meaningless one.
 
-### The window is a sidebar of pages
+### The window: four places in a sidebar
 
-The window has the shape of the results site: a sidebar on the left, one page
-at a time on the right, and the same disclaimer on every page: one line, the
-whole of it a click on *Read more* away. The sidebar is a source list, a
-glyph beside each page; hover one for what it is for. Above the page a
-toolbar names it, says which recording is open (subject, window, band), and
-carries the page's own buttons and the reader's name. Panels sit on cards.
+The sidebar holds four places, **Patient**, **Review**, **Assistant** and
+**Report**, with the **Library** at its foot; hover one for what it is for.
+The pages inside a place are a row of buttons above the page (*Recording ·
+Signal · Contacts · Map* under Review), and the same disclaimer is on every
+page: one line, the whole of it a click on *Read more* away. Above the page a
+toolbar names the place, says which recording is open (subject, window,
+band), and carries the page's own buttons and the reader's name. Panels sit on
+cards.
 
-| page | what is on it |
+| place › page | what is on it |
 |---|---|
-| **Home** | what this is and is not; before anything is open, *Continue where you left off* with the window opened last time; the windows cached on this machine grouped by patient (double-click one to open it), *Open a file…*. What each page is for is under **Help → How to read the pages** |
-| **Recording** | *Does any channel actually stand out?*, the trend strip, the trace, and a side column with the ranking, the events, the selected event close up and, on tabs beside it, every channel's spectrum, a channel's events averaged, and the leaders re-tested at stricter thresholds. *Open the trace in a new window*, in the toolbar (`Ctrl+Shift+T`), lifts MNE's browser into a window of its own, for a second monitor; closing that window puts it back. The row above the trace is the only toolbar on it: MNE's own bar, which repeats that row, is hidden while the trace is on the page, and what it alone offers (annotation mode, the crosshair, the overview bar, MNE's settings and help) sits under *Trace tools* at the row's end |
-| **Contacts** | the 3D view, the patient record, where the coordinates came from, and the button that fetches MNE's `fsaverage` template brain (a few hundred megabytes, once) for the 3D view to draw under measured coordinates |
-| **Signal** | data quality and preprocessing side by side, the preprocessing as groups of settings rows — filter design, reference, muscle and amplitude marking, reference regression and an experimental ICA among them — provenance and the ICA components under them; *Apply* re-runs the analysis and every page follows |
+| **Patient › Overview** | what this is and is not; before anything is open, *Continue where you left off* with the window opened last time; the windows cached on this machine grouped by patient (double-click one to open it), *Open a file…*. What each page is for is under **Help → How to read the pages** |
+| **Patient › Case** | an open case, its ten steps down the side; *Close the case* below it. With none open, what a case is, with *New case…* and *Open a case…* |
+| **Review › Recording** | *Does any channel actually stand out?*, the trend strip, the trace, and a side column with the ranking, the events, the selected event close up and, on tabs beside it, every channel's spectrum, a channel's events averaged, and the leaders re-tested at stricter thresholds. *Open the trace in a new window*, in the toolbar (`Ctrl+Shift+T`), lifts MNE's browser into a window of its own, for a second monitor; closing that window puts it back. The row above the trace is the only toolbar on it: MNE's own bar, which repeats that row, is hidden while the trace is on the page, and what it alone offers (annotation mode, the crosshair, the overview bar, MNE's settings and help) sits under *Trace tools* at the row's end |
+| **Review › Contacts** | the 3D view, the patient record, where the coordinates came from, and the button that fetches MNE's `fsaverage` template brain (a few hundred megabytes, once) for the 3D view to draw under measured coordinates |
+| **Review › Signal** | data quality and preprocessing side by side, the preprocessing as groups of settings rows — filter design, reference, muscle and amplitude marking, reference regression and an experimental ICA among them — provenance and the ICA components under them; *Apply* re-runs the analysis and every page follows |
 | **Report** | the review as it will be exported, the findings paragraph (yours, or drafted by the assistant and marked as such), agreement with the archive's annotators, *Export review…* in the toolbar |
-| **Assistant** | the assistant, one card per exchange with a chip saying what the answer is (Checked, From the documents, Not checked, Refused) and the trace folded under it; a *Stop* button for a model taking too long, *New conversation*, the tick that lets it run the pipeline's analyses, and the box that gets a local Qwen onto this machine. A refusal says what the model wrote and which check it failed |
-| **Chat** | under *The model*: the same local model on its own, not connected to the recording and checked by nothing, with a line at the top that says so. There before a recording is opened |
+| **Assistant › This recording** | the assistant, one card per exchange with a chip saying what the answer is (Checked, From the documents, Not checked, Refused) and the trace folded under it; a *Stop* button for a model taking too long, *New conversation*, the tick that lets it run the pipeline's analyses, and the box that gets a local Qwen onto this machine. A refusal says what the model wrote and which check it failed |
+| **Assistant › Chat** | the same local model on its own, not connected to the recording and checked by nothing, with a line at the top that says so. There before a recording is opened |
 
-`Alt+1` to `Alt+9` switch pages, so do the entries at the top of **View**.
+`Alt+1` to `Alt+5` switch places, so do the entries at the top of **View**;
+`Ctrl+Page Down` and `Ctrl+Page Up` move between the pages inside one. The
+**Library** holds the quick start guide and the study's pages, described below.
+The map has its own page beside Contacts (*Review › Map*), and the report is
+the **Report** place.
 Every boundary between regions — the sidebar and the page, the trend strip
 and the trace, the trace and its side column, the 3D view and its column, and
 so on — is a splitter you drag with the mouse. Sizes are remembered across
 re-analyses and across launches; **View → Restore the default layout** puts
 them back.
 
-Two **panes** sit beside the pages, as Spyder's do: **Workspace**, every
+In **Analysis mode** (**View → Analysis mode**, `Ctrl+Shift+E`; off until
+you turn it on, and remembered) two **panes** sit beside the pages, as
+Spyder's do, and the sidebar gains the **Analysis** place: **Workspace**, every
 variable the open window holds — the signal, the events, the ranking, the
 quality tables, the request — with its type, size and a glimpse of its value,
 and **Files**, the current folder. Double-click a variable to open it in a
@@ -235,7 +244,7 @@ pane is a plain Python console that says what to install.
 
 ![The Console under the Workspace, after a short analysis of AR1-AR2](images/onset-review-console.png)
 
-**The Analysis page.** Under Recording in the sidebar, the Workspace, Files
+**The Analysis page.** The Analysis place, in Analysis mode: the Workspace, Files
 and Console come onto one page beside an **Editor** of scripts and notebooks,
 as in Spyder, and go back to their docks when you leave it. Every Workspace
 name is the same object in the console (`signal` is the samples, read-only).
@@ -285,7 +294,8 @@ and their windows crowd the page:
 | **Pane layout → Spyder** | Workspace and Files tabbed on the right, the Console under them |
 | **Pane layout → MATLAB** | Files on the left; the Workspace on the right, the Console under it |
 | **Close variable and figure windows** | every window the Workspace and the Console opened |
-| **Page sidebar** | hide the list of pages to give the page its width (`Ctrl+Shift+B`); `Alt+1`… still move between pages |
+| **Analysis mode** | the Analysis place and the Workspace and Files beside the pages, or neither (`Ctrl+Shift+E`) |
+| **Page sidebar** | hide the sidebar to give the page its width (`Ctrl+Shift+B`); `Alt+1`… still move between places |
 | **Full screen** | the window and nothing else (`F11`) |
 
 The layout and the sidebar are remembered for the next launch; **Restore the
@@ -295,7 +305,7 @@ bar says so.
 
 ![The Recording page with every pane closed and the sidebar hidden, on a 1366 × 768 screen](images/onset-review-page-only.png)
 
-Under the first group sit the six **study pages** of the results site —
+The **Library** holds the quick start guide and the **study pages** of the results site —
 Detectors, Outcome, Patients, Data, Architecture, Research — built in the
 window from the same committed tables the site reads (`data/`), through the
 site's own loaders. They need no recording, so they are open before anything is

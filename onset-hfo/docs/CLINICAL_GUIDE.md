@@ -18,7 +18,12 @@ You don't need to know the menus to start.
 
 ![The Quick start page: the program laid out as the jobs people come with, every step a link](images/onset-review-quickstart.png)
 
-- **Quick start** (sidebar, *Help → Quick start guide*, or **F1**) lays the
+- **The sidebar is four places**: **Patient**, **Review**, **Assistant** and
+  **Report**, with the **Library** at its foot. The pages inside a place are
+  the row of buttons above the page: *Overview · Case* under Patient,
+  *Recording · Signal · Contacts · Map* under Review, *This recording · Chat*
+  under Assistant, and the guide and the study's pages under Library.
+- **Quick start** (*Library*, *Help → Quick start guide*, or **F1**) lays the
   program out as the jobs people come with:
   - look at a recording;
   - work up a patient, step by step;
@@ -30,18 +35,21 @@ You don't need to know the menus to start.
   shortcut, read from the menus themselves.
 - **Find a command** (**Ctrl+K**, *Help → Find a command…*) searches every
   menu entry and page by any word and runs the one you pick, from the keyboard.
-- **Nothing is greyed out.** Before a recording is open, every page in the
-  sidebar can still be visited. A page that needs a recording says what it
-  shows, with a picture of it, and offers the ways to open one.
-- **Patient case** in the sidebar explains a case and its ten steps, with
-  *New case…* and *Open a case…*.
+- **Nothing is greyed out.** Before a recording is open, every page can
+  still be visited. A page that needs a recording says what it shows, with a
+  picture of it, and offers the ways to open one.
+- **Patient › Case** holds an open case, its ten steps down the side, in this
+  window. With none open it explains a case, with *New case…* and *Open a
+  case…*.
 - **View → Interface size** (100% to 200%) enlarges text, icons and spacing
   together, from the next start. Setting `QT_SCALE_FACTOR` in the environment
   overrides it.
 - **Contrast.** Text and muted text meet WCAG AA contrast (4.5:1) on every
   background in both themes, and a test keeps it so.
-- **Keyboard.** **Alt+1** … **Alt+9** open the first nine pages.
-- **By code instead of pages.** On the **Analysis** page, the editor's
+- **Keyboard.** **Alt+1** … **Alt+5** go to the places; **Ctrl+Page Down**
+  and **Ctrl+Page Up** move between the pages inside one.
+- **By code instead of pages.** Turn on **View → Analysis mode**
+  (**Ctrl+Shift+E**). On the **Analysis** page it adds, the editor's
   **Templates** menu (or *Browse all templates…*, with a description and a
   preview of each) opens a ready-made script for every analysis this window
   does, against the open recording:
@@ -107,13 +115,11 @@ dataset — what the original annotators marked on the same minute.
 
 There are eleven panels and the window does not show them all at once, because
 a screen with eleven docked panels on it is one you have to tidy before you can
-use it. By default they are arranged as **pages** — a sidebar on the left with
-Home, Recording, Contacts, Signal, Report and Assistant, then the six study
-pages of the results site (Detectors, Outcome, Patients, Data, Architecture,
-Research, read-only, from the committed tables), one page showing at a time,
-`Alt+1` to `Alt+9` to switch — the same shape as the project's results
-site, with the trace on the Recording page and the ranking, the events and the
-selected event in a column beside it. The diagram above and the rest of this
+use it. By default they are arranged as **pages**, one showing at a time,
+behind a sidebar of four places (Patient, Review, Assistant, Report) and the
+Library of the study's read-only pages, `Alt+1` to `Alt+5` to switch. The
+trace is on Review › Recording, with the ranking, the events and the selected
+event in a column beside it. The diagram above and the rest of this
 section describe the **docked** arrangement, which **View → Everything at once
 (docked panels)** rebuilds the window into (and `onset-review --layout docks`
 opens in). There, **View** opens with three layouts, one per stage of the work:
@@ -727,8 +733,8 @@ between minutes is the usual case and the tied sets are what to compare.
 
 ![The Chat page](images/onset-review-chat.png)
 
-A page of its own, under **The model** in the sidebar, there whether or not
-a recording is open. It talks to the same local model the Assistant uses,
+The second page under **Assistant** (*Assistant › Chat*), there whether or
+not a recording is open. It talks to the same local model the Assistant uses,
 with none of the Assistant's machinery: no briefing, no tools, no number or
 citation check, no refusals. Ask it what you like.
 
@@ -745,6 +751,11 @@ the 7B the hardware chooser offers is the better companion.
 ### Workspace and Files — the panes beside the pages
 
 ![The Workspace and Files panes](images/onset-review-workspace.png)
+
+The panes belong to **Analysis mode** (**View → Analysis mode**,
+**Ctrl+Shift+E**): off, the pages have the window to themselves; on, the
+Workspace and Files stand beside them and the sidebar gains the Analysis
+place. Turning it off loses nothing in them.
 
 For anyone who has used MATLAB or Spyder: the **Workspace** pane lists every
 object the open window holds, grouped — *Signal* (the MNE `raw`, the samples
@@ -822,7 +833,7 @@ touched the numbers in it. Nothing is written to disk unless a command does it.
 
 ![The Analysis page: a script in the editor, its output in the console](images/onset-review-analysis.png)
 
-The **Analysis** page, under Recording in the sidebar, is Spyder on one page:
+The **Analysis** page, the sidebar's Analysis place in Analysis mode, is Spyder on one page:
 an **Editor** of scripts on the left; the Workspace and Files tabbed on the
 right, the Console under them. They are the same panes as View's — brought
 onto this page while it is open and returned to where they were when you
@@ -934,8 +945,8 @@ machine, unvalidated, and labelled so everywhere it shows.
 **Open as notebook** writes the page as a notebook that rebuilds it from the
 same tables with the same functions — its recomputed AUC is the page's — and
 opens it on the Analysis page, the starting point for a question of your own.
-The six pages fold away under their heading (click *THE STUDY* in the
-sidebar); `Alt`+number still reaches them.
+The study's pages are the **Library**, one place at the foot of the sidebar
+(`Alt+5`), each a button above the page.
 
 ### Two analyses side by side
 
@@ -972,7 +983,7 @@ quality stage — into one table: the accepted events, the busiest channel and
 its interval, whether it stands out, the channels tied with it, the contacts
 the quality stage set aside and, where the archive has expert markings, how
 the window scores against them. Add cached windows from the same list as
-Home's, or files of your own; the Files pane's ⧉ button sends the selected
+the ones on Patient › Overview, or files of your own; the Files pane's ⧉ button sends the selected
 recordings (or the whole folder). A file's channels are typed by **one rule
 for all of them** — every channel SEEG or ECoG, except names like ECG*, EMG*,
 EOG* — because a batch cannot stop to ask about each file; check one file
@@ -1042,8 +1053,8 @@ The panes and the windows they open are there when wanted and gone when not.
 step; **Spyder** and **MATLAB** put them back in those programs' arrangements.
 **View → Close variable and figure windows** clears every window the
 Workspace and the Console opened. **View → Page sidebar** (`Ctrl+Shift+B`)
-hides the list of pages, leaving the page the whole width; `Alt+1`… and the
-View menu still move between pages. **F11** is full screen. The choices are
+hides the sidebar, leaving the page the whole width; `Alt+1`… and the
+View menu still move between places. **F11** is full screen. The choices are
 kept for the next launch, and **View → Restore the default layout** undoes
 them.
 
@@ -1430,7 +1441,7 @@ assistant work on it unchanged.
 | MEG: KIT / Yokogawa | `.sqd` / `.con` |
 
 **A public recording instead: File → Open from OpenNeuro…** (also *From
-OpenNeuro…* on Home)
+OpenNeuro…* on Patient › Overview)
 
 ![Open from OpenNeuro: the catalogue searched for "epilepsy", and the HUP dataset's recordings listed](images/onset-review-openneuro.png)
 
@@ -1554,7 +1565,7 @@ with ten steps, all of which work today.
 
 **File → New case…** asks for a folder and a **pseudonym** (P017, never the
 patient's name). **File → Open case…**, or `onset-review /path/to/case`,
-opens one again. The case window has the steps on the left — *Import*,
+opens one again. It opens on **Patient › Case** in the same window, with the steps on the left — *Import*,
 *Channels & electrodes*, *Annotate*, then *Segments*, *Preprocess*,
 *Interictal*, *Ictal onset*, *Review*, *Map* and *Report* — and a tick
 beside each one done.

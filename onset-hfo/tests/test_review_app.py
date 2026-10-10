@@ -2220,26 +2220,19 @@ def test_the_page_window_is_its_own_window_and_holds_every_panel(paged):
     assert host.isAncestorOf(paged.figure), "the trace is on a page, not loose"
 
 
-def test_the_sidebar_lists_the_sites_pages_in_order(paged):
-    from onset_review.pages import GUIDE_PAGES, PAGES, STUDY_PAGES
+def test_the_sidebar_lists_the_places_and_every_page_is_in_one(paged):
+    from onset_review.pages import GUIDE_PAGES, PAGES, sections
     from onset_review.studies import STUDIES
 
     nav = paged.pages.nav
-    # Pages are the rows that name one; the study's heading is clickable too,
-    # to fold its pages away, but it is not a page and is never selected.
-    enabled = [nav.item(i) for i in range(nav.count())
-               if nav.item(i).flags() & Qt.ItemIsEnabled and nav.item(i).data(Qt.UserRole)]
-    # Start (Home, the guide, a patient case), then this recording's pages.
-    assert [i.data(Qt.UserRole) for i in enabled] == \
-        ["home"] + [k for k, _ in GUIDE_PAGES] + [k for k, _ in PAGES if k != "home"] \
-        + [k for k, _, _ in STUDIES] + ["chat"]
-    heading = paged.pages._study_heading
-    assert heading.flags() & Qt.ItemIsEnabled and not heading.flags() & Qt.ItemIsSelectable
-    labels = [nav.item(i).text() for i in range(nav.count())]
-    for study in STUDY_PAGES:
-        assert study in labels, "the study pages are listed, in the site's order"
+    places = [nav.item(i) for i in range(nav.count()) if nav.item(i).data(Qt.UserRole)]
+    assert [i.text() for i in places if not i.isHidden()] == \
+        ["Patient", "Review", "Assistant", "Report", "Library"]
     assert paged.pages.page_keys() == [k for k, _ in PAGES] + [k for k, _, _ in STUDIES] \
         + ["chat"] + [k for k, _ in GUIDE_PAGES]
+    inside = [page for _key, _label, pages in sections() for page, _ in pages]
+    assert sorted(inside) == sorted(paged.pages.page_keys()), "each page in one place"
+    assert len(inside) == len(set(inside))
 
 
 def test_a_window_opens_on_home_and_switches_pages(paged):
@@ -2289,8 +2282,8 @@ def test_the_report_page_renders_the_review_as_it_will_be_exported(paged, review
 def test_the_view_menu_switches_arrangements_both_ways(paged, built):
     actions = _actions(_menu(paged.host, "View"))
     assert "Everything at once (docked panels)" in actions
-    for _key, label in __import__("onset_review.pages", fromlist=["PAGES"]).PAGES:
-        assert label in actions, f"the View menu should list the {label} page"
+    for label in ("Patient", "Review", "Assistant", "Report", "Library"):
+        assert label in actions, f"the View menu should list the {label} place"
     actions["Everything at once (docked panels)"].trigger()
     assert paged.calls["relayout"] == ["docks"]
     # And the docked window offers the way back, disabled here because the
@@ -2449,7 +2442,8 @@ def test_the_application_opens_on_home_with_nothing_loaded(qapp):
             if key != "home":
                 assert host.show_page(key), f"{key} is never greyed out"
                 assert isinstance(host._pages[key], PreviewPage), f"{key} previews"
-                assert host._items[key].flags() & Qt.ItemIsEnabled
+                place = host._items[host._section_of[key]]
+                assert place.flags() & Qt.ItemIsEnabled
         host.show_page("home")
         assert host.findChild(qt.QLabel, "onset_nothing_open") is not None
         assert host.where.text() == "No recording open"
@@ -2523,10 +2517,12 @@ def test_the_patients_page_opens_a_cached_window_of_the_patient(paged):
     assert not page.open_button.isEnabled(), "nothing of sub-02 is cached"
 
 
-def test_the_view_menu_lists_the_study_pages(paged):
+def test_the_view_menu_reaches_the_study_pages_through_the_library(paged):
     actions = _actions(_menu(paged.host, "View"))
-    for label in ("Detectors", "Outcome", "Patients", "Research"):
-        assert label in actions
+    actions["Library"].trigger()
+    assert paged.pages.current_section() == "library"
+    for key in ("detectors", "outcome", "patients", "research"):
+        assert key in paged.pages.segment_buttons
 
 
 # -- regions a mouse can drag ---------------------------------------------------
@@ -3329,7 +3325,7 @@ def test_the_chat_page_waits_for_a_model_and_says_so(qapp, monkeypatch):
         assert not panel.available and not panel.question.isEnabled()
         assert "No model is loaded" in panel.model_line.text()
         panel.ask("Hello?")
-        assert "choose one on the Assistant page" in panel.transcript.toPlainText()
+        assert "choose one under Assistant › This recording" in panel.transcript.toPlainText()
         assert not hasattr(panel, "_session") and not hasattr(panel, "_store")
     finally:
         panel.deleteLater()
@@ -3374,8 +3370,8 @@ def test_the_chat_page_is_in_the_sidebar_with_or_without_a_recording(paged, qapp
     assert "chat" in host.page_keys()
     assert host.show_page("chat")
     assert host.stack.currentWidget().objectName() == "page_chat"
-    labels = [host.nav.item(i).text() for i in range(host.nav.count())]
-    assert "THE MODEL" in labels and "Chat" in labels
+    assert host.title.text() == "Assistant" and "chat" in host.segment_buttons, \
+        "the chat is the Assistant's second page"
     # The start state, before any recording: the page is there too.
     bare = pages.PageWindow()
     try:
@@ -3404,19 +3400,21 @@ def test_the_disclaimer_is_one_line_until_read_more(paged):
         "the line is the site's words, not a paraphrase"
 
 
-def test_the_sidebar_names_each_page_in_one_word_and_says_what_it_is_for(paged):
-    from onset_review.pages import HOW_TO_READ, PAGES
+def test_the_sidebar_names_each_place_in_one_word_and_says_what_it_is_for(paged):
+    from onset_review.pages import HOW_TO_READ, SECTION_ABOUT
 
     nav = paged.pages.nav
     items = {nav.item(i).data(Qt.UserRole): nav.item(i) for i in range(nav.count())
              if nav.item(i).data(Qt.UserRole)}
-    for key, label in PAGES:
-        assert items[key].text() == label and " " not in label, label
-        assert "desktop" not in items[key].text()
-    assert items["quality"].text() == "Signal"
+    for key, item in items.items():
+        assert " " not in item.text(), item.text()
+        assert item.toolTip() == SECTION_ABOUT[key]
+    pages = paged.pages
+    pages.show_page("quality")
+    assert pages.segment_buttons["quality"].text() == "Signal"
     what = dict(HOW_TO_READ)
-    for key in ("recording", "quality", "report"):
-        assert items[key].toolTip().lower().startswith(what[key][:12].lower())
+    for key in ("recording", "quality"):
+        assert pages.segment_buttons[key].toolTip().lower().startswith(what[key][:12].lower())
 
 
 def test_the_hints_are_behind_help_buttons_not_written_across_the_bars(built):
@@ -3524,12 +3522,12 @@ def test_the_sidebar_shows_glyphs_and_the_toolbar_names_the_page(paged):
         if item.data(Qt.UserRole):
             assert not item.icon().isNull(), item.text()
     pages.show_page("recording")
-    assert pages.title.text() == "Recording"
+    assert pages.title.text() == "Review"
     assert "sub-01" in pages.where.text() or pages.session.request.subject in pages.where.text()
     pages.show_page("report")
     assert pages.title.text() == "Report"
     pages.show_page("quality")
-    assert pages.title.text() == "Signal"
+    assert pages.title.text() == "Review" and pages.segment_buttons["quality"].isChecked()
     assert pages._toolbar.isAncestorOf(pages.where) and pages._toolbar.isAncestorOf(pages.reader)
 
 
@@ -3815,7 +3813,7 @@ def test_how_to_read_the_pages_is_in_help_not_on_home(paged):
             if host is not paged.host:
                 host.close()
     text = window.how_to_read_text()
-    assert "<b>Signal</b>" in text and "<b>Chat</b>" in text
+    assert "<b>Review › Signal</b>" in text and "<b>Assistant › Chat</b>" in text
     assert all(what in text for _key, what in HOW_TO_READ)
     paged.pages.show_page("home")
     labels = [w.text() for w in paged.pages.stack.currentWidget().findChildren(qt.QLabel)]
@@ -3905,6 +3903,7 @@ def test_the_workspace_and_files_panes_dock_float_tab_and_close(paged):
 
 def test_the_view_menu_toggles_each_pane(paged):
     host = paged.pages
+    host.set_analysis_mode(True, remember=False)      # the panes are Analysis mode's
     view = _menu(host, "View")
     actions = {a.text().replace("&", ""): a for a in view.actions()}
     for title, shortcut in (("Workspace", "Ctrl+Shift+W"), ("Files", "Ctrl+Shift+F")):
@@ -3998,7 +3997,9 @@ def test_the_start_window_has_the_panes_with_files_in_front(qapp, tmp_path, monk
                                  on_open_path=opened.append)
     try:
         assert host.pane("files") is not None and host.pane("workspace") is not None
-        assert not host.pane("files").isHidden(), "the start window shows the folder"
+        assert host.pane("files").isHidden(), "the panes belong to Analysis mode"
+        host.set_analysis_mode(True)
+        assert not host.pane("files").isHidden(), "in it, the start window shows the folder"
         assert host.panels["workspace"].names() == []
         assert "No recording" in host.panels["workspace"].count.text()
         host.panels["files"].openRequested.emit("/tmp/x.edf")

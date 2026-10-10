@@ -96,19 +96,33 @@ More, including what to do when Qt will not start: [`INSTALL.md`](INSTALL.md).
 ## Find your way around
 
 Start it from the applications menu, or type `onset-review`. It opens on
-**Home**, with nothing loaded.
+**Patient › Overview**, with nothing loaded.
 
-![Onset Review on Home](images/onset-review-home.png)
+![Onset Review on Patient › Overview](images/onset-review-home.png)
 
-- **The sidebar** holds the pages. Every page can be visited before anything
-  is open: a page that needs a recording says what it shows and offers ways
-  to open one.
-- **Quick start** (sidebar, **F1**, or *Help → Quick start guide*) lays the
+- **The sidebar** holds four places, with the Library at its foot:
+  - **Patient**: the recordings on this machine and the ways to open one, and
+    a patient's case;
+  - **Review**: the open recording, its signal and its contacts;
+  - **Assistant**: the local model;
+  - **Report**;
+  - **Library**: the quick start guide and the study behind every number.
+- **The pages inside a place** are the row of buttons above the page:
+  *Overview · Case* under Patient, *Recording · Signal · Contacts · Map* under
+  Review. This manual names a page by its place: **Review › Signal**.
+- **Before anything is open**, every page can still be visited. A page that
+  needs a recording says what it shows and offers ways to open one.
+- **Quick start** (*Library*, **F1**, or *Help → Quick start guide*) lays the
   program out as the jobs people come with. Every step on it is a link that
   does the step.
 - **Find a command** (**Ctrl+K**) searches every menu entry and page by any
   word and runs the one you pick.
-- **Alt+1 … Alt+9** open the first nine pages.
+- **Alt+1 … Alt+5** go to the places, and **Ctrl+Page Down** and
+  **Ctrl+Page Up** to the next and previous page inside one.
+- **View → Analysis mode** adds Python on the recording: the Analysis place,
+  and the Workspace and Files beside the pages
+  ([Tutorial 9](#tutorial-9-your-own-analysis-in-python)). It is off until you
+  turn it on.
 - **View → Interface size** enlarges text, icons and spacing together.
 
 ![The Quick start page](images/onset-review-quickstart.png)
@@ -142,9 +156,9 @@ install it, fetch it:
 onset-hfo fetch --subject sub-01 --t-start 0 --t-stop 60
 ```
 
-1. **Open it.** On **Home**, pick *sub-01, 0–60 s* and press *Open*. (Or
-   **File → Open a recording…**.) The analysis takes a few seconds; the
-   **Recording** page opens on the result.
+1. **Open it.** On **Patient › Overview**, pick *sub-01, 0–60 s* and press
+   *Open*. (Or **File → Open a recording…**.) The analysis takes a few
+   seconds; **Review › Recording** opens on the result.
 
    ![The Recording page](images/onset-review.png)
 
@@ -263,7 +277,7 @@ the same dialog with the file chosen. `--all-channels-as seeg`,
 **You will:** find a public dataset, download one window of one recording,
 and open it.
 
-1. **File → Open from OpenNeuro…**, or *From OpenNeuro…* on Home.
+1. **File → Open from OpenNeuro…**, or *From OpenNeuro…* on Patient › Overview.
 2. **Find a dataset.** Type words such as *epilepsy* to search the bundled
    catalogue of 748 OpenNeuro datasets with EEG, iEEG or MEG, and narrow by
    kind. Or type an id such as `ds004100`.
@@ -385,11 +399,15 @@ A **case** is a folder holding one patient's recordings, converted once into
 BIDS-iEEG, the open standard, with every change kept in an audit log.
 
 1. **File → New case…**: a folder and a **pseudonym** (P017, never a name).
-   **File → Open case…** or `onset-review /path/to/case` reopens one.
+   **File → Open case…** or `onset-review /path/to/case` reopens one. The
+   case opens on **Patient › Case**, in the same window.
 
    ![A case on the Annotate step](images/onset-review-case.png)
 
-2. Work down the steps on the left. A tick appears beside each one done.
+2. Work down the steps on the left of the case. A tick appears beside each
+   one done. A recording opened from the case goes to **Review**, and the
+   case stays on Patient › Case, where you left it, until you press
+   *Close the case*.
 
 | step | what you do there |
 |---|---|
@@ -442,13 +460,15 @@ your work.
 
 **You will:** reproduce the window's analysis in code, then change it.
 
-**Inside the app.** The **Analysis** page is an editor, a console and a
-workspace sharing the open recording's objects: `raw`, `events`, `findings`,
-`quality` and the rest.
+**Inside the app.** Turn on **View → Analysis mode** (**Ctrl+Shift+E**). The
+sidebar gains an **Analysis** place: an editor, a console and a workspace
+sharing the open recording's objects (`raw`, `events`, `findings`, `quality`
+and the rest). The Workspace and Files panes appear beside the other pages.
+Turn the mode off and they go; nothing in them is lost.
 
 ![The Analysis page](images/onset-review-analysis.png)
 
-1. Open a recording, then **Analysis**.
+1. Open a recording, turn on Analysis mode, then go to **Analysis**.
 2. The editor's **Templates** menu has a ready-made script for every analysis
    the window does: the ranking step by step, rates with intervals, the
    detectors compared, quality, the spectrum, one event in detail, the
@@ -510,22 +530,21 @@ the notebooks in `notebooks/`.
 
 # Part 3. Reference
 
-## The pages
+## The places and their pages
 
-| page | what it is for |
+| place › page | what it is for |
 |---|---|
-| **Home** | the windows on disk, grouped by patient; open, continue, or import |
-| **Quick start** | the program laid out as jobs; every step a link |
-| **Patient case** | what a case is, with *New case…* and *Open a case…* |
-| **Recording** | the trend, the trace, the ranking, the events, one event, spectrum, average event, threshold |
-| **Analysis** | editor, console and workspace on the open recording; templates |
-| **Contacts** | the patient record, and the contacts in 3D, measured or schematic |
-| **Map** | the contacts flat, coloured by rate |
-| **Signal** | the HFO band, preprocessing, data quality, ICA components |
+| **Patient › Overview** | the windows on disk, grouped by patient; open, continue, or import |
+| **Patient › Case** | the open case, its ten steps down the side; with none open, *New case…* and *Open a case…* |
+| **Review › Recording** | the trend, the trace, the ranking, the events, one event, spectrum, average event, threshold |
+| **Review › Signal** | the HFO band, preprocessing, data quality, ICA components |
+| **Review › Contacts** | the patient record, and the contacts in 3D, measured or schematic |
+| **Review › Map** | the contacts flat, coloured by rate |
+| **Assistant › This recording** | questions about this window, answered from its analysis |
+| **Assistant › Chat** | the local model on its own |
 | **Report** | the findings paragraph and the export |
-| **Assistant** | questions about this window, answered from its analysis |
-| **The study** | the published results (Detectors, Outcome, Patients, Data, Architecture, Research, Ictal onset, Template map), with this recording beside them |
-| **Chat** | the local model on its own |
+| **Library** | the quick start guide, and the published results (Detectors, Outcome, Patients, Ictal onset, Template map, Data, Architecture, Research) with this recording beside them |
+| **Analysis** | in Analysis mode only: editor, console and workspace on the open recording; templates |
 
 ## Keyboard
 
@@ -533,7 +552,9 @@ the notebooks in `notebooks/`.
 |---|---|
 | **F1** | Quick start |
 | **Ctrl+K** | find a command |
-| **Alt+1 … Alt+9** | the first nine pages |
+| **Alt+1 … Alt+5** | Patient, Review, Assistant, Report, Library |
+| **Ctrl+Page Down**, **Ctrl+Page Up** | the next and previous page inside a place |
+| **Ctrl+Shift+E** | Analysis mode on or off |
 | **A**, **D**, **U** | judge the selected event: real, not real, cannot tell |
 | **N** | a note on the event |
 | **Backspace** | take a verdict back |

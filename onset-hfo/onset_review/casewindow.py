@@ -42,7 +42,7 @@ import time
 from pathlib import Path
 
 import pandas as pd
-from qtpy.QtCore import Qt, QThread, Signal
+from qtpy.QtCore import QSize, Qt, QThread, Signal
 from qtpy.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -2374,6 +2374,7 @@ class CaseWindow(QMainWindow):
             self.pages.addWidget(page)
             item = QListWidgetItem(title)
             item.setData(Qt.UserRole, key)
+            item.setSizeHint(QSize(0, 28))
             if key not in own:
                 item.setFlags(item.flags() & ~Qt.ItemIsEnabled)
                 item.setToolTip(f"Arrives in phase {phase}")

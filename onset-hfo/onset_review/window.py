@@ -837,8 +837,8 @@ def decorate_start(*, cached=None, on_open_cached=None, on_import=None,
         "What am I looking at?",
         lambda: QMessageBox.information(
             host, "What am I looking at?",
-            "Onset Review, with nothing open. Pick a cached window on the "
-            "Home page, or File → Open a recording… for the full choice of "
+            "Onset Review, with nothing open. Pick a cached window on "
+            "Patient › Overview, or File → Open a recording… for the full choice of "
             "band and detectors, or File → Open a file… for a recording of "
             "your own."))
     help_menu.addAction("How to read the pages", lambda: _how_to_read(host))
@@ -1230,20 +1230,18 @@ def _menus(figure, host: QMainWindow, panels: dict, docks: dict,
 
     view = menubar.addMenu("&View")
     if pages is not None:
-        # One entry per page, in the sidebar's order, on the keys the
-        # sidebar already answers to.
-        from onset_review.pages import PAGES
-        from onset_review.studies import STUDIES
+        # One entry per place, in the sidebar's order, on the keys the
+        # sidebar already answers to; the pages inside one are its
+        # segmented control, and Ctrl+K finds any of them by name.
+        from onset_review.pages import sections
 
-        listed = [(key, label) for key, label in PAGES] + \
-                 [(key, label) for key, label, _what in STUDIES]
-        for index, (key, label) in enumerate(listed, start=1):
-            if index == len(PAGES) + 1:
+        for index, (key, label, _inside) in enumerate(sections(analysis=False), start=1):
+            if key == "library":
                 view.addSeparator()
             entry = view.addAction(f"&{label}")
-            entry.setToolTip(f"Alt+{index}" if index <= 9 else "")
+            entry.setToolTip(f"Alt+{index}")
             entry.triggered.connect(
-                lambda _=False, key=key: pages.show_page(key))
+                lambda _=False, key=key: pages.show_section(key))
         view.addSeparator()
         popped = view.addAction("&Trace in its own window")
         popped.setShortcut("Ctrl+Shift+T")
@@ -1344,12 +1342,10 @@ def _menus(figure, host: QMainWindow, panels: dict, docks: dict,
 
 def how_to_read_text() -> str:
     """What each page is for, one line each, from the page window's own list."""
-    from onset_review.pages import CHAT_PAGE, HOW_TO_READ, PAGES
+    from onset_review.pages import HOW_TO_READ, page_label
 
-    labels = dict(PAGES)
-    labels[CHAT_PAGE[0]] = CHAT_PAGE[1]
     return "<ol>" + "".join(
-        f"<li><b>{labels.get(key, key)}</b> — {what}</li>" for key, what in HOW_TO_READ
+        f"<li><b>{page_label(key)}</b> — {what}</li>" for key, what in HOW_TO_READ
     ) + "</ol>"
 
 

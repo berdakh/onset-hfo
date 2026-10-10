@@ -32,6 +32,7 @@ from qtpy.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QPushButton,
+    QStackedWidget,
     QTextBrowser,
     QVBoxLayout,
     QWidget,
@@ -45,7 +46,7 @@ __all__ = ["add_help_entries", "add_size_menu", "interface_scale", "set_interfac
 
 FIND_SHORTCUT = "Ctrl+K"
 
-#: What each step of a case does, in one line: the Patient case page and the guide.
+#: What each step of a case does, in one line: Patient → Case and the guide.
 CASE_STEPS = {
     "import": "convert the clinical system's files (EDF, Nihon Kohden, Micromed, …) into "
               "BIDS-iEEG, leaving identifying header fields behind",
@@ -111,12 +112,13 @@ def commands(window) -> list[dict]:
         for action in bar.actions():
             if action.menu() is not None:
                 walk(action.menu(), [action.text().replace("&", "")])
-    labels = getattr(window, "_labels", {})
-    items = getattr(window, "_items", {})
-    for key, item in items.items():
-        found.append({"where": "Pages", "text": labels.get(key, key),
-                      "about": item.toolTip(), "shortcut": "", "enabled": True,
-                      "run": (lambda key=key: window.show_page(key)), "kind": "page"})
+    entries = getattr(window, "page_entries", None)
+    for entry in (entries() if callable(entries) else []):
+        about = entry["about"]
+        found.append({"where": "Pages", "text": entry["label"],
+                      "about": about[:1].upper() + about[1:], "shortcut": "",
+                      "enabled": True, "kind": "page",
+                      "run": (lambda key=entry["key"]: window.show_page(key))})
     return found
 
 
@@ -214,35 +216,40 @@ def quickstart_html(window) -> str:
 oscillations, interictal discharges and seizure onset, in public recordings or
 your own. It is <b>not a medical device</b>. Every page that needs a
 recording works the same way: open one, and it fills in.</p>
+<p>The sidebar has four places: <b>Patient</b>, <b>Review</b>, <b>Assistant</b>
+and <b>Report</b>, with the <b>Library</b> at its foot. The pages inside a place
+are the row of buttons above the page.</p>
 <p style='color:{muted}'>Every underlined line below does what it says.
 {_link('do:find', f'Find any command ({FIND_SHORTCUT})')} searches all of them by
 any word.</p>
 
 <h3>1 · Look at a recording <span style='color:{muted}'>(five minutes)</span></h3>
 <ol>
-<li>{_link('page:home', 'Home')} lists the windows already on this machine;
+<li>{_link('page:home', 'Patient › Overview')} lists the windows already on this machine;
 select one and press <b>Open</b>. Or {_link('do:open-recording', 'open a recording')}
 to choose the band and the detectors as well, or
 {_link('do:open-file', 'open a file of your own')} (EDF, BrainVision, FIF, …), or
 {_link('do:openneuro', 'any recording on OpenNeuro')} by its dataset id.</li>
-<li>{_link('page:recording', 'Recording')} ranks the channels by event rate, both
+<li>{_link('page:recording', 'Review › Recording')} ranks the channels by event rate, both
 detectors side by side. Click a channel for its events; click an event for its
 raw, filtered and time-frequency views.</li>
 <li>Judge events with the keys shown on the page; your verdicts go into the
 {_link('page:report', 'Report')}.</li>
-<li>{_link('page:quality', 'Signal')} shows what was analysed and how;
-{_link('page:contacts', 'Contacts')} and {_link('page:map', 'Map')} show where.</li>
+<li>{_link('page:quality', 'Review › Signal')} shows what was analysed and how;
+{_link('page:contacts', 'Contacts')} and {_link('page:map', 'Map')}, beside it, show
+where.</li>
 </ol>
 
 <h3>2 · Work up a patient, step by step</h3>
-<p>A <b>case</b> holds one patient's recordings and everything done with them, in
-its own window: {_link('do:new-case', 'start a new case')} or
-{_link('do:open-case', 'open one')}. The steps, in order:</p>
+<p>A <b>case</b> holds one patient's recordings and everything done with them. It
+opens on {_link('page:case', 'Patient › Case')}, its steps down the side:
+{_link('do:new-case', 'start a new case')} or {_link('do:open-case', 'open one')}.
+A recording opened from it goes to Review, and the case stays where it was. The
+steps, in order:</p>
 <ol>{steps}</ol>
-<p>{_link('page:case', 'Patient case')} in the sidebar says the same, with the buttons.</p>
 
 <h3>3 · Read the evidence behind the numbers</h3>
-<p>The study's pages need no recording:
+<p>The <b>Library</b> holds the study's pages, and needs no recording:
 {_link('page:detectors', 'Detectors')} (against expert markings),
 {_link('page:outcome', 'Outcome')} (against surgery),
 {_link('page:patients', 'Patients')}, {_link('page:ictal', 'Ictal onset')},
@@ -250,13 +257,16 @@ its own window: {_link('do:new-case', 'start a new case')} or
 Each opens with its main result and says what it cannot support.</p>
 
 <h3>4 · Ask the local model</h3>
-<p>{_link('page:assistant', 'Assistant')} answers about the open recording with
-its tools and checks every number it quotes; {_link('page:chat', 'Chat')} is the
-model on its own. Both run on this machine; nothing leaves it.</p>
+<p>{_link('page:assistant', 'Assistant › This recording')} answers about the open
+recording with its tools and checks every number it quotes;
+{_link('page:chat', 'Assistant › Chat')} is the model on its own. Both run on this
+machine; nothing leaves it.</p>
 
 <h3>5 · Your own analysis</h3>
-<p>{_link('page:analysis', 'Analysis')} is Python on the open recording, as in
-Spyder: an editor, a console that shares the Workspace, and plots. Its
+<p><b>View → Analysis mode</b> ({_link('page:analysis', 'turn it on')}) adds the
+Analysis place to the sidebar, and the Workspace and Files beside the pages:
+Python on the open recording, as in Spyder, with an editor, a console that
+shares the Workspace, and plots. Its
 <b>Templates</b> menu has a ready-made script for every analysis this window does
 -- the ranking step by step, the detectors compared, quality, the spectrum, one
 event in detail, the threshold check, the Epileptogenicity Index, anatomy, export --
@@ -268,9 +278,11 @@ settings over a list into one table.</p>
 <ul>
 <li><b>View → Interface size</b> makes everything larger (applies on restart);
 the sidebar can be hidden from <b>View</b>.</li>
-<li>Every page is reachable from the keyboard: <b>Alt+1</b> … <b>Alt+9</b> for the
-first nine, {FIND_SHORTCUT} for anything, <b>F1</b> for this page.</li>
-<li>Hover over any page in the sidebar for what it is for.</li>
+<li>Every page is reachable from the keyboard: <b>Alt+1</b> … <b>Alt+5</b> for the
+places, <b>Ctrl+Page Down</b> and <b>Ctrl+Page Up</b> for the pages inside one,
+{FIND_SHORTCUT} for any page or command by name, <b>F1</b> for this page.</li>
+<li>Hover over a place in the sidebar, or a button above the page, for what it is
+for.</li>
 </ul>
 """]
     entries = [e for e in commands(window) if e["kind"] == "menu"]
@@ -374,7 +386,7 @@ class PreviewPage(QWidget):
         box.addWidget(need)
         row = QHBoxLayout()
         self.buttons: dict[str, QPushButton] = {}
-        for target, text in (("page:home", "Pick one on Home"),
+        for target, text in (("page:home", "Pick a recording"),
                              ("do:open-recording", "Open a recording…"),
                              ("do:open-file", "Open a file of your own…"),
                              ("page:quickstart", "Quick start guide")):
@@ -405,20 +417,55 @@ class PreviewPage(QWidget):
 
 
 class CasePage(QWidget):
-    """A patient case from the main window: what it is, its steps, and the doors in."""
+    """Patient → Case: the open case itself, its steps down the side, held
+    in this window; with none open, what a case is and the doors in.
+
+    The case is a `casewindow.CaseWindow` held as a page rather than shown
+    as a window of its own. A re-analysis rebuilds the main window, and the
+    case moves into the new one with everything in it (`hold`), the way the
+    console does."""
 
     def __init__(self, window, parent=None):
         super().__init__(parent)
         from onset_hfo.case.model import STEPS
 
-        box = QVBoxLayout(self)
+        self.window_ = window
+        #: The case held here, or None.
+        self.case_window = None
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        self.views = QStackedWidget()
+        outer.addWidget(self.views)
+        self.front = QWidget()
+        self.front.setObjectName("onset_case_front")
+        self.views.addWidget(self.front)
+        self.held = QWidget()
+        self.held.setObjectName("onset_case_held")
+        held = QVBoxLayout(self.held)
+        held.setContentsMargins(0, 0, 0, 0)
+        held.setSpacing(theme.SPACING)
+        self._slot = QVBoxLayout()
+        self._slot.setContentsMargins(0, 0, 0, 0)
+        held.addLayout(self._slot, 1)
+        closing = QHBoxLayout()
+        closing.addStretch(1)
+        self.close_button = QPushButton("Close the case")
+        self.close_button.setObjectName("onset_case_close")
+        self.close_button.setToolTip("Everything in it is already saved in its folder; "
+                                     "open it again from here or from File")
+        self.close_button.clicked.connect(lambda _=False: self.release(close=True))
+        closing.addWidget(self.close_button)
+        held.addLayout(closing)
+        self.views.addWidget(self.held)
+
+        box = QVBoxLayout(self.front)
         box.setContentsMargins(0, 0, 0, 0)
         box.setSpacing(theme.SPACING)
         lead = QLabel(
             "A case is one patient's monitoring, end to end: their recordings converted "
-            "from the clinical system, and every step done with them, in its own window "
-            "with an audit log. Use it for your own patients' data; the rest of this "
-            "window is for looking at one recording at a time.")
+            "from the clinical system, and every step done with them, with an audit log. "
+            "It opens here, its steps down the side. Use it for your own patients' data; "
+            "Review is for looking at one recording at a time.")
         lead.setWordWrap(True)
         box.addWidget(lead)
         row = QHBoxLayout()
@@ -450,9 +497,51 @@ class CasePage(QWidget):
                 image = QLabel()
                 image.setPixmap(pixmap.scaledToWidth(min(820, pixmap.width()),
                                                      Qt.SmoothTransformation))
-                image.setAccessibleName("A picture of a case window")
+                image.setAccessibleName("A picture of a case")
                 box.addWidget(image, 0, Qt.AlignLeft)
         box.addStretch(1)
+
+    def hold(self, case_window) -> None:
+        """Hold `case_window` here, taking it from whichever window had it;
+        a different case held before is closed."""
+        if case_window is self.case_window:
+            return
+        self.release(close=True)
+        before = getattr(case_window, "_held_by", None)
+        if before is not None and before is not self and before.case_window is case_window:
+            before.release()
+        case_window._held_by = self
+        self.case_window = case_window
+        case_window.setParent(self.held)
+        case_window.setWindowFlags(Qt.Widget)
+        case_window.statusBar().hide()
+        self._slot.addWidget(case_window)
+        case_window.show()
+        self.views.setCurrentWidget(self.held)
+
+    def release(self, close: bool = False):
+        """Let the case go: closed (Close the case), or handed back
+        parentless for another window to hold. Returns it."""
+        case_window, self.case_window = self.case_window, None
+        if case_window is None:
+            return None
+        case_window._held_by = None
+        self._slot.removeWidget(case_window)
+        if close:
+            case_window.close()
+            case_window.setParent(None)
+            case_window.deleteLater()
+        else:
+            case_window.setParent(None)
+        self.views.setCurrentWidget(self.front)
+        return case_window
+
+    def close_windows(self) -> None:
+        """The window is closing: the case's own windows (its trace) go with
+        it, unless a rebuilt window has taken the case already."""
+        case_window = self.case_window
+        if case_window is not None and case_window.window() is self.window():
+            case_window.close()
 
 
 # -- the menus' share ---------------------------------------------------------------------------

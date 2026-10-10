@@ -91,6 +91,19 @@ def add_pane_menu(menu, host, docks: dict, panels: dict, *, toggles: bool = True
     actions: dict = {}
     if not all(key in docks for key in PANE_KEYS):
         return actions
+    if sidebar is not None and hasattr(sidebar, "set_analysis_mode"):
+        from onset_review.pages import ANALYSIS_MODE_SHORTCUT
+
+        mode = menu.addAction("&Analysis mode")
+        mode.setShortcut(ANALYSIS_MODE_SHORTCUT)
+        mode.setCheckable(True)
+        mode.setToolTip("Python on the recording, as in Spyder: the Analysis page in the "
+                        "sidebar, and the Workspace and Files beside the pages")
+        mode.setChecked(sidebar.analysis_mode)
+        mode.toggled.connect(sidebar.set_analysis_mode)
+        menu.aboutToShow.connect(lambda: mode.setChecked(sidebar.analysis_mode))
+        actions["analysis_mode"] = mode
+        menu.addSeparator()
     if toggles:
         for key in PANE_KEYS:
             action = docks[key].toggleViewAction()

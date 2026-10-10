@@ -1,23 +1,24 @@
-"""The review window as pages: a sidebar on the left, one view at a time.
+"""The review window as pages: a short sidebar of places, one page at a time.
 
-This is the shape of the project's Streamlit site (``app/``), carried onto the
-desktop. The site has a page per question -- Recording, Report, Assistant, and
-the study pages behind them -- and every page carries the same disclaimer
-line. The window here has the same sidebar, the same names in the same order,
-and the same line; what it adds is what a web page cannot hold: the live
-trace, the 3D contacts, and the panels that re-run the analysis.
+The sidebar holds a handful of places rather than every page: **Patient**
+(the recordings on this machine, and a patient's case worked up step by
+step), **Review** (the open recording: its ranking and trace, the signal as
+analysed, the contacts, the map), **Assistant** (the local model about this
+recording, or on its own), **Report**, and at its foot the **Library** (the
+quick start guide and the study behind every number). The pages inside a
+place are a segmented control above the page. Python on the recording, as in
+Spyder, is the **Analysis** place, shown only in Analysis mode (View →
+Analysis mode), with the Workspace and Files panes it brings.
 
 Nothing in here is a panel. The panels are the ones `window.build_panels`
 makes for the docked window too, and the whole point of this module is that
 the same widgets, wired the same way, can be laid out either as docks or as
 pages. A reviewer who prefers the docks gets them back from the View menu.
 
-The first group needs a recording and is disabled until one is open; three of
-its pages (Contacts, Map, Signal) have no counterpart on the site because they
-need a running analysis. The six study pages of the site follow, read-only,
-built from the committed tables by `onset_review.studies`; they need no
-recording, so they are open even before one is loaded. Each sidebar entry is
-one word, and its tooltip is the line Home prints about the page.
+Every page keeps its key (`show_page("quality")` is the Signal page under
+Review), so the menus, the guide's links and the command search reach any
+page directly; a page that needs a recording shows what it is for and how to
+open one until there is one.
 """
 
 from __future__ import annotations
@@ -27,7 +28,7 @@ import html
 import importlib.util
 
 from qtpy.QtCore import QByteArray, QEvent, QSize, Qt, QTimer, Signal
-from qtpy.QtGui import QColor, QKeySequence
+from qtpy.QtGui import QKeySequence
 from qtpy.QtWidgets import (
     QCheckBox,
     QFrame,
@@ -52,7 +53,8 @@ from qtpy.QtWidgets import (
 
 from onset_review import theme
 
-__all__ = ["PageWindow", "PAGES", "STUDY_PAGES", "DISCLAIMER"]
+__all__ = ["PageWindow", "PAGES", "STUDY_PAGES", "DISCLAIMER", "SECTIONS",
+           "sections", "page_label"]
 
 #: (key, sidebar label). The order is the site's.
 PAGES = (
@@ -68,7 +70,7 @@ PAGES = (
 
 #: Pages for finding your way, open in every state: the quick start guide
 #: and a patient case's front door (`onset_review.guide`).
-GUIDE_PAGES = (("quickstart", "Quick start"), ("case", "Patient case"))
+GUIDE_PAGES = (("quickstart", "Quick start"), ("case", "Case"))
 
 #: The site's cohort pages, read-only, built from the committed tables by
 #: `onset_review.studies` and shown by `onset_review.studypages`. They need
@@ -128,6 +130,63 @@ HOW_TO_READ = (
 
 #: The page that needs no recording and belongs to no study: the model alone.
 CHAT_PAGE = ("chat", "Chat")
+
+#: The sidebar's places, in order: (key, label, ((page key, segment label), ...)).
+#: A place with more than one page shows them as a segmented control above
+#: the page. The Library (`library_section`) follows at the foot of the
+#: sidebar, and the Analysis place (`ANALYSIS_SECTION`) only in Analysis mode.
+SECTIONS = (
+    ("patient", "Patient", (("home", "Overview"), ("case", "Case"))),
+    ("review", "Review", (("recording", "Recording"), ("quality", "Signal"),
+                          ("contacts", "Contacts"), ("map", "Map"))),
+    ("ask", "Assistant", (("assistant", "This recording"), ("chat", "Chat"))),
+    ("report", "Report", (("report", "Report"),)),
+)
+ANALYSIS_SECTION = ("code", "Analysis", (("analysis", "Analysis"),))
+
+#: What each place is for: its tooltip, and the line the guide prints.
+SECTION_ABOUT = {
+    "patient": "The recordings on this machine and the ways to open one; a patient's "
+               "case, worked up step by step",
+    "review": "The open recording: the ranking and the trace, the signal as analysed, "
+              "where the contacts are",
+    "ask": "The local model: about this recording with every number checked, or on "
+           "its own",
+    "report": "The structured, cited report: findings, your read, data quality, "
+              "limitations",
+    "library": "The quick start guide, and the study behind every number; needs no "
+               "recording",
+    "code": "Your own Python on this recording, as in Spyder (View → Analysis mode)",
+}
+
+#: The glyph drawn beside each place (`onset_review.glyphs`).
+SECTION_GLYPHS = {"patient": "patients", "review": "recording", "ask": "assistant",
+                  "report": "report", "library": "research", "code": "analysis"}
+
+#: View → Analysis mode.
+ANALYSIS_MODE_SHORTCUT = "Ctrl+Shift+E"
+
+
+def library_section() -> tuple:
+    """The Library: the quick start guide, then the study's pages."""
+    from onset_review.studies import STUDIES
+
+    return ("library", "Library",
+            (("quickstart", "Quick start"),) + tuple((key, label) for key, label, _ in STUDIES))
+
+
+def sections(analysis: bool = True) -> tuple:
+    """Every place, in the sidebar's order; the Analysis place last."""
+    return SECTIONS + (library_section(),) + ((ANALYSIS_SECTION,) if analysis else ())
+
+
+def page_label(key: str) -> str:
+    """A page's name as a reader finds it: "Review › Signal", "Report"."""
+    for _section, label, pages in sections():
+        for page, segment in pages:
+            if page == key:
+                return label if len(pages) == 1 else f"{label} › {segment}"
+    return key
 
 SIDEBAR_WIDTH = 190
 COLUMN_WIDTH = 320
@@ -206,9 +265,10 @@ class PageWindow(QMainWindow):
                  on_place_contacts=None, on_export=None, on_open_path=None,
                  parent=None):
         """With a session, the whole window. Without one, the start state:
-        the same sidebar and Home page, the other pages disabled until a
-        recording is opened from Home or from the File menu. The application
-        opens on this and loads the data from inside it."""
+        the same sidebar on Patient › Overview, the pages that need a
+        recording saying so until one is opened from there or from the File
+        menu. The application opens on this and loads the data from inside
+        it."""
         super().__init__(parent)
         self.figure = figure
         self.panels = panels or {}
@@ -251,8 +311,12 @@ class PageWindow(QMainWindow):
         #: Per-page actions shown at the toolbar's right while that page is
         #: up: the trace's window button, the report's export.
         self._page_actions: dict[str, list[QWidget]] = {}
+        #: Analysis mode: the Analysis place in the sidebar and the Workspace
+        #: and Files panes. Off until asked for, and remembered.
+        self._analysis_mode = bool(self._remembered_value("analysis_mode"))
         self._build_sidebar()
         self._build_toolbar()
+        self._build_segments()
         self._build_pages()
 
         right = QWidget()
@@ -265,6 +329,7 @@ class PageWindow(QMainWindow):
         inner.setContentsMargins(theme.PAGE_MARGIN, theme.SPACING, theme.PAGE_MARGIN,
                                  theme.CARD_GAP)
         inner.setSpacing(theme.SPACING)
+        inner.addWidget(self.segment_bar)
         inner.addWidget(self.banner)
         inner.addWidget(self.stack, 1)
         column.addWidget(content, 1)
@@ -281,6 +346,11 @@ class PageWindow(QMainWindow):
         self.nav.currentItemChanged.connect(self._nav_changed)
         self.restore_layout_state(self._remembered())
         self._restore_panes()
+        if not self._analysis_mode:
+            # The panes belong to Analysis mode: a remembered arrangement
+            # says where they go, not that they show.
+            for dock in self.docks.values():
+                dock.setVisible(False)
         if self._remembered_sidebar() is False:
             self._sidebar.setVisible(False)
         self._building = False
@@ -289,18 +359,21 @@ class PageWindow(QMainWindow):
                 panel = self.panels.get(key)
                 if panel is not None and hasattr(panel, "set_compact"):
                     panel.set_compact(False)
-        from onset_review.studies import STUDIES
-
-        keyed = [key for key, _label in PAGES] + [key for key, _, _ in STUDIES]
-        for index, key in enumerate(keyed[:9], start=1):
+        for index, (key, _label, _pages) in enumerate(sections(), start=1):
             shortcut = QShortcut(QKeySequence(f"Alt+{index}"), self)
             shortcut.setContext(Qt.WindowShortcut)
-            shortcut.activated.connect(lambda key=key: self.show_page(key))
+            shortcut.activated.connect(lambda key=key: self.show_section(key))
+        # Within a place, the next and the previous page, as a browser's tabs.
+        for keys, step in (("Ctrl+PgDown", +1), ("Ctrl+PgUp", -1)):
+            shortcut = QShortcut(QKeySequence(keys), self)
+            shortcut.setContext(Qt.WindowShortcut)
+            shortcut.activated.connect(lambda step=step: self.step_segment(step))
         # F1 and Ctrl+K belong to Help's entries (`guide.add_help_entries`):
         # a second shortcut on the same keys would make both ambiguous.
-        self.nav.setAccessibleName("Pages")
-        self.nav.setAccessibleDescription("Every page of the program; Alt+1 to Alt+9 for the "
-                                          "first nine, Ctrl+K to search everything")
+        self.nav.setAccessibleName("Places")
+        self.nav.setAccessibleDescription(
+            "Patient, Review, Assistant, Report and the Library; Alt+1 to Alt+5, "
+            "Ctrl+Page Down for the next page inside one, Ctrl+K to search everything")
         self.show_page("home")
 
     # -- the sidebar ------------------------------------------------------
@@ -358,80 +431,54 @@ class PageWindow(QMainWindow):
         self._page_actions.setdefault(key, []).append(widget)
 
     def _build_sidebar(self) -> None:
+        """A handful of places, not every page: Patient, Review, Assistant
+        and Report, the Library at the foot, Analysis only in Analysis mode.
+        A place's pages are the segmented control above the page."""
         from onset_review import glyphs
 
         tokens = theme.current()
+        #: page key -> its name, as the command search and the guide say it.
         self._labels: dict[str, str] = {}
-        self.nav.setIconSize(QSize(16, 16))
+        #: page key -> its segment's label inside its place.
+        self._segment_label: dict[str, str] = {}
+        #: page key -> the place it is in; place -> its pages, in order.
+        self._section_of: dict[str, str] = {}
+        self._section_pages: dict[str, tuple[str, ...]] = {}
+        self._section_label: dict[str, str] = {}
+        #: place -> the page last shown in it, to come back to.
+        self._last: dict[str, str] = {}
+        #: The page `show_page` asked for, while the sidebar moves to its place.
+        self._going: str | None = None
+        self.nav.setIconSize(QSize(18, 18))
 
-        def heading(text: str, fold: bool = False) -> QListWidgetItem:
-            item = QListWidgetItem(text.upper())
-            # A heading that folds is clickable, never selectable: a click
-            # opens or closes its group and does not change the page.
-            item.setFlags(Qt.ItemIsEnabled if fold else Qt.NoItemFlags)
-            font = item.font()
-            font.setPointSize(max(7, font.pointSize() - 2))
-            font.setBold(True)
-            item.setFont(font)
-            # The theme's muted text, not Qt's grey: 2.2:1 on the light
-            # sidebar, where WCAG asks 4.5:1 of text this small.
-            item.setForeground(QColor(tokens.text_muted))
-            self.nav.addItem(item)
-            return item
-
-        # What each page is for, as its tooltip: the sidebar is the table of
-        # contents, and a reader who hovers gets the line Home prints.
-        what = dict(HOW_TO_READ)
-        guide_about = {
-            "quickstart": "Everything this program does, as the jobs people come with, "
-                          "and every menu entry (F1)",
-            "case": "One patient's recordings worked up step by step, in a case window"}
-
-        def entry(key: str, label: str, about: str) -> None:
-            item = QListWidgetItem(glyphs.icon(key, tokens), label)
+        def place(key: str, label: str, pages: tuple) -> QListWidgetItem:
+            item = QListWidgetItem(glyphs.icon(SECTION_GLYPHS[key], tokens), label)
             item.setData(Qt.UserRole, key)
-            self._labels[key] = label
-            tip = about[0].upper() + about[1:] if about else ""
-            if key in dict(PAGES) and key != "home" and not self.loaded:
-                tip += (" — open a recording to fill it in" if tip
-                        else "Open a recording to fill it in")
+            tip = SECTION_ABOUT.get(key, "")
             item.setToolTip(tip)
             item.setData(Qt.AccessibleDescriptionRole, tip)
+            item.setSizeHint(QSize(0, 30))
             self.nav.addItem(item)
             self._items[key] = item
+            self._section_label[key] = label
+            self._section_pages[key] = tuple(page for page, _segment in pages)
+            for page, segment in pages:
+                self._section_of[page] = key
+                self._segment_label[page] = segment
+                self._labels[page] = label if len(pages) == 1 else f"{label} › {segment}"
+            return item
 
-        # Nothing is greyed out: a page that needs a recording shows what it
-        # is for and how to open one, so the sidebar is the whole program
-        # from the first screen.
-        heading("Start")
-        entry("home", dict(PAGES)["home"], what.get("home", ""))
-        for key, label in GUIDE_PAGES:
-            entry(key, label, guide_about[key])
-        heading("This recording")
-        for key, label in PAGES:
-            if key != "home":
-                entry(key, label, what.get(key, ""))
-        self._study_heading = heading("The study", fold=True)
-        self._study_heading.setToolTip("Click to fold or unfold the study's pages")
-        from onset_review.studies import STUDIES
-
-        for key, label, what in STUDIES:
-            item = QListWidgetItem(glyphs.icon(key, tokens), label)
-            item.setData(Qt.UserRole, key)
-            item.setToolTip(what)
-            self._labels[key] = label
+        def gap() -> None:
+            item = QListWidgetItem("")
+            item.setFlags(Qt.NoItemFlags)
+            item.setSizeHint(QSize(0, 18))
             self.nav.addItem(item)
-            self._items[key] = item
-        self.nav.itemClicked.connect(self._heading_clicked)
-        self.set_study_folded(bool(self._remembered_value("study_folded")), remember=False)
-        heading("The model")
-        item = QListWidgetItem(glyphs.icon(CHAT_PAGE[0], tokens), CHAT_PAGE[1])
-        item.setData(Qt.UserRole, CHAT_PAGE[0])
-        self._labels[CHAT_PAGE[0]] = CHAT_PAGE[1]
-        item.setToolTip("The local model on its own: not connected to this recording, "
-                        "nothing checked")
-        self.nav.addItem(item)
-        self._items[CHAT_PAGE[0]] = item
+
+        for key, label, pages in SECTIONS:
+            place(key, label, pages)
+        gap()
+        place(*library_section())
+        place(*ANALYSIS_SECTION).setHidden(not self._analysis_mode)
 
         sidebar = QWidget()
         sidebar.setObjectName("onset_sidebar")
@@ -444,30 +491,101 @@ class PageWindow(QMainWindow):
         box.addWidget(self.nav, 1)
         self._sidebar = sidebar
 
-    # -- the study's pages, folded away ---------------------------------------
+    # -- the pages inside a place: a segmented control ------------------------------
+    def _build_segments(self) -> None:
+        self.segment_bar = QWidget()
+        self.segment_bar.setObjectName("onset_segments")
+        self._segment_row = QHBoxLayout(self.segment_bar)
+        self._segment_row.setContentsMargins(0, 0, 0, 0)
+        self._segment_row.setSpacing(0)
+        #: page key -> its button, for the place showing.
+        self.segment_buttons: dict[str, QPushButton] = {}
+        self._segments_for: str | None = None
+
+    def _show_segments(self, section: str, page: str) -> None:
+        if section != self._segments_for:
+            while self._segment_row.count():
+                taken = self._segment_row.takeAt(0)
+                old = taken.widget()
+                if old is not None:
+                    # Hidden now: deletion waits for the event loop, and the
+                    # last place's buttons must not show beside this one's.
+                    old.hide()
+                    old.setParent(None)
+                    old.deleteLater()
+            self.segment_buttons = {}
+            buttons = []
+            for key in self._section_pages[section]:
+                button = QPushButton(self._segment_label[key])
+                button.setObjectName(f"onset_segment_{key}")
+                button.setFocusPolicy(Qt.TabFocus)
+                tip = dict(HOW_TO_READ).get(key, "")
+                if tip:
+                    button.setToolTip(tip[0].upper() + tip[1:])
+                button.clicked.connect(lambda _=False, key=key: self.show_page(key))
+                buttons.append(button)
+                self.segment_buttons[key] = button
+            theme.segmented(buttons, self._segment_row)
+            for button in buttons:
+                self._segment_row.addWidget(button)
+            self._segment_row.addStretch(1)
+            self._segments_for = section
+            self.segment_bar.setVisible(len(buttons) > 1)
+        for key, button in self.segment_buttons.items():
+            button.setChecked(key == page)
+
+    def step_segment(self, step: int) -> bool:
+        """The next (or previous) page inside the place showing."""
+        page = self.current_page()
+        pages = self._section_pages.get(self._section_of.get(page, ""), ())
+        if len(pages) < 2:
+            return False
+        return self.show_page(pages[(pages.index(page) + step) % len(pages)])
+
+    def current_section(self) -> str:
+        return self._section_of.get(self.current_page(), "")
+
+    def show_section(self, key: str) -> bool:
+        """Go to a place, on the page last shown in it (its first, at first)."""
+        pages = self._section_pages.get(key)
+        if not pages:
+            return False
+        return self.show_page(self._last.get(key, pages[0]))
+
+    # -- Analysis mode -------------------------------------------------------------
     @property
-    def study_folded(self) -> bool:
-        from onset_review.studies import STUDIES
+    def analysis_mode(self) -> bool:
+        return self._analysis_mode
 
-        return all(self._items[key].isHidden() for key, _, _ in STUDIES
-                   if key in self._items)
-
-    def set_study_folded(self, folded: bool, remember: bool = True) -> None:
-        """Fold the six study pages under their heading, or show them. The
-        page that is showing stays, and Alt+number still reaches every page."""
-        from onset_review.studies import STUDIES
-
-        for key, _label, _what in STUDIES:
-            item = self._items.get(key)
-            if item is not None:
-                item.setHidden(bool(folded))
-        self._study_heading.setText(("▸ " if folded else "▾ ") + "THE STUDY")
+    def set_analysis_mode(self, on: bool, remember: bool = True) -> None:
+        """View → Analysis mode: the Analysis place in the sidebar, and the
+        Workspace and Files panes beside the pages. Off, both go, and so
+        does the Console; nothing in them is lost."""
+        on = bool(on)
+        if on == self._analysis_mode:
+            return
+        self._analysis_mode = on
+        if not on and self.current_page() == "analysis":
+            self.show_page("recording" if self.loaded else "home")
+        self._items["code"].setHidden(not on)
+        docks = getattr(self, "docks", None)
+        if docks:
+            building, self._building = getattr(self, "_building", False), True
+            try:
+                with self._keeping_size():
+                    if on:
+                        workspace, files = docks["workspace"], docks["files"]
+                        for dock in (workspace, files):
+                            dock.setVisible(True)
+                            self._fit_pane(dock)
+                        (workspace if self.loaded else files).raise_()
+                    else:
+                        for dock in docks.values():
+                            dock.setVisible(False)
+            finally:
+                self._building = building
         if remember:
             self.remember_layout()
-
-    def _heading_clicked(self, item) -> None:
-        if item is self._study_heading:
-            self.set_study_folded(not self.study_folded)
 
     def _remembered_value(self, name: str):
         import json
@@ -479,21 +597,33 @@ class PageWindow(QMainWindow):
             return None
 
     def _nav_changed(self, current, _previous) -> None:
-        key = current.data(Qt.UserRole) if current is not None else None
-        if key and key in self._pages:
-            if key != "analysis":
-                self._return_panes()
-            self.stack.setCurrentWidget(self._pages[key])
-            if key == "analysis":
-                self._lend_panes()
-            self.title.setText(self._labels.get(key, ""))
-            for page, widgets in self._page_actions.items():
-                for widget in widgets:
-                    widget.setVisible(page == key)
-            refresh = getattr(self._pages[key], "refresh", None)
-            if callable(refresh):
-                refresh()
-            self.pageChanged.emit(key)
+        section = current.data(Qt.UserRole) if current is not None else None
+        if not section or section not in self._section_pages:
+            return
+        key, self._going = self._going, None
+        if key is None or self._section_of.get(key) != section:
+            key = self._last.get(section, self._section_pages[section][0])
+        self._show(key)
+
+    def _show(self, key: str) -> None:
+        if key not in self._pages:
+            return
+        section = self._section_of[key]
+        self._last[section] = key
+        if key != "analysis":
+            self._return_panes()
+        self.stack.setCurrentWidget(self._pages[key])
+        if key == "analysis":
+            self._lend_panes()
+        self.title.setText(self._section_label.get(section, ""))
+        self._show_segments(section, key)
+        for page, widgets in self._page_actions.items():
+            for widget in widgets:
+                widget.setVisible(page == key)
+        refresh = getattr(self._pages[key], "refresh", None)
+        if callable(refresh):
+            refresh()
+        self.pageChanged.emit(key)
 
     # -- the disclaimer -----------------------------------------------------
     def toggle_disclaimer(self) -> None:
@@ -1586,14 +1716,15 @@ class PageWindow(QMainWindow):
         Workspace and Files tabbed on the right, the Console under them;
         Files in front before a recording is open, the Workspace after; the
         Console closed until asked for, since it is the one pane that runs
-        code and starting it costs a second of IPython."""
+        code and starting it costs a second of IPython. Outside Analysis
+        mode none of them shows."""
         from onset_review.panes import arrange
 
         arrange(self, self.docks, "Spyder")
         workspace, files = self.docks["workspace"], self.docks["files"]
         (workspace if self.loaded else files).raise_()
         self.resizeDocks([workspace], [380], Qt.Horizontal)
-        shown = (not self.loaded) or self._wide_screen()
+        shown = self._analysis_mode and ((not self.loaded) or self._wide_screen())
         for dock in (workspace, files):
             dock.setVisible(shown)
         self.docks["console"].setVisible(False)
@@ -1786,9 +1917,11 @@ class PageWindow(QMainWindow):
         return taken
 
     def reset_layout(self) -> None:
-        """Every region back to its opening size, and nothing remembered."""
+        """Every region back to its opening size, Analysis mode off, and
+        nothing remembered."""
         for splitter, default in self._splitters.values():
             splitter.setSizes(default)
+        self.set_analysis_mode(False, remember=False)
         if getattr(self, "docks", None):
             self._building = True
             try:
@@ -1848,7 +1981,7 @@ class PageWindow(QMainWindow):
                               for k, v in self.layout_state().items()})
             payload.update({"schema": 1, "compact": self.compact(), "splitters": splitters,
                             "sidebar": self.sidebar_shown,
-                            "study_folded": self.study_folded})
+                            "analysis_mode": self._analysis_mode})
             if getattr(self, "docks", None) and not self.panes_lent:
                 # While the Analysis page holds the panes their docks stand
                 # hidden; that is not an arrangement to remember.
@@ -1890,11 +2023,45 @@ class PageWindow(QMainWindow):
         return ""
 
     def show_page(self, key: str) -> bool:
-        item = self._items.get(key)
-        if item is None:
+        """Show page `key` in its place. The Analysis page turns Analysis
+        mode on, since asking for it is asking for the mode."""
+        section = self._section_of.get(key)
+        if section is None or key not in self._pages:
             return False
-        self.nav.setCurrentItem(item)
+        if section == "code" and not self._analysis_mode:
+            self.set_analysis_mode(True)
+        item = self._items[section]
+        if self.nav.currentItem() is item:
+            self._show(key)
+        else:
+            self._going = key
+            self.nav.setCurrentItem(item)
         return True
+
+    # -- a patient's case, held in this window -------------------------------------
+    def hold_case(self, case_window, show: bool = True) -> None:
+        """Hold a `casewindow.CaseWindow` on Patient → Case, and go there."""
+        self.case_page.hold(case_window)
+        if show:
+            self.show_page("case")
+
+    @property
+    def held_case(self):
+        """The case held on Patient → Case, or None."""
+        return self.case_page.case_window
+
+    def page_entries(self) -> list[dict]:
+        """Every page by its name, for the command search."""
+        from onset_review.studies import STUDIES
+
+        about = dict(HOW_TO_READ)
+        about.update({key: what for key, _label, what in STUDIES})
+        about["quickstart"] = ("everything this program does, as the jobs people come with, "
+                               "and every menu entry (F1)")
+        about["case"] = "one patient's recordings worked up step by step"
+        return [{"key": key, "label": self._labels.get(key, key),
+                 "about": about.get(key, SECTION_ABOUT.get(self._section_of[key], ""))}
+                for key in self.page_keys() if key in self._section_of]
 
     def set_reader(self, text: str) -> None:
         self.reader.setText(text or "No reader named")

@@ -66,12 +66,13 @@ def test_every_page_can_be_looked_at_before_anything_is_open(start):
     assert start.calls["chosen"] == 1 and start.calls["imported"] == 1
     page.buttons["page:quickstart"].click()
     assert start.current_page() == "quickstart"
-    heading_colours = {start.nav.item(i).foreground().color().name()
-                       for i in range(start.nav.count())
-                       if not start.nav.item(i).data(Qt.UserRole)}
-    from onset_review import theme
-
-    assert heading_colours == {theme.current().text_muted.lower()}
+    # The sidebar is places, not pages: nothing in it but the places and
+    # one blank gap before the Library.
+    rows = [(start.nav.item(i).text(), start.nav.item(i).data(Qt.UserRole))
+            for i in range(start.nav.count())]
+    assert [text for text, key in rows if key] == ["Patient", "Review", "Assistant",
+                                                   "Report", "Library", "Analysis"]
+    assert [text for text, key in rows if not key] == [""]
 
 
 def test_the_guides_links_do_what_they_say(start):
@@ -107,7 +108,7 @@ def test_find_a_command_by_any_word_and_run_it(start):
     assert palette.run_current() and start.calls["new_case"] == 1
     palette = guide.open_palette(start, show=False)
     assert palette.filter("removal cured") >= 1, "a page found by the words of its tooltip"
-    assert palette.list.currentItem().data(Qt.UserRole)["text"] == "Outcome"
+    assert palette.list.currentItem().data(Qt.UserRole)["text"] == "Library › Outcome"
     palette.run_current()
     assert start.current_page() == "outcome"
     assert guide.open_palette(start, show=False).filter("zzz nothing") == 0
