@@ -61,7 +61,10 @@ DATA_HOME_ENV = "ONSET_HFO_DATA"
 #: Signal files OpenNeuro holds, by extension: (format, can a window be cut by byte range).
 SIGNAL_FORMATS = {".vhdr": ("BrainVision", True), ".edf": ("EDF", True),
                   ".bdf": ("BDF", True), ".set": ("EEGLAB", False),
-                  ".fif": ("FIF", False), ".nwb": ("NWB", False), ".mefd": ("MEF3", False)}
+                  ".fif": ("FIF", False), ".ds": ("CTF", False), ".con": ("KIT", False),
+                  ".sqd": ("KIT", False), ".nwb": ("NWB", False), ".mefd": ("MEF3", False)}
+#: A FIF recording too large for one file continues in ``_split-02`` and on.
+_SPLIT = re.compile(r"_split-(\d+)_")
 #: Files whose readers this package cannot use for a remote recording.
 _NOT_FETCHABLE = {".nwb": "NWB needs pynwb, which this package does not use",
                   ".mefd": "a MEF3 recording is a directory of many files; download it "
@@ -86,7 +89,7 @@ class Bunch(dict):
         return list(self.keys())
 
 
-#: The OpenNeuro datasets with continuous EEG or iEEG, bundled so a dataset can be
+#: The OpenNeuro datasets with continuous EEG, iEEG or MEG, bundled so a dataset can be
 #: found by name without the network; `build_catalogue` makes it, `catalogue` reads it.
 CATALOGUE = Path(__file__).with_name("openneuro_catalogue.csv")
 CATALOGUE_COLUMNS = ["dataset_id", "name", "modalities", "subjects", "license", "doi"]
@@ -122,7 +125,7 @@ class allow_network:
 # -- the catalogue ----------------------------------------------------------------------------
 def catalogue(modality: str | None = None, search: str | None = None,
               data_home=None) -> pd.DataFrame:
-    """The OpenNeuro datasets with continuous EEG or iEEG: ``dataset_id``,
+    """The OpenNeuro datasets with continuous EEG, iEEG or MEG: ``dataset_id``,
     ``name``, ``modalities`` (e.g. "ieeg" or "eeg,ieeg"), ``subjects``,
     ``license`` and ``doi``.
 
@@ -159,7 +162,7 @@ def _catalogue_row(dataset_id: str) -> dict | None:
                              retries=2).decode("utf-8", "replace")
     keys = re.findall(r"<Key>([^<]+)</Key>", xml)
     kinds = sorted({part for key in keys for part in key.split("/")[2:-1]
-                    if part in ("eeg", "ieeg")})
+                    if part in _MODALITIES})
     if not kinds:
         return None
     query = {"list-type": "2", "prefix": f"{dataset_id}/", "delimiter": "/",
@@ -180,7 +183,7 @@ def _catalogue_row(dataset_id: str) -> dict | None:
 
 
 def build_catalogue(out=None, workers: int = 16, progress=print) -> pd.DataFrame:
-    """Survey every dataset on OpenNeuro and keep those with EEG or iEEG.
+    """Survey every dataset on OpenNeuro and keep those with EEG, iEEG or MEG.
 
     About three small requests per dataset, a few minutes in all. Writes the
     table to `out` (default: the data home, where `catalogue` will prefer it
@@ -214,12 +217,12 @@ def build_catalogue(out=None, workers: int = 16, progress=print) -> pd.DataFrame
             if row:
                 rows.append(row)
             if n % 200 == 0:
-                progress(f"{n} of {len(ids)} surveyed, {len(rows)} with EEG or iEEG")
+                progress(f"{n} of {len(ids)} surveyed, {len(rows)} with EEG, iEEG or MEG")
     table = pd.DataFrame(rows, columns=CATALOGUE_COLUMNS).sort_values("dataset_id")
     out = Path(out) if out else get_data_home() / "openneuro_catalogue.csv"
     out.parent.mkdir(parents=True, exist_ok=True)
     table.to_csv(out, index=False)
-    progress(f"{len(table)} datasets with EEG or iEEG written to {out}"
+    progress(f"{len(table)} datasets with EEG, iEEG or MEG written to {out}"
              + (f"; {len(failed)} could not be read: {', '.join(sorted(failed)[:10])}"
                 if failed else ""))
     return table.reset_index(drop=True)
@@ -251,7 +254,16 @@ def _get(path: str, byte_range=None) -> bytes:
     from onset_hfo import datasets
 
     # S3 reads a bare "+" in a path as a space.
-    return datasets._http_get(f"{BUCKET}/{urllib.parse.quote(path)}", byte_range=byte_range)
+    try:
+        return datasets._http_get(f"{BUCKET}/{urllib.parse.quote(path)}",
+                                  byte_range=byte_range)
+    except RuntimeError as error:
+        if "HTTP 403" not in str(error):
+            raise
+        raise RuntimeError(
+            f"OpenNeuro's storage refuses {path} (access denied). Some datasets' "
+            "files are listed but not public on its S3 bucket yet; download this one "
+            "from openneuro.org instead.") from error
 
 
 def _check_id(dataset_id: str) -> str:
@@ -375,17 +387,30 @@ def list_openneuro(dataset_id: str, subject: str | None = None, modality: str | 
         folder_mod = parts[-2] if len(parts) >= 2 else ""
         name = parts[-1]
         mefd = next((p for p in parts if p.endswith(".mefd")), None)
+        ctf = next((p for p in parts[:-1] if p.endswith(".ds")), None)
         if mefd:
             # A MEF3 recording is a directory; list it once, by its name.
             if parts.index(mefd) != len(parts) - 2 or not name.endswith(".tmet"):
                 continue
             name, folder_mod = mefd, parts[parts.index(mefd) - 1]
             key = "/".join(parts[:parts.index(mefd) + 1])
+        elif ctf:
+            # So is a CTF one: list it once, by its .meg4, sized as a whole.
+            if parts.index(ctf) != len(parts) - 2 or not name.endswith(".meg4"):
+                continue
+            name, folder_mod = ctf, parts[parts.index(ctf) - 1]
+            key = "/".join(parts[:parts.index(ctf) + 1])
+            size = sum(v for k, v in keys.items() if k.startswith(key + "/"))
         suffix = next((e for e in SIGNAL_FORMATS if name.endswith(e)), None)
         if suffix is None or folder_mod not in _MODALITIES:
             continue
         if not name[: -len(suffix)].endswith(f"_{folder_mod}"):
             continue
+        split = _SPLIT.search(name)
+        if split and int(split.group(1)) > 1:
+            continue            # part of the split-01 recording, listed once
+        if split:
+            size = sum(keys[k] for k in _splits(key, keys))
         if suffix == ".vhdr":   # the signal is the .eeg beside it
             size = keys.get(key[: -len(".vhdr")] + ".eeg",
                             keys.get(key[: -len(".vhdr")] + ".dat", size))
@@ -408,6 +433,12 @@ def list_openneuro(dataset_id: str, subject: str | None = None, modality: str | 
         table = table[table["modality"] == modality]
     return table.sort_values(["subject", "session", "task", "acq", "run", "path"]) \
         .reset_index(drop=True)
+
+
+def _splits(key: str, keys) -> list[str]:
+    """Every part of a split FIF recording, in order, from its first."""
+    pattern = re.compile(re.escape(_SPLIT.sub("_split-@@_", key)).replace("@@", r"\d+"))
+    return sorted(k for k in keys if pattern.fullmatch(k))
 
 
 def _sub(subject: str) -> str:
@@ -661,14 +692,24 @@ def _whole_file(dataset_id, path, suffix, keys, folder: Path, max_mb, transfer: 
     companions = [path]
     if suffix == ".set" and path[: -4] + ".fdt" in keys:
         companions.append(path[: -4] + ".fdt")
+    if suffix == ".fif" and _SPLIT.search(Path(path).name):
+        companions = _splits(path, keys)        # MNE reads on from split-01
+    if suffix == ".ds":
+        # A CTF recording is a folder: everything in it, kept as a folder.
+        companions = sorted(k for k in keys if k.startswith(path + "/"))
     _check_size(sum(keys.get(p, 0) for p in companions), max_mb, path,
                 whole=True)
     transfer.expect(sum(keys.get(p, 0) for p in companions))
     for name in companions:
-        size = keys.get(name, 0)
-        blob = transfer.get(f"{dataset_id}/{name}", 0, size - 1) if size \
-            else _get(f"{dataset_id}/{name}")
-        (folder / Path(name).name).write_bytes(blob)
+        size = keys.get(name)
+        # An empty file is written, not fetched: S3 refuses a GET for some of
+        # them (a CTF folder's empty BadChannels, for one).
+        blob = (transfer.get(f"{dataset_id}/{name}", 0, size - 1) if size
+                else b"" if size == 0 else _get(f"{dataset_id}/{name}"))
+        target = folder / (name[len(path) - len(Path(path).name):] if suffix == ".ds"
+                           else Path(name).name)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(blob)
     return folder / Path(path).name, 0.0, None
 
 
@@ -737,6 +778,36 @@ def _fetch_sidecars(dataset_id, stem, modality, keys, folder: Path,
     return found
 
 
+#: SI per unit, for the units channels.tsv writes.
+_SI_PER_UNIT = {"v": 1.0, "mv": 1e-3, "uv": 1e-6, "µv": 1e-6, "μv": 1e-6, "nv": 1e-9,
+                "t": 1.0, "ft": 1e-15, "pt": 1e-12, "t/m": 1.0, "ft/cm": 1e-13,
+                "ft/mm": 1e-12}
+
+
+def _units_from_channels_tsv(raw, channels: pd.DataFrame | None) -> dict[str, str]:
+    """Read a channel in the unit channels.tsv gives when the file states none.
+
+    An EDF whose physical-dimension field is blank is read by MNE as volts,
+    which turns a 50 µV scalp signal into 50 V; every amplitude after that is
+    wrong by a million and the quality checks set every channel aside. The
+    dataset's own channels.tsv says what the numbers are. Returns the channels
+    rescaled, with the unit they were read in.
+    """
+    original = getattr(raw, "_orig_units", None) or {}
+    if channels is None or not {"name", "units"} <= set(channels.columns) or not original:
+        return {}
+    done = {}
+    for name, unit in zip(channels["name"], channels["units"], strict=False):
+        name, unit = str(name), str(unit).strip()
+        factor = _SI_PER_UNIT.get(unit.lower())
+        if (name not in raw.ch_names or factor is None or factor == 1.0
+                or str(original.get(name, "")).strip().lower() not in ("", "n/a", "na")):
+            continue
+        raw._data[raw.ch_names.index(name)] *= factor
+        done[name] = unit
+    return done
+
+
 #: A label that is about a seizure. Without one, and outside an ictal task, an
 #: "onset" or "start" in events.tsv is a stimulus or a task block, not a seizure.
 _SEIZURE_WORD = re.compile(r"\bsz\b|seiz|ictal", re.IGNORECASE)
@@ -797,6 +868,7 @@ def _load(folder: Path, meta: dict, data_home, verbose: bool) -> Bunch:
                                 channel_types=types, run=meta["run"] or "01",
                                 task=meta["task"] or meta["modality"])
     raw = record.raw
+    rescaled = _units_from_channels_tsv(raw, channels)
     bads = [b for b in bads if b in raw.ch_names]
     raw.info["bads"] = bads
     record.t_offset = offset + start
@@ -826,6 +898,9 @@ def _load(folder: Path, meta: dict, data_home, verbose: bool) -> Bunch:
         ("channel types and bad channels from the dataset's channels.tsv"
          if channels is not None else
          "no channels.tsv: channel types are the file's own, which may be wrong"),
+        *([f"the file does not state the unit of {len(rescaled)} channels; the dataset's "
+           f"channels.tsv gives it ({', '.join(sorted(set(rescaled.values())))}), so they "
+           "were read in that unit rather than as volts"] if rescaled else []),
         f"licence: {description.license or 'not stated'}; cite: {description.citation}",
     ]
     participant = {}

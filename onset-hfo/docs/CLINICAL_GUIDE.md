@@ -1434,7 +1434,7 @@ OpenNeuro…* on Home)
 
 ![Open from OpenNeuro: the catalogue searched for "epilepsy", and the HUP dataset's recordings listed](images/onset-review-openneuro.png)
 
-1. Search the catalogue of OpenNeuro's EEG and iEEG datasets by name (for
+1. Search the catalogue of OpenNeuro's EEG, iEEG and MEG datasets by name (for
    example *epilepsy*), or type any dataset id, such as `ds004100`.
    Double-click a dataset or press *List recordings*. The dialog shows the
    dataset's name, licence and citation, and every recording in it. This
@@ -1489,8 +1489,11 @@ suggests every channel's type again.
   as another sensor type or as not analysed, never as EEG.
 
 The detectors were validated only on intracranial recordings. On scalp EEG
-and MEG they run the same way, and every window says first that nothing there
-has been checked against a scalp or MEG reference. The Contacts and Map pages
+and MEG they run the same way, and every window says so first.
+[`MODALITIES.md`](MODALITIES.md) has what happened on real scalp and MEG
+recordings: scalp channel rankings track a published scalp detector's
+candidates but not its artefact rejection, and the one MEG recording of a
+person gave detections too large to be brain ripples. The Contacts and Map pages
 lay channels out as implanted contacts, so on scalp EEG or MEG they say that
 what they draw is a diagram of the names, not where the sensors are.
 

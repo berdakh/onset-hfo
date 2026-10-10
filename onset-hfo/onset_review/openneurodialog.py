@@ -117,7 +117,8 @@ class OpenNeuroDialog(QDialog):
         self.search.setAccessibleName("Search the OpenNeuro catalogue")
         self.search.textChanged.connect(self.show_catalogue)
         self.kind = QComboBox()
-        for label, value in (("iEEG", "ieeg"), ("EEG", "eeg"), ("EEG or iEEG", "")):
+        for label, value in (("iEEG", "ieeg"), ("EEG", "eeg"), ("MEG", "meg"),
+                             ("Any", "")):
             self.kind.addItem(label, value)
         self.kind.setAccessibleName("Kind of recording")
         self.kind.currentIndexChanged.connect(self.show_catalogue)
@@ -242,6 +243,7 @@ class OpenNeuroDialog(QDialog):
         for r, row in enumerate(self.catalogue_rows):
             for c, (key, _label) in enumerate(FIND_COLUMNS):
                 text = str(row.get(key, "")).replace("ieeg", "iEEG").replace("eeg", "EEG") \
+                    .replace("meg", "MEG") \
                     if key == "modalities" else str(row.get(key, ""))
                 item = QTableWidgetItem(text)
                 if key == "name":
@@ -249,7 +251,7 @@ class OpenNeuroDialog(QDialog):
                 self.found.setItem(r, c, item)
         total = len(openneuro.catalogue(data_home=self.data_home))
         self.found_count.setText(
-            f"{len(self.catalogue_rows)} of {total} OpenNeuro datasets with EEG or iEEG. "
+            f"{len(self.catalogue_rows)} of {total} OpenNeuro datasets with EEG, iEEG or MEG. "
             "Not listed? Type its id below.")
         return len(self.catalogue_rows)
 

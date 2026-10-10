@@ -108,6 +108,31 @@ class Prepared:
         return self.data[self.index(ch), i0:i1]
 
 
+def _chpi_note(raw) -> list[str]:
+    """Say so when a MEG recording carries continuous head-position coils.
+
+    The coils emit sinusoids, typically between 80 and 330 Hz: inside the HFO
+    bands, where a steady line in every sensor is the opposite of a burst but
+    still raises the band's floor. They are not removed here, so the note
+    names them and the HFO band each falls in.
+    """
+    import mne
+
+    try:
+        freqs, _, _ = mne.chpi.get_chpi_info(raw.info, on_missing="ignore", verbose="ERROR")
+    except Exception:       # noqa: BLE001 - a header without coil information
+        return []
+    freqs = [float(f) for f in freqs]
+    if not freqs:
+        return []
+    bands = sorted({name.replace("_", " ") for name in ("ripple", "fast_ripple")
+                    for f in freqs if getattr(BANDS, name)[0] <= f <= getattr(BANDS, name)[1]})
+    return [f"this recording carries continuous head-position (cHPI) coils at "
+            f"{', '.join(f'{f:g}' for f in freqs)} Hz; they are not removed here"
+            + (f", and they sit inside the {' and '.join(bands)} band" if bands else "")
+            + " (mne.chpi.filter_chpi removes them)"]
+
+
 def _is_brain_channel(name: str, ch_type: str) -> bool:
     if ch_type not in ("ecog", "seeg", "eeg"):
         return False
@@ -827,6 +852,8 @@ def prepare(rec: Recording, cfg: PreprocessConfig | None = None, verbose: bool =
     if missing:
         raise ValueError(f"no channel {', '.join(missing)} in this recording to regress out")
     regress = [c for c in regress if c not in keep]
+    if kind.key.startswith("meg"):
+        steps.extend(_chpi_note(raw))
     raw.pick(keep + regress)
     steps.append(f"kept {len(keep)} "
                  f"{'intracranial' if kind.key == 'ieeg' else kind.label} channels; dropped "
