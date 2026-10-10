@@ -16,6 +16,8 @@ Thirty minutes of reading. The last section is the one that matters.
 
 You don't need to know the menus to start.
 
+![The Quick start page: the program laid out as the jobs people come with, every step a link](images/onset-review-quickstart.png)
+
 - **Quick start** (sidebar, *Help → Quick start guide*, or **F1**) lays the
   program out as the jobs people come with:
   - look at a recording;
@@ -1422,7 +1424,11 @@ assistant work on it unchanged.
 | Neuralynx | any `.ncs` in the recording's folder |
 | Curry, EEGLAB, EGI, Neuroscan, Eximia, MNE | `.cdt`, `.set`, `.mff`, `.cnt`, `.nxe`, `.fif` |
 
-**A public recording instead: File → Open from OpenNeuro…**
+**A public recording instead: File → Open from OpenNeuro…** (also *From
+OpenNeuro…* on Home)
+
+![Open from OpenNeuro: the catalogue searched for "epilepsy", and the HUP dataset's recordings listed](images/onset-review-openneuro.png)
+
 1. Search the catalogue of OpenNeuro's EEG and iEEG datasets by name (for
    example *epilepsy*), or type any dataset id, such as `ds004100`.
    Double-click a dataset or press *List recordings*. The dialog shows the

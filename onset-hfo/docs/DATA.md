@@ -451,7 +451,10 @@ python -m onset_hfo.cli openneuro fetch ds004100 --subject HUP060 --task ictal \
        --t-start 100 --t-stop 130       # prints the window's local file
 ```
 
-**In the desktop app**, *File → Open from OpenNeuro…*:
+![Open from OpenNeuro: the catalogue searched for "epilepsy", and the HUP dataset's recordings listed](images/onset-review-openneuro.png)
+
+**In the desktop app**, *File → Open from OpenNeuro…* (or *From OpenNeuro…* on
+Home):
 1. Search the catalogue by name, or type any id. Double-click a dataset, or
    press *List recordings*. The app runs offline unless started with
    `--allow-fetch`; this dialog reaches openneuro.org anyway, because choosing
