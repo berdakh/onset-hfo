@@ -1422,6 +1422,19 @@ assistant work on it unchanged.
 | Neuralynx | any `.ncs` in the recording's folder |
 | Curry, EEGLAB, EGI, Neuroscan, Eximia, MNE | `.cdt`, `.set`, `.mff`, `.cnt`, `.nxe`, `.fif` |
 
+**A public recording instead: File → Open from OpenNeuro…**
+1. Type any OpenNeuro dataset id, such as `ds004100`, and press *List
+   recordings*. The dialog shows the dataset's name, licence and citation, and
+   every recording in it.
+2. Pick one and a window, then *Download and open*.
+3. The window comes through the same confirmation as a file of your own, with
+   the dataset's own channel types and mains frequency already set. Channels
+   the dataset marks bad are set to "not analysed".
+
+Only the window is downloaded where the format allows. Everything is kept on
+this machine, and the same window opens from there next time. `docs/DATA.md`
+has the details and the Python API.
+
 `.eeg` is the one ambiguous extension: BrainVision writes the *signal* to
 it beside a `.vhdr` header, Nihon Kohden writes the whole recording to it.
 A sibling `.vhdr` settles which, so either file of a BrainVision triplet

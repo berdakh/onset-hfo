@@ -682,11 +682,19 @@ class _Review:
 
         self._open_request(choose_file(self._host(), self.args.cache_dir))
 
+    def open_openneuro(self) -> None:
+        """File → Open from OpenNeuro…: list a dataset, download a window of
+        one recording, confirm it as an imported file, and open it."""
+        from onset_review.openneurodialog import choose_openneuro
+
+        self._open_request(choose_openneuro(self._host()))
+
     # -- many recordings, and whole projects ------------------------------------------------
     def _install_handlers(self, host) -> None:
         """What the File menu's batch and project entries, and the Files pane,
         call: set on the window rather than passed down every builder."""
         host.on_batch = self.batch
+        host.on_openneuro = self.open_openneuro
         host.on_save_project = self.save_project
         host.on_open_project = self.open_project
         host.on_new_case = self.new_case
