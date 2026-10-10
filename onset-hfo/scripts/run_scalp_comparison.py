@@ -36,6 +36,7 @@ detector.
 from __future__ import annotations
 
 import argparse
+import copy
 import io
 import sys
 import warnings
@@ -48,8 +49,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 DATASET = "ds003555"
-COLUMNS = ["subject", "sfreq", "seconds", "channels", "kept", "ours", "theirs_passed",
-           "theirs_all", "rho_passed", "rho_all", "our_top", "their_top"]
+COLUMNS = ["subject", "fraction", "sfreq", "seconds", "channels", "kept", "ours",
+           "theirs_passed", "theirs_all", "rho_passed", "rho_all", "our_top", "their_top"]
 
 
 def _subjects(text: str) -> list[str]:
@@ -63,7 +64,7 @@ def _subjects(text: str) -> list[str]:
     return out
 
 
-def compare(subject: str, cache: Path) -> dict:
+def compare(subject: str, cache: Path, fractions=(0.0,)) -> list[dict]:
     import mne
     from scipy.stats import spearmanr
 
@@ -71,6 +72,7 @@ def compare(subject: str, cache: Path) -> dict:
     from onset_hfo.config import PipelineConfig, PreprocessConfig
     from onset_hfo.datasets import Recording
     from onset_hfo.pipeline import run_pipeline
+    from onset_hfo.validate import reject_concurrent
 
     base = (f"{DATASET}/derivatives/sub-{subject}/ses-01/eeg/"
             f"sub-{subject}_ses-01_task-hfo_run-01")
@@ -90,28 +92,46 @@ def compare(subject: str, cache: Path) -> dict:
     raw.info["line_freq"] = 50.0
     record = Recording(raw=raw, source=f"{DATASET}:{subject}", subject=f"sub-{subject}",
                        task="hfo", run="01", t_offset=0.0, line_freq=50.0)
+    # Detected once with the concurrency rule off; each fraction is then
+    # applied to copies of the same candidates, which is what the rule does
+    # inside the pipeline (it is the last validation check).
     config = PipelineConfig()
     config.preprocess = PreprocessConfig(modality="eeg", bipolar=False)
+    config.validation.scalp_max_concurrent_fraction = 0.0
     result = run_pipeline(record, config=config, detectors=("rms",), verbose=False)
-    ours = result.rates["rms"].set_index("channel")["n_events"]
+    channels = list(result.rates["rms"]["channel"])
+    candidates = result.events["rms"]
     passed = events[events["EvPassRejection"] == 1]["strChannelName"].value_counts() \
-        .reindex(ours.index).fillna(0)
-    every = events["strChannelName"].value_counts().reindex(ours.index).fillna(0)
+        .reindex(channels).fillna(0)
+    every = events["strChannelName"].value_counts().reindex(channels).fillna(0)
+    rows = []
+    for fraction in fractions:
+        copies = [copy.copy(e) for e in candidates]
+        reject_concurrent(copies, len(result.prepared.ch_names), fraction)
+        ours = pd.Series([e.channel for e in copies if e.accepted], dtype=str) \
+            .value_counts().reindex(channels).fillna(0)
 
-    def rho(other):
-        return round(float(spearmanr(ours, other).statistic), 2) \
-            if ours.sum() and other.sum() else np.nan
+        def rho(other, ours=ours):
+            return round(float(spearmanr(ours, other).statistic), 2) \
+                if ours.sum() and other.sum() else np.nan
 
-    return {"subject": subject, "sfreq": float(raw.info["sfreq"]),
-            "seconds": round(float(raw.times[-1])), "channels": len(ours),
-            "kept": int(result.quality["good"].sum()) if not result.quality.empty else 0,
-            "ours": int(ours.sum()), "theirs_passed": int(passed.sum()),
-            "theirs_all": int(every.sum()), "rho_passed": rho(passed), "rho_all": rho(every),
-            "our_top": ours.idxmax() if ours.sum() else "",
-            "their_top": passed.idxmax() if passed.sum() else ""}
+        rows.append({"subject": subject, "fraction": fraction,
+                     "sfreq": float(raw.info["sfreq"]),
+                     "seconds": round(float(raw.times[-1])), "channels": len(channels),
+                     "kept": int(result.quality["good"].sum())
+                     if not result.quality.empty else 0,
+                     "ours": int(ours.sum()), "theirs_passed": int(passed.sum()),
+                     "theirs_all": int(every.sum()), "rho_passed": rho(passed),
+                     "rho_all": rho(every),
+                     "our_top": ours.idxmax() if ours.sum() else "",
+                     "their_top": passed.idxmax() if passed.sum() else ""})
+    return rows
 
 
 def summarise(table: pd.DataFrame) -> str:
+    if "fraction" in table and table["fraction"].nunique() > 1:
+        return "\n".join(f"fraction {f:g}: " + summarise(t.drop(columns="fraction"))
+                         for f, t in table.groupby("fraction"))
     agree = int((table["our_top"] == table["their_top"]).sum())
     return (f"{len(table)} subjects. Per-channel Spearman rho with their ripples after "
             f"artefact rejection: median {table['rho_passed'].median():.2f} "
@@ -128,6 +148,9 @@ def main() -> int:
                         help="where the downloaded intervals are kept")
     parser.add_argument("--out", type=Path, default=ROOT / "data/scalp/scalp_comparison.csv")
     parser.add_argument("--from-csv", type=Path, default=None)
+    parser.add_argument("--fractions", default="0,default",
+                        help="concurrency limits to compare, comma-separated; 0 is no "
+                             "limit, 'default' the shipped one")
     args = parser.parse_args()
     if args.from_csv:
         table = pd.read_csv(args.from_csv, dtype={"subject": str})
@@ -135,10 +158,14 @@ def main() -> int:
         from onset_hfo import openneuro
 
         cache = args.cache or openneuro.get_data_home() / DATASET / "derivatives"
+        from onset_hfo.config import SCALP_CONCURRENT_FRACTION
+
+        fractions = [SCALP_CONCURRENT_FRACTION if f == "default" else float(f)
+                     for f in args.fractions.split(",")]
         rows = []
         for subject in _subjects(args.subjects):
-            rows.append(compare(subject, cache))
-            print(rows[-1], flush=True)
+            rows += compare(subject, cache, tuple(fractions))
+            print(rows[-len(fractions):], flush=True)
         table = pd.DataFrame(rows, columns=COLUMNS)
         args.out.parent.mkdir(parents=True, exist_ok=True)
         table.to_csv(args.out, index=False)

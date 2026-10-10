@@ -272,6 +272,11 @@ class SpikeConfig:
         return asdict(self)
 
 
+#: The scalp concurrency limit, chosen on ds003555 subjects 01-10 and tested on
+#: 11-20 (scripts/run_scalp_comparison.py).
+SCALP_CONCURRENT_FRACTION = 0.2
+
+
 @dataclass
 class ValidationConfig:
     """Parameters of the post-detection artifact rejection stage.
@@ -301,6 +306,13 @@ class ValidationConfig:
     #: Measured on synthetic data: raising it to 3 costs 17 percentage points
     #: of recall and buys no precision (see docs/EVALUATION.md).
     min_cycles: float = 2.0
+    #: Scalp EEG only: reject an HFO that coincides with HFO candidates on more
+    #: than this fraction of the other channels. Muscle and movement reach the
+    #: whole scalp at once; a scalp ripple is focal. On ds003555 the published
+    #: detector's rejected events coincide with a median of 13 other channels of
+    #: 52, its accepted ones with 2. Never applied to intracranial or MEG
+    #: recordings; 0 turns it off. See docs/MODALITIES.md for how it was chosen.
+    scalp_max_concurrent_fraction: float = SCALP_CONCURRENT_FRACTION
 
 
 #: Burstiness (envelope p99/p10) of a channel carrying no events at all.

@@ -135,3 +135,42 @@ def test_the_request_carries_the_kind_into_the_analysis():
 
     assert ReviewRequest().pipeline_config().preprocess.modality == "auto"
     assert ReviewRequest(modality="meg").pipeline_config().preprocess.modality == "meg"
+
+
+def _event(channel, start, stop=None, detector="rms"):
+    from onset_hfo.detectors.base import Event
+
+    return Event(channel=channel, start=start, stop=stop or start + 0.05,
+                 detector=detector, band=(80.0, 250.0))
+
+
+def test_a_scalp_event_seen_everywhere_at_once_is_rejected_and_a_focal_one_kept():
+    from onset_hfo.validate import reject_concurrent
+
+    names = [f"C{i}" for i in range(20)]
+    burst = [_event(n, 10.0) for n in names]             # muscle: every channel at once
+    focal = [_event("C0", 20.0), _event("C1", 20.01)]     # two neighbours
+    spike = [_event(n, 10.0, detector="spike") for n in names]
+    events = burst + focal + spike
+    reject_concurrent(events, len(names), 0.2)
+    assert not any(e.accepted for e in burst)
+    assert "seen on 19 other channels at once" in burst[0].reject_reason
+    assert all(e.accepted for e in focal), "two channels of twenty is focal"
+    assert all(e.accepted for e in spike), "discharges have their own criteria"
+    again = [_event(n, 10.0) for n in names]
+    assert all(e.accepted for e in reject_concurrent(again, len(names), 0.0)), "0 is off"
+
+
+def test_the_concurrency_rule_runs_on_scalp_eeg_and_never_on_intracranial(base):
+    from onset_hfo.preprocess import prepare
+    from onset_hfo.validate import validate_events
+
+    for kind, expect_rejected in (("eeg", True), ("ieeg", False)):
+        record = base if kind == "ieeg" else as_modality(base, "eeg")
+        prepared = prepare(record, verbose=False)
+        events = [_event(n, 10.0) for n in prepared.ch_names]
+        for e in events:
+            e.n_cycles, e.spectral_prominence_db = 6.0, 20.0     # pass the other checks
+        validate_events(events, prepared)
+        rejected = [e for e in events if not e.accepted]
+        assert bool(rejected) is expect_rejected, kind
