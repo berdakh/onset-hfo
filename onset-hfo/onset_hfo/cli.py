@@ -466,11 +466,16 @@ def _cmd_openneuro(args: argparse.Namespace) -> int:
                 print(table.drop(columns="path").to_string(index=False) if len(table)
                       else "no continuous recordings found")
         else:
+            def show(fraction: float, message: str) -> None:
+                # One line, rewritten in place, on stderr: stdout stays the path.
+                print(f"\r[onset-hfo]   {message} ({100 * fraction:.0f}%)",
+                      end="\n" if fraction >= 1.0 else "", file=sys.stderr, flush=True)
+
             bunch = openneuro.fetch_openneuro(
                 args.dataset, args.subject, session=args.session, task=args.task,
                 acq=args.acq, run=args.run, t_start=args.t_start,
                 t_stop=None if args.t_stop < 0 else args.t_stop,
-                data_home=args.data_home, max_mb=args.max_mb)
+                data_home=args.data_home, max_mb=args.max_mb, progress=show)
             print(bunch.local_path)
     except (ValueError, OSError, RuntimeError) as problem:
         print(f"[onset-hfo] {problem}", file=sys.stderr)

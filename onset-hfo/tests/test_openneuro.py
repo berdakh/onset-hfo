@@ -300,3 +300,49 @@ def test_the_command_line_searches_the_catalogue(archive, capsys):
     assert DS in capsys.readouterr().out
     assert main(["openneuro", "list", "--data-home", home]) == 1
     assert "needs a dataset id" in capsys.readouterr().err
+
+
+def test_a_download_in_pieces_is_exact_and_says_how_far_it_has_got(archive, monkeypatch):
+    monkeypatch.setattr(openneuro, "CHUNK_BYTES", 5000)
+    heard = []
+    bunch = openneuro.fetch_openneuro(DS, "01", t_start=2.0, t_stop=5.0,
+                                      data_home=archive["home"], verbose=False,
+                                      progress=lambda f, m: heard.append((f, m)))
+    first, last = int(2.0 * SFREQ_BV), int(5.0 * SFREQ_BV)
+    assert np.allclose(bunch.data[0] * 1e6, np.arange(first, last)), "the pieces join exactly"
+    pieces = [r for u, r in archive["asked"] if u.endswith(".eeg")]
+    assert len(pieces) == int(np.ceil((last - first) * 12 / 5000))
+    fractions = [f for f, _ in heard]
+    assert fractions == sorted(fractions) and fractions[-1] == 1.0
+    assert heard[-1][1] == f"{36000 / 1e6:.1f} of {36000 / 1e6:.1f} MB"
+
+
+def test_stopping_a_download_keeps_nothing(archive, monkeypatch):
+    monkeypatch.setattr(openneuro, "CHUNK_BYTES", 5000)
+    asked = {"n": 0}
+
+    def stop_after_two():
+        asked["n"] += 1
+        return asked["n"] > 2
+
+    with pytest.raises(openneuro.Cancelled):
+        openneuro.fetch_openneuro(DS, "01", t_start=2.0, t_stop=5.0, data_home=archive["home"],
+                                  verbose=False, should_stop=stop_after_two)
+    assert not any((archive["home"] / DS).glob("*/2-5s")), "no half window is left behind"
+    bunch = openneuro.fetch_openneuro(DS, "01", t_start=2.0, t_stop=5.0,
+                                      data_home=archive["home"], verbose=False)
+    assert bunch.data.shape == (3, 3000), "and the next try starts clean"
+
+
+def test_a_server_that_ignores_ranges_is_read_once(archive, monkeypatch):
+    from onset_hfo import datasets
+
+    monkeypatch.setattr(openneuro, "CHUNK_BYTES", 5000)
+    serve = datasets._http_get
+    monkeypatch.setattr(datasets, "_http_get",
+                        lambda url, byte_range=None, **k: serve(url, None, **k)
+                        if url.endswith(".eeg") else serve(url, byte_range, **k))
+    bunch = openneuro.fetch_openneuro(DS, "01", t_start=2.0, t_stop=5.0,
+                                      data_home=archive["home"], verbose=False)
+    assert np.allclose(bunch.data[0] * 1e6, np.arange(2000, 5000))
+    assert sum(u.endswith(".eeg") for u, _ in archive["asked"]) == 1

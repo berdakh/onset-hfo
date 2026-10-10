@@ -116,3 +116,49 @@ def test_listing_reaches_the_network_even_when_the_window_is_offline(qapp, archi
     assert dialog.list_recordings()
     assert seen == [False], "the asking lifts the refusal for its own calls"
     assert offline(), "and puts it back afterwards"
+
+
+def test_a_download_shows_its_progress(qapp, archive, monkeypatch):
+    from onset_hfo import openneuro
+
+    monkeypatch.setattr(openneuro, "CHUNK_BYTES", 5000)
+    dialog = OpenNeuroDialog(data_home=archive["home"], dataset=DS)
+    dialog.list_recordings()
+    dialog.t_start.setValue(2.0)
+    dialog.t_stop.setValue(5.0)
+    assert dialog.progress.isHidden() and dialog.stop_button.isHidden()
+    assert dialog.fetch()
+    qapp.processEvents()
+    assert dialog.furthest == 100, "the bar reached the end"
+    assert dialog.progress.isHidden(), "and is put away when it is done"
+
+
+def test_stop_ends_a_download_and_says_nothing_was_kept(qapp, archive, monkeypatch):
+    import time
+
+    from qtpy.QtCore import QTimer
+
+    from onset_hfo import openneuro
+
+    def slow_fetch(*_args, progress=None, should_stop=None, **_kwargs):
+        for step in range(500):
+            if should_stop():
+                raise openneuro.Cancelled("stopped")
+            progress(step / 500, f"piece {step}")
+            time.sleep(0.01)
+        raise AssertionError("the download should have been stopped")
+
+    monkeypatch.setattr(openneuro, "fetch_openneuro", slow_fetch)
+    dialog = OpenNeuroDialog(data_home=archive["home"], dataset=DS)
+    dialog.list_recordings()
+    seen = {}
+
+    def press_stop():
+        seen["visible"] = dialog.stop_button.isVisible() or not dialog.stop_button.isHidden()
+        dialog.stop_button.click()
+
+    QTimer.singleShot(150, press_stop)
+    assert not dialog.fetch()
+    assert seen["visible"], "Stop is offered while the download runs"
+    assert dialog.status.text() == "Stopped. Nothing of the download was kept."
+    assert dialog.bunch is None and dialog.table.isEnabled()
