@@ -778,36 +778,6 @@ def _fetch_sidecars(dataset_id, stem, modality, keys, folder: Path,
     return found
 
 
-#: SI per unit, for the units channels.tsv writes.
-_SI_PER_UNIT = {"v": 1.0, "mv": 1e-3, "uv": 1e-6, "µv": 1e-6, "μv": 1e-6, "nv": 1e-9,
-                "t": 1.0, "ft": 1e-15, "pt": 1e-12, "t/m": 1.0, "ft/cm": 1e-13,
-                "ft/mm": 1e-12}
-
-
-def _units_from_channels_tsv(raw, channels: pd.DataFrame | None) -> dict[str, str]:
-    """Read a channel in the unit channels.tsv gives when the file states none.
-
-    An EDF whose physical-dimension field is blank is read by MNE as volts,
-    which turns a 50 µV scalp signal into 50 V; every amplitude after that is
-    wrong by a million and the quality checks set every channel aside. The
-    dataset's own channels.tsv says what the numbers are. Returns the channels
-    rescaled, with the unit they were read in.
-    """
-    original = getattr(raw, "_orig_units", None) or {}
-    if channels is None or not {"name", "units"} <= set(channels.columns) or not original:
-        return {}
-    done = {}
-    for name, unit in zip(channels["name"], channels["units"], strict=False):
-        name, unit = str(name), str(unit).strip()
-        factor = _SI_PER_UNIT.get(unit.lower())
-        if (name not in raw.ch_names or factor is None or factor == 1.0
-                or str(original.get(name, "")).strip().lower() not in ("", "n/a", "na")):
-            continue
-        raw._data[raw.ch_names.index(name)] *= factor
-        done[name] = unit
-    return done
-
-
 #: A label that is about a seizure. Without one, and outside an ictal task, an
 #: "onset" or "start" in events.tsv is a stimulus or a task block, not a seizure.
 _SEIZURE_WORD = re.compile(r"\bsz\b|seiz|ictal", re.IGNORECASE)
@@ -868,7 +838,6 @@ def _load(folder: Path, meta: dict, data_home, verbose: bool) -> Bunch:
                                 channel_types=types, run=meta["run"] or "01",
                                 task=meta["task"] or meta["modality"])
     raw = record.raw
-    rescaled = _units_from_channels_tsv(raw, channels)
     bads = [b for b in bads if b in raw.ch_names]
     raw.info["bads"] = bads
     record.t_offset = offset + start
@@ -887,6 +856,7 @@ def _load(folder: Path, meta: dict, data_home, verbose: bool) -> Bunch:
     record.line_freq = line_freq or 50.0
     if events is not None:
         datasets._attach_annotations(raw, events, record.t_offset)
+    units_note = [n for n in record.notes if n.startswith("the file does not state the unit")]
     record.notes = [
         f"OpenNeuro {dataset_id}: {meta['path']}",
         f"window {record.t_offset:g}–{record.t_offset + record.duration:g} s of the "
@@ -898,10 +868,8 @@ def _load(folder: Path, meta: dict, data_home, verbose: bool) -> Bunch:
         ("channel types and bad channels from the dataset's channels.tsv"
          if channels is not None else
          "no channels.tsv: channel types are the file's own, which may be wrong"),
-        *([f"the file does not state the unit of {len(rescaled)} channels; the dataset's "
-           f"channels.tsv gives it ({', '.join(sorted(set(rescaled.values())))}), so they "
-           "were read in that unit rather than as volts"] if rescaled else []),
         f"licence: {description.license or 'not stated'}; cite: {description.citation}",
+        *units_note,
     ]
     participant = {}
     table = _read_tsv(folder / "participants.tsv")

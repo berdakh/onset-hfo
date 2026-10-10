@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="790" viewBox="0 0 900 790" font-family="DejaVu Sans, Helvetica, Arial, sans-serif">
+  <title>How a recording flows through Onset-HFO</title>
+  <rect x="0" y="0" width="900" height="790" rx="14" fill="#ffffff"/>
+
+  <text x="40" y="44" font-size="20" font-weight="bold" fill="#1d1d1f">How a recording flows through the analysis</text>
+  <text x="40" y="68" font-size="13" fill="#5b6069">Each stage, what it does, and where you change it. Every step it takes is written into the report.</text>
+
+  <text x="200" y="100" font-size="11" font-weight="bold" fill="#8a8f98" letter-spacing="1">WHAT HAPPENS</text>
+  <text x="640" y="100" font-size="11" font-weight="bold" fill="#8a8f98" letter-spacing="1">WHERE YOU CHANGE IT</text>
+
+  <!-- rows: y, height 62, gap 10 -->
+  <g font-size="13" fill="#1d1d1f">
+    <!-- 1 -->
+    <rect x="40" y="110" width="820" height="62" rx="10" fill="#f2f4f7" stroke="#d5d9e0"/>
+    <text x="60" y="137" font-weight="bold">1  Recording</text>
+    <text x="200" y="137">A file of your own (about 20 formats), an archive window,</text>
+    <text x="200" y="157">a window from OpenNeuro, or a segment of a patient case.</text>
+    <text x="640" y="137">File → Open a file…</text>
+    <text x="640" y="157">File → Open from OpenNeuro…</text>
+
+    <!-- 2 -->
+    <rect x="40" y="182" width="820" height="62" rx="10" fill="#f2f4f7" stroke="#d5d9e0"/>
+    <text x="60" y="209" font-weight="bold">2  Import</text>
+    <text x="200" y="209">What it is (intracranial, scalp EEG, MEG), each channel's</text>
+    <text x="200" y="229">type, the window to read, the mains frequency.</text>
+    <text x="640" y="209">The import dialog:</text>
+    <text x="640" y="229">“This recording is…”</text>
+
+    <!-- 3 -->
+    <rect x="40" y="254" width="820" height="62" rx="10" fill="#f2f4f7" stroke="#d5d9e0"/>
+    <text x="60" y="281" font-weight="bold">3  Preprocess</text>
+    <text x="200" y="281">Keep the analysed channels; high-pass, notch; montage:</text>
+    <text x="200" y="301">bipolar contacts, the double banana, or none for MEG.</text>
+    <text x="640" y="281">Signal page:</text>
+    <text x="640" y="301">filtering, re-referencing</text>
+
+    <!-- 4 -->
+    <rect x="40" y="326" width="820" height="62" rx="10" fill="#f2f4f7" stroke="#d5d9e0"/>
+    <text x="60" y="353" font-weight="bold">4  Quality</text>
+    <text x="200" y="353">Set aside dead, clipped or noisy channels and unusable</text>
+    <text x="200" y="373">seconds. Rates are per clean minute, not per minute recorded.</text>
+    <text x="640" y="353">Signal page:</text>
+    <text x="640" y="373">data quality</text>
+
+    <!-- 5 -->
+    <rect x="40" y="398" width="820" height="62" rx="10" fill="#e8f1fc" stroke="#9cc0ea"/>
+    <text x="60" y="425" font-weight="bold">5  Detect</text>
+    <text x="200" y="425">HFOs in the chosen band (skipped below 556 Hz sampling),</text>
+    <text x="200" y="445">and interictal discharges.</text>
+    <text x="640" y="425">Signal page: HFO band;</text>
+    <text x="640" y="445">detector, threshold on opening</text>
+
+    <!-- 6 -->
+    <rect x="40" y="470" width="820" height="62" rx="10" fill="#e8f1fc" stroke="#9cc0ea"/>
+    <text x="60" y="497" font-weight="bold">6  Validate</text>
+    <text x="200" y="497">Reject filter ringing from sharp transients, and events</text>
+    <text x="200" y="517">in seconds or channels set aside.</text>
+    <text x="640" y="497">Automatic; the Event tab</text>
+    <text x="640" y="517">shows why, island or column</text>
+
+    <!-- 7 -->
+    <rect x="40" y="542" width="820" height="62" rx="10" fill="#e8f1fc" stroke="#9cc0ea"/>
+    <text x="60" y="569" font-weight="bold">7  Rank</text>
+    <text x="200" y="569">Rate per channel with a 95% interval; the channels tied</text>
+    <text x="200" y="589">with the busiest. Discharges rank it when HFOs are skipped.</text>
+    <text x="640" y="569">Recording page: ranking,</text>
+    <text x="640" y="589">trend, threshold check</text>
+
+    <!-- 8 -->
+    <rect x="40" y="614" width="820" height="62" rx="10" fill="#fdf3e1" stroke="#ecc68a"/>
+    <text x="60" y="641" font-weight="bold">8  Your read</text>
+    <text x="200" y="641">Real, not real or cannot tell, per event and per channel,</text>
+    <text x="200" y="661">under your name. Nothing is deleted because you disagreed.</text>
+    <text x="640" y="641">Recording page:</text>
+    <text x="640" y="661">keys A, D, U</text>
+
+    <!-- 9 -->
+    <rect x="40" y="686" width="820" height="62" rx="10" fill="#fdf3e1" stroke="#ecc68a"/>
+    <text x="60" y="713" font-weight="bold">9  Report</text>
+    <text x="200" y="713">Settings, every step, the ranking, your verdicts and the</text>
+    <text x="200" y="733">caveats. The same window and settings reproduce it.</text>
+    <text x="640" y="713">Report page;</text>
+    <text x="640" y="733">File → Export review…</text>
+  </g>
+
+
+  <g font-size="11" fill="#5b6069">
+    <rect x="200" y="760" width="12" height="12" rx="3" fill="#f2f4f7" stroke="#d5d9e0"/>
+    <text x="218" y="770">the signal</text>
+    <rect x="300" y="760" width="12" height="12" rx="3" fill="#e8f1fc" stroke="#9cc0ea"/>
+    <text x="318" y="770">the algorithm's opinion</text>
+    <rect x="470" y="760" width="12" height="12" rx="3" fill="#fdf3e1" stroke="#ecc68a"/>
+    <text x="488" y="770">yours</text>
+  </g>
+</svg>
