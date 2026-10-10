@@ -95,3 +95,43 @@ def test_a_kind_the_recording_does_not_have_is_refused(base):
         prepare(meg, PreprocessConfig(modality="eeg"), verbose=False)
     config = PipelineConfig()
     assert config.preprocess.modality == "auto"
+
+
+def test_ctf_and_kit_meg_files_are_recognised(tmp_path):
+    from onset_hfo.io import detect_format, recording_root
+
+    ctf = tmp_path / "sub-01_task-rest_meg.ds"
+    ctf.mkdir()
+    (ctf / "sub-01_task-rest_meg.meg4").write_bytes(b"")
+    assert detect_format(ctf).reader == "read_raw_ctf"
+    assert recording_root(ctf / "sub-01_task-rest_meg.meg4") == ctf, "a file inside picks the folder"
+    assert detect_format(ctf / "sub-01_task-rest_meg.meg4").reader == "read_raw_ctf"
+    for suffix in (".sqd", ".con"):
+        assert detect_format(tmp_path / f"run{suffix}").reader == "read_raw_kit"
+
+
+def test_bids_meg_types_are_read_as_mne_types():
+    from onset_hfo.datasets import _mne_type
+
+    assert [_mne_type(t) for t in ("MEGGRADPLANAR", "MEGMAG", "MEGGRADAXIAL", "MEGREFMAG",
+                                   "VEOG", "SEEG", "DBS")] == [
+        "grad", "mag", "mag", "ref_meg", "eog", "seeg", "misc"]
+
+
+def test_named_intracranial_leaves_scalp_eeg_out_and_detected_keeps_it(base):
+    record = make_synthetic_recording(verbose=False, duration_s=20)
+    first = record.raw.ch_names[0]
+    record.raw.set_channel_types({first: "eeg"}, verbose="ERROR")
+    detected = prepare(record, verbose=False)
+    assert any(first in pair.split("-") for pair in detected.ch_names), "as it always was"
+    named = prepare(record, PreprocessConfig(modality="ieeg"), verbose=False)
+    assert not any(first in pair.split("-") for pair in named.ch_names)
+    assert any(s.startswith(f"left out 1 channels typed scalp EEG ({first})")
+               for s in named.steps)
+
+
+def test_the_request_carries_the_kind_into_the_analysis():
+    from onset_review.session import ReviewRequest
+
+    assert ReviewRequest().pipeline_config().preprocess.modality == "auto"
+    assert ReviewRequest(modality="meg").pipeline_config().preprocess.modality == "meg"

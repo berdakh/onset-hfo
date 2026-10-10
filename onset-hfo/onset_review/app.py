@@ -346,6 +346,8 @@ def _prefill(dialog, args) -> None:
     if dialog.table is None:
         return
     if args.all_channels_as:
+        if args.all_channels_as == "eeg":
+            dialog.set_kind("eeg")      # every channel scalp EEG: a scalp recording
         dialog.set_all(args.all_channels_as)
     for pair in args.channel_types or ():
         name, _, kind = pair.partition("=")

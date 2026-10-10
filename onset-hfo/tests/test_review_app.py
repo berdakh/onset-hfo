@@ -1640,16 +1640,16 @@ def test_the_import_dialog_refuses_to_open_with_nothing_to_analyse(
     dialog = ImportDialog(recording_file)
     button = dialog.buttons.button(QDialogButtonBox.Open)
     assert button.isEnabled()
-    assert dialog.counts.text() == "6 of 6 will be analysed"
+    assert dialog.counts.text() == "6 of 6 will be analysed (intracranial)"
 
     dialog.set_all("ecg")
     assert not button.isEnabled()
-    assert dialog.counts.text() == "0 of 6 will be analysed"
+    assert dialog.counts.text() == "0 of 6 will be analysed (intracranial)"
     assert "nothing to analyse" in button.toolTip()
 
     dialog.set_all("ecog")
     assert button.isEnabled()
-    assert dialog.counts.text() == "6 of 6 will be analysed"
+    assert dialog.counts.text() == "6 of 6 will be analysed (intracranial)"
 
 
 def test_one_channel_changed_by_hand_updates_the_count(qapp, recording_file):
@@ -1661,7 +1661,7 @@ def test_one_channel_changed_by_hand_updates_the_count(qapp, recording_file):
     chooser = dialog.table.cellWidget(ekg, 2)
     chooser.setCurrentIndex(
         [i for i in range(chooser.count()) if chooser.itemData(i) == "ecg"][0])
-    assert dialog.counts.text() == "5 of 6 will be analysed"
+    assert dialog.counts.text() == "5 of 6 will be analysed (intracranial)"
     assert dialog.channel_types()["EKG"] == "ecg"
 
 
@@ -1864,7 +1864,7 @@ def test_the_command_line_flags_open_the_dialog_on_their_answer(qapp,
     assert request.subject == "study-001"
     assert dict(request.channel_types)["EKG"] == "ecg"
     assert dict(request.channel_types)["AR1"] == "seeg"
-    assert dialog.counts.text() == "5 of 6 will be analysed"
+    assert dialog.counts.text() == "5 of 6 will be analysed (intracranial)"
 
 
 def test_the_channel_table_opens_tall_enough_to_be_a_list(qapp,

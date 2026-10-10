@@ -76,7 +76,10 @@ Read in this order:
 10. [**TEMPLATE_MAP.md**](TEMPLATE_MAP.md) — contacts placed on a template
     brain: how far a straight-line plan lands from real implants (HUP, 38
     patients), and what an atlas label is worth.
-11. [**LIMITATIONS.md**](LIMITATIONS.md) — read before quoting any number from
+11. [**MODALITIES.md**](MODALITIES.md) — scalp EEG and MEG: how each is
+    read, and what happened against a published scalp detector and on real
+    MEG recordings.
+12. [**LIMITATIONS.md**](LIMITATIONS.md) — read before quoting any number from
     this repository to anyone.
 
 ## "I am joining the project and need to do something useful"

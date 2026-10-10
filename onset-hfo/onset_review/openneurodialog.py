@@ -117,7 +117,8 @@ class OpenNeuroDialog(QDialog):
         self.search.setAccessibleName("Search the OpenNeuro catalogue")
         self.search.textChanged.connect(self.show_catalogue)
         self.kind = QComboBox()
-        for label, value in (("iEEG", "ieeg"), ("EEG", "eeg"), ("EEG or iEEG", "")):
+        for label, value in (("iEEG", "ieeg"), ("EEG", "eeg"), ("MEG", "meg"),
+                             ("Any", "")):
             self.kind.addItem(label, value)
         self.kind.setAccessibleName("Kind of recording")
         self.kind.currentIndexChanged.connect(self.show_catalogue)
@@ -242,6 +243,7 @@ class OpenNeuroDialog(QDialog):
         for r, row in enumerate(self.catalogue_rows):
             for c, (key, _label) in enumerate(FIND_COLUMNS):
                 text = str(row.get(key, "")).replace("ieeg", "iEEG").replace("eeg", "EEG") \
+                    .replace("meg", "MEG") \
                     if key == "modalities" else str(row.get(key, ""))
                 item = QTableWidgetItem(text)
                 if key == "name":
@@ -249,7 +251,7 @@ class OpenNeuroDialog(QDialog):
                 self.found.setItem(r, c, item)
         total = len(openneuro.catalogue(data_home=self.data_home))
         self.found_count.setText(
-            f"{len(self.catalogue_rows)} of {total} OpenNeuro datasets with EEG or iEEG. "
+            f"{len(self.catalogue_rows)} of {total} OpenNeuro datasets with EEG, iEEG or MEG. "
             "Not listed? Type its id below.")
         return len(self.catalogue_rows)
 
@@ -400,13 +402,21 @@ def import_dialog_for(bunch, parent=None):
     channels = bunch.channels
     if channels is not None and {"name", "type"} <= set(channels.columns):
         status = channels["status"] if "status" in channels else [""] * len(channels)
-        for name, kind, state in zip(channels["name"], channels["type"], status, strict=False):
-            mne_kind = datasets._mne_type(str(kind))
+        typed = [(str(name), datasets._mne_type(str(kind)), str(state).lower())
+                 for name, kind, state in zip(channels["name"], channels["type"], status,
+                                              strict=False)]
+        # The dataset says what it is, and BIDS types are explicit, so an
+        # all-EEG dataset is scalp EEG here (unlike a bare clinical export).
+        present = {kind for _, kind, _ in typed}
+        dialog.set_kind("meg" if present & {"grad", "mag"} else
+                        "ieeg" if present & {"seeg", "ecog"} else
+                        "eeg" if "eeg" in present else dialog.kind_name())
+        for name, mne_kind, state in typed:
             # A channel the dataset marks bad is not analysed, whatever its type:
             # HUP, for one, types its scalp and EKG leads SEEG and marks them bad.
-            if str(state).lower() == "bad" or mne_kind not in ("seeg", "ecog", "eeg"):
+            if state == "bad" or mne_kind not in ("seeg", "ecog", "eeg", "grad", "mag"):
                 mne_kind = "misc"
-            dialog.set_channel(str(name), mne_kind)
+            dialog.set_channel(name, mne_kind)
     if bunch.line_freq in (50.0, 60.0):
         _select(dialog.line_freq, float(bunch.line_freq))
     start = float(bunch.t_start - bunch.local_offset)

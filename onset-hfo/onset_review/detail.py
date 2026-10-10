@@ -48,6 +48,8 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from onset_hfo.modality import trace_scale
+
 __all__ = ["Snapshot", "snapshot", "PAD_S", "N_FREQS", "find_event", "read_event",
            "read_contrast", "band_contrast"]
 
@@ -167,7 +169,7 @@ def snapshot(session, event, pad_s: float = PAD_S) -> Snapshot:
 
     pick = names.index(event.channel)
     data = np.asarray(raw.get_data(picks=[pick], start=first, stop=last),
-                      dtype=float)[0] * 1e6          # volts back to microvolts
+                      dtype=float)[0] * trace_scale(raw)   # SI back to µV, fT/cm or fT
     times = np.arange(data.size) / sfreq + (first / sfreq) - start_s
 
     band = tuple(float(v) for v in (event.band or (0.0, 0.0)))

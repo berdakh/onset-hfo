@@ -177,7 +177,8 @@ class QualityPanel(QWidget):
         column.addWidget(self.show_table)
 
         self.table = QTableWidget(0, len(COLUMNS))
-        self.table.setHorizontalHeaderLabels([label for _, label, _ in COLUMNS])
+        self.table.setHorizontalHeaderLabels(
+            [label.replace("µV", getattr(session, "unit", "µV")) for _, label, _ in COLUMNS])
         self.table.verticalHeader().setVisible(False)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)

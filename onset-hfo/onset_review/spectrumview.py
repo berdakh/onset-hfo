@@ -103,6 +103,11 @@ class SpectrumPanel(QWidget):
         self.redraw()
 
     # -- data ---------------------------------------------------------------
+
+    @property
+    def _unit(self) -> str:
+        """The unit this window's amplitudes are in: µV, or fT/cm or fT for MEG."""
+        return getattr(self._session, "unit", "µV")
     def spectrum(self):
         """Computed once per session and kept: a minute of 43 channels is a
         fraction of a second, but not one to spend on every click."""
@@ -168,7 +173,7 @@ class SpectrumPanel(QWidget):
                 self.axes.loglog(f, 10 ** (intercept + slope * np.log10(f)),
                                  color=tokens.warn, linewidth=1.4, linestyle="--", zorder=6)
         self.axes.set_xlabel("frequency (Hz)", fontsize=8, color=tokens.text_muted)
-        self.axes.set_ylabel("power (µV²/Hz)", fontsize=8, color=tokens.text_muted)
+        self.axes.set_ylabel(f"power ({self._unit}²/Hz)", fontsize=8, color=tokens.text_muted)
         self.axes.tick_params(labelsize=7, colors=tokens.text_muted)
         for side in self.axes.spines.values():
             side.set_color(tokens.separator)

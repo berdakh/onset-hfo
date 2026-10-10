@@ -96,6 +96,11 @@ class EventDetailPanel(QWidget):
                    "to see it close up.")
 
     # -- what to draw ------------------------------------------------------
+
+    @property
+    def _unit(self) -> str:
+        """The unit this window's amplitudes are in: µV, or fT/cm or fT for MEG."""
+        return getattr(self._session, "unit", "µV")
     def show_key(self, key: str) -> bool:
         """Draw the event a verdict key names. False when there is no such event."""
         event = detail.find_event(self._session, str(key))
@@ -151,9 +156,9 @@ class EventDetailPanel(QWidget):
         on, off = snap.onset * 1000.0, snap.offset * 1000.0
 
         wide.plot(milliseconds, snap.wideband, lw=0.7, color=tokens.text)
-        wide.set_ylabel("wideband\nµV", fontsize=7, color=tokens.text_muted)
+        wide.set_ylabel(f"wideband\n{self._unit}", fontsize=7, color=tokens.text_muted)
         band.plot(milliseconds, snap.band_passed, lw=0.8, color=tokens.accent)
-        band.set_ylabel(f"{snap.band[0]:g}–{snap.band[1]:g} Hz\nµV",
+        band.set_ylabel(f"{snap.band[0]:g}–{snap.band[1]:g} Hz\n{self._unit}",
                         fontsize=7, color=tokens.text_muted)
 
         for axis in (wide, band):
@@ -188,7 +193,7 @@ class EventDetailPanel(QWidget):
     def _headline(self, snap) -> str:
         m = snap.measurements
         bits = [f"<b>{snap.channel}</b> — {snap.kind}",
-                f"{m['duration_ms']:.0f} ms", f"{m['amplitude_uv']:.0f} µV"]
+                f"{m['duration_ms']:.0f} ms", f"{m['amplitude_uv']:.0f} {self._unit}"]
         if np.isfinite(m["frequency_hz"]):
             bits.append(f"{m['frequency_hz']:.0f} Hz")
         if np.isfinite(m["prominence_db"]):

@@ -28,7 +28,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 __all__ = ["Modality", "MODALITIES", "detect", "resolve", "DOUBLE_BANANA",
-           "double_banana_pairs"]
+           "double_banana_pairs", "TRACE_TYPE", "UNIT_BY_TYPE", "SCALE_BY_TYPE",
+           "trace_scale", "trace_unit"]
 
 
 @dataclass(frozen=True)
@@ -63,6 +64,25 @@ MODALITIES: dict[str, Modality] = {
         "validated only there. Amplitudes are in fT; magnetometers see distant sources "
         "and environmental noise more than gradiometers do"),
 }
+
+#: The MNE channel type a review window's trace carries for each modality, so
+#: MNE's own browser labels it in the right unit (µV, fT/cm or fT).
+TRACE_TYPE = {"ieeg": "seeg", "eeg": "eeg", "meg_grad": "grad", "meg_mag": "mag"}
+#: The unit, and SI-to-unit factor, each analysed channel type is read in.
+UNIT_BY_TYPE = {"seeg": "µV", "ecog": "µV", "eeg": "µV", "grad": "fT/cm", "mag": "fT"}
+SCALE_BY_TYPE = {"seeg": 1e6, "ecog": 1e6, "eeg": 1e6, "grad": 1e13, "mag": 1e15}
+
+
+def trace_scale(raw) -> float:
+    """SI x this = the unit `raw`'s channels are read in (1e6 for µV)."""
+    types = raw.get_channel_types() if raw is not None and len(raw.ch_names) else []
+    return SCALE_BY_TYPE.get(types[0], 1e6) if types else 1e6
+
+
+def trace_unit(raw) -> str:
+    types = raw.get_channel_types() if raw is not None and len(raw.ch_names) else []
+    return UNIT_BY_TYPE.get(types[0], "µV") if types else "µV"
+
 
 #: The longitudinal bipolar montage of the 10-20 system ("double banana"),
 #: left temporal, left parasagittal, right parasagittal, right temporal, then

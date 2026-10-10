@@ -93,7 +93,7 @@ def test_the_dialog_refuses_until_a_channel_is_intracranial_then_builds_the_requ
         chooser.setCurrentIndex(
             [i for i in range(chooser.count()) if chooser.itemData(i) == kind][0])
     assert button.isEnabled()
-    assert dialog.counts.text() == "6 of 8 will be analysed"
+    assert dialog.counts.text() == "6 of 8 will be analysed (intracranial)"
     dialog.subject.setText("study-007")
     request = dialog.request()
     dialog.close()

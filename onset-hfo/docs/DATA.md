@@ -377,11 +377,13 @@ bunch.line_freq, bunch.license, bunch.citation
 ```
 
 **Finding a dataset.** The package carries a catalogue of every OpenNeuro
-dataset with continuous EEG or iEEG. For each it gives the id, name, kind of
-recording, number of subjects, licence and DOI.
+dataset with continuous EEG, iEEG or MEG: 748 of them, 577 with scalp EEG, 86
+with iEEG and 89 with MEG. For each it gives the id, name, kind of recording,
+number of subjects, licence and DOI.
 
 ```python
 openneuro.catalogue(modality="ieeg")              # every iEEG dataset
+openneuro.catalogue(modality="meg")               # every MEG dataset
 openneuro.catalogue(search="epilepsy seizure")    # every word must appear
 openneuro.build_catalogue()                       # survey OpenNeuro again
 ```
@@ -390,7 +392,7 @@ openneuro.build_catalogue()                       # survey OpenNeuro again
   three small requests per dataset.
 - `build_catalogue()` repeats the survey in a few minutes and keeps the result
   in the data home, where `catalogue()` prefers it to the bundled copy.
-- A dataset is counted as EEG or iEEG from the first thousand files of its
+- A dataset is counted as EEG, iEEG or MEG from the first thousand files of its
   subjects. A dataset whose first subject holds more files than that, all of
   them MRI, could be missed; its id still works when typed.
 
@@ -400,6 +402,14 @@ openneuro.build_catalogue()                       # survey OpenNeuro again
   trimmed to the exact seconds asked for.
 - **EEGLAB, FIF and other formats:** whole files, refused above `max_mb`
   (500 MB by default) rather than started.
+- **MEG:** whole, too. A CTF recording comes down as its `.ds` folder, a FIF
+  recording split across files with all its parts, and a KIT `.sqd` or `.con`
+  as itself. Analysing one is described in [`MODALITIES.md`](MODALITIES.md).
+- **A file that states no unit:** an EDF whose unit field is blank is read by
+  MNE as volts. When the dataset's `channels.tsv` gives the unit, the channel
+  is read in it instead, and the notes say so.
+- **A file the archive refuses:** some datasets are listed on OpenNeuro's
+  storage with files that are not public yet. The error says so.
 - **NWB and MEF3:** listed but not fetched. Download them with the OpenNeuro
   client and open them with *File → Open a file*.
 
@@ -476,14 +486,17 @@ and says why in `result.hfo_skipped` and the report's notes. It still runs:
 - the quality checks.
 
 The app opens such a recording all the same. The import dialog says HFO
-detection will be skipped, and the window's notes say it first. Its
-discharges and its signal quality are there to read.
+detection will be skipped, and the window's notes say it first. Its channels
+are ranked by interictal discharges instead of an all-zero HFO count, and the
+next note says that the counts and rates on the Recording page are
+discharges. Its signal quality is there to read too.
 
 ## Using your own data
 
 **The desktop reviewer does this with a file dialog.** *File → Open a file…*
 reads EDF, BDF, GDF, BrainVision, Persyst, Nihon Kohden, Nicolet, Curry,
-Blackrock, Neuralynx, MEF3, EEGLAB, EGI, Neuroscan, Eximia and FIF through
+Blackrock, Neuralynx, MEF3, EEGLAB, EGI, Neuroscan, Eximia and FIF, and MEG
+from CTF (`.ds`) and KIT/Yokogawa (`.sqd`, `.con`), through
 `onset_hfo.io`, which dispatches on the extension to one of MNE's readers and
 returns the same `Recording` the archive loader returns. It confirms the
 channel types with you first; see [`CLINICAL_GUIDE.md` §5](CLINICAL_GUIDE.md).

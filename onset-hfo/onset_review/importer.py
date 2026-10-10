@@ -51,11 +51,14 @@ from onset_hfo.io import (
     detect_format,
     file_filter,
     recording_info,
+    recording_kind,
+    suggest_type,
 )
+from onset_hfo.modality import MODALITIES
 from onset_review.session import ReviewRequest
 from onset_review.theme import SPACING, card, muted, plain_buttons
 
-__all__ = ["ImportDialog", "choose_file", "TYPE_CHOICES",
+__all__ = ["ImportDialog", "choose_file", "TYPE_CHOICES", "KIND_CHOICES",
            "VISIBLE_ROWS", "VISIBLE_ROWS_MIN"]
 
 #: Contacts the dialog opens showing. A typical SEEG implantation is 50 to 150
@@ -67,8 +70,9 @@ VISIBLE_ROWS = 14
 #: about this the table stops being a list and starts being a peephole.
 VISIBLE_ROWS_MIN = 7
 
-#: Types a reviewer can assign. `seeg` and `ecog` are analysed; everything else
-#: is dropped in preprocessing, which is the point of offering them.
+#: Types a reviewer can assign. Which are analysed depends on the kind of
+#: recording (`KIND_CHOICES`); everything else is dropped in preprocessing,
+#: which is the point of offering them.
 TYPE_CHOICES = [
     ("Depth electrode (SEEG)", "seeg"),
     ("Subdural grid or strip (ECoG)", "ecog"),
@@ -79,6 +83,27 @@ TYPE_CHOICES = [
     ("Trigger / stimulus", "stim"),
     ("Other, not analysed", "misc"),
 ]
+
+#: Offered only on a channel the file itself declares a MEG sensor: a sensor
+#: type is a property of the hardware, not something a reviewer can correct
+#: an EEG channel into.
+MEG_TYPE_CHOICES = [
+    ("MEG gradiometer", "grad"),
+    ("MEG magnetometer", "mag"),
+    ("MEG reference sensor", "ref_meg"),
+    ("Other, not analysed", "misc"),
+]
+
+#: What the recording is. It decides which channel types are analysed:
+#: intracranial EEG analyses SEEG and ECoG, scalp EEG analyses EEG, and MEG
+#: analyses one sensor type, the gradiometers when there are any.
+KIND_CHOICES = [
+    ("Intracranial EEG (SEEG or ECoG)", "ieeg"),
+    ("Scalp EEG", "eeg"),
+    ("MEG", "meg"),
+]
+
+_MEG_TYPES = ("grad", "mag", "ref_meg")
 
 
 class ImportDialog(QDialog):
@@ -182,23 +207,34 @@ class ImportDialog(QDialog):
         group = QGroupBox("Channels")
         box = QVBoxLayout(group)
 
-        warning = QLabel(
-            "<b>Check these before opening.</b> This file declares "
-            f"<b>{self._declared_summary()}</b>. Clinical exports usually "
-            "declare every channel as scalp EEG whatever they actually hold, "
-            "and this software analyses anything marked SEEG or ECoG — so an "
-            "unchecked import can produce confident rates for the wrong "
-            "channels.")
-        warning.setWordWrap(True)
-        warning.setStyleSheet(card("warn"))
-        box.addWidget(warning)
+        declared = list(self.overview["declared"])
+        self.kind = QComboBox()
+        for label, key in KIND_CHOICES:
+            self.kind.addItem(label, key)
+        self.kind.setMaximumWidth(320)
+        self.kind.setToolTip(
+            "Decides which channels are analysed and in what unit. Changing it "
+            "suggests every channel's type again.")
+        _select(self.kind, recording_kind(declared))
+        kind_row = QHBoxLayout()
+        kind_row.addWidget(QLabel("This recording is"))
+        kind_row.addWidget(self.kind)
+        kind_row.addStretch(1)
+        box.addLayout(kind_row)
+
+        self.warning = QLabel()
+        self.warning.setWordWrap(True)
+        self.warning.setStyleSheet(card("warn"))
+        box.addWidget(self.warning)
 
         tools = QHBoxLayout()
+        self.all_buttons = {}
         for label, kind in (("All as SEEG", "seeg"), ("All as ECoG", "ecog"),
                             ("All as scalp EEG", "eeg")):
             button = QPushButton(label)
             button.clicked.connect(lambda _=False, k=kind: self.set_all(k))
             tools.addWidget(button)
+            self.all_buttons[kind] = button
         tools.addStretch(1)
         self.counts = muted("")
         self.counts.setWordWrap(False)   # "50 of 50 will be analysed" on one
@@ -219,9 +255,13 @@ class ImportDialog(QDialog):
             declared.setFlags(Qt.ItemIsEnabled)
             self.table.setItem(row, 1, declared)
             chooser = QComboBox()
-            for label, kind in TYPE_CHOICES:
+            meg = str(record["declared"]) in _MEG_TYPES
+            for label, kind in (MEG_TYPE_CHOICES if meg else TYPE_CHOICES):
                 chooser.addItem(label, kind)
-            _select(chooser, str(record["suggested"]))
+            # A type with no row of its own (a respiration or a bio channel,
+            # say) is offered as not analysed, never as the first row.
+            if not _select(chooser, str(record["suggested"])):
+                _select(chooser, "misc")
             chooser.currentIndexChanged.connect(self._refresh_counts)
             self.table.setCellWidget(row, 2, chooser)
         self.table.resizeColumnsToContents()
@@ -234,7 +274,51 @@ class ImportDialog(QDialog):
         # not open a dialog two thirds empty.
         self.table.setMinimumHeight(self._rows_tall(VISIBLE_ROWS_MIN))
         box.addWidget(self.table)
+        self.kind.currentIndexChanged.connect(self._kind_changed)
+        self._describe_kind()
         return group
+
+    # -- the kind of recording ---------------------------------------------
+    def kind_name(self) -> str:
+        """``"ieeg"``, ``"eeg"`` or ``"meg"``: what the reviewer says this is."""
+        return str(self.kind.currentData()) if self.table is not None else "ieeg"
+
+    def set_kind(self, key: str) -> None:
+        """Say what the recording is, and suggest every channel's type again."""
+        _select(self.kind, key)
+
+    def _kind_changed(self) -> None:
+        kind = self.kind_name()
+        for row, declared in enumerate(self.overview["declared"]):
+            chooser = self.table.cellWidget(row, 2)
+            if not _select(chooser, suggest_type(str(declared), kind)):
+                _select(chooser, "misc")
+        self._describe_kind()
+        self._refresh_counts()
+
+    def _describe_kind(self) -> None:
+        kind = self.kind_name()
+        for key, button in self.all_buttons.items():
+            button.setVisible(kind == "ieeg" and key in ("seeg", "ecog")
+                              or kind == "eeg" and key == "eeg")
+        summary = self._declared_summary()
+        if kind == "ieeg":
+            text = ("<b>Check these before opening.</b> This file declares "
+                    f"<b>{summary}</b>. Clinical exports usually declare every "
+                    "channel as scalp EEG whatever they actually hold, and this "
+                    "software analyses anything marked SEEG or ECoG — so an "
+                    "unchecked import can produce confident rates for the wrong "
+                    "channels.")
+        elif kind == "eeg":
+            text = ("<b>Analysed as scalp EEG</b>, in µV on the double banana. "
+                    f"This file declares <b>{summary}</b>; only channels typed scalp "
+                    f"EEG are analysed. {_sentence(MODALITIES['eeg'].caveat)}")
+        else:
+            text = ("<b>Analysed as MEG</b>, one sensor type at a time: the "
+                    "gradiometers (fT/cm) when there are any, otherwise the "
+                    f"magnetometers (fT). This file declares <b>{summary}</b>. "
+                    f"{_sentence(MODALITIES['meg_grad'].caveat)}")
+        self.warning.setText(text)
 
     def _rows_tall(self, rows: int) -> int:
         """The pixel height that shows `rows` of this table, header included."""
@@ -277,20 +361,35 @@ class ImportDialog(QDialog):
                 str(self.table.cellWidget(row, 2).currentData())
                 for row in range(self.table.rowCount())}
 
+    def analysed_types(self) -> tuple[str, ...]:
+        """The channel types that will be analysed, as the table stands."""
+        kind = self.kind_name()
+        if kind == "eeg":
+            return ("eeg",)
+        if kind == "meg":
+            chosen = set(self.channel_types().values())
+            return ("grad",) if "grad" in chosen else ("mag",)
+        return ("seeg", "ecog")
+
     def _refresh_counts(self) -> None:
         if self.table is None:
             return
         chosen = list(self.channel_types().values())
-        analysed = sum(1 for kind in chosen if kind in ("seeg", "ecog"))
-        self.counts.setText(f"{analysed} of {len(chosen)} will be analysed")
+        wanted = self.analysed_types()
+        analysed = sum(1 for kind in chosen if kind in wanted)
+        what = {"seeg": "intracranial", "eeg": "scalp EEG", "grad": "gradiometers",
+                "mag": "magnetometers"}[wanted[0]]
+        self.counts.setText(f"{analysed} of {len(chosen)} will be analysed ({what})")
         button = self.buttons.button(QDialogButtonBox.Open)
         # Opened whatever the sampling rate: a recording too slow for the HFO
         # bands still has its discharges and its signal quality to read, and
         # the band itself is chosen after opening, on the Signal page.
         button.setEnabled(analysed > 0)
+        needed = {"seeg": "SEEG or ECoG", "eeg": "scalp EEG",
+                  "grad": "an MEG sensor", "mag": "an MEG sensor"}[wanted[0]]
         button.setToolTip(
             "" if analysed else
-            "Nothing is marked SEEG or ECoG, so there would be nothing to analyse.")
+            f"Nothing is marked {needed}, so there would be nothing to analyse.")
 
     # -- settings ----------------------------------------------------------
     def _settings_group(self) -> QGroupBox:
@@ -369,6 +468,7 @@ class ImportDialog(QDialog):
             t_stop=float(self.t_stop.value()),
             detectors=detectors,
             band=self.band_name,
+            modality=self.kind_name(),
             path=self.path,
             channel_types=tuple(sorted(self.channel_types().items())),
             line_freq=float(self.line_freq.currentData() or 50.0),
@@ -393,11 +493,20 @@ def _short(path: Path) -> str:
     return str(path) if len(str(path)) <= 64 else f"…/{path.parent.name}/{path.name}"
 
 
-def _select(box: QComboBox, value: str) -> None:
+def _sentence(caveat: str) -> str:
+    """A modality's caveat as a sentence of its own: "scalp EEG: the
+    detectors run ..." becomes "The detectors run ...", full stop added."""
+    text = caveat.split(": ", 1)[-1]
+    return text[:1].upper() + text[1:] + ("" if text.endswith(".") else ".")
+
+
+def _select(box: QComboBox, value: str) -> bool:
+    """Choose the item carrying `value`. False when there is none."""
     for index in range(box.count()):
         if box.itemData(index) == value:
             box.setCurrentIndex(index)
-            return
+            return True
+    return False
     box.setCurrentIndex(box.count() - 1)      # "Other, not analysed"
 
 

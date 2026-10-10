@@ -87,6 +87,10 @@ def test_a_window_too_slow_for_hfos_opens_with_its_discharges_and_says_why():
     assert "at least 556 Hz" in session.notes[0]
     assert {event.detector for event in session.events} == {"spike"}
     assert len(session.findings) == len(session.raw.ch_names)
+    # Ranked by the discharges, not by an all-zero HFO count, and said so.
+    assert session.notes[1].startswith("Channels are ranked by interictal discharges")
+    assert session.findings["n_events"].sum() == len(session.events) > 0
+    assert session.findings["n_events"].iloc[0] == session.findings["n_events"].max()
 
 
 def test_a_band_the_rate_cannot_carry_is_still_refused_when_another_fits():

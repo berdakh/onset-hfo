@@ -661,7 +661,7 @@ def build_parser() -> argparse.ArgumentParser:
                        help="an OpenNeuro id, such as ds004100")
     neuro.add_argument("--search", default=None,
                        help="catalogue: words every dataset's id or name must contain")
-    neuro.add_argument("--kind", choices=("ieeg", "eeg"), default=None,
+    neuro.add_argument("--kind", choices=("ieeg", "eeg", "meg"), default=None,
                        help="catalogue: only datasets with this kind of recording")
     neuro.add_argument("--refresh", action="store_true",
                        help="catalogue: survey OpenNeuro again (a few minutes) rather than "

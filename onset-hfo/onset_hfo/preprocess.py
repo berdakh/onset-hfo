@@ -108,6 +108,31 @@ class Prepared:
         return self.data[self.index(ch), i0:i1]
 
 
+def _chpi_note(raw) -> list[str]:
+    """Say so when a MEG recording carries continuous head-position coils.
+
+    The coils emit sinusoids, typically between 80 and 330 Hz: inside the HFO
+    bands, where a steady line in every sensor is the opposite of a burst but
+    still raises the band's floor. They are not removed here, so the note
+    names them and the HFO band each falls in.
+    """
+    import mne
+
+    try:
+        freqs, _, _ = mne.chpi.get_chpi_info(raw.info, on_missing="ignore", verbose="ERROR")
+    except Exception:       # noqa: BLE001 - a header without coil information
+        return []
+    freqs = [float(f) for f in freqs]
+    if not freqs:
+        return []
+    bands = sorted({name.replace("_", " ") for name in ("ripple", "fast_ripple")
+                    for f in freqs if getattr(BANDS, name)[0] <= f <= getattr(BANDS, name)[1]})
+    return [f"this recording carries continuous head-position (cHPI) coils at "
+            f"{', '.join(f'{f:g}' for f in freqs)} Hz; they are not removed here"
+            + (f", and they sit inside the {' and '.join(bands)} band" if bands else "")
+            + " (mne.chpi.filter_chpi removes them)"]
+
+
 def _is_brain_channel(name: str, ch_type: str) -> bool:
     if ch_type not in ("ecog", "seeg", "eeg"):
         return False
@@ -794,10 +819,21 @@ def prepare(rec: Recording, cfg: PreprocessConfig | None = None, verbose: bool =
     from onset_hfo.modality import resolve
 
     types = raw.get_channel_types()
-    kind = resolve(getattr(cfg, "modality", "auto"), types)
+    requested = str(getattr(cfg, "modality", "auto") or "auto").lower()
+    kind = resolve(requested, types)
+    scalp_left_out: list[str] = []
     if kind.key == "ieeg":      # the selection this project has always made
         keep = [n for n, t in zip(raw.ch_names, types, strict=False)
                 if _is_brain_channel(n, t)]
+        # Named rather than detected -- as the import dialog does, once a
+        # reviewer has typed each channel -- a channel typed scalp EEG beside
+        # SEEG or ECoG contacts is scalp EEG, and is not analysed with them.
+        # Detected, EEG-typed channels ride along as they always have, because
+        # archives often type intracranial contacts `eeg`.
+        if requested == "ieeg" and set(types) & {"seeg", "ecog"}:
+            scalp_left_out = [n for n, t in zip(raw.ch_names, types, strict=False)
+                              if t == "eeg" and n in keep]
+            keep = [n for n in keep if n not in scalp_left_out]
     else:
         keep = [n for n, t in zip(raw.ch_names, types, strict=False)
                 if t in kind.types and not n.upper().startswith(_NON_BRAIN)]
@@ -816,12 +852,19 @@ def prepare(rec: Recording, cfg: PreprocessConfig | None = None, verbose: bool =
     if missing:
         raise ValueError(f"no channel {', '.join(missing)} in this recording to regress out")
     regress = [c for c in regress if c not in keep]
+    if kind.key.startswith("meg"):
+        steps.extend(_chpi_note(raw))
     raw.pick(keep + regress)
     steps.append(f"kept {len(keep)} "
                  f"{'intracranial' if kind.key == 'ieeg' else kind.label} channels; dropped "
                  f"{len(dropped_type) - len(regress)} "
                  f"{'non-brain channels (DC/trigger/ECG/misc)' if kind.key == 'ieeg' else 'other channels'}"
                  + (f"; kept {', '.join(regress)} to regress out" if regress else ""))
+    if scalp_left_out:
+        steps.append(f"left out {len(scalp_left_out)} channels typed scalp EEG "
+                     f"({', '.join(scalp_left_out[:6])}"
+                     f"{', …' if len(scalp_left_out) > 6 else ''}): the recording was "
+                     "named intracranial, so only its SEEG and ECoG contacts are analysed")
 
     bads = [b for b in rec.bads if b in raw.ch_names]
     if cfg.drop_bads and bads:
