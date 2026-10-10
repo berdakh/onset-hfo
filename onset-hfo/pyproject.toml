@@ -1,6 +1,6 @@
 [project]
 name = "onset-hfo"
-version = "0.3.12"
+version = "0.3.13"
 description = "Onset-HFO: an AI-assisted research tool for intracranial EEG -- high-frequency oscillations, interictal discharges and seizure onset, from raw recordings to a signed report, with an evidence-only assistant on an open-weight model"
 readme = "README.md"
 requires-python = ">=3.10"

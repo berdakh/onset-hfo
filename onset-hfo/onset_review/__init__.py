@@ -24,7 +24,7 @@ __all__ = ["__version__", "__author__", "DEVELOPER", "HOMEPAGE", "credit"]
 
 #: Tracks `onset-hfo`'s version: the reviewer is a face on that pipeline, and
 #: two version numbers would only ever be a question about which one applies.
-__version__ = "0.3.12"
+__version__ = "0.3.13"
 
 #: Who made it: shown on the Home page, in Help → About, in `--version` and
 #: in every exported report.
