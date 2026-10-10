@@ -22,5 +22,6 @@ published detector, on the first 5-minute N3 interval of subjects 01–10.
 | file | what it is |
 |---|---|
 | `scalp_comparison.csv` | one row per subject |
+| `concurrency_sweep.csv` | the same ten subjects under each concurrency limit tried (`fraction`, 0 = no limit): rejecting events seen on more than that share of the other channels at once |
 
 Write-up: `docs/MODALITIES.md`.

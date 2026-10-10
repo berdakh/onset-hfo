@@ -79,6 +79,40 @@ def validate_events(events: list[Event], prep: Prepared,
                 continue
         e.accepted = True
         e.reject_reason = None
+    if getattr(prep, "modality", "ieeg") == "eeg":
+        reject_concurrent(events, len(prep.ch_names), cfg.scalp_max_concurrent_fraction)
+    return events
+
+
+def reject_concurrent(events: list[Event], n_channels: int, fraction: float) -> list[Event]:
+    """Reject HFOs seen on too many channels at once: muscle or movement.
+
+    For each accepted HFO, count the other channels holding a candidate of the
+    same detector that overlaps it in time (accepted or not, since a burst of
+    muscle produces candidates that fail the other checks too). More than
+    `fraction` of the other channels, and it is rejected. Scalp EEG only: an
+    implanted contact sees a field a few millimetres across, and a seizure
+    or a discharge spreading across a montage is not an artefact there.
+    """
+    if not fraction or fraction <= 0 or n_channels < 3:
+        return events
+    limit = fraction * (n_channels - 1)
+    by_detector: dict[str, list[Event]] = {}
+    for e in events:
+        if e.detector != "spike":
+            by_detector.setdefault(e.detector, []).append(e)
+    for group in by_detector.values():
+        starts = np.array([e.start for e in group])
+        stops = np.array([e.stop for e in group])
+        names = np.array([e.channel for e in group])
+        for e in group:
+            if not e.accepted:
+                continue
+            overlap = (starts < e.stop) & (stops > e.start) & (names != e.channel)
+            others = len(set(names[overlap]))
+            if others > limit:
+                _reject(e, f"seen on {others} other channels at once (more than "
+                           f"{fraction:.0%} of them): probable muscle or movement artefact")
     return events
 
 
