@@ -23,6 +23,7 @@ says before the reviewer finds the panels empty.
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 from qtpy.QtCore import Qt
@@ -283,17 +284,13 @@ class ImportDialog(QDialog):
         analysed = sum(1 for kind in chosen if kind in ("seeg", "ecog"))
         self.counts.setText(f"{analysed} of {len(chosen)} will be analysed")
         button = self.buttons.button(QDialogButtonBox.Open)
-        # A recording too slow for every HFO band has nothing this window can
-        # rank, so it is not offered; the band row already says why.
-        band_ok = self.band.isEnabled()
-        button.setEnabled(analysed > 0 and band_ok)
+        # Opened whatever the sampling rate: a recording too slow for the HFO
+        # bands still has its discharges and its signal quality to read, and
+        # the band itself is chosen after opening, on the Signal page.
+        button.setEnabled(analysed > 0)
         button.setToolTip(
-            "" if analysed and band_ok else
-            "Nothing is marked SEEG or ECoG, so there would be nothing to analyse."
-            if not analysed else
-            "This recording is sampled too slowly for ripples; see the band row. "
-            "Its interictal discharges can still be analysed from the Python console "
-            "(onset_hfo.pipeline.run_pipeline).")
+            "" if analysed else
+            "Nothing is marked SEEG or ECoG, so there would be nothing to analyse.")
 
     # -- settings ----------------------------------------------------------
     def _settings_group(self) -> QGroupBox:
@@ -343,30 +340,20 @@ class ImportDialog(QDialog):
         self.t_stop.valueChanged.connect(
             lambda value: self.t_start.setMaximum(max(0.0, value - 1.0)))
 
-        self.band = QComboBox()
-        self.band.setMaximumWidth(260)
-        refused = []
-        for name in ("ripple", "fast_ripple"):
-            low, high = getattr(BANDS, name)
-            text = f"{name.replace('_', ' ')} ({low:.0f}–{high:.0f} Hz)"
-            if BANDS.usable(sfreq, (low, high)):
-                self.band.addItem(text, name)
-            else:
-                refused.append(f"The {name.replace('_', ' ')} band needs more "
-                               f"than {2 * high:.0f} Hz.")
-        if self.band.count() == 0:            # nothing this file can support
-            self.band.addItem("ripple (80–250 Hz)", "ripple")
-            self.band.setEnabled(False)
+        # The band is not asked for here: ripple or fast ripple is a question
+        # about the analysis, answered after opening on the Signal page. What
+        # the file's rate allows is said, so nobody is surprised later.
+        self.band_name = "ripple"
+        rate_note = _rate_note(sfreq) if sfreq else ""
 
         form.addRow("Label", self.subject)
         form.addRow("From", self.t_start)
         form.addRow("To", self.t_stop)
-        form.addRow("Band", self.band)
         form.addRow("Mains", self.line_freq)
         if self.info:
             summary = (f"{self.info['n_channels']} channels · "
                        f"{sfreq:g} Hz · {duration:g} s long.  ")
-            form.addRow("", muted(summary + " ".join(refused)))
+            form.addRow("", muted(summary + rate_note))
         form.addRow("", muted(
             "An imported file brings no expert markings, no resected zone and "
             "no participant record, so the panels that compare against them "
@@ -381,11 +368,24 @@ class ImportDialog(QDialog):
             t_start=float(self.t_start.value()),
             t_stop=float(self.t_stop.value()),
             detectors=detectors,
-            band=str(self.band.currentData() or "ripple"),
+            band=self.band_name,
             path=self.path,
             channel_types=tuple(sorted(self.channel_types().items())),
             line_freq=float(self.line_freq.currentData() or 50.0),
         )
+
+
+def _rate_note(sfreq: float) -> str:
+    """What this sampling rate allows, in the words the analysis will use."""
+    ripple, fast = (math.ceil(high / 0.45) for _, high in (BANDS.ripple, BANDS.fast_ripple))
+    if not BANDS.usable(sfreq, BANDS.ripple):
+        return (f"Too slow for HFOs (ripples need at least {ripple} Hz): HFO detection "
+                f"will be skipped, and interictal discharges and signal quality "
+                f"analysed.")
+    if not BANDS.usable(sfreq, BANDS.fast_ripple):
+        return (f"Ripples can be analysed; fast ripples need at least {fast} Hz. "
+                f"The band is chosen after opening, on the Signal page.")
+    return "Ripples or fast ripples: the band is chosen after opening, on the Signal page."
 
 
 def _short(path: Path) -> str:

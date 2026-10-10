@@ -1699,9 +1699,10 @@ def test_the_window_cannot_be_set_past_the_end_of_the_file(qapp, recording_file)
     assert dialog.t_stop.value() <= dialog.info["duration"] + 0.01
 
 
-def test_the_import_dialog_offers_only_the_bands_the_file_can_support(
+def test_the_import_dialog_leaves_the_band_for_later_and_says_what_the_rate_allows(
         qapp, tmp_path_factory):
-    """The same refusal the launcher makes, made from the file's own header."""
+    """Ripple or fast ripple is chosen after opening, on the Signal page; the
+    dialog only says what the file's own rate allows."""
     import mne
 
     from onset_review.importer import ImportDialog
@@ -1712,8 +1713,9 @@ def test_the_import_dialog_offers_only_the_bands_the_file_can_support(
     raw.save(slow, overwrite=True, verbose="ERROR")
 
     dialog = ImportDialog(slow)
-    assert [dialog.band.itemData(i) for i in range(dialog.band.count())] == ["ripple"]
-    assert "needs more than 1000 Hz" in _form_text(dialog)
+    assert not hasattr(dialog, "band"), "no band row"
+    assert "fast ripples need at least 1112 Hz" in _form_text(dialog)
+    assert dialog.request().band == "ripple"
 
 
 def _form_text(dialog) -> str:
@@ -3591,7 +3593,7 @@ def test_the_preprocessing_panel_is_settings_rows_in_groups(built):
 
     panel = built.panels["preprocess"]
     groups = [f for f in panel.findChildren(QFrame) if f.objectName() == "onset_group"]
-    assert len(groups) == 6, "filtering, reference, artifacts, experimental, rate, channels"
+    assert len(groups) == 7, "band, filtering, reference, artifacts, experimental, rate, channels"
     lines = [f for f in panel.findChildren(QFrame) if f.objectName() == "onset_group_line"]
     assert len(lines) >= 12, "a hairline between rows"
     # The radios sit in rows of their own and are still exclusive.

@@ -71,7 +71,7 @@ def test_the_edf_is_read_as_the_export_declared_it(qapp, clinical_edf):
     assert [dialog.table.item(row, 1).text() for row in range(len(NAMES))] == ["eeg"] * 8
     text = " ".join(label.text() for label in dialog.findChildren(qt_label()))
     assert "2000 Hz" in text and "20 s" in text
-    assert dialog.band.findData("fast_ripple") >= 0, "2000 Hz supports the fast-ripple band"
+    assert "Ripples or fast ripples: the band is chosen after opening" in text
     dialog.close()
 
 

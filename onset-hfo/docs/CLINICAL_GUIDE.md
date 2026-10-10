@@ -1384,6 +1384,8 @@ band, detector and threshold reproduces it exactly.
 specific marker and are far rarer. On a 1000 Hz recording the fast-ripple band
 is greyed out — a 500 Hz band needs more than 1000 Hz of sampling, and
 analysing it anyway produces numbers that look fine and mean nothing.
+The band is chosen under *HFO band* at the top of the Signal page; *Apply and
+re-analyse* re-runs the window in the new band.
 
 **Detector.** Four are offered. They are different ways of asking "is this
 stretch unusually energetic in this band": root-mean-square energy, line
@@ -1473,8 +1475,11 @@ number that will actually be analysed.
   of gigabytes and this software analyses a minute of it; the range is bounded
   by the file's own length. Every time it later reports is a time in the
   original recording, not in your window.
-* **Band.** Offered from the file's sampling rate, so the fast-ripple band
-  disappears below 1000 Hz for the same reason it does for the archive.
+* **Band.** Not asked here. Ripple or fast ripple is chosen after opening,
+  under *HFO band* on the Signal page, which offers only what the file's
+  sampling rate can carry. The dialog says what that is: below 556 Hz there
+  is no HFO band at all, and the file still opens for its interictal
+  discharges and signal quality.
 * **Mains.** 50 or 60 Hz, and it is *not* read from the file. Notching the
   wrong one leaves the interference in place and carves a hole where there was
   none, and it never announces itself.

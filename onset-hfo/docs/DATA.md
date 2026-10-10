@@ -475,8 +475,9 @@ and says why in `result.hfo_skipped` and the report's notes. It still runs:
 - the interictal discharge detector;
 - the quality checks.
 
-The import dialog does not offer to open such a recording, because the
-window has no HFO band to rank it by.
+The app opens such a recording all the same. The import dialog says HFO
+detection will be skipped, and the window's notes say it first. Its
+discharges and its signal quality are there to read.
 
 ## Using your own data
 
