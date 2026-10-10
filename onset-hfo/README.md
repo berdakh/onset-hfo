@@ -104,7 +104,7 @@ channels are intracranial first, because a clinical export declares every
 channel as scalp EEG and this software analyses whatever is typed eeg, ecog or
 seeg.
 
-[`INSTALL.md`](docs/INSTALL.md) · [`CLINICAL_GUIDE.md`](docs/CLINICAL_GUIDE.md)
+[`MANUAL.md`](docs/MANUAL.md) · [`INSTALL.md`](docs/INSTALL.md) · [`CLINICAL_GUIDE.md`](docs/CLINICAL_GUIDE.md)
 
 New to the project? [**Where do seizures start?**](https://berdakh.github.io/onset-hfo/TUTORIAL.html)
 ([source](../site/TUTORIAL.html)) is a standalone

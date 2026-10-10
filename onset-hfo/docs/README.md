@@ -15,13 +15,17 @@ justifies claiming. It is self-contained — one file, no build step.
 
 ## "I want to sit with the signal for an afternoon"
 
+[**MANUAL.md**](MANUAL.md) — start here: install it, then nine tutorials, from
+your first recording to a patient case with a signed report, scalp EEG and
+MEG, and your own analysis in Python, each a few minutes long. Then:
+
 [**INSTALL.md**](INSTALL.md) — **Onset Review**, the desktop application:
 `./packaging/install-ubuntu.sh --with-sample && onset-review`. MNE's iEEG trace
 browser with the detector's marks on it, the archive annotators' marks beside
 them, a Persyst-style activity trend above, and the ranked channels and
 confidence intervals around it. Then
 [**CLINICAL_GUIDE.md**](CLINICAL_GUIDE.md) — what the panels mean, what the
-screen supports concluding, and the four things never to conclude from it.
+screen supports concluding, and the five things never to conclude from it.
 
 ## "I just want to click around in it"
 

@@ -1550,7 +1550,7 @@ show the overview; no patient's data.*
 Opening a file looks at one minute. A **case** holds a patient's whole
 monitoring: every recording, converted once into one open layout, with the
 channels, the marks and every change made to them. It is the clinic edition,
-growing a step at a time; seven of its ten steps work today.
+with ten steps, all of which work today.
 
 **File → New case…** asks for a folder and a **pseudonym** (P017, never the
 patient's name). **File → Open case…**, or `onset-review /path/to/case`,
