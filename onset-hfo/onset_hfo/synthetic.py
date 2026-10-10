@@ -252,3 +252,50 @@ def make_synthetic_recording(spec: SyntheticSpec | None = None, seed: int = 7,
               f"@ {sf:g} Hz, {len(ground_truth)} implanted events "
               f"(hot contacts: {', '.join(sorted(hot))})")
     return rec
+
+
+#: The 18 scalp electrodes of the double banana, one per synthetic contact.
+_SCALP_NAMES = ("Fp1", "F7", "T7", "P7", "O1", "F3", "C3", "P3", "Fp2", "F4", "C4",
+                "P4", "O2", "F8", "T8", "P8", "Fz", "Cz")
+
+
+def as_modality(rec: Recording, modality: str) -> Recording:
+    """The same synthetic recording dressed as scalp EEG or MEG.
+
+    Its signal and implanted events are unchanged; only the channel names,
+    the channel types and, for MEG, the unit change: 10-20 electrode names
+    typed ``eeg`` for ``"eeg"``, Neuromag-style names typed ``grad`` (T/m,
+    scaled so 50 µV becomes 500 fT/cm) for ``"meg_grad"`` and ``mag`` (T,
+    50 µV becomes 500 fT) for ``"meg_mag"``. It exists so the scalp and MEG
+    paths can be tested end to end without a download; it says nothing about
+    how real scalp or MEG HFOs look.
+    """
+    raw = rec.raw.copy()
+    old = list(raw.ch_names)
+    if modality == "eeg":
+        if len(old) > len(_SCALP_NAMES):
+            raise ValueError(f"only {len(_SCALP_NAMES)} scalp names to give")
+        new, kind, factor = list(_SCALP_NAMES[:len(old)]), "eeg", 1.0
+    elif modality in ("meg_grad", "meg_mag"):
+        kind = "grad" if modality == "meg_grad" else "mag"
+        new = [f"MEG{1000 + 10 * i + (2 if kind == 'grad' else 1):04d}"
+               for i in range(len(old))]
+        # 1 µV -> 10 fT/cm (1e-12 T/m) or 10 fT (1e-14 T).
+        factor = 1e-6 if kind == "grad" else 1e-8
+    else:
+        raise ValueError(f"modality must be eeg, meg_grad or meg_mag, not {modality!r}")
+    mapping = dict(zip(old, new, strict=True))
+    raw.rename_channels(mapping)
+    raw.set_channel_types({name: kind for name in new}, on_unit_change="ignore",
+                          verbose="ERROR")
+    if factor != 1.0:
+        raw._data *= factor
+    truth = rec.ground_truth.copy() if rec.ground_truth is not None else None
+    if truth is not None and "contact" in truth:
+        truth["contact"] = truth["contact"].map(lambda c: mapping.get(c, c))
+    return Recording(
+        raw=raw, source=f"{rec.source}:{modality}", subject=rec.subject, task=rec.task,
+        run=rec.run, t_offset=rec.t_offset, seizure=rec.seizure, bads=[],
+        marked_contacts=[mapping.get(c, c) for c in rec.marked_contacts],
+        ground_truth=truth, line_freq=rec.line_freq,
+        notes=list(rec.notes) + [f"synthetic recording dressed as {modality}"])

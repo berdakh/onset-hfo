@@ -251,10 +251,12 @@ def test_a_window_with_nothing_intracranial_says_so_in_its_own_provenance(fif):
                             channel_types={n: "eeg" for n in
                                            ("AR1", "AR2", "AR3", "HL1",
                                             "EKG", "DC1")})
-    assert any(note.startswith("WARNING: no channel") for note in record.notes)
+    said = [note for note in record.notes if note.startswith("no channel in this window")]
+    assert said and "analysed as scalp EEG" in said[0]
+    assert "If it is in fact intracranial" in said[0], "the scalp reading is said, not assumed"
 
     good = open_recording(fif, t_stop=5.0, channel_types={"AR1": "seeg"})
-    assert not any(note.startswith("WARNING: no channel") for note in good.notes)
+    assert not any(note.startswith("no channel in this window") for note in good.notes)
 
 
 def test_the_provenance_says_an_imported_file_brings_no_ground_truth(fif):

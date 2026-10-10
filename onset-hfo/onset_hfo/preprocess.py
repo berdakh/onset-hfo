@@ -75,6 +75,11 @@ class Prepared:
     #: sources and loadings for the panel, MNE's scores, what was suggested
     #: and what the reviewer removed. ``None`` when the stage is off.
     ica: dict | None = None
+    #: What kind of recording was analysed (`onset_hfo.modality`): "ieeg",
+    #: "eeg", "meg_grad" or "meg_mag".
+    modality: str = "ieeg"
+    #: The unit of `data`: µV for EEG of either kind, fT/cm or fT for MEG.
+    unit: str = "µV"
 
     @property
     def duration(self) -> float:
@@ -344,7 +349,8 @@ def learn_ptp_threshold(epochs: np.ndarray, n_folds: int = 5,
     return best
 
 
-def _annotate(raw, cfg: PreprocessConfig, t_offset: float, steps: list[str]) -> list[dict]:
+def _annotate(raw, cfg: PreprocessConfig, t_offset: float, steps: list[str],
+              scale: float = 1e6, unit: str = "µV") -> list[dict]:
     """Run the artifact annotators MNE offers on the filtered, monopolar
     signal, and return the seconds they marked in file time."""
 
@@ -374,12 +380,12 @@ def _annotate(raw, cfg: PreprocessConfig, t_offset: float, steps: list[str]) -> 
     if cfg.annotate_amplitude:
         from mne.preprocessing import annotate_amplitude
 
-        data = raw.get_data() * 1e6
+        data = raw.get_data() * scale
         sfreq = float(raw.info["sfreq"])
         width = max(1, int(round(sfreq)))
         if cfg.amplitude_ptp_uv is not None:
             ceilings = {name: float(cfg.amplitude_ptp_uv) for name in raw.ch_names}
-            how = f"a {float(cfg.amplitude_ptp_uv):g} µV peak-to-peak ceiling"
+            how = f"a {float(cfg.amplitude_ptp_uv):g} {unit} peak-to-peak ceiling"
         else:
             ceilings = {}
             for i, name in enumerate(raw.ch_names):
@@ -388,7 +394,7 @@ def _annotate(raw, cfg: PreprocessConfig, t_offset: float, steps: list[str]) -> 
                 ceilings[name] = learn_ptp_threshold(epochs)
             finite = [c for c in ceilings.values() if np.isfinite(c)]
             how = (f"a peak-to-peak ceiling learned per contact by cross-validation "
-                   f"(median {np.median(finite):.0f} µV)" if finite else
+                   f"(median {np.median(finite):.0f} {unit})" if finite else
                    "a learned ceiling (too little signal to learn one)")
         marked = 0.0
         for name, ceiling in ceilings.items():
@@ -397,7 +403,7 @@ def _annotate(raw, cfg: PreprocessConfig, t_offset: float, steps: list[str]) -> 
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
                 notes, _bads = annotate_amplitude(
-                    raw, peak=float(ceiling) * 1e-6, flat=None, bad_percent=100,
+                    raw, peak=float(ceiling) / scale, flat=None, bad_percent=100,
                     min_duration=0.005, picks=[name], verbose="ERROR")
             for onset, duration in zip(notes.onset, notes.duration, strict=True):
                 found.append({"channel": name, "t_start": float(onset) + t_offset,
@@ -785,11 +791,23 @@ def prepare(rec: Recording, cfg: PreprocessConfig | None = None, verbose: bool =
     steps: list[str] = []
 
     # 1. channel selection ------------------------------------------------
+    from onset_hfo.modality import resolve
+
     types = raw.get_channel_types()
-    keep = [n for n, t in zip(raw.ch_names, types, strict=False) if _is_brain_channel(n, t)]
+    kind = resolve(getattr(cfg, "modality", "auto"), types)
+    if kind.key == "ieeg":      # the selection this project has always made
+        keep = [n for n, t in zip(raw.ch_names, types, strict=False)
+                if _is_brain_channel(n, t)]
+    else:
+        keep = [n for n, t in zip(raw.ch_names, types, strict=False)
+                if t in kind.types and not n.upper().startswith(_NON_BRAIN)]
     dropped_type = [n for n in raw.ch_names if n not in keep]
     if not keep:
-        raise ValueError("No intracranial data channels found in this recording")
+        raise ValueError("No intracranial data channels found in this recording"
+                         if kind.key == "ieeg" else
+                         f"No {kind.label} channels found in this recording")
+    if kind.key != "ieeg":
+        steps.append(f"analysed as {kind.label}, in {kind.unit}: {kind.caveat}")
     # Channels to regress out ride along through the filters, so they are
     # compared with the brain channels on equal terms, and leave before the
     # montage. A name the recording does not carry is refused, not skipped.
@@ -799,8 +817,10 @@ def prepare(rec: Recording, cfg: PreprocessConfig | None = None, verbose: bool =
         raise ValueError(f"no channel {', '.join(missing)} in this recording to regress out")
     regress = [c for c in regress if c not in keep]
     raw.pick(keep + regress)
-    steps.append(f"kept {len(keep)} intracranial channels; dropped "
-                 f"{len(dropped_type) - len(regress)} non-brain channels (DC/trigger/ECG/misc)"
+    steps.append(f"kept {len(keep)} "
+                 f"{'intracranial' if kind.key == 'ieeg' else kind.label} channels; dropped "
+                 f"{len(dropped_type) - len(regress)} "
+                 f"{'non-brain channels (DC/trigger/ECG/misc)' if kind.key == 'ieeg' else 'other channels'}"
                  + (f"; kept {', '.join(regress)} to regress out" if regress else ""))
 
     bads = [b for b in rec.bads if b in raw.ch_names]
@@ -882,21 +902,39 @@ def prepare(rec: Recording, cfg: PreprocessConfig | None = None, verbose: bool =
     ica_record = _fit_ica(raw, cfg, rec, steps) if cfg.ica else None
 
     # 3c. artifact annotation, on the filtered monopolar signal ------------
-    annotations = (_annotate(raw, cfg, float(rec.t_offset), steps)
+    annotations = (_annotate(raw, cfg, float(rec.t_offset), steps, kind.scale, kind.unit)
                    if (cfg.annotate_muscle or cfg.annotate_amplitude) else [])
 
-    data = raw.get_data(picks="all") * 1e6  # volts -> microvolts
+    # SI units to the modality's: volts -> microvolts for EEG of either kind,
+    # tesla (per metre) -> femtotesla (per centimetre) for MEG.
+    data = raw.get_data(picks="all") * kind.scale
     names = list(raw.ch_names)
 
     # 4. montage ----------------------------------------------------------
     scheme = effective_reference(cfg)
+    if kind.key.startswith("meg") and scheme != "none":
+        steps.append(f"MEG sensors are not re-referenced: the {scheme} reference does not "
+                     "apply to them, so each sensor is analysed as recorded")
+        scheme = "none"
+    elif kind.key == "eeg" and scheme in ("shaft", "laplacian"):
+        steps.append(f"the {scheme} reference is for intracranial leads; scalp EEG uses "
+                     "the common average instead")
+        scheme = "average"
     pairs: list[tuple[str, str]] = []
     montage = "monopolar"
     if scheme == "bipolar":
-        pairs = bipolar_pairs(names, exclude=set())
+        if kind.key == "eeg":
+            from onset_hfo.modality import double_banana_pairs
+
+            pairs = double_banana_pairs(names)
+        else:
+            pairs = bipolar_pairs(names, exclude=set())
         if not pairs:
             steps.append("bipolar montage requested but no consecutive contact pairs were found; "
-                         "kept the original (monopolar) channels")
+                         "kept the original (monopolar) channels"
+                         if kind.key != "eeg" else
+                         "the double banana needs 10-20 electrode names (Fp1, F7, T7, ...) "
+                         "and found no pair of them; kept the original channels")
         else:
             idx = {n: i for i, n in enumerate(names)}
             data = np.stack([data[idx[a]] - data[idx[b]] for a, b in pairs])
@@ -912,7 +950,9 @@ def prepare(rec: Recording, cfg: PreprocessConfig | None = None, verbose: bool =
             annotations = renamed
             names = [f"{a}-{b}" for a, b in pairs]
             montage = "bipolar"
-            steps.append(f"bipolar montage: {len(pairs)} pairs of neighbouring contacts")
+            steps.append(f"longitudinal bipolar (double banana) montage: {len(pairs)} pairs"
+                         if kind.key == "eeg" else
+                         f"bipolar montage: {len(pairs)} pairs of neighbouring contacts")
     elif scheme == "average" and len(names) > 1:
         data = data - data.mean(axis=0, keepdims=True)
         montage = "average"
@@ -972,7 +1012,7 @@ def prepare(rec: Recording, cfg: PreprocessConfig | None = None, verbose: bool =
                         sfreq=float(raw.info["sfreq"]), t_offset=rec.t_offset, montage=montage,
                         line_freq=float(line_freq),
                         pairs=pairs, steps=steps, recording=rec, annotations=annotations,
-                        ica=ica_record)
+                        ica=ica_record, modality=kind.key, unit=kind.unit)
     if verbose:
         print(f"[onset-hfo] preprocessed: {prepared.n_channels} {montage} channels, "
               f"{prepared.duration:.1f} s @ {prepared.sfreq:g} Hz")
