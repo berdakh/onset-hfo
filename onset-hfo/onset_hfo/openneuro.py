@@ -52,8 +52,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-__all__ = ["fetch_openneuro", "list_openneuro", "describe_openneuro", "get_data_home",
-           "clear_data_home", "Bunch", "DATA_HOME_ENV", "SIGNAL_FORMATS"]
+__all__ = ["fetch_openneuro", "list_openneuro", "describe_openneuro", "catalogue",
+           "build_catalogue", "allow_network", "Cancelled", "CHUNK_BYTES", "get_data_home", "clear_data_home", "Bunch",
+           "DATA_HOME_ENV", "SIGNAL_FORMATS", "CATALOGUE"]
 
 BUCKET = "https://s3.amazonaws.com/openneuro.org"
 DATA_HOME_ENV = "ONSET_HFO_DATA"
@@ -83,6 +84,145 @@ class Bunch(dict):
 
     def __dir__(self):
         return list(self.keys())
+
+
+#: The OpenNeuro datasets with continuous EEG or iEEG, bundled so a dataset can be
+#: found by name without the network; `build_catalogue` makes it, `catalogue` reads it.
+CATALOGUE = Path(__file__).with_name("openneuro_catalogue.csv")
+CATALOGUE_COLUMNS = ["dataset_id", "name", "modalities", "subjects", "license", "doi"]
+
+
+# -- the network, when asked for ---------------------------------------------------------------
+class allow_network:
+    """Lift ``ONSET_HFO_OFFLINE`` for the calls inside, then put it back.
+
+    The desktop app runs offline unless started with ``--allow-fetch``, so it
+    never reaches for an archive unasked. Listing or downloading from the
+    OpenNeuro dialog *is* the asking, so the dialog runs its calls inside this.
+    """
+
+    def __enter__(self):
+        import os
+
+        from onset_hfo.datasets import OFFLINE_ENV
+
+        self._previous = os.environ.pop(OFFLINE_ENV, None)
+        return self
+
+    def __exit__(self, *_):
+        import os
+
+        from onset_hfo.datasets import OFFLINE_ENV
+
+        if self._previous is not None:
+            os.environ[OFFLINE_ENV] = self._previous
+        return False
+
+
+# -- the catalogue ----------------------------------------------------------------------------
+def catalogue(modality: str | None = None, search: str | None = None,
+              data_home=None) -> pd.DataFrame:
+    """The OpenNeuro datasets with continuous EEG or iEEG: ``dataset_id``,
+    ``name``, ``modalities`` (e.g. "ieeg" or "eeg,ieeg"), ``subjects``,
+    ``license`` and ``doi``.
+
+    Read from a refreshed copy in the data home when `build_catalogue` has made
+    one there, else from the copy bundled with the package. `modality` keeps
+    datasets with that kind of recording; `search` keeps those whose id or name
+    contains every word of it (any case)."""
+    refreshed = get_data_home(data_home) / "openneuro_catalogue.csv"
+    path = refreshed if refreshed.exists() else CATALOGUE
+    if not path.exists():
+        table = pd.DataFrame(columns=CATALOGUE_COLUMNS)
+    else:
+        table = pd.read_csv(path, dtype={"name": str, "modalities": str, "license": str,
+                                         "doi": str}, keep_default_na=False)
+    if modality:
+        table = table[table["modalities"].str.split(",").apply(lambda m: modality in m)]
+    for word in str(search or "").lower().split():
+        table = table[table["dataset_id"].str.lower().str.contains(word, regex=False)
+                      | table["name"].str.lower().str.contains(word, regex=False)]
+    return table.reset_index(drop=True)
+
+
+def _catalogue_row(dataset_id: str) -> dict | None:
+    """One dataset's row, from two small requests: the top of its listing (for
+    its subjects and kinds of recording) and its ``dataset_description.json``."""
+    import urllib.parse
+
+    from onset_hfo import datasets
+
+    # From the first subject's files, not the dataset's: "derivatives/" sorts
+    # before "sub-" and can fill the first thousand keys on its own.
+    query = {"list-type": "2", "prefix": f"{dataset_id}/sub-", "max-keys": "1000"}
+    xml = datasets._http_get(f"{BUCKET}/?{urllib.parse.urlencode(query)}",
+                             retries=2).decode("utf-8", "replace")
+    keys = re.findall(r"<Key>([^<]+)</Key>", xml)
+    kinds = sorted({part for key in keys for part in key.split("/")[2:-1]
+                    if part in ("eeg", "ieeg")})
+    if not kinds:
+        return None
+    query = {"list-type": "2", "prefix": f"{dataset_id}/", "delimiter": "/",
+             "max-keys": "1000"}
+    tops = datasets._http_get(f"{BUCKET}/?{urllib.parse.urlencode(query)}",
+                              retries=2).decode("utf-8", "replace")
+    subjects = len(re.findall(r"<Prefix>[^<]*/sub-[^<]*/</Prefix>", tops))
+    try:
+        meta = json.loads(datasets._http_get(f"{BUCKET}/{dataset_id}/dataset_description.json",
+                                             retries=2))
+    except Exception:       # noqa: BLE001 - a dataset without one still counts
+        meta = {}
+    name = " ".join(str(meta.get("Name", "")).split())
+    return {"dataset_id": dataset_id, "name": name or dataset_id,
+            "modalities": ",".join(kinds), "subjects": subjects,
+            "license": str(meta.get("License", "") or ""),
+            "doi": str(meta.get("DatasetDOI", "") or "").replace("doi:", "").strip()}
+
+
+def build_catalogue(out=None, workers: int = 16, progress=print) -> pd.DataFrame:
+    """Survey every dataset on OpenNeuro and keep those with EEG or iEEG.
+
+    About three small requests per dataset, a few minutes in all. Writes the
+    table to `out` (default: the data home, where `catalogue` will prefer it
+    to the bundled copy) and returns it."""
+    import concurrent.futures as futures
+    import urllib.parse
+
+    from onset_hfo import datasets
+
+    ids, token = [], None
+    while True:
+        query = {"list-type": "2", "delimiter": "/", "max-keys": "1000"}
+        if token:
+            query["continuation-token"] = token
+        xml = datasets._http_get(f"{BUCKET}/?{urllib.parse.urlencode(query)}").decode()
+        ids += re.findall(r"<Prefix>(ds\d{6})/</Prefix>", xml)
+        more = re.search(r"<NextContinuationToken>([^<]+)</NextContinuationToken>", xml)
+        if not more:
+            break
+        token = more.group(1)
+    progress(f"{len(ids)} datasets on OpenNeuro; surveying them")
+    rows, failed = [], []
+    with futures.ThreadPoolExecutor(workers) as pool:
+        jobs = {pool.submit(_catalogue_row, i): i for i in ids}
+        for n, job in enumerate(futures.as_completed(jobs), 1):
+            try:
+                row = job.result()
+            except Exception:       # noqa: BLE001 - counted, not fatal
+                failed.append(jobs[job])
+                continue
+            if row:
+                rows.append(row)
+            if n % 200 == 0:
+                progress(f"{n} of {len(ids)} surveyed, {len(rows)} with EEG or iEEG")
+    table = pd.DataFrame(rows, columns=CATALOGUE_COLUMNS).sort_values("dataset_id")
+    out = Path(out) if out else get_data_home() / "openneuro_catalogue.csv"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    table.to_csv(out, index=False)
+    progress(f"{len(table)} datasets with EEG or iEEG written to {out}"
+             + (f"; {len(failed)} could not be read: {', '.join(sorted(failed)[:10])}"
+                if failed else ""))
+    return table.reset_index(drop=True)
 
 
 # -- the data home ----------------------------------------------------------------------------
@@ -276,13 +416,67 @@ def _sub(subject: str) -> str:
 
 
 # -- fetching ---------------------------------------------------------------------------------
+#: The signal is downloaded in pieces of this size, so a download can say how far
+#: it has got and can be stopped between pieces.
+CHUNK_BYTES = 4 * 1024 * 1024
+
+
+class Cancelled(RuntimeError):
+    """The download was stopped before it finished; nothing of it is kept."""
+
+
+class _Transfer:
+    """The signal's bytes, fetched in `CHUNK_BYTES` pieces, with progress.
+
+    `progress(fraction, message)` is called after each piece; `should_stop()`
+    is asked before each, and a True answer raises `Cancelled`."""
+
+    def __init__(self, progress=None, should_stop=None):
+        self.progress, self.should_stop = progress, should_stop
+        self.total = self.done = 0
+
+    def expect(self, n_bytes: int) -> None:
+        self.total += max(0, int(n_bytes))
+        self._tell()
+
+    def get(self, key: str, first: int, last: int) -> bytes:
+        """Bytes `first`..`last` (inclusive) of `key`."""
+        parts, pos = [], first
+        while pos <= last:
+            if self.should_stop is not None and self.should_stop():
+                raise Cancelled("the download was stopped before it finished")
+            end = min(last, pos + CHUNK_BYTES - 1)
+            blob = _get(key, (pos, end))
+            if len(blob) > end - pos + 1:
+                # A server that ignores Range sends the whole file every time:
+                # take the window from it once rather than once per piece.
+                whole = blob[first:last + 1]
+                self._add(len(whole) - sum(len(p) for p in parts))
+                return whole
+            parts.append(blob)
+            self._add(len(blob))
+            if len(blob) < end - pos + 1:       # the file ended early
+                break
+            pos = end + 1
+        return b"".join(parts)
+
+    def _add(self, n_bytes: int) -> None:
+        self.done += n_bytes
+        self._tell()
+
+    def _tell(self) -> None:
+        if self.progress is not None:
+            fraction = min(1.0, self.done / self.total) if self.total else 0.0
+            self.progress(fraction, f"{self.done / 1e6:.1f} of {self.total / 1e6:.1f} MB")
+
+
 def fetch_openneuro(dataset_id: str, subject: str | None = None, *,
                     session: str | None = None, task: str | None = None,
                     acq: str | None = None, run: str | None = None,
                     modality: str | None = None, t_start: float = 0.0,
                     t_stop: float | None = 60.0, data_home=None,
                     download_if_missing: bool = True, max_mb: float = 500.0,
-                    verbose: bool = True) -> Bunch:
+                    verbose: bool = True, progress=None, should_stop=None) -> Bunch:
     """A window of one recording, downloaded once and kept in the data home.
 
     The recording is the first in `list_openneuro` order that matches the
@@ -301,6 +495,10 @@ def fetch_openneuro(dataset_id: str, subject: str | None = None, *,
       subject's row of ``participants.tsv`` as ``participant``;
     - ``line_freq``, ``license``, ``citation``, ``url``, ``local_path`` and
       ``DESCR``.
+
+    `progress(fraction, message)` hears how far the download has got, after
+    each `CHUNK_BYTES` piece; `should_stop()` is asked before each piece, and
+    True stops it with `Cancelled`, keeping nothing of the window.
     """
     dataset_id = _check_id(dataset_id)
     table = list_openneuro(dataset_id, data_home=data_home,
@@ -323,7 +521,7 @@ def fetch_openneuro(dataset_id: str, subject: str | None = None, *,
         folder.mkdir(parents=True, exist_ok=True)
         try:
             _download(dataset_id, chosen, suffix, t_start, t_stop, folder, data_home, max_mb,
-                      verbose)
+                      verbose, _Transfer(progress, should_stop))
         except BaseException:
             shutil.rmtree(folder, ignore_errors=True)   # never leave half a window
             raise
@@ -333,7 +531,7 @@ def fetch_openneuro(dataset_id: str, subject: str | None = None, *,
 
 
 def _download(dataset_id, chosen, suffix, t_start, t_stop, folder: Path, data_home, max_mb,
-              verbose) -> None:
+              verbose, transfer: _Transfer) -> None:
     path = chosen["path"]
     stem = path[: -len(suffix)]
     keys = _keys(dataset_id, data_home)
@@ -342,12 +540,13 @@ def _download(dataset_id, chosen, suffix, t_start, t_stop, folder: Path, data_ho
         print(f"[onset-hfo] fetching {path} [{window}] from OpenNeuro {dataset_id}")
     if suffix == ".vhdr":
         local, offset, length = _brainvision_window(dataset_id, path, keys, t_start, t_stop,
-                                                    folder, max_mb)
+                                                    folder, max_mb, transfer)
     elif suffix in (".edf", ".bdf"):
         local, offset, length = _edf_window(dataset_id, path, suffix, t_start, t_stop, folder,
-                                            max_mb)
+                                            max_mb, transfer)
     else:
-        local, offset, length = _whole_file(dataset_id, path, suffix, keys, folder, max_mb)
+        local, offset, length = _whole_file(dataset_id, path, suffix, keys, folder, max_mb,
+                                            transfer)
     sidecars = _fetch_sidecars(dataset_id, stem, chosen["modality"], keys, folder, data_home)
     # Written last: its presence is what marks the window as complete.
     (folder / "window.json").write_text(json.dumps({
@@ -383,7 +582,8 @@ def _choose(table: pd.DataFrame, dataset_id: str, **wanted) -> dict:
     return rows.iloc[0].to_dict()
 
 
-def _brainvision_window(dataset_id, path, keys, t_start, t_stop, folder: Path, max_mb):
+def _brainvision_window(dataset_id, path, keys, t_start, t_stop, folder: Path, max_mb,
+                        transfer: _Transfer):
     from onset_hfo import datasets
 
     header_text = _get(f"{dataset_id}/{path}").decode("utf-8", "replace")
@@ -402,7 +602,8 @@ def _brainvision_window(dataset_id, path, keys, t_start, t_stop, folder: Path, m
         raise ValueError(f"the window starts after the recording ends "
                          f"({(n_samples or 0) / sfreq:g} s)")
     _check_size((last - first) * frame, max_mb, path)
-    payload = _get(f"{dataset_id}/{data_key}", byte_range=(first * frame, last * frame - 1))
+    transfer.expect((last - first) * frame)
+    payload = transfer.get(f"{dataset_id}/{data_key}", first * frame, last * frame - 1)
     usable = (len(payload) // frame) * frame
     (folder / data_name).write_bytes(payload[:usable])
     marker = header.get("MarkerFile", Path(data_name).with_suffix(".vmrk").name)
@@ -412,7 +613,8 @@ def _brainvision_window(dataset_id, path, keys, t_start, t_stop, folder: Path, m
     return local, first / sfreq, usable // frame / sfreq
 
 
-def _edf_window(dataset_id, path, suffix, t_start, t_stop, folder: Path, max_mb):
+def _edf_window(dataset_id, path, suffix, t_start, t_stop, folder: Path, max_mb,
+                transfer: _Transfer):
     """The data records of a remote EDF/BDF that cover the window, as a short
     file of the same format. Records are whole seconds or so, so the window
     is cut exactly after reading."""
@@ -434,8 +636,9 @@ def _edf_window(dataset_id, path, suffix, t_start, t_stop, folder: Path, max_mb)
         # is a time window, so the file is read whole.
         size = header_bytes + max(n_records, 0) * record_bytes
         _check_size(size, max_mb, path)
+        transfer.expect(size)
         local = folder / Path(path).name
-        local.write_bytes(_get(key))
+        local.write_bytes(transfer.get(key, 0, size - 1))
         return local, 0.0, None
     first = max(0, int(np.floor(t_start / record_s)))
     last = n_records if t_stop is None else min(n_records, int(np.ceil(t_stop / record_s)))
@@ -443,8 +646,9 @@ def _edf_window(dataset_id, path, suffix, t_start, t_stop, folder: Path, max_mb)
         raise ValueError(f"the window starts after the recording ends "
                          f"({n_records * record_s:g} s)")
     _check_size((last - first) * record_bytes, max_mb, path)
-    data = _get(key, (header_bytes + first * record_bytes,
-                      header_bytes + last * record_bytes - 1))
+    transfer.expect((last - first) * record_bytes)
+    data = transfer.get(key, header_bytes + first * record_bytes,
+                        header_bytes + last * record_bytes - 1)
     count = len(data) // record_bytes
     header = bytearray(header)
     header[236:244] = f"{count:<8d}".encode()
@@ -453,14 +657,18 @@ def _edf_window(dataset_id, path, suffix, t_start, t_stop, folder: Path, max_mb)
     return local, first * record_s, count * record_s
 
 
-def _whole_file(dataset_id, path, suffix, keys, folder: Path, max_mb):
+def _whole_file(dataset_id, path, suffix, keys, folder: Path, max_mb, transfer: _Transfer):
     companions = [path]
     if suffix == ".set" and path[: -4] + ".fdt" in keys:
         companions.append(path[: -4] + ".fdt")
     _check_size(sum(keys.get(p, 0) for p in companions), max_mb, path,
                 whole=True)
+    transfer.expect(sum(keys.get(p, 0) for p in companions))
     for name in companions:
-        (folder / Path(name).name).write_bytes(_get(f"{dataset_id}/{name}"))
+        size = keys.get(name, 0)
+        blob = transfer.get(f"{dataset_id}/{name}", 0, size - 1) if size \
+            else _get(f"{dataset_id}/{name}")
+        (folder / Path(name).name).write_bytes(blob)
     return folder / Path(path).name, 0.0, None
 
 

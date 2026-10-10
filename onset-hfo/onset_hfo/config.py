@@ -586,6 +586,11 @@ class PreprocessConfig:
     #: positions, or from `grid_columns`), on a strip or shaft the contacts
     #: either side.
     reference: str | None = None
+    #: What kind of recording to analyse it as: ``"auto"`` (from its channel
+    #: types: intracranial when it has SEEG or ECoG, else MEG, else scalp EEG),
+    #: ``"ieeg"``, ``"eeg"``, ``"meg"`` (gradiometers if any), ``"meg_grad"``
+    #: or ``"meg_mag"``. See `onset_hfo.modality`.
+    modality: str = "auto"
     #: How many columns each ECoG grid has, by its name: ``(("G", 8),)`` for a
     #: grid G numbered 1-8 along its first row, 9-16 along the next. Only the
     #: Laplacian reads it, and only for a recording without contact

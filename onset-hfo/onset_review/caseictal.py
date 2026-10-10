@@ -27,6 +27,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from onset_hfo.case.model import new_run_folder
+
 __all__ = ["seizures_of", "run_ictal", "IctalResult", "latest_ictal", "draw_ictal",
            "SEIZURE_COLUMNS"]
 
@@ -185,8 +187,7 @@ def run_ictal(case, seizures: pd.DataFrame | None = None, settings=None, templat
     combined = combine(tables)
     per_seizure = pd.concat([t.assign(seizure=k) for k, t in tables.items()],
                             ignore_index=True) if tables else pd.DataFrame()
-    folder = Path(case.derivatives) / "ictal" / time.strftime("run-%Y%m%d-%H%M%S")
-    folder.mkdir(parents=True, exist_ok=True)
+    folder = new_run_folder(Path(case.derivatives) / "ictal")
     meta = {"when": time.strftime("%Y-%m-%d %H:%M"), "method": settings.describe(),
             "settings": settings.to_json(),
             "window_s": [WINDOW_BEFORE_S, WINDOW_AFTER_S],

@@ -19,6 +19,7 @@ reason this module is thin.
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -942,9 +943,20 @@ def session_from_recording(record: Recording, request: ReviewRequest,
                    positions_from=positions_from)
 
     band = request.band_hz
-    if not BANDS.usable(prep.sfreq, band):
-        resampled = (cfg.preprocess.resample
-                     and abs(float(cfg.preprocess.resample) - prep.sfreq) < 1.0)
+    resampled = (cfg.preprocess.resample
+                 and abs(float(cfg.preprocess.resample) - prep.sfreq) < 1.0)
+    # A recording too slow for every HFO band, as recorded, is still read:
+    # its discharges and its signal quality do not need the HFO band, and
+    # the analysis says plainly that the HFO detectors did not run. One that
+    # a lower band would fit, or that preprocessing slowed down, is a setting
+    # to change instead.
+    hfo_skipped = "" if BANDS.usable(prep.sfreq, band) or resampled \
+        or BANDS.usable(prep.sfreq, BANDS.ripple) else (
+        f"HFO detection skipped: the {band[0]:g}–{band[1]:g} Hz band needs a sampling "
+        f"rate of at least {math.ceil(band[1] / 0.45)} Hz (its top within 90% of the "
+        f"Nyquist frequency), and this recording is {prep.sfreq:g} Hz. Interictal "
+        f"discharges and signal quality were still analysed.")
+    if not hfo_skipped and not BANDS.usable(prep.sfreq, band):
         raise ValueError(
             f"{request.band.replace('_', ' ')}s need a sampling rate above "
             f"{2 * band[1]:.0f} Hz; this recording is {prep.sfreq:.0f} Hz"
@@ -971,12 +983,12 @@ def session_from_recording(record: Recording, request: ReviewRequest,
 
     events: list[Event] = []
     span = 0.3 / len(request.detectors)
-    for index, name in enumerate(request.detectors):
+    for index, name in enumerate(() if hfo_skipped else request.detectors):
         say(0.35 + span * index,
             f"Detecting with {DETECTOR_LABELS.get(name, name).lower()}")
         events.extend(_detect(prep, cfg, name))
 
-    if request.with_spikes:
+    if request.with_spikes or hfo_skipped:
         say(0.68, "Detecting interictal discharges")
         events.extend(DETECTORS["spike"](prep, cfg.spikes))
 
@@ -1013,7 +1025,8 @@ def session_from_recording(record: Recording, request: ReviewRequest,
         reviewed_channels=reviewed, resection=resection, electrodes=electrodes,
         quality=quality, segments=segments, clean_seconds=dict(clean or {}),
         steps=list(prep.steps),
-        notes=(list(getattr(record, "notes", []))
+        notes=(([hfo_skipped] if hfo_skipped else [])
+               + list(getattr(record, "notes", []))
                + ([quality_summary(quality, segments,
                                    kept=request.keep_channels)]
                   if cfg.check_quality else [])),

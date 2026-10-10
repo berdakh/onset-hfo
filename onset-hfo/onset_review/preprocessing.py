@@ -28,6 +28,8 @@ rebuild them all.
 
 from __future__ import annotations
 
+import math
+
 from qtpy.QtCore import Qt, Signal
 from qtpy.QtWidgets import (
     QButtonGroup,
@@ -48,7 +50,7 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
-from onset_hfo.config import PreprocessConfig
+from onset_hfo.config import BANDS, PreprocessConfig
 from onset_hfo.preprocess import (
     default_ica_method,
     describe,
@@ -319,6 +321,39 @@ class PreprocessPanel(QWidget):
         rate = SettingsGroup("Sampling rate")
         rate.add_row(f"Recorded at {self._sfreq:g} Hz", self.resample)
 
+        # -- band ----------------------------------------------------------
+        # Chosen here rather than when the file is opened: which band to read
+        # is a question about the analysis, and the rate decides what is on
+        # offer. A band the recording cannot carry is shown but not offered.
+        self.band = QComboBox()
+        self.band.setMaximumWidth(FIELD_WIDTH)
+        for name in ("ripple", "fast_ripple"):
+            low, high = getattr(BANDS, name)
+            self.band.addItem(f"{name.replace('_', ' ')} ({low:.0f}–{high:.0f} Hz)", name)
+            if not BANDS.usable(self._sfreq, (low, high)):
+                item = self.band.model().item(self.band.count() - 1)
+                item.setEnabled(False)
+                item.setToolTip(f"Needs at least {math.ceil(high / 0.45)} Hz; this "
+                                f"recording is {self._sfreq:g} Hz.")
+        _select(self.band, session.request.band)
+        self.no_band = not BANDS.usable(self._sfreq, BANDS.ripple)
+        band_group = SettingsGroup("HFO band")
+        band_group.add_row("Analyse", self.band)
+        if self.no_band:
+            self.band.setEnabled(False)
+            band_group.add_wide(muted(
+                f"At {self._sfreq:g} Hz neither band fits (ripples need at least "
+                f"{math.ceil(BANDS.ripple[1] / 0.45)} Hz), so HFO detection is "
+                f"skipped; interictal discharges and signal quality are still "
+                f"analysed.", current()))
+        else:
+            fast_too = BANDS.usable(self._sfreq, BANDS.fast_ripple)
+            band_group.add_wide(muted(
+                "Ripples are commoner and easier to detect; fast ripples are the more "
+                "specific marker and far rarer." + ("" if fast_too else
+                f" Fast ripples need at least {math.ceil(BANDS.fast_ripple[1] / 0.45)} "
+                f"Hz; this recording is {self._sfreq:g} Hz."), current()))
+
         # -- channels ------------------------------------------------------
         self.drop_bads = QCheckBox("Drop channels the dataset flagged bad")
         self.drop_bads.setChecked(start.drop_bads)
@@ -365,7 +400,8 @@ class PreprocessPanel(QWidget):
         column = QVBoxLayout(body)
         column.setContentsMargins(4, 4, 4, 4)
         column.setSpacing(6)
-        for group in (filters, reference, artifacts, experimental, rate, channels):
+        for group in (band_group, filters, reference, artifacts, experimental, rate,
+                      channels):
             column.addWidget(group.widget)
         column.addWidget(self.summary)
         column.addWidget(self.warnings)
@@ -386,7 +422,7 @@ class PreprocessPanel(QWidget):
         for widget in self._reference_buttons.values():
             widget.toggled.connect(self.refresh)
         self.grid_columns.textChanged.connect(self.refresh)
-        for widget in (self.mains, self.resample, self.method, self.phase):
+        for widget in (self.mains, self.resample, self.method, self.phase, self.band):
             widget.currentIndexChanged.connect(self.refresh)
         self.channels.itemChanged.connect(self.refresh)
         self.apply.clicked.connect(self._apply)
@@ -394,6 +430,10 @@ class PreprocessPanel(QWidget):
         self.refresh()
 
     # -- the config this panel describes -----------------------------------
+    def band_name(self) -> str:
+        """The HFO band to analyse: what the reviewer chose, or the window's own."""
+        return str(self.band.currentData() or self._session.request.band)
+
     def reference(self) -> str:
         for name, button in self._reference_buttons.items():
             if button.isChecked():
@@ -464,7 +504,8 @@ class PreprocessPanel(QWidget):
     def refresh(self) -> None:
         """Rewrite the summary and the warnings for the current settings."""
         cfg = self.config()
-        summary, warnings = describe(cfg, self._band, self._sfreq)
+        self._band = getattr(BANDS, self.band_name())
+        summary, warnings = self._describe(cfg)
         self.grid_columns.setEnabled(cfg.reference == "laplacian")
         if cfg.reference == "laplacian" and self._grid_problem():
             warnings = [self._grid_problem(), *warnings]
@@ -485,8 +526,9 @@ class PreprocessPanel(QWidget):
         self.design.setText("MNE builds: " + filter_description(cfg, self._sfreq))
         self.warnings.setText("\n".join("• " + w for w in warnings))
         self.warnings.setVisible(bool(warnings))
-        self.apply.setEnabled(self.config() != (
-            self._session.request.preprocess or self._default))
+        self.apply.setEnabled(
+            self.config() != (self._session.request.preprocess or self._default)
+            or self.band_name() != self._session.request.band)
 
     def reset_to_defaults(self) -> None:
         cfg = self._default
@@ -508,9 +550,19 @@ class PreprocessPanel(QWidget):
         self.amplitude.setChecked(bool(cfg.annotate_amplitude))
         self.ptp.setValue(float(cfg.amplitude_ptp_uv or 0.0))
         self.drop_bads.setChecked(cfg.drop_bads)
+        _select(self.band, "ripple")
         for index in range(self.channels.count()):
             self.channels.item(index).setCheckState(Qt.Unchecked)
         self.refresh()
+
+    def _describe(self, cfg):
+        """`describe`, without the band warning on a recording no band fits as
+        recorded: there the HFO detectors are skipped and the band group says
+        so, and refusing every other setting would leave nothing to apply."""
+        summary, warnings = describe(cfg, self._band, self._sfreq)
+        if self.no_band:
+            warnings = [w for w in warnings if "cannot carry" not in w]
+        return summary, warnings
 
     def _apply(self) -> None:
         """Hand the config up. Refused settings never get this far.
@@ -521,7 +573,7 @@ class PreprocessPanel(QWidget):
         dialog thirty seconds later.
         """
         cfg = self.config()
-        _, warnings = describe(cfg, self._band, self._sfreq)
+        _, warnings = self._describe(cfg)
         if cfg.reference == "laplacian" and self._grid_problem():
             warnings = [self._grid_problem(), *warnings]
         blocking = [w for w in warnings if "would still run" in w

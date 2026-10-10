@@ -330,10 +330,16 @@ def open_recording(path: str | Path, *, t_start: float = 0.0,
         "against them is unavailable rather than empty",
     ]
     if not (types & set(INTRACRANIAL_TYPES)):
+        from onset_hfo.modality import MODALITIES, detect
+
+        kind = MODALITIES[detect(types)]
         notes.append(
-            "WARNING: no channel in this window is typed seeg or ecog. The "
-            "pipeline will analyse whatever is typed eeg, which on a scalp "
-            "recording produces rates that mean nothing.")
+            f"no channel in this window is typed seeg or ecog, so it is analysed as "
+            f"{kind.label} ({kind.unit}): {kind.caveat}. If it is in fact intracranial, "
+            "say so when importing, or every channel is analysed as the wrong kind"
+            if kind.key != "ieeg" else
+            "WARNING: no channel in this window is typed seeg, ecog, eeg or MEG, so "
+            "there is nothing the pipeline can analyse")
 
     return Recording(
         raw=raw, source=f"local:{path.name}",

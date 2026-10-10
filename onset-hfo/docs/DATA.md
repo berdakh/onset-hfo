@@ -376,6 +376,24 @@ bunch.channels, bunch.events, bunch.electrodes        # the dataset's own sideca
 bunch.line_freq, bunch.license, bunch.citation
 ```
 
+**Finding a dataset.** The package carries a catalogue of every OpenNeuro
+dataset with continuous EEG or iEEG. For each it gives the id, name, kind of
+recording, number of subjects, licence and DOI.
+
+```python
+openneuro.catalogue(modality="ieeg")              # every iEEG dataset
+openneuro.catalogue(search="epilepsy seizure")    # every word must appear
+openneuro.build_catalogue()                       # survey OpenNeuro again
+```
+
+- The bundled copy was made by surveying OpenNeuro's public storage, about
+  three small requests per dataset.
+- `build_catalogue()` repeats the survey in a few minutes and keeps the result
+  in the data home, where `catalogue()` prefers it to the bundled copy.
+- A dataset is counted as EEG or iEEG from the first thousand files of its
+  subjects. A dataset whose first subject holds more files than that, all of
+  them MRI, could be missed; its id still works when typed.
+
 **What comes down.**
 - **BrainVision and EDF/BDF:** only the window, by byte range. A window of an
   EDF is cut from its data records, which are a second or so long, and then
@@ -426,14 +444,22 @@ BrainVision, EDF, BDF and EEGLAB, intracranial and scalp:
 **From the command line:**
 
 ```bash
+python -m onset_hfo.cli openneuro catalogue --search epilepsy --kind ieeg
 python -m onset_hfo.cli openneuro describe ds004100
 python -m onset_hfo.cli openneuro list ds004100 --subject HUP060
 python -m onset_hfo.cli openneuro fetch ds004100 --subject HUP060 --task ictal \
        --t-start 100 --t-stop 130       # prints the window's local file
 ```
 
-**In the desktop app**, *File → Open from OpenNeuro…*:
-1. Type a dataset id and list its recordings.
+![Open from OpenNeuro: the catalogue searched for "epilepsy", and the HUP dataset's recordings listed](images/onset-review-openneuro.png)
+
+**In the desktop app**, *File → Open from OpenNeuro…* (or *From OpenNeuro…* on
+Home):
+1. Search the catalogue by name, or type any id. Double-click a dataset, or
+   press *List recordings*. The app runs offline unless started with
+   `--allow-fetch`; this dialog reaches openneuro.org anyway, because choosing
+   to list or download here is the asking. It lifts the refusal only for its
+   own calls.
 2. Pick one and a window.
 3. The window goes through the usual import confirmation, with the dataset's
    channel types and mains frequency filled in. A channel the dataset marks
@@ -443,8 +469,15 @@ python -m onset_hfo.cli openneuro fetch ds004100 --subject HUP060 --task ictal \
 The window opens as a file of your own, so its trace counts from 0. Its label
 says where it starts in the original recording.
 
-**Ripples need more than 500 Hz.** Many archives record at 500 or 512 Hz,
-HUP among them. Check `bunch.sfreq` before running the detectors.
+**Ripples need at least 556 Hz.** Many archives record at 500 or 512 Hz,
+HUP among them. On such a recording `run_pipeline` skips the HFO detectors
+and says why in `result.hfo_skipped` and the report's notes. It still runs:
+- the interictal discharge detector;
+- the quality checks.
+
+The app opens such a recording all the same. The import dialog says HFO
+detection will be skipped, and the window's notes say it first. Its
+discharges and its signal quality are there to read.
 
 ## Using your own data
 

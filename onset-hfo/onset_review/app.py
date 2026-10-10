@@ -339,9 +339,8 @@ def _prefill(dialog, args) -> None:
     for index in range(dialog.line_freq.count()):
         if float(dialog.line_freq.itemData(index)) == float(args.line_freq):
             dialog.line_freq.setCurrentIndex(index)
-    for index in range(dialog.band.count()):
-        if dialog.band.itemData(index) == args.band:
-            dialog.band.setCurrentIndex(index)
+    if args.band:
+        dialog.band_name = str(args.band)
     if args.subject:
         dialog.subject.setText(args.subject)
     if dialog.table is None:
@@ -990,7 +989,7 @@ class _Review:
         """
         self._rerun(check_quality=bool(check), keep_channels=tuple(keep))
 
-    def reanalyse(self, preprocess) -> None:
+    def reanalyse(self, preprocess, band: str | None = None) -> None:
         """Re-run this window under new preprocessing, and replace the view.
 
         A failure leaves the current window exactly as it was. `load_with_progress`
@@ -998,7 +997,10 @@ class _Review:
         closing a working window because a setting was rejected -- would lose
         them their place for no reason.
         """
-        self._rerun(preprocess=preprocess)
+        changes = {"preprocess": preprocess}
+        if band:
+            changes["band"] = band          # chosen on the Signal page
+        self._rerun(**changes)
 
     def _rerun(self, **changes) -> None:
         """Replace the window with the same slice analysed differently."""

@@ -622,6 +622,9 @@ class PageWindow(QMainWindow):
                      "EDF, BrainVision, FIF, Nihon Kohden and more"),
                     ("do:open-recording", "Open a public recording…",
                      "Choose a patient, a window, the band and the detectors"),
+                    ("do:openneuro", "From OpenNeuro…",
+                     "Find any of OpenNeuro's EEG and iEEG datasets by name and "
+                     "download a window of one"),
                     ("do:new-case", "Start a patient case…",
                      "One patient's recordings, step by step to a signed report"),
                     ("page:quickstart", "Quick start guide",

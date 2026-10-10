@@ -509,8 +509,8 @@ def decorate(figure, session: ReviewSession, show_expert: bool = False,
              editor=None) -> ReviewWindowParts:
     """Add the menus, the toolbar, the panels and the caveat around the trace.
 
-    `on_preprocess` is called with a new `PreprocessConfig` when the reviewer
-    applies one. `on_quality` is called with (check_quality, keep_channels)
+    `on_preprocess` is called with a new `PreprocessConfig`, and the HFO band
+    as the keyword `band`, when the reviewer applies them. `on_quality` is called with (check_quality, keep_channels)
     when they change which contacts are analysed. `on_import` is called with
     no arguments when they ask to open a recording from this machine. All
     three are callbacks rather than something
@@ -741,7 +741,8 @@ def _finish(figure, session: ReviewSession, panels: dict, display: _Display,
         panels["quality"].apply.setToolTip(
             "Re-analysis is not available in this window")
     if on_preprocess is not None:
-        panels["preprocess"].applied.connect(on_preprocess)
+        panel = panels["preprocess"]
+        panel.applied.connect(lambda cfg: on_preprocess(cfg, band=panel.band_name()))
     else:
         panels["preprocess"].apply.setEnabled(False)
         panels["preprocess"].apply.setToolTip(

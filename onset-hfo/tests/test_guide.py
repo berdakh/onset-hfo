@@ -178,3 +178,13 @@ def test_text_keeps_wcag_aa_contrast_on_every_background(name):
     for background in (palette.window, palette.surface, palette.sidebar):
         for foreground in (palette.text, palette.text_muted):
             assert _contrast(foreground, background) >= 4.5, (name, foreground, background)
+
+
+def test_home_offers_openneuro_beside_the_other_first_moves(start):
+    from qtpy.QtWidgets import QPushButton
+
+    start.show_page("home")
+    button = start.findChild(QPushButton, "onset_start_openneuro")
+    assert button is not None and button.text() == "From OpenNeuro…"
+    button.click()
+    assert start.calls["openneuro"] == 1

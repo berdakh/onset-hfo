@@ -17,13 +17,14 @@ pipeline wrote down.
 from __future__ import annotations
 
 import json
+import math
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import pandas as pd
 
-from onset_hfo.config import PIPELINE_VERSION, RESULTS_DIR, PipelineConfig
+from onset_hfo.config import BANDS, PIPELINE_VERSION, RESULTS_DIR, PipelineConfig
 from onset_hfo.datasets import Recording
 from onset_hfo.detectors import HFO_DETECTORS as _HFO_DETECTORS
 from onset_hfo.detectors import (
@@ -80,6 +81,9 @@ class PipelineResult:
     #: Channel -> seconds actually analysed. This, not ``duration_s``, is what
     #: every rate in ``rates`` was divided by.
     clean_seconds: dict[str, float] = field(default_factory=dict)
+    #: Why the HFO detectors did not run, or "" when they did: a recording
+    #: sampled too slowly for the band (`BANDS.usable`).
+    hfo_skipped: str = ""
 
     # -- access -----------------------------------------------------------
     @property
@@ -164,11 +168,25 @@ def run_pipeline(recording: Recording, config: PipelineConfig | None = None,
     prep = prepare(recording, cfg.preprocess, verbose=verbose)
     timings["preprocess"] = time.perf_counter() - t0
 
+    # A recording sampled too slowly for the HFO band cannot carry it, and a
+    # band-pass up to the Nyquist frequency would fail inside the filter (or,
+    # just below it, measure filter ringing). The HFO detectors are skipped
+    # and the result says why; the discharge detector and the quality checks,
+    # whose bands sit far lower, still run.
+    band = cfg.rms.band
+    hfo_skipped = "" if BANDS.usable(prep.sfreq, band) else (
+        f"HFO detection skipped: the {band[0]:g}–{band[1]:g} Hz band needs a sampling rate "
+        f"of at least {math.ceil(band[1] / 0.45)} Hz (its top within 90% of the Nyquist "
+        f"frequency), and this recording is {prep.sfreq:g} Hz. Interictal discharges and "
+        "signal quality were still analysed.")
+    if hfo_skipped and verbose:
+        print(f"[onset-hfo] {hfo_skipped}")
+
     # Both HFO detectors share one band-pass: filtering twice would be slower
     # and, worse, would make a difference between them possible for a reason
     # that has nothing to do with the detectors.
     t0 = time.perf_counter()
-    filtered = bandpass(prep.data, prep.sfreq, cfg.rms.band)
+    filtered = None if hfo_skipped else bandpass(prep.data, prep.sfreq, band)
     timings["bandpass"] = time.perf_counter() - t0
 
     # Before anything is detected: which contacts and which seconds are fit
@@ -190,6 +208,9 @@ def run_pipeline(recording: Recording, config: PipelineConfig | None = None,
     for name in detectors:
         if name not in HFO_DETECTORS:
             raise ValueError(f"Unknown detector {name!r}; available: {sorted(HFO_DETECTORS)}")
+        if hfo_skipped:
+            events[name] = []
+            continue
         t0 = time.perf_counter()
         det_cfg = getattr(cfg, name)
         found = HFO_DETECTORS[name](prep, det_cfg, filtered=filtered)
@@ -262,6 +283,8 @@ def run_pipeline(recording: Recording, config: PipelineConfig | None = None,
     populations = {name: population_rates(evs, clean, prep.ch_names)
                    for name, evs in events.items()}
     notes = list(recording.notes or [])
+    if hfo_skipped:
+        notes.append(hfo_skipped)
     notes += population_notes(events, duration)
     if cfg.check_quality:
         notes.append(quality_summary(quality, segments))
@@ -279,7 +302,8 @@ def run_pipeline(recording: Recording, config: PipelineConfig | None = None,
                             rate_change=change_frame, timings=timings,
                             populations=populations, quality=quality,
                             segments=segments,
-                            clean_seconds=(clean if isinstance(clean, dict) else {}))
+                            clean_seconds=(clean if isinstance(clean, dict) else {}),
+                            hfo_skipped=hfo_skipped)
     if save_to is not None:
         result.save(save_to)
     if verbose:

@@ -240,3 +240,15 @@ def test_the_window_chooses_sets_runs_and_reviews(qapp, case):
         assert review.table.item(1, 5).text() == "1"
     finally:
         window.close()
+
+
+def test_two_runs_in_the_same_second_get_their_own_folders(tmp_path, monkeypatch):
+    import time
+
+    from onset_hfo.case.model import new_run_folder
+
+    monkeypatch.setattr(time, "strftime", lambda fmt, *a: "run-20261010-140242")
+    first, second, third = (new_run_folder(tmp_path / "interictal") for _ in range(3))
+    assert [f.name for f in (first, second, third)] == [
+        "run-20261010-140242", "run-20261010-140242-02", "run-20261010-140242-03"]
+    assert sorted(p.name for p in (tmp_path / "interictal").glob("run-*"))[-1] == third.name

@@ -463,9 +463,14 @@ def _burstiness(data: np.ndarray, sfreq: float,
 
     from onset_hfo.detectors.base import bandpass
 
-    if sfreq / 2 <= band[0]:
+    # The band's top is held below the Nyquist frequency: a recording sampled
+    # too slowly for the whole band (500 Hz against 80-250 Hz ripples) still
+    # gets a burstiness, of the part of the band it carries. It is compared
+    # within the montage, so a narrower band shifts every channel alike.
+    top = min(band[1], 0.9 * sfreq / 2)
+    if top <= band[0]:
         return np.full(data.shape[0], float(RAYLEIGH_BURSTINESS))
-    envelope = np.abs(hilbert(bandpass(data, sfreq, band), axis=-1))
+    envelope = np.abs(hilbert(bandpass(data, sfreq, (band[0], top)), axis=-1))
     low, high = np.percentile(envelope, [10, 99], axis=-1)
     return high / np.maximum(low, np.finfo(float).eps)
 
