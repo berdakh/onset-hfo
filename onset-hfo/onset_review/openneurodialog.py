@@ -15,6 +15,7 @@ from __future__ import annotations
 from qtpy.QtCore import Qt, QThread
 from qtpy.QtWidgets import (
     QAbstractItemView,
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QDoubleSpinBox,
@@ -33,6 +34,9 @@ from onset_review.theme import SPACING, card, muted, plain_buttons
 
 __all__ = ["OpenNeuroDialog", "choose_openneuro", "import_dialog_for"]
 
+#: The catalogue's columns: dataset id, kind of recording, subjects, name.
+FIND_COLUMNS = (("dataset_id", "Dataset"), ("modalities", "Kind"), ("subjects", "Subjects"),
+                ("name", "Name"))
 COLUMNS = (("subject", "Subject"), ("session", "Session"), ("task", "Task"), ("acq", "Acq"),
            ("run", "Run"), ("modality", "Kind"), ("format", "Format"), ("size_mb", "MB"))
 
@@ -68,10 +72,45 @@ class OpenNeuroDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.setSpacing(SPACING)
         layout.addWidget(muted(
-            "Any dataset on openneuro.org, by its id. Only the window asked for is "
-            "downloaded where the format allows it (BrainVision, EDF, BDF); other formats "
-            "come whole. Everything is kept on this machine and opened from there next "
-            "time."))
+            "Find a dataset by name, or type any OpenNeuro id. Listing and downloading "
+            "reach openneuro.org, even when this window was started offline: choosing them "
+            "here is the asking. Only the window asked for is downloaded where the format "
+            "allows it (BrainVision, EDF, BDF); other formats come whole. Everything is kept "
+            "on this machine and opened from there next time."))
+
+        # -- finding a dataset: the bundled catalogue, searched as you type ---------------
+        find = QHBoxLayout()
+        self.search = QLineEdit()
+        self.search.setPlaceholderText("Search datasets: epilepsy, seizure, sleep, ds0041…")
+        self.search.setAccessibleName("Search the OpenNeuro catalogue")
+        self.search.textChanged.connect(self.show_catalogue)
+        self.kind = QComboBox()
+        for label, value in (("iEEG", "ieeg"), ("EEG", "eeg"), ("EEG or iEEG", "")):
+            self.kind.addItem(label, value)
+        self.kind.setAccessibleName("Kind of recording")
+        self.kind.currentIndexChanged.connect(self.show_catalogue)
+        find.addWidget(QLabel("Find"))
+        find.addWidget(self.search, 1)
+        find.addWidget(self.kind)
+        layout.addLayout(find)
+
+        self.found = QTableWidget(0, len(FIND_COLUMNS))
+        self.found.setHorizontalHeaderLabels([label for _, label in FIND_COLUMNS])
+        self.found.verticalHeader().setVisible(False)
+        self.found.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.found.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.found.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.found.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        self.found.horizontalHeader().setStretchLastSection(True)
+        self.found.setMinimumHeight(170)
+        self.found.setAccessibleName("OpenNeuro datasets")
+        self.found.setToolTip("Click a dataset to choose it; double-click to list its "
+                              "recordings")
+        self.found.itemSelectionChanged.connect(self._dataset_chosen)
+        self.found.itemDoubleClicked.connect(lambda _item: self.list_recordings())
+        layout.addWidget(self.found, 1)
+        self.found_count = muted("")
+        layout.addWidget(self.found_count)
 
         row = QHBoxLayout()
         self.dataset = QLineEdit(dataset)
@@ -101,7 +140,7 @@ class OpenNeuroDialog(QDialog):
         self.table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         self.table.horizontalHeader().setStretchLastSection(True)
-        self.table.setMinimumHeight(260)
+        self.table.setMinimumHeight(200)
         self.table.itemSelectionChanged.connect(self._selection_changed)
         self.table.setAccessibleName("Recordings in the dataset")
         layout.addWidget(self.table, 1)
@@ -138,16 +177,49 @@ class OpenNeuroDialog(QDialog):
         self.buttons.rejected.connect(self.reject)
         plain_buttons(self.buttons)
         layout.addWidget(self.buttons)
+        self.show_catalogue()
+
+    # -- the catalogue ---------------------------------------------------------------------
+    def show_catalogue(self, *_args) -> int:
+        """Fill the dataset table from the catalogue, filtered by the search
+        words and the kind of recording. Returns how many are shown."""
+        from onset_hfo import openneuro
+
+        table = openneuro.catalogue(modality=self.kind.currentData() or None,
+                                    search=self.search.text(), data_home=self.data_home)
+        self.catalogue_rows = table.to_dict("records")
+        self.found.setRowCount(len(self.catalogue_rows))
+        for r, row in enumerate(self.catalogue_rows):
+            for c, (key, _label) in enumerate(FIND_COLUMNS):
+                text = str(row.get(key, "")).replace("ieeg", "iEEG").replace("eeg", "EEG") \
+                    if key == "modalities" else str(row.get(key, ""))
+                item = QTableWidgetItem(text)
+                if key == "name":
+                    item.setToolTip(f"{text}\nLicence: {row.get('license') or 'not stated'}")
+                self.found.setItem(r, c, item)
+        total = len(openneuro.catalogue(data_home=self.data_home))
+        self.found_count.setText(
+            f"{len(self.catalogue_rows)} of {total} OpenNeuro datasets with EEG or iEEG. "
+            "Not listed? Type its id below.")
+        return len(self.catalogue_rows)
+
+    def _dataset_chosen(self) -> None:
+        rows = self.found.selectionModel().selectedRows() if self.found.selectionModel() \
+            else []
+        if rows:
+            self.dataset.setText(self.catalogue_rows[rows[0].row()]["dataset_id"])
 
     # -- work off the window's thread ----------------------------------------------------
     def _call(self, function, waiting: str):
+        from onset_hfo.openneuro import allow_network
         from onset_review.workers import run
 
         self.status.setText(waiting)
         self.setEnabled(False)
         worker = _Call(function)
         try:
-            run(worker)
+            with allow_network():       # asked for here, so not refused as offline
+                run(worker)
         finally:
             self.setEnabled(True)
         worker.deleteLater()

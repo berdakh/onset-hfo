@@ -1423,9 +1423,12 @@ assistant work on it unchanged.
 | Curry, EEGLAB, EGI, Neuroscan, Eximia, MNE | `.cdt`, `.set`, `.mff`, `.cnt`, `.nxe`, `.fif` |
 
 **A public recording instead: File → Open from OpenNeuro…**
-1. Type any OpenNeuro dataset id, such as `ds004100`, and press *List
-   recordings*. The dialog shows the dataset's name, licence and citation, and
-   every recording in it.
+1. Search the catalogue of OpenNeuro's EEG and iEEG datasets by name (for
+   example *epilepsy*), or type any dataset id, such as `ds004100`.
+   Double-click a dataset or press *List recordings*. The dialog shows the
+   dataset's name, licence and citation, and every recording in it. This
+   reaches openneuro.org even when the window was started offline: choosing
+   it here is the asking.
 2. Pick one and a window, then *Download and open*.
 3. The window comes through the same confirmation as a file of your own, with
    the dataset's own channel types and mains frequency already set. Channels

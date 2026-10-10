@@ -83,3 +83,36 @@ def test_an_edf_window_is_offset_within_its_records(qapp, archive):
     request = import_dialog_for(dialog.bunch).request()
     # The file holds whole records from 2 s, so the window is 0.5–2.5 s into it.
     assert (request.t_start, request.t_stop) == (0.5, 2.5)
+
+
+def test_the_catalogue_is_searched_as_you_type_and_chooses_the_dataset(qapp, archive):
+    from onset_hfo import openneuro
+
+    openneuro.build_catalogue(out=archive["home"] / "openneuro_catalogue.csv", workers=1,
+                              progress=lambda *_: None)
+    dialog = OpenNeuroDialog(data_home=archive["home"])
+    assert dialog.found.rowCount() == 1            # iEEG first, and the test archive is iEEG
+    assert dialog.found.item(0, 1).text() == "iEEG"
+    assert "1 of 1 OpenNeuro datasets" in dialog.found_count.text()
+    dialog.search.setText("no such words")
+    assert dialog.found.rowCount() == 0
+    dialog.search.setText("test archive")
+    dialog.found.selectRow(0)
+    assert dialog.dataset.text() == DS
+    assert dialog.list_recordings() and dialog.table.rowCount() == 3
+
+
+def test_listing_reaches_the_network_even_when_the_window_is_offline(qapp, archive,
+                                                                     monkeypatch):
+    from onset_hfo import openneuro
+    from onset_hfo.datasets import OFFLINE_ENV, offline
+
+    monkeypatch.setenv(OFFLINE_ENV, "1")
+    seen = []
+    real = openneuro.describe_openneuro
+    monkeypatch.setattr(openneuro, "describe_openneuro",
+                        lambda *a, **k: seen.append(offline()) or real(*a, **k))
+    dialog = OpenNeuroDialog(data_home=archive["home"], dataset=DS)
+    assert dialog.list_recordings()
+    assert seen == [False], "the asking lifts the refusal for its own calls"
+    assert offline(), "and puts it back afterwards"

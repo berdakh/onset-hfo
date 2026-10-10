@@ -52,8 +52,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-__all__ = ["fetch_openneuro", "list_openneuro", "describe_openneuro", "get_data_home",
-           "clear_data_home", "Bunch", "DATA_HOME_ENV", "SIGNAL_FORMATS"]
+__all__ = ["fetch_openneuro", "list_openneuro", "describe_openneuro", "catalogue",
+           "build_catalogue", "allow_network", "get_data_home", "clear_data_home", "Bunch",
+           "DATA_HOME_ENV", "SIGNAL_FORMATS", "CATALOGUE"]
 
 BUCKET = "https://s3.amazonaws.com/openneuro.org"
 DATA_HOME_ENV = "ONSET_HFO_DATA"
@@ -83,6 +84,145 @@ class Bunch(dict):
 
     def __dir__(self):
         return list(self.keys())
+
+
+#: The OpenNeuro datasets with continuous EEG or iEEG, bundled so a dataset can be
+#: found by name without the network; `build_catalogue` makes it, `catalogue` reads it.
+CATALOGUE = Path(__file__).with_name("openneuro_catalogue.csv")
+CATALOGUE_COLUMNS = ["dataset_id", "name", "modalities", "subjects", "license", "doi"]
+
+
+# -- the network, when asked for ---------------------------------------------------------------
+class allow_network:
+    """Lift ``ONSET_HFO_OFFLINE`` for the calls inside, then put it back.
+
+    The desktop app runs offline unless started with ``--allow-fetch``, so it
+    never reaches for an archive unasked. Listing or downloading from the
+    OpenNeuro dialog *is* the asking, so the dialog runs its calls inside this.
+    """
+
+    def __enter__(self):
+        import os
+
+        from onset_hfo.datasets import OFFLINE_ENV
+
+        self._previous = os.environ.pop(OFFLINE_ENV, None)
+        return self
+
+    def __exit__(self, *_):
+        import os
+
+        from onset_hfo.datasets import OFFLINE_ENV
+
+        if self._previous is not None:
+            os.environ[OFFLINE_ENV] = self._previous
+        return False
+
+
+# -- the catalogue ----------------------------------------------------------------------------
+def catalogue(modality: str | None = None, search: str | None = None,
+              data_home=None) -> pd.DataFrame:
+    """The OpenNeuro datasets with continuous EEG or iEEG: ``dataset_id``,
+    ``name``, ``modalities`` (e.g. "ieeg" or "eeg,ieeg"), ``subjects``,
+    ``license`` and ``doi``.
+
+    Read from a refreshed copy in the data home when `build_catalogue` has made
+    one there, else from the copy bundled with the package. `modality` keeps
+    datasets with that kind of recording; `search` keeps those whose id or name
+    contains every word of it (any case)."""
+    refreshed = get_data_home(data_home) / "openneuro_catalogue.csv"
+    path = refreshed if refreshed.exists() else CATALOGUE
+    if not path.exists():
+        table = pd.DataFrame(columns=CATALOGUE_COLUMNS)
+    else:
+        table = pd.read_csv(path, dtype={"name": str, "modalities": str, "license": str,
+                                         "doi": str}, keep_default_na=False)
+    if modality:
+        table = table[table["modalities"].str.split(",").apply(lambda m: modality in m)]
+    for word in str(search or "").lower().split():
+        table = table[table["dataset_id"].str.lower().str.contains(word, regex=False)
+                      | table["name"].str.lower().str.contains(word, regex=False)]
+    return table.reset_index(drop=True)
+
+
+def _catalogue_row(dataset_id: str) -> dict | None:
+    """One dataset's row, from two small requests: the top of its listing (for
+    its subjects and kinds of recording) and its ``dataset_description.json``."""
+    import urllib.parse
+
+    from onset_hfo import datasets
+
+    # From the first subject's files, not the dataset's: "derivatives/" sorts
+    # before "sub-" and can fill the first thousand keys on its own.
+    query = {"list-type": "2", "prefix": f"{dataset_id}/sub-", "max-keys": "1000"}
+    xml = datasets._http_get(f"{BUCKET}/?{urllib.parse.urlencode(query)}",
+                             retries=2).decode("utf-8", "replace")
+    keys = re.findall(r"<Key>([^<]+)</Key>", xml)
+    kinds = sorted({part for key in keys for part in key.split("/")[2:-1]
+                    if part in ("eeg", "ieeg")})
+    if not kinds:
+        return None
+    query = {"list-type": "2", "prefix": f"{dataset_id}/", "delimiter": "/",
+             "max-keys": "1000"}
+    tops = datasets._http_get(f"{BUCKET}/?{urllib.parse.urlencode(query)}",
+                              retries=2).decode("utf-8", "replace")
+    subjects = len(re.findall(r"<Prefix>[^<]*/sub-[^<]*/</Prefix>", tops))
+    try:
+        meta = json.loads(datasets._http_get(f"{BUCKET}/{dataset_id}/dataset_description.json",
+                                             retries=2))
+    except Exception:       # noqa: BLE001 - a dataset without one still counts
+        meta = {}
+    name = " ".join(str(meta.get("Name", "")).split())
+    return {"dataset_id": dataset_id, "name": name or dataset_id,
+            "modalities": ",".join(kinds), "subjects": subjects,
+            "license": str(meta.get("License", "") or ""),
+            "doi": str(meta.get("DatasetDOI", "") or "").replace("doi:", "").strip()}
+
+
+def build_catalogue(out=None, workers: int = 16, progress=print) -> pd.DataFrame:
+    """Survey every dataset on OpenNeuro and keep those with EEG or iEEG.
+
+    About three small requests per dataset, a few minutes in all. Writes the
+    table to `out` (default: the data home, where `catalogue` will prefer it
+    to the bundled copy) and returns it."""
+    import concurrent.futures as futures
+    import urllib.parse
+
+    from onset_hfo import datasets
+
+    ids, token = [], None
+    while True:
+        query = {"list-type": "2", "delimiter": "/", "max-keys": "1000"}
+        if token:
+            query["continuation-token"] = token
+        xml = datasets._http_get(f"{BUCKET}/?{urllib.parse.urlencode(query)}").decode()
+        ids += re.findall(r"<Prefix>(ds\d{6})/</Prefix>", xml)
+        more = re.search(r"<NextContinuationToken>([^<]+)</NextContinuationToken>", xml)
+        if not more:
+            break
+        token = more.group(1)
+    progress(f"{len(ids)} datasets on OpenNeuro; surveying them")
+    rows, failed = [], []
+    with futures.ThreadPoolExecutor(workers) as pool:
+        jobs = {pool.submit(_catalogue_row, i): i for i in ids}
+        for n, job in enumerate(futures.as_completed(jobs), 1):
+            try:
+                row = job.result()
+            except Exception:       # noqa: BLE001 - counted, not fatal
+                failed.append(jobs[job])
+                continue
+            if row:
+                rows.append(row)
+            if n % 200 == 0:
+                progress(f"{n} of {len(ids)} surveyed, {len(rows)} with EEG or iEEG")
+    table = pd.DataFrame(rows, columns=CATALOGUE_COLUMNS).sort_values("dataset_id")
+    out = Path(out) if out else get_data_home() / "openneuro_catalogue.csv"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    table.to_csv(out, index=False)
+    progress(f"{len(table)} datasets with EEG or iEEG written to {out}"
+             + (f"; {len(failed)} could not be read: {', '.join(sorted(failed)[:10])}"
+                if failed else ""))
+    return table.reset_index(drop=True)
 
 
 # -- the data home ----------------------------------------------------------------------------

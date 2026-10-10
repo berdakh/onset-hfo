@@ -111,9 +111,19 @@ def serve_archive(tmp_path, monkeypatch) -> dict:
     def serve(url, byte_range=None, **_):
         asked.append((url, byte_range))
         if "?" in url:
-            prefix = urllib.parse.parse_qs(url.split("?", 1)[1])["prefix"][0]
-            body = "".join(f"<Contents><Key>{k}</Key><Size>{len(v)}</Size></Contents>"
-                           for k, v in sorted(files.items()) if k.startswith(prefix))
+            query = urllib.parse.parse_qs(url.split("?", 1)[1])
+            prefix = query.get("prefix", [""])[0]
+            keys = [k for k in sorted(files) if k.startswith(prefix)]
+            if query.get("delimiter"):     # S3's folders: one level, then the files
+                folders = sorted({prefix + k[len(prefix):].split("/", 1)[0] + "/"
+                                  for k in keys if "/" in k[len(prefix):]})
+                keys = [k for k in keys if "/" not in k[len(prefix):]]
+                body = "".join(f"<CommonPrefixes><Prefix>{f}</Prefix></CommonPrefixes>"
+                               for f in folders)
+            else:
+                body = ""
+            body += "".join(f"<Contents><Key>{k}</Key><Size>{len(files[k])}</Size></Contents>"
+                            for k in keys)
             return f"<ListBucketResult>{body}</ListBucketResult>".encode()
         key = urllib.parse.unquote(url.split("openneuro.org/", 1)[1])
         if key not in files:
@@ -239,3 +249,54 @@ def test_the_command_line_lists_describes_and_fetches(archive, capsys):
                  "--t-stop", "2", "--data-home", home]) == 0
     assert capsys.readouterr().out.strip().endswith("_ieeg.vhdr")
     assert main(["openneuro", "list", "nope", "--data-home", home]) == 1
+
+
+def test_the_catalogue_finds_datasets_by_name_and_kind(archive, monkeypatch):
+    table = openneuro.build_catalogue(out=archive["home"] / "openneuro_catalogue.csv",
+                                      workers=2, progress=lambda *_: None)
+    assert table.to_dict("records") == [{
+        "dataset_id": DS, "name": "A test archive", "modalities": "ieeg", "subjects": 3,
+        "license": "CC0", "doi": "10.0/test"}]
+    # The refreshed copy in the data home is preferred to the bundled one.
+    assert list(openneuro.catalogue(data_home=archive["home"])["dataset_id"]) == [DS]
+    assert len(openneuro.catalogue(search="test ARCHIVE", data_home=archive["home"])) == 1
+    assert len(openneuro.catalogue(search="test sleep", data_home=archive["home"])) == 0
+    assert len(openneuro.catalogue(modality="eeg", data_home=archive["home"])) == 0
+
+
+def test_the_bundled_catalogue_holds_the_archives_this_project_uses(tmp_path):
+    bundled = openneuro.catalogue(data_home=tmp_path)
+    assert len(bundled) > 100
+    assert set(bundled.columns) == set(openneuro.CATALOGUE_COLUMNS)
+    assert bundled["dataset_id"].is_unique
+    for dataset in ("ds003029", "ds003498", "ds004100", "ds003688"):
+        row = bundled[bundled["dataset_id"] == dataset]
+        assert len(row) == 1 and "ieeg" in row.iloc[0]["modalities"], dataset
+    assert set(openneuro.catalogue(modality="ieeg", data_home=tmp_path)["modalities"]
+               .str.contains("ieeg")) == {True}
+    assert "HUP" in openneuro.catalogue(search="hup", data_home=tmp_path).iloc[0]["name"]
+
+
+def test_the_network_is_allowed_only_inside_the_asking(monkeypatch):
+    from onset_hfo.datasets import OFFLINE_ENV, offline
+
+    monkeypatch.setenv(OFFLINE_ENV, "1")
+    with openneuro.allow_network():
+        assert not offline()
+    assert offline()
+    monkeypatch.delenv(OFFLINE_ENV)
+    with openneuro.allow_network():
+        assert not offline()
+    assert not offline()
+
+
+def test_the_command_line_searches_the_catalogue(archive, capsys):
+    from onset_hfo.cli import main
+
+    openneuro.build_catalogue(out=archive["home"] / "openneuro_catalogue.csv", workers=1,
+                              progress=lambda *_: None)
+    home = str(archive["home"])
+    assert main(["openneuro", "catalogue", "--search", "test", "--data-home", home]) == 0
+    assert DS in capsys.readouterr().out
+    assert main(["openneuro", "list", "--data-home", home]) == 1
+    assert "needs a dataset id" in capsys.readouterr().err

@@ -444,6 +444,19 @@ def _cmd_openneuro(args: argparse.Namespace) -> int:
     from onset_hfo import openneuro
 
     try:
+        if args.action == "catalogue":
+            if args.refresh:
+                openneuro.build_catalogue(out=None)
+            table = openneuro.catalogue(modality=args.kind, search=args.search,
+                                        data_home=args.data_home)
+            with pd.option_context("display.max_rows", None, "display.width", 200,
+                                   "display.max_colwidth", 80):
+                print(table[["dataset_id", "modalities", "subjects", "name"]]
+                      .to_string(index=False) if len(table) else "no dataset matches")
+            return 0
+        if not args.dataset:
+            raise ValueError(f"'{args.action}' needs a dataset id, such as ds004100; "
+                             "'catalogue --search …' finds one")
         if args.action == "describe":
             print(openneuro.describe_openneuro(args.dataset, data_home=args.data_home).DESCR)
         elif args.action == "list":
@@ -637,8 +650,17 @@ def build_parser() -> argparse.ArgumentParser:
 
     neuro = sub.add_parser(
         "openneuro", help="list, describe or fetch any OpenNeuro dataset's recordings")
-    neuro.add_argument("action", choices=("list", "describe", "fetch"))
-    neuro.add_argument("dataset", help="an OpenNeuro id, such as ds004100")
+    neuro.add_argument("action", choices=("catalogue", "list", "describe", "fetch"),
+                       help="catalogue: find datasets by name; the others take a dataset id")
+    neuro.add_argument("dataset", nargs="?", default=None,
+                       help="an OpenNeuro id, such as ds004100")
+    neuro.add_argument("--search", default=None,
+                       help="catalogue: words every dataset's id or name must contain")
+    neuro.add_argument("--kind", choices=("ieeg", "eeg"), default=None,
+                       help="catalogue: only datasets with this kind of recording")
+    neuro.add_argument("--refresh", action="store_true",
+                       help="catalogue: survey OpenNeuro again (a few minutes) rather than "
+                            "read the copy bundled with the package")
     neuro.add_argument("--subject", default=None)
     neuro.add_argument("--session", default=None)
     neuro.add_argument("--task", default=None)
