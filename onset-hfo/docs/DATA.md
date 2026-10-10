@@ -443,8 +443,14 @@ python -m onset_hfo.cli openneuro fetch ds004100 --subject HUP060 --task ictal \
 The window opens as a file of your own, so its trace counts from 0. Its label
 says where it starts in the original recording.
 
-**Ripples need more than 500 Hz.** Many archives record at 500 or 512 Hz,
-HUP among them. Check `bunch.sfreq` before running the detectors.
+**Ripples need at least 556 Hz.** Many archives record at 500 or 512 Hz,
+HUP among them. On such a recording `run_pipeline` skips the HFO detectors
+and says why in `result.hfo_skipped` and the report's notes. It still runs:
+- the interictal discharge detector;
+- the quality checks.
+
+The import dialog does not offer to open such a recording, because the
+window has no HFO band to rank it by.
 
 ## Using your own data
 

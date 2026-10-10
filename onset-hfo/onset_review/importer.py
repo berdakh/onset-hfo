@@ -283,10 +283,17 @@ class ImportDialog(QDialog):
         analysed = sum(1 for kind in chosen if kind in ("seeg", "ecog"))
         self.counts.setText(f"{analysed} of {len(chosen)} will be analysed")
         button = self.buttons.button(QDialogButtonBox.Open)
-        button.setEnabled(analysed > 0)
-        button.setToolTip("" if analysed else
-                          "Nothing is marked SEEG or ECoG, so there would be "
-                          "nothing to analyse.")
+        # A recording too slow for every HFO band has nothing this window can
+        # rank, so it is not offered; the band row already says why.
+        band_ok = self.band.isEnabled()
+        button.setEnabled(analysed > 0 and band_ok)
+        button.setToolTip(
+            "" if analysed and band_ok else
+            "Nothing is marked SEEG or ECoG, so there would be nothing to analyse."
+            if not analysed else
+            "This recording is sampled too slowly for ripples; see the band row. "
+            "Its interictal discharges can still be analysed from the Python console "
+            "(onset_hfo.pipeline.run_pipeline).")
 
     # -- settings ----------------------------------------------------------
     def _settings_group(self) -> QGroupBox:
