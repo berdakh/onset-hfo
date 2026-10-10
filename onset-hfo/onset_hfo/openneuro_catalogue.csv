@@ -1,0 +1,662 @@
+dataset_id,name,modalities,subjects,license,doi
+ds001784,Effects of ON/OFF deep brain stimulation on cognitive control in treatment-resistant depression (EEG),eeg,14,CC0,10.18112/openneuro.ds001784.v1.1.2
+ds001785,Evidence accumulation relates to perceptual consciousness and monitoring,"eeg,ieeg",20,CC0,10.18112/openneuro.ds001785.v1.1.1
+ds001787,EEG meditation study,eeg,24,CC0,10.18112/openneuro.ds001787.v1.1.1
+ds001810,"EEG study of the attentional blink; before, during, and after transcranial Direct Current Stimulation (tDCS)",eeg,47,CC0,10.18112/openneuro.ds001810.v1.1.0
+ds001849,RS_TMSEEG_Data,eeg,20,CC0,10.18112/openneuro.ds001849.v1.0.2
+ds001868,Brainstorm Tutorial ECoG/sEEG,ieeg,1,CC0,10.18112/openneuro.ds001868.v1.0.2
+ds001971,Audiocue walking study,eeg,20,Creative commons,10.18112/openneuro.ds001971.v1.1.1
+ds002034,Real-time EEG feedback on alpha power lateralization leads to behavioral improvements in a covert attention task,eeg,14,CC0,10.18112/openneuro.ds002034.v1.0.3
+ds002094,Single-pulse open-loop TMS-EEG dataset,eeg,20,CC0,
+ds002158,Disentangling the origins of confidence in speeded perceptual judgments through multimodal imaging,eeg,20,CC0,10.18112/openneuro.ds002158.v1.0.2
+ds002173,ds002173,eeg,17,CC0,mockDOI
+ds002181,CRYPTO and PROVIDE EEG Baseline Data,eeg,226,CC0,mockDOI
+ds002216,ds002216,eeg,10,,
+ds002218,Auditory and Visual Rhythm Omission EEG,eeg,18,CC0,mockDOI
+ds002256,ds002256,eeg,226,,
+ds002257,ds002257,eeg,226,,
+ds002336,A multi-modal human neuroimaging dataset for data integration: simultaneous EEG and fMRI acquisition during a motor imagery neurofeedback task: XP1,eeg,10,CC0,10.18112/openneuro.ds002336.v2.0.2
+ds002338,A multi-modal human neuroimaging dataset for data integration: simultaneous EEG and fMRI acquisition during a motor imagery neurofeedback task: XP2,eeg,17,CC0,10.18112/openneuro.ds002338.v2.0.1
+ds002508,ds002508,eeg,49,,
+ds002578,Visual Oddball Task (256 channels),eeg,2,CC0,10.18112/openneuro.ds002578.v1.1.0
+ds002680,Go-nogo categorization and detection task,eeg,14,CC0,10.18112/openneuro.ds002680.v1.2.0
+ds002691,Internal attention study,eeg,20,CC0,10.18112/openneuro.ds002691.v1.1.0
+ds002714,ds002714,eeg,2,,
+ds002718,Face processing EEG dataset for EEGLAB,eeg,18,CC0,10.18112/openneuro.ds002718.v1.0.5
+ds002720,A dataset recorded during development of a tempo-based brain-computer music interface,eeg,18,CC0,10.18112/openneuro.ds002720.v1.0.1
+ds002721,An EEG dataset recorded during affective music listening,eeg,31,CC0,10.18112/openneuro.ds002721.v1.0.1
+ds002722,A dataset recorded during development of an affective brain-computer music interface: calibration session,eeg,19,CC0,10.18112/openneuro.ds002722.v1.0.1
+ds002723,A dataset recorded during development of an affective brain-computer music interface: testing session,eeg,8,CC0,10.18112/openneuro.ds002723.v1.1.0
+ds002724,A dataset recorded during development of an affective brain-computer music interface: training sessions,eeg,10,CC0,10.18112/openneuro.ds002724.v1.0.1
+ds002725,A dataset recording joint EEG-fMRI during affective music listening,eeg,21,CC0,10.18112/openneuro.ds002725.v1.0.0
+ds002778,UC San Diego Resting State EEG Data from Patients with Parkinson's Disease,eeg,31,CC0,10.18112/openneuro.ds002778.v1.0.4
+ds002784,ds002784,eeg,1,,
+ds002791,DataSet1,eeg,23,CC0,10.18112/openneuro.ds002791.v1.0.0
+ds002799,Human es-fMRI Resource: Concurrent deep-brain stimulation and whole-brain functional MRI,ieeg,26,CC0,10.18112/openneuro.ds002799.v1.0.4
+ds002814,A Multimodal Neuroimaging Dataset to Study Spatiotemporal Dynamics of Visual Processing in Humans,eeg,21,CC0,10.18112/openneuro.ds002814.v1.3.0
+ds002833,DataSet2,eeg,20,CC0,10.18112/openneuro.ds002833.v1.0.0
+ds002892,ds002892,eeg,20,,
+ds002893,Auditory-Visual Shift Study,eeg,49,CC0,10.18112/openneuro.ds002893.v2.0.0
+ds003004,Imagined Emotion Study,eeg,34,CC0,10.18112/openneuro.ds003004.v1.1.0
+ds003029,Epilepsy-iEEG-Multicenter-Dataset,ieeg,37,CC0,10.18112/openneuro.ds003029.v1.0.3
+ds003032,ds003032,eeg,3,,
+ds003039,free walking study,eeg,34,CC0,10.18112/openneuro.ds003039.v1.0.2
+ds003054,ds003054,eeg,40,,
+ds003061,EEG data from an auditory oddball task,eeg,13,CC0,10.18112/openneuro.ds003061.v1.1.2
+ds003063,ds003063,eeg,40,,
+ds003064,ds003064,eeg,40,,
+ds003065,ds003065,eeg,40,,
+ds003066,ds003066,eeg,40,,
+ds003067,ds003067,eeg,40,,
+ds003068,ds003068,eeg,40,,
+ds003069,ds003069,eeg,40,,
+ds003078,PROBE iEEG,ieeg,6,CC0,10.18112/openneuro.ds003078.v1.0.0
+ds003190,Assesment of the visual stimuli properties in P300 paradigm,eeg,19,CC0,10.18112/openneuro.ds003190.v1.0.1
+ds003194,Neuroepo multisession,eeg,15,CC0,10.18112/openneuro.ds003194.v1.0.3
+ds003195,Placebo Neuroepo multisession,eeg,10,CC0,10.18112/openneuro.ds003195.v1.0.3
+ds003343,Disentangling the percepts of illusory movement and sensory stimulation during tendon vibration in the EEG,eeg,20,CC0,10.18112/openneuro.ds003343.v2.0.1
+ds003374,Dataset of neurons and intracranial EEG from human amygdala during aversive dynamic visual stimulation,ieeg,9,CC0,10.18112/openneuro.ds003374.v1.1.1
+ds003380,"Corticothalamic communication under analgesia, sedation and gradual ischemia: a multimodal model of controlled gradual cerebral ischemia in pig",eeg,12,CC0,10.18112/openneuro.ds003380.v1.0.0
+ds003420,HD-EEGtask(Dataset 1),eeg,23,CC0,10.18112/openneuro.ds003420.v1.0.2
+ds003421,HD-EEGtask(Dataset 2),eeg,20,CC0,10.18112/openneuro.ds003421.v1.0.2
+ds003458,EEG: Three armed bandit gambling task,eeg,23,CC0,10.18112/openneuro.ds003458.v1.1.0
+ds003474,EEG: Probabilistic Selection and Depression,eeg,122,CC0,10.18112/openneuro.ds003474.v1.1.0
+ds003478,EEG: Depression rest,eeg,122,CC0,10.18112/openneuro.ds003478.v1.1.0
+ds003490,EEG: 3-Stim Auditory Oddball and Rest in Parkinson's,eeg,50,CC0,10.18112/openneuro.ds003490.v1.1.0
+ds003498,interictal iEEG during slow-wave sleep with HFO markings,ieeg,20,CC0,10.18112/openneuro.ds003498.v1.0.1
+ds003505,VEPCON: Source imaging of high-density visual evoked potentials with multi-scale brain parcellations and connectomes,eeg,20,CC0,10.18112/openneuro.ds003505.v1.0.0
+ds003506,EEG: Reinforcement Learning in Parkinson's,eeg,56,CC0,10.18112/openneuro.ds003506.v1.1.0
+ds003509,EEG: Simon Conflict in Parkinson's,eeg,56,CC0,10.18112/openneuro.ds003509.v1.1.0
+ds003516,EEG: Attended Speaker Paradigm (Own Name in Ignored Stream),eeg,25,CC0,10.18112/openneuro.ds003516.v1.1.1
+ds003517,EEG: Continuous gameplay of an 8-bit style video game,eeg,17,CC0,10.18112/openneuro.ds003517.v1.1.0
+ds003518,EEG: Simon Conflict w/ Reinforcement + Cabergoline Challenge,eeg,110,CC0,10.18112/openneuro.ds003518.v1.1.0
+ds003519,EEG: Visual Working Memory + Cabergoline Challenge,eeg,27,CC0,10.18112/openneuro.ds003519.v1.1.0
+ds003522,EEG: Three-Stim Auditory Oddball and Rest in Acute and Chronic TBI,eeg,96,CC0,10.18112/openneuro.ds003522.v1.1.0
+ds003523,EEG: Visual Working Memory in Acute TBI,eeg,91,CC0,10.18112/openneuro.ds003523.v1.1.0
+ds003552,ds003552,eeg,19,,
+ds003555,Dataset of EEG recordings of pediatric patients with epilepsy based on the 10-20 system,eeg,30,CC0,10.18112/openneuro.ds003555.v1.0.1
+ds003565,EEG: verbal working memory,eeg,156,CC0,10.18112/openneuro.ds003565.v1.0.3
+ds003570,EEG: Improvisation and Musical Structures,eeg,40,CC0,10.18112/openneuro.ds003570.v1.0.0
+ds003574,Reward biases spontaneous neural reactivation during sleep,eeg,18,CC0,10.18112/openneuro.ds003574.v1.0.2
+ds003602,Childhood Sexual Abuse and problem drinking in women: Neurobehavioral mechanisms,eeg,118,CC0,10.18112/openneuro.ds003602.v1.0.0
+ds003609,ds003609,eeg,44,,
+ds003620,Runabout: A mobile EEG study of auditory oddball processing in laboratory and real-world conditions,eeg,44,CC0,10.18112/openneuro.ds003620.v1.1.1
+ds003626,Inner Speech,eeg,10,CC0,10.18112/openneuro.ds003626.v2.1.2
+ds003638,EEG: Electrophysiological biomarkers of behavioral dimensions from cross-species paradigms,eeg,57,CC0,10.18112/openneuro.ds003638.v1.0.0
+ds003645,Face processing MEEG dataset with HED annotation,eeg,19,CC0,10.18112/openneuro.ds003645.v2.0.2
+ds003648,ds003648,eeg,190,,
+ds003655,VerbalWorkingMemory,eeg,156,CC0,10.18112/openneuro.ds003655.v1.0.0
+ds003670,"Dataset of Concurrent EEG, ECG, and Behavior with Multiple Doses of transcranial Electrical Stimulation - BIDS",eeg,25,CC0,10.18112/openneuro.ds003670.v1.1.0
+ds003688,Open multimodal iEEG-fMRI dataset from naturalistic stimulation with a short audiovisual film,ieeg,63,CC0,10.18112/openneuro.ds003688.v1.0.7
+ds003690,"EEG, ECG and pupil data from young and older adults: rest and auditory cued reaction time tasks",eeg,75,CC0,10.18112/openneuro.ds003690.v1.0.0
+ds003702,Social Memory cuing,eeg,47,CC0,10.18112/openneuro.ds003702.v1.0.1
+ds003708,Basis profile curve identification to understand electrical stimulation effects in human brain networks,ieeg,1,CC0,10.18112/openneuro.ds003708.v1.0.0
+ds003710,APPLESEED Example Dataset,eeg,13,CC0,10.18112/openneuro.ds003710.v1.0.1
+ds003722,ds003722,eeg,10,,
+ds003738,ds003738,eeg,26,,
+ds003739,Perturbed beam-walking task,eeg,30,CC0,10.18112/openneuro.ds003739.v1.0.2
+ds003751,Dataset on Emotion with Naturalistic Stimuli (DENS),eeg,40,CC0,10.18112/openneuro.ds003751.v1.0.2
+ds003753,EEG: Probabilistic Learning with Affective Feedback: Exp #2,eeg,25,CC0,10.18112/openneuro.ds003753.v1.1.0
+ds003755,ds003755,eeg,94,,
+ds003756,ds003756,eeg,47,,
+ds003766,A resource for assessing dynamic binary choices in the adult brain using EEG and mouse-tracking,eeg,31,CC0,10.18112/openneuro.ds003766.v2.0.3
+ds003768,Simultaneous EEG and fMRI signals during sleep from humans,eeg,33,CC0,10.18112/openneuro.ds003768.v1.0.0
+ds003774,Music Listening- Genre EEG dataset (MUSIN-G),eeg,20,CC0,10.18112/openneuro.ds003774.v1.0.0
+ds003775,SRM Resting-state EEG,eeg,111,CC0,10.18112/openneuro.ds003775.v1.0.0
+ds003781,ds003781,eeg,12,,
+ds003792,ds003792,eeg,12,,
+ds003793,ds003793,eeg,1,,
+ds003794,ds003794,eeg,12,,
+ds003800,Auditory Gamma Entrainment,eeg,13,CC0,10.18112/openneuro.ds003800.v1.0.0
+ds003801,Neural Tracking to go,eeg,20,CC0,10.18112/openneuro.ds003801.v1.0.0
+ds003805,Multisensory Gamma Entrainment,eeg,1,CC0,10.18112/openneuro.ds003805.v1.0.0
+ds003810,Motor Imagery vs Rest - Low-Cost EEG System,eeg,10,CC0,10.18112/openneuro.ds003810.v1.0.0
+ds003816,The Effect of Buddhism Derived Loving Kindness Meditation on Modulating EEG: Long-term and Short-term Effect,eeg,48,CC0,10.18112/openneuro.ds003816.v1.0.1
+ds003822,EEG: Probabilistic Learning with Affective Feedback: Exp #1,eeg,25,CC0,10.18112/openneuro.ds003822.v1.1.0
+ds003825,"Human electroencephalography recordings from 50 subjects for 22,248 images from 1,854 object concepts",eeg,50,CC0,10.18112/openneuro.ds003825.v1.1.2
+ds003838,"EEG, pupillometry, ECG and photoplethysmography, and behavioral data in the digit span task and rest",eeg,86,CC0,10.18112/openneuro.ds003838.v1.0.6
+ds003844,Dataset Clinical Epilepsy iEEG to BIDS -RESPect_intraoperative_iEEG,ieeg,6,CC0,10.18112/openneuro.ds003844.v1.0.1
+ds003846,Prediction Error,eeg,19,CC0,10.18112/openneuro.ds003846.v2.0.2
+ds003848,Dataset Clinical Epilepsy iEEG to BIDS - RESPect_longterm_iEEG,ieeg,6,CC0,10.18112/openneuro.ds003848.v1.0.3
+ds003855,ds003855,eeg,24,,
+ds003857,ds003857,eeg,24,,
+ds003873,Somatosensory evoked potentials in the human spinal cord to mixed nerve stimulation,eeg,39,CC0,10.18112/openneuro.ds003873.v1.0.0
+ds003876,Epilepsy-iEEG-Interictal-Multicenter-Dataset,ieeg,39,CC0,10.18112/openneuro.ds003876.v1.0.2
+ds003878,ds003878,eeg,24,,
+ds003885,Capacity for movement is an organisational principle in object representations: EEG data from Experiment 1,eeg,24,CC0,10.18112/openneuro.ds003885.v1.0.6
+ds003887,Capacity for movement is a major organisational principle in object representations: EEG data from Experiment 3,eeg,24,CC0,10.18112/openneuro.ds003887.v1.0.0
+ds003889,ds003889,eeg,26,,
+ds003891,ds003891,eeg,40,,
+ds003944,EEG: First Episode Psychosis vs. Control Resting Task 1,eeg,82,CC0,10.18112/openneuro.ds003944.v1.0.0
+ds003947,EEG: First Episode Psychosis vs. Control Resting Task 2,eeg,61,CC0,10.18112/openneuro.ds003947.v1.0.0
+ds003969,Meditation vs thinking task,eeg,98,CC0,10.18112/openneuro.ds003969.v1.0.0
+ds003987,EEG: Amphetamine trials 5CCPT and Probabilistic Learning,eeg,23,CC0,10.18112/openneuro.ds003987.v1.0.0
+ds004000,Fribourg Ultimatum Game in Schizophrenia Study,eeg,43,CC0,10.18112/openneuro.ds004000.v1.0.0
+ds004010,MAVIS,eeg,24,CC0,10.18112/openneuro.ds004010.v1.0.0
+ds004015,Attended speaker paradigm (cEEGrid data),eeg,36,CC0,10.18112/openneuro.ds004015.v1.0.2
+ds004017,Embodied Learning for Literacy EEG,eeg,21,CC0,10.18112/openneuro.ds004017.v1.0.3
+ds004018,EEG recordings for 200 object images presented in RSVP sequences at 5Hz or 20Hz,eeg,16,CC0,10.18112/openneuro.ds004018.v2.0.0
+ds004019,Effect of obesity on arithmetic processing in preteens with high and low math skills. An event-related potentials study,eeg,62,CC0,10.18112/openneuro.ds004019.v1.0.0
+ds004022,Multimodal EEG and fNIRS Biosignal Acquisition during Motor Imagery Tasks in Patients with Orthopedic Impairment,eeg,7,CC0,10.18112/openneuro.ds004022.v1.0.0
+ds004024,"TMS-EEG-MRI-fMRI-DWI data on paired associative stimulation and connectivity (Shirley Ryan AbilityLab, Chicago, IL)",eeg,13,CC0,10.18112/openneuro.ds004024.v1.0.0
+ds004033,Electrode walking study,eeg,18,CC0,10.18112/openneuro.ds004033.v1.0.0
+ds004040,Trance channeling EEG study,eeg,13,CC0,10.18112/openneuro.ds004040.v1.0.0
+ds004043,The time-course of feature-based attention effects dissociated from temporal expectation and target-related processes,eeg,20,CC0,10.18112/openneuro.ds004043.v1.1.0
+ds004067,Moral conviction and metacognitive ability shape multiple stages of information processing,eeg,80,CC0,10.18112/openneuro.ds004067.v1.0.1
+ds004075,what_are_we_talking_about,eeg,29,CC0,10.18112/openneuro.ds004075.v1.0.0
+ds004080,CCEP ECoG dataset across age 4-51,ieeg,74,CC0,10.18112/openneuro.ds004080.v1.2.4
+ds004100,HUP iEEG Epilepsy Dataset,ieeg,58,CC0,10.18112/openneuro.ds004100.v1.1.3
+ds004105,BCIT Auditory Cueing,eeg,17,CC0,10.18112/openneuro.ds004105.v1.0.0
+ds004106,BCIT Advanced Guard Duty,eeg,27,CC0,10.18112/openneuro.ds004106.v1.0.0
+ds004117,Sternberg Working Memory,eeg,23,CC0,10.18112/openneuro.ds004117.v1.0.1
+ds004118,BCIT Calibration Driving,eeg,156,CC0,10.18112/openneuro.ds004118.v1.0.1
+ds004119,BCIT Basic Guard Duty,eeg,21,CC0,10.18112/openneuro.ds004119.v1.0.0
+ds004120,BCIT Baseline Driving,eeg,109,CC0,10.18112/openneuro.ds004120.v1.0.0
+ds004121,BCIT Mind Wandering,eeg,21,CC0,10.18112/openneuro.ds004121.v1.0.0
+ds004122,BCIT Speed Control,eeg,32,CC0,10.18112/openneuro.ds004122.v1.0.0
+ds004123,BCIT Traffic Complexity,eeg,29,CC0,10.18112/openneuro.ds004123.v1.0.0
+ds004127,Somatosensory Cortex Rat DISC Data,ieeg,8,CC0,10.18112/openneuro.ds004127.v3.0.0
+ds004147,Average Task Value,eeg,12,CC0,10.18112/openneuro.ds004147.v1.0.2
+ds004148,A test-retest resting and cognitive state EEG dataset,eeg,60,CC0,10.18112/openneuro.ds004148.v1.0.0
+ds004151,Effect of obesity on inhibitory control in preadolescents during stop-signal task. An event-related potentials study,eeg,57,CC0,10.18112/openneuro.ds004151.v1.0.0
+ds004152,Drum Trainer,eeg,21,CC0,10.18112/openneuro.ds004152.v1.1.2
+ds004166,"Effects of Forward and Backward Span Trainings on Working Memory: Evidence from a Randomized, Controlled Trial",eeg,71,CC0,10.18112/openneuro.ds004166.v1.0.0
+ds004178,ds004178,eeg,19,,
+ds004186,ds004186,eeg,991,,
+ds004194,Visual ECoG dataset,ieeg,14,CC0,10.18112/openneuro.ds004194.v3.0.0
+ds004196,FMRI-EEG Prestudy,eeg,4,CC0,10.18112/openneuro.ds004196.v1.0.12
+ds004200,Temporal Scaling,eeg,20,CC0,10.18112/openneuro.ds004200.v1.0.1
+ds004252,Rotation-tolerant representations elucidate the time course of high-level object processing,eeg,16,CC0,10.18112/openneuro.ds004252.v1.1.0
+ds004256,Encoding of Sound Source Elevation in Human Cortex,eeg,53,CC0,10.18112/openneuro.ds004256.v1.0.5
+ds004262,Continuous Feedback Processing,eeg,21,CC0,10.18112/openneuro.ds004262.v1.0.0
+ds004264,Steer the Ship,eeg,21,CC0,10.18112/openneuro.ds004264.v1.1.0
+ds004279,Large Spanish EEG,eeg,56,CC0,10.18112/openneuro.ds004279.v1.1.2
+ds004284,eeg-neuroforecasting,eeg,18,CC0,10.18112/openneuro.ds004284.v1.0.0
+ds004295,Reward gain and punishment avoidance reversal learning,eeg,26,CC0,10.18112/openneuro.ds004295.v1.0.0
+ds004306,EEG Semantic Imagination and Perception Dataset,eeg,12,CC0,10.18112/openneuro.ds004306.v1.0.2
+ds004315,"Mood Manipulation and PST, Experiment 1",eeg,50,CC0,10.18112/openneuro.ds004315.v1.0.0
+ds004317,"Mood Manipulation and PST, Experiment 2",eeg,50,CC0,10.18112/openneuro.ds004317.v1.0.3
+ds004324,ToonFaces,eeg,26,CC0,10.18112/openneuro.ds004324.v1.0.0
+ds004347,Symmetry perception and affective responses: a combined EEG/EMG study,eeg,24,CC0,10.18112/openneuro.ds004347.v1.0.0
+ds004348,Ear-EEG Sleep Monitoring 2017 (EESM17),eeg,9,CC0,10.18112/openneuro.ds004348.v1.0.5
+ds004350,Executive Functionning Study for Assessing the Effect of Neurofeedback,eeg,24,CC0,10.18112/openneuro.ds004350.v2.0.0
+ds004356,Subcortical responses to music and speech are alike while cortical responses diverge,eeg,22,CC0,10.18112/openneuro.ds004356.v2.2.1
+ds004357,Features-EEG,eeg,16,CC0,10.18112/openneuro.ds004357.v1.0.1
+ds004362,EEG Motor Movement/Imagery Dataset,eeg,109,CC0,10.18112/openneuro.ds004362.v1.0.0
+ds004363,ds004363,eeg,281,,
+ds004364,ds004364,eeg,292,,
+ds004367,Meta-rdk: Raw EEG data,eeg,40,CC0,10.18112/openneuro.ds004367.v1.0.2
+ds004368,Meta-rdk: Preprocessed EEG data,eeg,39,CC0,10.18112/openneuro.ds004368.v1.0.2
+ds004369,Blink-Pause-Relation (Competing Speaker Paradigm),eeg,41,CC0,10.18112/openneuro.ds004369.v1.0.1
+ds004370,PRIOS,ieeg,7,CC0,10.18112/openneuro.ds004370.v1.0.0
+ds004371,ds004371,eeg,292,,
+ds004372,ds004372,eeg,287,,
+ds004373,ds004373,eeg,294,,
+ds004374,ds004374,eeg,288,,
+ds004381,Intraoperative EEG dataset during medianus-tibialis stimulation with 8 different rates,eeg,18,CC0,10.18112/openneuro.ds004381.v1.0.2
+ds004388,Somatosensory evoked potentials in the human spinal cord to mixed nerve stimulation,eeg,40,CC0,10.18112/openneuro.ds004388.v1.0.0
+ds004389,Somatosensory evoked potentials in the human spinal cord to mixed and sensory nerve stimulation,eeg,26,CC0,10.18112/openneuro.ds004389.v1.0.0
+ds004395,Penn Electrophysiology of Encoding and Retrieval Study (PEERS),eeg,364,CC0,10.18112/openneuro.ds004395.v2.0.0
+ds004408,EEG responses to continuous naturalistic speech,eeg,19,CC0,10.18112/openneuro.ds004408.v1.0.8
+ds004444,The BMI-HDEEG dataset 1,eeg,30,CC0,10.18112/openneuro.ds004444.v1.0.1
+ds004446,The BMI-HDEEG dataset 2,eeg,30,CC0,10.18112/openneuro.ds004446.v1.0.1
+ds004447,The BMI-HDEEG dataset 3,eeg,22,CC0,10.18112/openneuro.ds004447.v1.0.1
+ds004448,The BMI-HDEEG dataset 4,eeg,56,CC0,10.18112/openneuro.ds004448.v1.0.2
+ds004457,Electrical stimulation of temporal and limbic circuitry produces distinct responses in human ventral temporal cortex,ieeg,5,CC0,10.18112/openneuro.ds004457.v1.0.1
+ds004460,EEG and motion capture data set for a full-body/joystick rotation task,eeg,20,CC0,10.18112/openneuro.ds004460.v1.1.0
+ds004473,sEEG Forced Two-Choice Task,ieeg,8,CC0,10.18112/openneuro.ds004473.v1.0.1
+ds004475,ds004475,eeg,30,CC0,10.18112/openneuro.ds004475.v1.0.2
+ds004477,PES - Pandemic Emergency Scenario,eeg,9,CC0,10.18112/openneuro.ds004477.v1.0.2
+ds004502,Anticipatory differences between Attention and Expectation,eeg,48,CC0,10.18112/openneuro.ds004502.v1.0.1
+ds004504,"A dataset of EEG recordings from: Alzheimer's disease, Frontotemporal dementia and Healthy subjects",eeg,88,CC0,10.18112/openneuro.ds004504.v1.0.9
+ds004505,Real World Table Tennis,eeg,25,CC0,10.18112/openneuro.ds004505.v1.0.4
+ds004511,Deception_data,eeg,45,CC0,10.18112/openneuro.ds004511.v1.0.2
+ds004514,Simultaneous EEG and fNIRS recordings for semantic decoding of imagined animals and tools,eeg,12,CC0,10.18112/openneuro.ds004514.v1.1.2
+ds004515,EEG: Alcohol imagery reinforcement learning task with light and heavy drinker participants,eeg,54,CC0,10.18112/openneuro.ds004515.v1.0.0
+ds004517,EEG recordings for semantic decoding of imagined animals and tools during auditory imagery task,eeg,7,CC0,10.18112/openneuro.ds004517.v1.0.2
+ds004519,Internal selective attention is delayed by competition between endogenous and exogenous factors,eeg,40,CC0,10.18112/openneuro.ds004519.v1.0.1
+ds004520,Changes in behavioral priority influence the accessibility of working memory content - Experiment 2,eeg,33,CC0,10.18112/openneuro.ds004520.v1.0.1
+ds004521,Changes in behavioral priority influence the accessibility of working memory content - Experiment 1,eeg,34,CC0,10.18112/openneuro.ds004521.v1.0.1
+ds004532,EEG: Probabilistic Selection Task (PST) + PST with Cabergoline Challenge,eeg,110,CC0,10.18112/openneuro.ds004532.v1.2.0
+ds004541,Multimodal EEG-fNIRS data from patients undergoing general anesthesia,eeg,8,CC0,10.18112/openneuro.ds004541.v1.0.0
+ds004549,ds004549,ieeg,1,,
+ds004551,iEEG on children during slow wave sleep,ieeg,114,CC0,10.18112/openneuro.ds004551.v1.0.6
+ds004554,Forced Picture Naming Task,eeg,16,CC0,10.18112/openneuro.ds004554.v1.0.4
+ds004561,Illusion of Agency over Electrically-Actuated Movements,eeg,23,CC0,10.18112/openneuro.ds004561.v1.0.0
+ds004563,Vicarious touch: overlapping neural patterns between seeing and feeling touch,eeg,40,CC0,10.18112/openneuro.ds004563.v1.0.1
+ds004572,The effects of sham hypnosis techniques,eeg,52,CC0,10.18112/openneuro.ds004572.v1.3.2
+ds004574,Cross-modal Oddball Task.,eeg,146,CC0,10.18112/openneuro.ds004574.v1.0.0
+ds004577,Dataset containing resting EEG for a sample of 103 normal infants in the first year of life,eeg,103,CC0,10.18112/openneuro.ds004577.v1.0.1
+ds004579,Interval Timing Task,eeg,139,CC0,10.18112/openneuro.ds004579.v1.0.0
+ds004580,Simon-conflict Task.,eeg,147,CC0,10.18112/openneuro.ds004580.v1.0.0
+ds004582,FakeFaceEmo_data,eeg,73,CC0,10.18112/openneuro.ds004582.v1.0.0
+ds004584,Rest eyes open,eeg,149,CC0,10.18112/openneuro.ds004584.v1.0.0
+ds004587,IllusionGameEEG_data,eeg,103,CC0,10.18112/openneuro.ds004587.v1.0.0
+ds004588,Neuma,eeg,42,CC0,10.18112/openneuro.ds004588.v1.2.0
+ds004595,EEG: RL Task (3-Armed Bandit) with alcohol cues in hazardous drinkers and ctls,eeg,53,CC0,10.18112/openneuro.ds004595.v1.0.0
+ds004598,LFP during linear track in 6-month old TgF344-AD rats,eeg,9,CC0,10.18112/openneuro.ds004598.v1.0.0
+ds004602,Registered Replication Report of ERN/Pe Psychometrics,eeg,182,CC0,10.18112/openneuro.ds004602.v1.0.3
+ds004603,Visual Attribute-Specific Contextual Trajectory Paradigm,eeg,37,CC0,10.18112/openneuro.ds004603.v1.1.0
+ds004621,The Nencki-Symfonia EEG/ERP dataset,eeg,42,CC0,10.18112/openneuro.ds004621.v1.0.4
+ds004624,Intracranial recordings using BCI2000 and the CorTec BrainInterchange,ieeg,3,CC0,10.18112/openneuro.ds004624.v2.0.0
+ds004625,Mind in Motion Young Adults Walking Over Uneven Terrain,eeg,32,CC0,10.18112/openneuro.ds004625.v1.0.2
+ds004626,Can we dissociate hypervigilance to social threats from altered perceptual decision-making processes in lonely individuals? An exploration with Drift Diffusion Modelling and event-related potentials.,eeg,52,CC0,10.18112/openneuro.ds004626.v1.0.2
+ds004635,Gaffrey Lab Infant Microstates Reliability,eeg,48,CC0,10.18112/openneuro.ds004635.v3.1.0
+ds004642,Intraoperative recordings of medianus stimulation with low and high impedance ECoG,ieeg,10,CC0,10.18112/openneuro.ds004642.v1.0.1
+ds004657,Driving with Autonomous Aids,eeg,24,CC0,10.18112/openneuro.ds004657.v1.0.3
+ds004660,TNO,eeg,21,CC0,10.18112/openneuro.ds004660.v1.0.2
+ds004661,ANDI,eeg,17,CC0,10.18112/openneuro.ds004661.v1.1.0
+ds004696,HAPwave_bids,ieeg,8,CC0,10.18112/openneuro.ds004696.v1.0.1
+ds004703,sEEG Passive listening to natural speech,ieeg,10,CC0,10.18112/openneuro.ds004703.v1.1.0
+ds004706,Spatial memory and non-invasive closed-loop stimulus timing,eeg,34,CC0,10.18112/openneuro.ds004706.v1.0.0
+ds004709,ds004709,eeg,36,,
+ds004718,Le Petit Prince Hong Kong: Naturalistic fMRI and EEG dataset from older Cantonese speakers,eeg,52,CC0,10.18112/openneuro.ds004718.v1.1.2
+ds004745,8-Channel SSVEP EEG Dataset with Artifact Trials,eeg,6,CC0,10.18112/openneuro.ds004745.v1.0.1
+ds004752,"Dataset of intracranial EEG, scalp EEG and beamforming sources from epilepsy patients performing a verbal working memory task","eeg,ieeg",15,CC0,10.18112/openneuro.ds004752.v1.0.1
+ds004754,ds004754,eeg,30,,
+ds004757,ds004757,ieeg,8,,
+ds004770,iEEG on children during gameplay,ieeg,10,CC0,10.18112/openneuro.ds004770.v1.0.0
+ds004771,EEG/ERP data from a Python Reading Task,eeg,61,CC0,10.18112/openneuro.ds004771.v1.0.0
+ds004774,Automatic Evoked Response Detection (ER-Detect) dataset,ieeg,14,CC0,10.18112/openneuro.ds004774.v1.0.0
+ds004784,"Phantom EEG Dataset with Motion, Muscle, and Eye Artifacts and Example Scripts",eeg,1,CC0,10.18112/openneuro.ds004784.v1.0.4
+ds004785,EEG data for paper titled - Precise cortical contributions to feedback sensorimotor control during reactive balance,eeg,17,CC0,10.18112/openneuro.ds004785.v1.0.1
+ds004789,Delayed Free Recall of Word Lists,ieeg,280,CC0,10.18112/openneuro.ds004789.v3.1.0
+ds004796,"A Polish Electroencephalography, Alzheimer’s Risk-genes, Lifestyle and Neuroimaging (PEARL-Neuro) Database",eeg,79,CC0,10.18112/openneuro.ds004796.v1.1.0
+ds004802,Pilot data for Loneliness in the Brain: Distinguishing Between Hypersensitivity and Hyperalertness,eeg,38,CC0,10.18112/openneuro.ds004802.v1.0.0
+ds004809,Categorized Free Recall: Delayed Free Recall of Word Lists Organized by Semantic Categories,ieeg,258,CC0,10.18112/openneuro.ds004809.v2.2.0
+ds004816,EEG-attention-rsvp-exp1,eeg,20,CC0,10.18112/openneuro.ds004816.v1.0.1
+ds004817,EEG-attention-rsvp-exp2,eeg,20,CC0,10.18112/openneuro.ds004817.v1.0.1
+ds004819,"Flexible, Scalable, High Channel Count Stereo-Electrode for Recording in the Human Brain",ieeg,1,CC0,10.18112/openneuro.ds004819.v1.0.0
+ds004840,"Dataset of electrophysiological signals (EEG, ECG, EMG) during Music therapy with adult burn patients in the Intensive Care Unit.",eeg,9,CC0,10.18112/openneuro.ds004840.v1.0.1
+ds004841,TX14,eeg,20,CC0,10.18112/openneuro.ds004841.v1.0.1
+ds004842,TX15,eeg,14,CC0,10.18112/openneuro.ds004842.v1.0.0
+ds004843,T16,eeg,14,CC0,10.18112/openneuro.ds004843.v1.0.0
+ds004844,T22,eeg,17,CC0,10.18112/openneuro.ds004844.v1.0.0
+ds004849,STRONG,eeg,1,CC0,10.18112/openneuro.ds004849.v1.0.0
+ds004850,ODE,eeg,1,CC0,10.18112/openneuro.ds004850.v1.0.0
+ds004851,HID,eeg,66,CC0,10.18112/openneuro.ds004851.v2.1.0
+ds004852,InsurgentCivilian,eeg,1,CC0,10.18112/openneuro.ds004852.v1.0.0
+ds004853,TX17,eeg,1,CC0,10.18112/openneuro.ds004853.v1.0.0
+ds004854,TX18,eeg,1,CC0,10.18112/openneuro.ds004854.v1.0.0
+ds004855,FT,eeg,1,CC0,10.18112/openneuro.ds004855.v1.0.0
+ds004857,ds004857,eeg,30,,
+ds004859,iEEG on children during Stroop task,ieeg,7,CC0,10.18112/openneuro.ds004859.v1.0.0
+ds004860,Investigating the cognitive conflict triggered by moral judgment of accidental harm : an event-related potentials study,eeg,31,CC0,10.18112/openneuro.ds004860.v1.0.0
+ds004865,"pyFR: Delayed Free Recall of Word Lists, Preliminary Cognitive Electrophysiology Study",ieeg,49,CC0,10.18112/openneuro.ds004865.v2.0.1
+ds004883,Registered Report of ERN During Three Versions of a Flanker Task,eeg,172,CC0,10.18112/openneuro.ds004883.v1.0.1
+ds004902,A Resting-state EEG Dataset for Sleep Deprivation,eeg,71,CC0,10.18112/openneuro.ds004902.v1.0.8
+ds004917,Probability Decision-making Task with ambiguity,eeg,53,CC0,10.18112/openneuro.ds004917.v1.0.0
+ds004940,Neurophysiological measures of covert semantic processing in neurotypical adolescents actively ignoring spoken sentence inputs: A high-density event-related potential (ERP) study.,eeg,22,CC0,10.18112/openneuro.ds004940.v1.0.1
+ds004942,SpatialMemory,eeg,62,CC0,10.18112/openneuro.ds004942.v1.0.0
+ds004944,Dataset of BCI2000-compatible intraoperative ECoG with neuromorphic encoding,ieeg,22,CC0,10.18112/openneuro.ds004944.v1.1.0
+ds004950,Novel Reading,eeg,1,CC0,10.18112/openneuro.ds004950.v1.0.0
+ds004951,Braille letters - EEG,eeg,11,CC0,10.18112/openneuro.ds004951.v1.0.0
+ds004952,ChineseEEG: A Chinese Linguistic Corpora EEG Dataset for Semantic Alignment and Neural Decoding,eeg,10,CC0,10.18112/openneuro.ds004952.v1.2.2
+ds004966,ds004966,ieeg,12,,
+ds004977,CARLA: Adjusted common average referencing for cortico-cortical evoked potential data,ieeg,4,CC0,10.18112/openneuro.ds004977.v1.2.0
+ds004980,EEG data set for a architectural affordances task,eeg,17,CC0,10.18112/openneuro.ds004980.v1.0.0
+ds004993,"WIRED ICM Sample Dataset - Workshop on Intracranial Recordings in Humans, Epilepsy, DBS",ieeg,3,CC0,10.18112/openneuro.ds004993.v1.1.2
+ds004995,The Time-Course of Food Representation in the Human Brain,eeg,20,CC0,10.18112/openneuro.ds004995.v1.0.2
+ds005007,Auditory naming task with questions that begin or end with a wh-interrogative,ieeg,40,CC0,10.18112/openneuro.ds005007.v1.0.0
+ds005021,Tilt Illusion by Phase,eeg,36,CC0,10.18112/openneuro.ds005021.v1.2.1
+ds005028,Comparing P300 Flashing paradigms in online typing with language models,eeg,11,CC0,10.18112/openneuro.ds005028.v1.0.0
+ds005034,The effect of theta tACS on working memory,eeg,25,CC0,10.18112/openneuro.ds005034.v1.0.1
+ds005048,40Hz Auditory Entrainment,eeg,35,CC0,10.18112/openneuro.ds005048.v1.0.1
+ds005059,Paired Associates Learning: Memory for Word Pairs in Cued Recall,ieeg,72,CC0,10.18112/openneuro.ds005059.v1.0.6
+ds005079,The Effects of Directed Therapeutic Intent on Live and Damaged Cells,eeg,1,CC0,10.18112/openneuro.ds005079.v2.0.0
+ds005083,Safety and Accuracy of Stereoelectroencephalography for Pediatric Patients with Prior Craniotomy,ieeg,60,CC0,10.18112/openneuro.ds005083.v1.0.0
+ds005087,rapid-hemifield-object-eeg,eeg,20,CC0,10.18112/openneuro.ds005087.v1.0.1
+ds005089,Proactive selective attention across competition contexts,eeg,36,CC0,10.18112/openneuro.ds005089.v1.0.1
+ds005095,STERNBERG DIFFICULT,eeg,48,CC0,10.18112/openneuro.ds005095.v1.0.2
+ds005106,200 Objects Infants EEG,eeg,42,CC0,10.18112/openneuro.ds005106.v1.5.0
+ds005113,EEG: Flankers with varying luminance,eeg,21,CC0,10.18112/openneuro.ds005113.v1.0.0
+ds005114,EEG: DPX Cog Ctl Task in Acute Mild TBI,eeg,91,CC0,10.18112/openneuro.ds005114.v1.0.0
+ds005121,Siefert2024,eeg,34,CC0,10.18112/openneuro.ds005121.v1.0.2
+ds005127,AMRI 16-N-0031 sleep1,eeg,16,CC0,10.18112/openneuro.ds005127.v2.0.2
+ds005131,Evoked responses to elevated sounds,eeg,58,CC0,10.18112/openneuro.ds005131.v1.0.1
+ds005163,ds005163,eeg,26,,
+ds005169,Dataset of intracranial EEG during cortical stimulation evoking visual effects,ieeg,20,CC0,10.18112/openneuro.ds005169.v1.0.0
+ds005170,Chisco,eeg,5,CC0,10.18112/openneuro.ds005170.v1.1.2
+ds005178,Ear-EEG Sleep Monitoring 2023 (EESM23),eeg,10,CC0,10.18112/openneuro.ds005178.v1.0.0
+ds005185,Ear-EEG Sleep Monitoring 2019 (EESM19),eeg,20,CC0,10.18112/openneuro.ds005185.v1.0.2
+ds005189,Search Superiority Recollection Familiarity,eeg,30,CC0,10.18112/openneuro.ds005189.v1.0.2
+ds005207,Surrey cEEGrid sleep data set,eeg,20,CC0,10.18112/openneuro.ds005207.v1.0.0
+ds005262,ArEEG: Arabic Inner Speech EEG dataset,eeg,12,CC0,10.18112/openneuro.ds005262.v1.0.1
+ds005273,Neural representation of consciously seen and unseen information,eeg,33,CC0,10.18112/openneuro.ds005273.v1.0.0
+ds005274,UV_EEG,eeg,22,CC0,10.18112/openneuro.ds005274.v1.0.0
+ds005280,223 By BP,eeg,223,CC0,10.18112/openneuro.ds005280.v1.0.0
+ds005284,26 By Biosemi,eeg,26,CC0,10.18112/openneuro.ds005284.v1.0.0
+ds005285,29 By ANT,eeg,29,CC0,10.18112/openneuro.ds005285.v1.0.0
+ds005286,30 By ANT,eeg,30,CC0,10.18112/openneuro.ds005286.v1.0.0
+ds005289,39 By BP,eeg,39,CC0,10.18112/openneuro.ds005289.v1.0.0
+ds005291,65 By ANT,eeg,65,CC0,10.18112/openneuro.ds005291.v1.0.0
+ds005292,142 by Biosemi,eeg,142,CC0,10.18112/openneuro.ds005292.v1.0.0
+ds005293,95 By BP,eeg,95,CC0,10.18112/openneuro.ds005293.v1.0.0
+ds005296,Assessing sensitivity to semantic and syntactic information in deaf readers: An ERP study,eeg,62,CC0,10.18112/openneuro.ds005296.v1.0.1
+ds005305,EEG Resting-state Microstates Correlates of Executive Functions,eeg,165,CC0,10.18112/openneuro.ds005305.v1.0.1
+ds005307,Laser-evoked potentials in the human spinal cord and cortex,eeg,7,CC0,10.18112/openneuro.ds005307.v1.0.1
+ds005340,Fundamental frequency predominantly drives talker differences in auditory brainstem responses to continuous speech,eeg,15,CC0,10.18112/openneuro.ds005340.v1.0.1
+ds005342,EEG data offline and online during motor imagery for standing and sitting,eeg,32,CC0,10.18112/openneuro.ds005342.v1.0.2
+ds005343,Gaffrey Lab Infant Microstates and Attention,eeg,43,CC0,10.18112/openneuro.ds005343.v1.0.0
+ds005345,Le Petit Prince (LPP) Multi-talker: Naturalistic 7T fMRI and EEG Dataset,eeg,26,CC0,10.18112/openneuro.ds005345.v1.0.1
+ds005363,Object recognition in healthy aging (ORHA) - EEG,eeg,43,CC0,10.18112/openneuro.ds005363.v1.0.0
+ds005383,"TMNRED, A Chinese Language EEG Dataset for Fuzzy Semantic Target Identification in Natural Reading Environments",eeg,30,CC0,10.18112/openneuro.ds005383.v1.0.0
+ds005385,Resting-state EEG data before and after cognitive activity across the adult lifespan and a 5-year follow-up,eeg,608,CC0,10.18112/openneuro.ds005385.v1.0.3
+ds005397,Affordances of stairs,eeg,26,CC0,10.18112/openneuro.ds005397.v1.0.4
+ds005398,"Open iEEG Dataset (Pediatric iEEG, Wayne State University and UCLA)",ieeg,185,CC0,10.18112/openneuro.ds005398.v1.1.3
+ds005403,Delayed Auditory Feedback EEG/EGG,eeg,32,CC0,10.18112/openneuro.ds005403.v1.0.1
+ds005406,EEG frequency tagging reveals the integration of dissimilar observed actions,eeg,29,CC0,10.18112/openneuro.ds005406.v1.0.0
+ds005408,The effect of speech masking on the human subcortical response to continuous speech,eeg,25,CC0,10.18112/openneuro.ds005408.v1.0.1
+ds005410,Semantic_conditioning,eeg,81,CC0,10.18112/openneuro.ds005410.v1.0.1
+ds005411,Free Recall of Word Lists with Repeated Items,ieeg,48,CC0,10.18112/openneuro.ds005411.v1.0.1
+ds005415,Numbers,ieeg,13,CC0,10.18112/openneuro.ds005415.v1.0.0
+ds005416,Fatigue Characterization of EEG under Mixed Reality Stereo Vision,eeg,23,CC0,10.18112/openneuro.ds005416.v1.0.1
+ds005420,Resting state EEG with closed eyes and open eyes in females from 60 to 80 years old,eeg,37,CC0,10.18112/openneuro.ds005420.v1.0.0
+ds005429,"Auditory oddball comparison (Optimum-1, Learning-oddball, and the local–global paradigm)",eeg,15,CC0,10.18112/openneuro.ds005429.v1.0.0
+ds005434,ds005434,eeg,58,,
+ds005443,ds005443,eeg,14,,
+ds005448,STReEF,ieeg,13,CC0,10.18112/openneuro.ds005448.v1.0.0
+ds005473,29 By BP,eeg,29,CC0,10.18112/openneuro.ds005473.v1.0.0
+ds005486,PREDICT,eeg,159,CC0,10.18112/openneuro.ds005486.v1.0.1
+ds005489,Free Recall with Open-Loop Stimulation at Encoding,ieeg,38,CC0,10.18112/openneuro.ds005489.v1.0.3
+ds005491,Categorized Free Recall with Open-Loop Stimulation at Encoding,ieeg,19,CC0,10.18112/openneuro.ds005491.v1.0.0
+ds005494,Cued Recall of Paired Associates with Open-Loop Stimulation at Encoding or Retrieval,ieeg,20,CC0,10.18112/openneuro.ds005494.v1.0.1
+ds005505,Healthy Brain Network (HBN) EEG - Release 1,eeg,136,CC-BY-SA 4.0,10.18112/openneuro.ds005505.v1.0.1
+ds005506,Healthy Brain Network (HBN) EEG - Release 2,eeg,150,CC-BY-SA 4.0,10.18112/openneuro.ds005506.v1.0.1
+ds005507,Healthy Brain Network (HBN) EEG - Release 3,eeg,184,CC-BY-SA 4.0,10.18112/openneuro.ds005507.v1.0.1
+ds005508,Healthy Brain Network (HBN) EEG - Release 4,eeg,324,CC-BY-SA 4.0,10.18112/openneuro.ds005508.v1.0.1
+ds005509,Healthy Brain Network (HBN) EEG - Release 5,eeg,330,CC-BY-SA 4.0,10.18112/openneuro.ds005509.v1.0.1
+ds005510,Healthy Brain Network (HBN) EEG - Release 6,eeg,135,CC-BY-SA 4.0,10.18112/openneuro.ds005510.v1.0.1
+ds005511,Healthy Brain Network (HBN) EEG - Release 7,eeg,381,CC-BY-SA 4.0,10.18112/openneuro.ds005511.v1.0.1
+ds005512,Healthy Brain Network (HBN) EEG - Release 8,eeg,257,CC-BY-SA 4.0,10.18112/openneuro.ds005512.v1.0.1
+ds005514,Healthy Brain Network (HBN) EEG - Release 9,eeg,295,CC-BY-SA 4.0,10.18112/openneuro.ds005514.v1.0.1
+ds005515,Healthy Brain Network (HBN) EEG - Release 10,eeg,533,CC-BY-SA 4.0,10.18112/openneuro.ds005515.v1.0.1
+ds005516,Healthy Brain Network (HBN) EEG - Release 11,eeg,430,CC-BY-SA 4.0,10.18112/openneuro.ds005516.v1.0.0
+ds005517,ds005517,eeg,3,,
+ds005520,Research data supporting 'EEG recording during playing MOBA game',eeg,23,CC0,10.18112/openneuro.ds005520.v1.0.1
+ds005522,Spatial Navigation Memory of Object Locations,ieeg,58,CC0,10.18112/openneuro.ds005522.v1.0.0
+ds005523,Spatial Memory of Object Locations with Open-Loop Stimulation at Encoding,ieeg,22,CC0,10.18112/openneuro.ds005523.v1.0.1
+ds005530,Depotentiation of emotional reactivity using TMR during REM sleep,eeg,18,CC0,10.18112/openneuro.ds005530.v1.0.9
+ds005540,EmoEEG-MC: A Multi-Context Emotional EEG Dataset for Cross-Context Emotion Decoding,eeg,60,CC0,10.18112/openneuro.ds005540.v1.0.7
+ds005545,Auditory naming,ieeg,106,CC0,10.18112/openneuro.ds005545.v1.0.3
+ds005555,The Bitbrain Open Access Sleep (BOAS) dataset,eeg,128,CC0,10.18112/openneuro.ds005555.v1.1.3
+ds005557,Free Recall with Closed-Loop Stimulation at Encoding (Encoding Classifier),ieeg,18,CC0,10.18112/openneuro.ds005557.v1.0.0
+ds005558,Categorized Free Recall with Closed-Loop Stimulation at Encoding (Encoding Classifier),ieeg,9,CC0,10.18112/openneuro.ds005558.v1.0.0
+ds005565,"Neural associations between fingerspelling, print, and signs: An ERP priming study with deaf readers",eeg,24,CC0,10.18112/openneuro.ds005565.v1.0.3
+ds005571,Expectation of Conflict Stimuli,eeg,29,CC0,10.18112/openneuro.ds005571.v1.0.0
+ds005574,"The ""Podcast"" ECoG dataset",ieeg,9,CC0,10.18112/openneuro.ds005574.v1.0.2
+ds005578,ds005578,eeg,36,,
+ds005586,Electroencephalographic responses to the number of objects in partially occluded and uncovered scenes,eeg,23,CC0,10.18112/openneuro.ds005586.v2.0.0
+ds005594,Alphabetic Decision Task (Arial Light Font),eeg,16,CC0,10.18112/openneuro.ds005594.v1.0.3
+ds005612,ds005612,ieeg,10,,
+ds005620,A repeated awakening study exploring the capacity of complexity measures to capture dreaming during propofol sedation,eeg,21,CC0,10.18112/openneuro.ds005620.v1.0.0
+ds005624,Color Change Detection Task,ieeg,24,CC0,10.18112/openneuro.ds005624.v1.0.0
+ds005627,ds005627,eeg,102,,
+ds005628,Dataset of Visual and Audiovisual Stimuli in Virtual Reality from the Edzna Archaeological Site,eeg,102,CC0,10.18112/openneuro.ds005628.v1.0.0
+ds005633,ds005633,eeg,1,,
+ds005642,illusory-face-eeg,eeg,21,CC0,10.18112/openneuro.ds005642.v1.0.1
+ds005648,Mapping object space dimensions: new insights from temporal dynamics,eeg,21,CC0,10.18112/openneuro.ds005648.v1.0.3
+ds005662,A comprehensive EEG dataset for investigating visual touch perception,eeg,80,CC0,10.18112/openneuro.ds005662.v2.0.1
+ds005670,SEEG Resting State Recording,ieeg,2,CC0,10.18112/openneuro.ds005670.v1.0.0
+ds005672,PerceiveImagine,eeg,3,CC0,10.18112/openneuro.ds005672.v1.0.0
+ds005688,visStim,eeg,20,CC0,10.18112/openneuro.ds005688.v1.0.1
+ds005691,SpinalExpect_Invasive,ieeg,8,CC0,10.18112/openneuro.ds005691.v1.0.0
+ds005692,SpinalExpect_NonInvasive,eeg,30,CC0,10.18112/openneuro.ds005692.v1.0.0
+ds005697,PerceiveImagine,eeg,51,CC0,10.18112/openneuro.ds005697.v1.0.2
+ds005779,Real-time personalized brain state-dependent TMS in healthy adults,eeg,19,CC0,10.18112/openneuro.ds005779.v1.0.1
+ds005788,ds005788,eeg,36,,
+ds005795,MULTI-CLARID (Multimodal Category Learning and Resting-state Imaging Data),eeg,34,CC0,10.18112/openneuro.ds005795.v1.0.0
+ds005802,ds005802,ieeg,6,,
+ds005811,NOD-EEG,eeg,19,CC0,10.18112/openneuro.ds005811.v1.0.9
+ds005815,A Human EEG Dataset for Multisensory Perception and Mental Imagery,eeg,20,CC0,10.18112/openneuro.ds005815.v2.0.1
+ds005841,EEG Experiment measuring ERPs in VR,eeg,48,CC0,10.18112/openneuro.ds005841.v1.0.0
+ds005846,ds005846,eeg,10,,
+ds005857,ltpDelayRepFRReadOnly,eeg,33,CC0,10.18112/openneuro.ds005857.v1.0.0
+ds005863,Cognitive Electrophysiology in Socioeconomic Context in Adulthood,eeg,127,CC0,10.18112/openneuro.ds005863.v2.0.0
+ds005866,Flankers-NEAR,eeg,60,CC0,10.18112/openneuro.ds005866.v1.0.1
+ds005868,Flankers-FAR,eeg,48,CC0,10.18112/openneuro.ds005868.v1.0.1
+ds005872,EEGEyeNet Dataset,eeg,1,CC0,10.18112/openneuro.ds005872.v1.0.0
+ds005873,SeizeIT2,eeg,125,CC0,10.18112/openneuro.ds005873.v1.1.0
+ds005876,Song Familiarity,eeg,29,CC0,10.18112/openneuro.ds005876.v1.0.1
+ds005878,ds005878,eeg,14,,
+ds005907,EEG: RL Task (3-Armed Bandit) with alcohol cues in hazardous drinkers and ctls,eeg,53,CC0,10.18112/openneuro.ds005907.v1.0.0
+ds005931,Visuomotor_task,ieeg,8,CC0,10.18112/openneuro.ds005931.v1.0.0
+ds005932,PWIe,eeg,29,CC0,10.18112/openneuro.ds005932.v1.0.0
+ds005946,ERC_CoG PROMENADE - WP2 - MetaImagery (Metaphor and Mental Imagery),eeg,39,CC0,10.18112/openneuro.ds005946.v1.0.1
+ds005951,ds005951,eeg,3,,
+ds005953,iEEG_visual,ieeg,2,CC0,10.18112/openneuro.ds005953.v1.0.0
+ds005960,General Info: inst-comp-eeg,eeg,41,CC0,10.18112/openneuro.ds005960.v1.0.0
+ds005982,ds005982,eeg,3,,
+ds006018,Cognitive Electrophysiology in Socioeconomic Context in Adulthood: An EEG dataset,eeg,127,CC0,10.18112/openneuro.ds006018.v1.2.2
+ds006032,ds006032,ieeg,2,,
+ds006033,Synchronous EEG and fMRI dataset on inner speech,eeg,3,CC0,10.18112/openneuro.ds006033.v1.0.1
+ds006036,"A complementary dataset of open-eyes EEG recordings in a photo-stimulation setting from: Alzheimer's disease, Frontotemporal dementia and Healthy subjects",eeg,88,CC0,10.18112/openneuro.ds006036.v1.0.6
+ds006040,Sustained Attention Task (gradCPT) Dataset using simultaneous EEG-fMRI and DTI,eeg,28,CC0,10.18112/openneuro.ds006040.v1.0.2
+ds006065,TSS_iEEG,ieeg,7,CC0,10.18112/openneuro.ds006065.v1.0.0
+ds006095,Mind in Motion Older Adults Walking Over Uneven Terrain,eeg,71,CC0,10.18112/openneuro.ds006095.v1.0.0
+ds006104,EEG dataset for speech decoding,eeg,24,CC0,10.18112/openneuro.ds006104.v1.0.1
+ds006107,iEEG_Neural_spatial_volatility,ieeg,166,CC0,10.18112/openneuro.ds006107.v1.0.0
+ds006110,PsiConnect,eeg,65,CC0,10.18112/openneuro.ds006110.v1.2.2
+ds006121,ds006121,eeg,20,,
+ds006126,TDCS Modulation of Visual Cortex in Motor Imagery,eeg,5,CC0,10.18112/openneuro.ds006126.v1.0.0
+ds006136,OWM-Dataset,ieeg,13,CC0,10.18112/openneuro.ds006136.v1.0.1
+ds006142,Essex EEG Movie Memory dataset,eeg,27,CC0,10.18112/openneuro.ds006142.v1.0.2
+ds006159,Implicit Learning EEG (BioSemi),eeg,61,CC0,10.18112/openneuro.ds006159.v1.0.0
+ds006163,ds006163,eeg,58,,
+ds006171,"EEG data during three near-threshold visual detection tasks: a no-cue task, a noninformative cue task (50% validity), and an informative cue task (100% validity)",eeg,36,CC0,10.18112/openneuro.ds006171.v1.0.0
+ds006201,ds006201,eeg,2,,
+ds006222,MultisensoryFlickerHealthyYoungAdults_AllSubjectsRawData,eeg,69,CC0,10.18112/openneuro.ds006222.v1.0.1
+ds006233,Picture naming,ieeg,108,CC0,10.18112/openneuro.ds006233.v1.0.0
+ds006234,Auditory naming,ieeg,119,CC0,10.18112/openneuro.ds006234.v1.0.0
+ds006253,MetaRDK,ieeg,21,CC0,10.18112/openneuro.ds006253.v1.0.3
+ds006254,ds006254,ieeg,30,,
+ds006260,Dataset of psychophysiological data from children with learning difficulties who strengthen reading and math skills through assistive technology,eeg,76,CC0,10.18112/openneuro.ds006260.v1.0.1
+ds006269,Tethered EEG Recordings in Syngap1 rats,eeg,24,CC0,10.18112/openneuro.ds006269.v1.0.0
+ds006317,Chisco-2.0,eeg,2,CC0,10.18112/openneuro.ds006317.v1.1.1
+ds006360,ds006360,eeg,47,,
+ds006366,Mouse Sleep Staging Validation dataset (MSSV),eeg,92,CC0,10.18112/openneuro.ds006366.v1.0.1
+ds006367,Memory Reactivation Levels Remain Unaffected by Anticipated Interference,eeg,52,CC0,10.18112/openneuro.ds006367.v1.0.1
+ds006370,Memory Reactivation Levels Remain Unaffected by Anticipated Interference Experiment 2 Dataset,eeg,56,CC0,10.18112/openneuro.ds006370.v1.0.1
+ds006374,Expectation effects on repetition suppression in nociception,eeg,36,CC0,10.18112/openneuro.ds006374.v1.0.0
+ds006386,PhysioMotion_Artifact,eeg,30,CC0,10.18112/openneuro.ds006386.v1.0.1
+ds006392,HED schema library for SCORE annotations example,ieeg,1,CC0,10.18112/openneuro.ds006392.v1.0.1
+ds006394,Electrophysiological markers of surprise-induced failures of visual and auditory awareness,eeg,33,CC0,10.18112/openneuro.ds006394.v1.0.5
+ds006434,The auditory brainstem response to natural speech is not affected by selective attention,eeg,66,CC0,10.18112/openneuro.ds006434.v1.2.0
+ds006437,LIGHT Hypnotherapy,eeg,9,CC0,10.18112/openneuro.ds006437.v1.1.0
+ds006446,Cueing the future to reduce temporal discounting,eeg,29,CC0,10.18112/openneuro.ds006446.v1.0.0
+ds006456,ds006456,eeg,15,,
+ds006465,"3M-CPSEED：An EEG-based Dataset for Chinese Pinyin Production in Overt, Silent-intended, and Imagined Speech",eeg,20,CC0,10.18112/openneuro.ds006465.v2.0.0
+ds006466,HeartBEAM: Older Adult Resting State and Auditory Oddball Task EEG Data,eeg,66,CC0,10.18112/openneuro.ds006466.v1.0.1
+ds006480,Young Adult Resting State and Auditory Oddball Task EEG Data,eeg,68,CC0,10.18112/openneuro.ds006480.v1.0.1
+ds006485,ds006485,ieeg,2,,
+ds006519,Dataset of intracranial EEG during cortical stimulations evoking negative motor responses,ieeg,21,CC0,10.18112/openneuro.ds006519.v1.0.0
+ds006525,Resting EEG,eeg,34,CC0,10.18112/openneuro.ds006525.v1.0.0
+ds006547,Visual EEG Study (BrainVision → BIDS),eeg,31,CC0,10.18112/openneuro.ds006547.v1.0.0
+ds006554,Social Observation EEG raw data,eeg,47,CC0,10.18112/openneuro.ds006554.v1.0.0
+ds006563,Dimension-based attention modulates early visual processing,eeg,12,CC0,10.18112/openneuro.ds006563.v1.0.0
+ds006576,The role of REM sleep in neural differentiation of memories in the hippocampus,eeg,69,CC0,10.18112/openneuro.ds006576.v1.0.5
+ds006593,cBCI Matrix Multimodal Dataset,eeg,21,CC0,10.18112/openneuro.ds006593.v1.0.0
+ds006647,Poetry Assessment EEG Dataset 2,eeg,4,CC0,10.18112/openneuro.ds006647.v1.0.1
+ds006648,Poetry Assessment EEG Dataset 1,eeg,47,CC0,10.18112/openneuro.ds006648.v1.0.0
+ds006695,Validation of Sleep Staging with Forehead EEG Patch,eeg,19,CC0,10.18112/openneuro.ds006695.v1.0.2
+ds006735,Chimeric music reveals an interaction of pitch and time in electrophysiological signatures of music encoding,eeg,27,CC0,10.18112/openneuro.ds006735.v2.0.0
+ds006761,Neural decoding of competitive decision-making in Rock-Paper-Scissors,eeg,31,CC0,10.18112/openneuro.ds006761.v1.0.0
+ds006768,Multiple Object Monitoring (EEG),eeg,30,CC0,10.18112/openneuro.ds006768.v1.1.0
+ds006777,SFARI AVSRT EEG,eeg,121,CC0,10.18112/openneuro.ds006777.v1.0.0
+ds006780,SFARI_EEG multi-paradigm dataset (BIDS),eeg,139,CC0,10.18112/openneuro.ds006780.v1.0.0
+ds006801,Resting-state EEG before and after different study methods,eeg,21,CC0,10.18112/openneuro.ds006801.v1.0.0
+ds006802,Collaborative rule learning promotes interbrain information alignment,eeg,24,CC0,10.18112/openneuro.ds006802.v1.0.0
+ds006803,NeuroTechs Dataset for Stem Skills,eeg,63,CC0,10.18112/openneuro.ds006803.v1.1.1
+ds006817,Visual Attribute-Specific Contextual Trajectory Paradigm 2.0,eeg,35,CC0,10.18112/openneuro.ds006817.v1.1.0
+ds006822,ds006822,eeg,25,,
+ds006832,ds006832,eeg,1,,
+ds006839,EEG recordings during sham neurofeedback in virtual reality,eeg,36,CC0,10.18112/openneuro.ds006839.v1.0.0
+ds006840,IACKD: Intention Action Conflict EEG-Hand Kinematics Dataset,eeg,15,CC0,10.18112/openneuro.ds006840.v1.0.0
+ds006848,"AlphaDirection1: EEG, ECG, PPG in the resting state and working memory for sequentially and simultaneously presented digits",eeg,30,CC0,10.18112/openneuro.ds006848.v1.0.0
+ds006850,Urban Appraisal: Physiological Recording during Rating of Different Urban Environments,eeg,63,CC0,10.18112/openneuro.ds006850.v1.0.0
+ds006861,Targeted Neuromodulation of the Left Dorsolateral Prefrontal Cortex Alleviates Altered Affective Response Evaluation in Lonely Individuals,eeg,120,CC0,10.18112/openneuro.ds006861.v1.0.2
+ds006865,ds006865,eeg,151,,
+ds006866,Discrepancy between self-report and neurophysiological markers of socio-affective responses in lonely individuals,eeg,148,CC0,10.18112/openneuro.ds006866.v1.0.0
+ds006890,Longitudinal Multitask Wireless ECoG Data from Two Fully Implanted Macaca fuscata,ieeg,2,CC0,10.18112/openneuro.ds006890.v1.0.0
+ds006897,No effect of rhythmic visual stimulation on experimental pain perception,eeg,41,CC0,10.18112/openneuro.ds006897.v1.0.1
+ds006910,Auditory Naming EC,ieeg,121,CC0,10.18112/openneuro.ds006910.v1.0.1
+ds006914,Visual Naming EC,ieeg,110,CC0,10.18112/openneuro.ds006914.v1.0.3
+ds006921,High Density Resting State EEG of Phantom Limb Pain and Controls,eeg,38,CC0,10.18112/openneuro.ds006921.v1.1.1
+ds006923,Dataset of Electroencephalograms of Juvenile Offenders,eeg,140,CC0,10.18112/openneuro.ds006923.v1.0.1
+ds006945,Dataset: T1-Weighted Structural MRI and fMRI of Participants Viewing Self-Avatar Exoskeleton Walking (11 SWS Cycles),eeg,5,CC0,10.18112/openneuro.ds006945.v1.2.1
+ds006959,ds006959,eeg,4,,
+ds006963,Motor Control Processes Moderate Visual Working Memory Gating Dataset,eeg,32,CC0,10.18112/openneuro.ds006963.v1.0.1
+ds006979,Examining Perceptual Grouping on Stages of Processing in Visual Working Memory: An ERP Study,eeg,53,CC0,10.18112/openneuro.ds006979.v1.0.1
+ds007006,VR-Compassion Cultivation Training,eeg,10,CC0,10.18112/openneuro.ds007006.v1.0.0
+ds007012,FOODEEG: An open dataset of human electroencephalographic and behavioural responses to food images,eeg,117,CC0,10.18112/openneuro.ds007012.v1.1.1
+ds007020,EEG Mortality Dataset in Parkinson's Disease,eeg,94,CC0,10.18112/openneuro.ds007020.v1.0.0
+ds007028,Auditory Cortex Macaque Monkey DISC Data,eeg,3,CC0,10.18112/openneuro.ds007028.v1.0.0
+ds007043,After-effects of parieto-occipital gamma transcranial alternating current stimulation on behavioral performance and neural activity in visuo-spatial attention task,eeg,18,CC0,10.18112/openneuro.ds007043.v1.0.0
+ds007052,PURSUE N400 Word Processing,eeg,288,CC0,10.18112/openneuro.ds007052.v1.1.2
+ds007056,PURSUE P300 Visual Oddball,eeg,286,CC0,10.18112/openneuro.ds007056.v1.1.1
+ds007058,Silent Visual Reading EEG,eeg,10,CC0,10.18112/openneuro.ds007058.v1.1.0
+ds007069,PURSUE MMN Auditory Oddball,eeg,281,CC0,10.18112/openneuro.ds007069.v1.0.0
+ds007081,"Passive but accessible: Studied information is not actively stored in working memory, yet attended regardless of anticipated load",eeg,41,CC0,10.18112/openneuro.ds007081.v1.0.0
+ds007095,RNS_Epilepsy-iBIDS,ieeg,8,CC0,10.18112/openneuro.ds007095.v1.0.0
+ds007096,PURSUE N170 Face Perception,eeg,292,CC0,10.18112/openneuro.ds007096.v1.0.0
+ds007114,SUBEMOcondEEG1,eeg,28,CC0,10.18112/openneuro.ds007114.v1.0.1
+ds007118,iEEG_comprehensive_HFA_model_part1,ieeg,65,CC0,10.18112/openneuro.ds007118.v1.0.0
+ds007119,iEEG_comprehensive_HFA_model_part3,ieeg,103,CC0,10.18112/openneuro.ds007119.v1.0.0
+ds007120,iEEG_comprehensive_HFA_model_part2,ieeg,65,CC0,10.18112/openneuro.ds007120.v1.0.0
+ds007137,PURSUE N2pc Visual Search,eeg,294,CC0,10.18112/openneuro.ds007137.v1.0.0
+ds007139,PURSUE LRP/ERN Flanker,eeg,292,CC0,10.18112/openneuro.ds007139.v1.0.0
+ds007161,ds007161,eeg,34,,
+ds007162,Adaptive recruitment of cortex-wide recurrence for visual object recognition (EEG),eeg,34,CC0,10.18112/openneuro.ds007162.v1.0.0
+ds007169,"Multimodal Cognitive Workload n-back Task, 4 Difficulties",eeg,18,CC0,10.18112/openneuro.ds007169.v1.0.5
+ds007170,ds007170,eeg,18,,
+ds007172,EEG-Asymmetries Dataset,eeg,100,CC0,10.18112/openneuro.ds007172.v1.0.0
+ds007175,FFR-active-listening,eeg,41,CC0,10.18112/openneuro.ds007175.v1.0.1
+ds007176,Longitudinal EEG Test-Retest Reliability in Healthy Individuals,eeg,45,CC0,10.18112/openneuro.ds007176.v1.0.2
+ds007180,Exo-EEG Experiment,eeg,25,CC0,10.18112/openneuro.ds007180.v1.0.0
+ds007181,"Structural MRI, Resting-state fMRI, and PSG/EEG Dataset of Zoster-associated Neuralgia",eeg,66,CC0,10.18112/openneuro.ds007181.v1.0.1
+ds007216,A multi-session simultaneous EEG-fMRI dataset with online experience sampling,eeg,24,CC0,10.18112/openneuro.ds007216.v1.1.0
+ds007221,ds007221,eeg,84,,
+ds007222,Visual Occlusions with Treadmill Walking Speeds EEG,eeg,15,CC0,10.18112/openneuro.ds007222.v1.0.0
+ds007262,Cognitive Workload 8-level arithmetic,eeg,18,CC0,10.18112/openneuro.ds007262.v1.1.0
+ds007314,tACS for Patients with Post-Stroke Anomia,eeg,2,CC0,10.18112/openneuro.ds007314.v1.0.0
+ds007315,tACS for Patients with Post-Stroke Anomia,eeg,2,CC0,10.18112/openneuro.ds007315.v1.0.1
+ds007322,Personalized smartphone notifications bias auditory salience across processing stages,eeg,57,CC0,10.18112/openneuro.ds007322.v1.0.1
+ds007338,EEGEyeNet Dataset,eeg,1,CC0,10.18112/openneuro.ds007338.v1.0.0
+ds007347,Sterotactic Focused Ultrasound Mesencephalotomy for the Treatment of Head and Neck Cancer Pain,eeg,5,CC0,10.18112/openneuro.ds007347.v1.0.0
+ds007350,ds007350,eeg,8,,
+ds007353,HAD-MEEG,eeg,32,CC0,10.18112/openneuro.ds007353.v1.0.0
+ds007358,A subset of large-scale EEG dataset (India + Tanzania),eeg,993,CC0,10.18112/openneuro.ds007358.v1.0.0
+ds007406,EEG dataset on consumer responses to extreme versus traditional marketing videos,eeg,10,CC0,10.18112/openneuro.ds007406.v1.0.0
+ds007410,ds007410,eeg,1,,
+ds007411,ds007411,eeg,1,,
+ds007427,Comprehensive methodology for sample enrichment in EEG biomarker studies for Alzheimer’s risk classification,eeg,44,CC0,10.18112/openneuro.ds007427.v1.0.2
+ds007431,Diffuse predictions stabilize and reshape neural code during memory encoding,eeg,47,CC0,10.18112/openneuro.ds007431.v1.0.0
+ds007445,Thalamocortical ictal iEEG dataset,ieeg,19,CC0,10.18112/openneuro.ds007445.v1.0.4
+ds007454,A common neural mechanism underlies experiences of passage of time,eeg,42,CC0,10.18112/openneuro.ds007454.v1.0.1
+ds007469,ds007469,eeg,25,,
+ds007471,Joint agency EEG dataset,eeg,32,CC0,10.18112/openneuro.ds007471.v1.0.0
+ds007509,1hrPVTdataset_allSubjects,eeg,69,CC0,10.18112/openneuro.ds007509.v1.0.3
+ds007521,The effect of hunger and state preferences on the neural processing of food images,eeg,23,CC0,10.18112/openneuro.ds007521.v1.0.1
+ds007526,PD-EEG: Resting-State & Walking EEG in Parkinson's Disease,eeg,144,CC0,10.18112/openneuro.ds007526.v1.0.2
+ds007537,"A multimodal dataset of EEG, eye-tracking, and physiological signals during smartphone interaction",eeg,30,CC0,10.18112/openneuro.ds007537.v2.0.2
+ds007541,Multi-identity Information Authentication EEG Dataset,eeg,32,CC0,10.18112/openneuro.ds007541.v1.0.2
+ds007554,Multimodal dataset from the CMx7-MM Experiment,eeg,30,CC0,10.18112/openneuro.ds007554.v1.0.0
+ds007558,EEG Pre/Post Intervention Dataset,eeg,67,CC0,10.18112/openneuro.ds007558.v1.0.0
+ds007574,ds007574,ieeg,3,,
+ds007591,Delineating neural contributions to EEG-based speech decoding,eeg,9,CC0,10.18112/openneuro.ds007591.v1.0.3
+ds007602,ds007602,eeg,3,,
+ds007605,EPOC,eeg,97,CC0,10.18112/openneuro.ds007605.v1.0.1
+ds007609,Resting-State EEG and Trait Anxiety,eeg,51,CC0,10.18112/openneuro.ds007609.v1.0.0
+ds007615,LDAEP and resting-state EEG in healthy women,eeg,69,CC0,10.18112/openneuro.ds007615.v1.0.0
+ds007629,ROAMM,eeg,1,CC0,10.18112/openneuro.ds007629.v1.3.0
+ds007643,ds007643,ieeg,18,,
+ds007646,ds007646,eeg,83,,
+ds007647,Different Doors,eeg,40,CC0,10.18112/openneuro.ds007647.v1.0.1
+ds007648,CrossModal Study,eeg,22,CC0,10.18112/openneuro.ds007648.v1.1.0
+ds007655,MorseEEG-ATP,eeg,32,CC0,10.18112/openneuro.ds007655.v1.0.2
+ds007659,ds007659,eeg,127,,
+ds007666,Grupos Pre and Post bids,eeg,55,CC0,10.18112/openneuro.ds007666.v1.0.0
+ds007667,Grupos Pre and Post bids,eeg,55,CC0,10.18112/openneuro.ds007667.v1.0.0
+ds007683,ds007683,eeg,32,,
+ds007688,The Temporal Sequence of Party Leader Incongruence,eeg,44,CC0,10.18112/openneuro.ds007688.v1.0.0
+ds007703,ds007703,ieeg,2,,
+ds007720,BCI-FIT: A customization protocol for communication brain-computer interface systems.,eeg,5,CC0,10.18112/openneuro.ds007720.v1.0.1
+ds007721,Bone conducted responses using the parallel auditory brainstem response (pABR) paradigm,eeg,20,CC0,10.18112/openneuro.ds007721.v1.0.1
+ds007753,BCCWJ-EEG,eeg,41,CC0,10.18112/openneuro.ds007753.v2.0.0
+ds007760,ds007760,eeg,10,,
+ds007764,ds007764,eeg,36,,
+ds007766,ds007766,eeg,19,,
+ds007767,ds007767,eeg,19,,
+ds007788,ds007788,eeg,7,,
+ds007801,OpenNeuro EEG Dataset,eeg,80,CC0,10.18112/openneuro.ds007801.v1.0.0
+ds007802,ds007802,eeg,172,,
+ds007808,ds007808,eeg,3,,
+ds007813,EEG Practice Set,eeg,4,CC0,10.18112/openneuro.ds007813.v1.0.0
+ds007822,Prisoner's Dilemma EEG Dataset,eeg,33,CC0,10.18112/openneuro.ds007822.v1.0.0
+ds007823,A COVID-19 survivors and close contacts EEG dataset,eeg,173,CC0,10.18112/openneuro.ds007823.v1.0.3
+ds007827,Loneliness EEG - Roving Oddball Task,eeg,99,CC0,10.18112/openneuro.ds007827.v1.0.1
+ds007855,ds007855,eeg,45,,
+ds007856,ds007856,eeg,24,,
+ds007864,Neuroepo multisession Phase II and III,eeg,45,CC0,10.18112/openneuro.ds007864.v1.0.0
+ds007865,Placebo Neuroepo multisession Phase II and III,eeg,24,CC0,10.18112/openneuro.ds007865.v1.0.0
+ds007873,ds007873,eeg,20,,
+ds007895,Auditory Streaming and Interoception,eeg,22,CC0,10.18112/openneuro.ds007895.v1.0.0
+ds007920,ds007920,eeg,10,,
+ds007949,Auditory Streaming and Interoception,eeg,22,CC0,10.18112/openneuro.ds007949.v1.0.0
+ds007955,EEG and autonomic responses during emotional word association,eeg,9,CC0,10.18112/openneuro.ds007955.v1.0.0
+ds007960,ds007960,eeg,25,,
+ds007964,Disentangling objects' contextual associations from perceptual and conceptual attributes using time-resolved neural decoding,eeg,19,CC0,10.18112/openneuro.ds007964.v1.0.0
+ds007968,Narrative Reward,eeg,40,CC0,10.18112/openneuro.ds007968.v1.0.0
+ds007987,Raw resting-state EEG dataset with alternating eyes-open and eyes-closed recordings in healthy adults,eeg,43,CC0,10.18112/openneuro.ds007987.v1.1.0
+ds008003,Working Memory Disruption and Altered Alpha Dynamics In Misophonics,eeg,54,CC0,10.18112/openneuro.ds008003.v1.1.0
+ds008014,ds008014,eeg,78,,
+ds008037,The neural dynamics of working memory and transcranial magnetic stimulation,eeg,123,CC0,10.18112/openneuro.ds008037.v1.0.1
+ds008065,Optimizing parameters for multiband ABRs to continuous speech,eeg,62,CC0,10.18112/openneuro.ds008065.v1.0.1
+ds008081,ds008081,eeg,30,,
+ds008082,A COVID-19 survivors and close contacts EEG dataset,eeg,173,CC0,10.18112/openneuro.ds008082.v1.0.0
+ds008083,Hierarchical Priors in Perceptual Uncertainty and Psychosis Proneness,eeg,43,CC0,10.18112/openneuro.ds008083.v1.0.1
+ds008089,ds008089,eeg,49,,
+ds008092,ds008092,eeg,77,,
+ds008099,ds008099,eeg,30,,
+ds008104,ds008104,eeg,81,,
+ds008108,ds008108,eeg,142,,
+ds008115,ds008115,eeg,180,,
+ds008161,Auditory-motor EEG (one-channel),eeg,33,CC0,10.18112/openneuro.ds008161.v1.0.4
+ds008168,ds008168,eeg,27,,
+ds008198,ds008198,eeg,22,,
+ds008257,EEG Moments Dataset (EMD),eeg,6,CC0,10.18112/openneuro.ds008257.v1.1.0
+ds008302,ds008302,eeg,124,,
+ds008322,ds008322,eeg,20,,
+ds008349,A comprehensive physiological dataset of pain and aversive modalities for pain biomarkers research,eeg,125,CC0,10.18112/openneuro.ds008349.v2.0.1
+ds008427,ds008427,eeg,6,,
+ds008446,Random and Sequential Order Finger Motor Imagery,eeg,20,CC0,10.18112/openneuro.ds008446.v1.0.1
+ds008465,NeuralEcho MACS high-density communication-related EEG dataset,eeg,30,CC0,10.18112/openneuro.ds008465.v1.0.0
+ds008466,ds008466,eeg,4,,
+ds008496,EEG RKI,eeg,15,CC0,10.18112/openneuro.ds008496.v1.0.3
+ds008610,FUS and Tactile Neuromodulation in NHP VPL - Electrophysiology,ieeg,2,CC0,10.18112/openneuro.ds008610.v1.0.0
+ds008618,ds008618,eeg,4,,
+ds008619,ds008619,eeg,60,,
+ds008679,ds008679,eeg,32,,
+ds008680,ds008680,eeg,32,,
+ds008701,MET - Music-Induced Emotion EEG Dataset,eeg,20,CC0,10.18112/openneuro.ds008701.v1.0.4
+ds008709,ds008709,eeg,1,,
+ds008711,RSVP with flankers - sentences with semantic and syntactic violations,eeg,64,CC0,10.18112/openneuro.ds008711.v1.0.0
+ds008730,ds008730,eeg,104,,
+ds008763,ds008763,eeg,80,,
+ds008768,Resting-State EEG in Parkinson's Disease and Healthy Controls,eeg,312,CC0,10.18112/openneuro.ds008768.v2.0.1
+ds008769,ds008769,eeg,51,,
+ds008790,ds008790,ieeg,16,,
+ds008809,ds008809,eeg,13,,
+ds008832,ds008832,eeg,22,,
+ds008834,PKUEEG,eeg,25,CC0,10.18112/openneuro.ds008834.v1.0.3
+ds008836,Heartbeat-evoked responses and self-reported meditative depth in Vipassana practitioners,eeg,39,CC0,10.18112/openneuro.ds008836.v1.0.1
+ds008837,Neural and physiological dynamics before and after unpredictable collision events in virtual reality,eeg,18,CC0,10.18112/openneuro.ds008837.vv1.1.2
+ds008843,ds008843,eeg,49,,
+ds008851,EEG Data for Emotion Recognition: Alcohol Cue-Reactivity Dataset (Alcohol Dependence vs Healthy Controls),eeg,60,CC0,10.18112/openneuro.ds008851.v1.0.0
+ds008858,EEG Based MI-BCI Mouse Cursor Control Dataset,eeg,18,CC0,10.18112/openneuro.ds008858.v1.0.2
+ds008859,EEG MI-BCI Multidirectional Mouse Cursor Dataset - OpenBCI recordings,eeg,7,CC0,10.18112/openneuro.ds008859.v1.0.2
+ds008867,ds008867,eeg,30,,
+ds008875,ds008875,eeg,252,,
+ds008878,Chinese compound word priming EEG local review snapshot,eeg,98,CC0,10.18112/openneuro.ds008878.v1.0.0
+ds008895,ds008895,eeg,16,,
+ds008896,Preprocessed EEG data in CLN3 disease and NIH healthy volunteers,eeg,95,CC0,10.18112/openneuro.ds008896.v1.0.1
