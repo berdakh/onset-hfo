@@ -93,6 +93,46 @@ detector's.
 
 The table is `data/scalp/scalp_comparison.csv`.
 
+### Trying the published artefact rejection
+
+The published detector's rejection is mostly about **events seen on many
+channels at once**. Across subjects 01–10:
+- an event it rejected coincided with events on a median of 13 of the other
+  51 channels;
+- an event it kept coincided with a median of 2, and never more than 15.
+
+Muscle and movement reach the whole scalp at once, while a scalp ripple is
+focal. So the rule tried was: reject an HFO that coincides with candidates on
+more than a set fraction of the other channels. It was to be chosen on
+subjects 01–10, and adopted only if it ranked the channels more like the
+published detector's final events, then tested on 11–20.
+
+| limit | median ρ with their final events | range | events found (they kept 2,109) |
+|---|---|---|---|
+| none | 0.73 | 0.16–0.90 | 11,174 |
+| 5% | 0.59 | 0.25–0.86 | 1,624 |
+| 10% | 0.71 | 0.22–0.90 | 3,423 |
+| 15% | 0.71 | 0.15–0.91 | 5,817 |
+| 20% | 0.72 | 0.10–0.91 | 6,644 |
+| 30% | 0.73 | 0.13–0.90 | 7,591 |
+| 40% | 0.73 | 0.14–0.90 | 8,514 |
+
+- **The rule brings the counts closer, but not the ranking.** No limit ranked
+  the channels better than no limit at all, and the two subjects where
+  agreement had collapsed, sub-02 and sub-07, stayed low at every limit.
+- **What it misses.** In sub-02 the published detector kept none of the
+  144–159 candidates on each of the six channels that include electrode Cz.
+  That is a decision about the electrode, not about single events. In
+  sub-01, by contrast, the channels around P3 kept 81–94% of theirs. The
+  published columns do not say what decided it, and no single event-level
+  rule here reproduces it.
+- **So it is off.** The rule is in the code
+  (`ValidationConfig.scalp_max_concurrent_fraction`) and runs only on scalp
+  EEG when set, but by default it is 0. Since nothing was adopted, the
+  held-out subjects 11–20 were not used.
+
+The sweep is `data/scalp/concurrency_sweep.csv`.
+
 ### MEG: ds000247 (CTF) and ds003352 (MEGIN)
 
 **CTF empty-room recording.** `ds000247`, sub-emptyroom, 60 s at 2400 Hz. This
@@ -129,8 +169,10 @@ a bare HTTP 403.
   every format tried: EDF, MEGIN FIF and CTF. They are analysed end to end, and
   every window says the detectors were validated only on intracranial EEG.
 - **Scalp EEG.** Channel rankings track a published scalp detector's
-  candidates (median ρ 0.79). Without an artefact-rejection stage, absolute
-  rates on noisy recordings are not comparable to published scalp rates.
+  candidates (median ρ 0.79). Without its artefact rejection, absolute rates
+  on noisy recordings are not comparable to published scalp rates. Rejecting
+  events seen on many channels at once, the obvious stand-in, did not close
+  that gap and is off.
 - **MEG.** Nothing here has been checked against a MEG HFO reference. The one
   recording of a person produced detections too large to be brain ripples.
   Treat MEG rates as unvalidated, and read the events before believing any of

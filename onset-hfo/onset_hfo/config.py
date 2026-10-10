@@ -272,9 +272,12 @@ class SpikeConfig:
         return asdict(self)
 
 
-#: The scalp concurrency limit, chosen on ds003555 subjects 01-10 and tested on
-#: 11-20 (scripts/run_scalp_comparison.py).
-SCALP_CONCURRENT_FRACTION = 0.2
+#: The scalp concurrency limit. Off: on ds003555 subjects 01-10, no limit from
+#: 5% to 40% ranked the channels more like the published detector's final
+#: events than no limit did (median rho 0.73 without; 0.59-0.73 with), although
+#: it brings the counts closer (data/scalp/concurrency_sweep.csv). Set it to
+#: try the rule; docs/MODALITIES.md has the measurement.
+SCALP_CONCURRENT_FRACTION = 0.0
 
 
 @dataclass
@@ -311,7 +314,8 @@ class ValidationConfig:
     #: whole scalp at once; a scalp ripple is focal. On ds003555 the published
     #: detector's rejected events coincide with a median of 13 other channels of
     #: 52, its accepted ones with 2. Never applied to intracranial or MEG
-    #: recordings; 0 turns it off. See docs/MODALITIES.md for how it was chosen.
+    #: recordings. 0, the default, turns it off: it did not improve agreement
+    #: with that detector (see SCALP_CONCURRENT_FRACTION).
     scalp_max_concurrent_fraction: float = SCALP_CONCURRENT_FRACTION
 
 

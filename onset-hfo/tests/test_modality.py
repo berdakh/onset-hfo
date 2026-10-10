@@ -162,15 +162,18 @@ def test_a_scalp_event_seen_everywhere_at_once_is_rejected_and_a_focal_one_kept(
 
 
 def test_the_concurrency_rule_runs_on_scalp_eeg_and_never_on_intracranial(base):
+    from onset_hfo.config import ValidationConfig
     from onset_hfo.preprocess import prepare
     from onset_hfo.validate import validate_events
 
+    on = ValidationConfig(scalp_max_concurrent_fraction=0.2)
+    assert ValidationConfig().scalp_max_concurrent_fraction == 0.0, "off unless asked for"
     for kind, expect_rejected in (("eeg", True), ("ieeg", False)):
         record = base if kind == "ieeg" else as_modality(base, "eeg")
         prepared = prepare(record, verbose=False)
         events = [_event(n, 10.0) for n in prepared.ch_names]
         for e in events:
             e.n_cycles, e.spectral_prominence_db = 6.0, 20.0     # pass the other checks
-        validate_events(events, prepared)
+        validate_events(events, prepared, on)
         rejected = [e for e in events if not e.accepted]
         assert bool(rejected) is expect_rejected, kind

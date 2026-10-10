@@ -15,6 +15,10 @@ intracranial EEG, run by its authors, on the same files.
     # re-print the published table from the committed extract
     python scripts/run_scalp_comparison.py --from-csv data/scalp/scalp_comparison.csv
 
+    # the concurrency limits tried (data/scalp/concurrency_sweep.csv)
+    python scripts/run_scalp_comparison.py --subjects 01-10 \
+        --fractions 0,0.05,0.1,0.15,0.2,0.3,0.4 --out data/scalp/concurrency_sweep.csv
+
 What is compared
 ----------------
 Per subject, the number of ripples on each of the 52 channels: ours (the RMS
@@ -148,7 +152,7 @@ def main() -> int:
                         help="where the downloaded intervals are kept")
     parser.add_argument("--out", type=Path, default=ROOT / "data/scalp/scalp_comparison.csv")
     parser.add_argument("--from-csv", type=Path, default=None)
-    parser.add_argument("--fractions", default="0,default",
+    parser.add_argument("--fractions", default="0",
                         help="concurrency limits to compare, comma-separated; 0 is no "
                              "limit, 'default' the shipped one")
     args = parser.parse_args()
