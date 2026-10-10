@@ -28,7 +28,7 @@ import pandas as pd
 
 from onset_hfo.case import bids
 
-__all__ = ["Case", "STEPS", "CASE_FILE", "Recording"]
+__all__ = ["Case", "STEPS", "CASE_FILE", "Recording", "new_run_folder"]
 
 CASE_FILE = "case.json"
 SCHEMA = 1
@@ -47,6 +47,25 @@ STEPS = (
     ("map", "Map", 4),
     ("report", "Report", 5),
 )
+
+
+def new_run_folder(parent) -> Path:
+    """A fresh ``run-YYYYmmdd-HHMMSS`` folder under `parent`, created.
+
+    Two runs inside the same second get ``-02``, ``-03`` and so on rather than
+    one overwriting the other, and the names still sort in the order the runs
+    were made, which is how the latest one is found.
+    """
+    parent = Path(parent)
+    stem = time.strftime("run-%Y%m%d-%H%M%S")
+    for index in range(1, 1000):
+        folder = parent / (stem if index == 1 else f"{stem}-{index:02d}")
+        try:
+            folder.mkdir(parents=True)
+            return folder
+        except FileExistsError:
+            continue
+    raise RuntimeError(f"no free run folder for {stem} under {parent}")
 
 
 def _now() -> str:

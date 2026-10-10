@@ -26,6 +26,7 @@ from pathlib import Path
 import pandas as pd
 
 from onset_hfo.case import bids
+from onset_hfo.case.model import new_run_folder
 from onset_hfo.case.pooling import pool
 
 __all__ = ["template_for", "save_template", "segment_request", "run_interictal",
@@ -164,8 +165,7 @@ def run_interictal(case, segments: pd.DataFrame, template=None, progress=None,
         if progress is not None:
             progress((index + 1) / max(len(rows), 1))
     table, leader = pool(measured)
-    folder = Path(case.derivatives) / "interictal" / time.strftime("run-%Y%m%d-%H%M%S")
-    folder.mkdir(parents=True, exist_ok=True)
+    folder = new_run_folder(Path(case.derivatives) / "interictal")
     per_segment = pd.DataFrame([
         {"segment": m["segment"], "run": m["run"], "start": m["start"], "stop": m["stop"],
          "channel": ch, "n_events": m["counts"].get(ch, 0), "seconds": m["seconds"].get(ch, 0),
