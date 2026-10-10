@@ -290,6 +290,53 @@ def recording_info(path: str | Path, **reader_kwargs) -> dict:
     }
 
 
+#: SI per unit, for the units channels.tsv writes.
+_SI_PER_UNIT = {"v": 1.0, "mv": 1e-3, "uv": 1e-6, "µv": 1e-6, "μv": 1e-6, "nv": 1e-9,
+                "t": 1.0, "ft": 1e-15, "pt": 1e-12, "t/m": 1.0, "ft/cm": 1e-13,
+                "ft/mm": 1e-12}
+
+
+def _units_from_channels_tsv(raw, channels: pd.DataFrame | None) -> dict[str, str]:
+    """Read a channel in the unit channels.tsv gives when the file states none.
+
+    An EDF whose physical-dimension field is blank is read by MNE as volts,
+    which turns a 50 µV scalp signal into 50 V; every amplitude after that is
+    wrong by a million and the quality checks set every channel aside. The
+    dataset's own channels.tsv says what the numbers are. Returns the channels
+    rescaled, with the unit they were read in.
+    """
+    original = getattr(raw, "_orig_units", None) or {}
+    if channels is None or not {"name", "units"} <= set(channels.columns) or not original:
+        return {}
+    done = {}
+    for name, unit in zip(channels["name"], channels["units"], strict=False):
+        name, unit = str(name), str(unit).strip()
+        factor = _SI_PER_UNIT.get(unit.lower())
+        if (name not in raw.ch_names or factor is None or factor == 1.0
+                or str(original.get(name, "")).strip().lower() not in ("", "n/a", "na")):
+            continue
+        raw._data[raw.ch_names.index(name)] *= factor
+        done[name] = unit
+    return done
+
+
+def _channels_tsv_beside(path: Path) -> pd.DataFrame | None:
+    """The BIDS channels table that describes `path`, if one sits beside it:
+    ``sub-01_task-x_channels.tsv`` for ``sub-01_task-x_eeg.edf``, or a plain
+    ``channels.tsv`` (how a window fetched from OpenNeuro keeps it)."""
+    stem = path.name.split(".")[0]
+    head, _, _ = stem.rpartition("_")
+    candidates = ([path.parent / f"{head}_channels.tsv"] if head else []) \
+        + [path.parent / "channels.tsv"]
+    for candidate in candidates:
+        if candidate.is_file():
+            try:
+                return pd.read_csv(candidate, sep="\t", dtype=str, keep_default_na=False)
+            except Exception:       # noqa: BLE001 - an unreadable table is no table
+                return None
+    return None
+
+
 def open_recording(path: str | Path, *, t_start: float = 0.0,
                    t_stop: float | None = None, subject: str | None = None,
                    line_freq: float = 50.0,
@@ -348,6 +395,7 @@ def open_recording(path: str | Path, *, t_start: float = 0.0,
         with raw.info._unlock():
             raw.info["line_freq"] = float(line_freq)
 
+    rescaled = _units_from_channels_tsv(raw, _channels_tsv_beside(path))
     types = set(raw.get_channel_types())
     notes = [
         f"imported from {path.name} ({fmt.name}, via mne.io.{fmt.reader})",
@@ -363,6 +411,9 @@ def open_recording(path: str | Path, *, t_start: float = 0.0,
         "no expert markings, no resected zone and no participant record come "
         "with an imported file, so anything in this software that compares "
         "against them is unavailable rather than empty",
+        *([f"the file does not state the unit of {len(rescaled)} channels; the BIDS "
+           f"channels.tsv beside it gives it ({', '.join(sorted(set(rescaled.values())))}), "
+           "so they were read in that unit rather than as volts"] if rescaled else []),
     ]
     if not (types & set(INTRACRANIAL_TYPES)):
         from onset_hfo.modality import MODALITIES, detect

@@ -121,6 +121,14 @@ recording from OpenNeuro.
 
 # Part 2. Tutorials
 
+Every tutorial below is some part of one path. A recording comes in, is
+prepared, checked, searched and ranked, and then you read it and report it:
+
+![How a recording flows through the analysis: recording, import, preprocess, quality, detect, validate, rank, your read, report, with where each is changed](images/manual-flow.svg)
+
+The blue rows are the algorithm's opinion and the orange rows are yours. The
+software keeps the two apart everywhere: on screen, on disk and in the report.
+
 ## Tutorial 1. Your first recording
 
 **You will:** open a minute of a real patient, see which channel stands out,
@@ -300,7 +308,12 @@ bunch.license, bunch.citation
 are worth.
 
 1. **Open it** as in Tutorial 3 or 4, and say *Scalp EEG* or *MEG* in the
-   import dialog.
+   import dialog. A file that declares MEG sensors opens as MEG by itself.
+   Each sensor can be re-typed only as another sensor type or as not
+   analysed, and the count says which sensor type will be analysed.
+
+   ![The import dialog on a MEGIN recording from OpenNeuro: 204 planar gradiometers of 323 channels will be analysed](images/onset-review-import-meg.png)
+
 2. **What changes.**
    - **Scalp EEG** is read in µV. *Bipolar* means the longitudinal "double
      banana" (Fp1-F7-T7-P7-O1 and the rest); the older T3/T4/T5/T6 names
@@ -310,6 +323,11 @@ are worth.
      is labelled in its own unit.
 3. **Read the first preprocessing step.** On every scalp or MEG window it
    says that the detectors were validated only on intracranial recordings.
+
+   ![A scalp EEG window: a minute of a child's sleep EEG from ds003555 on the double banana, Fp1-F7 busiest at 25 per minute](images/onset-review-scalp.png)
+
+   In this minute the busiest channel is frontal (Fp1-F7), where muscle and
+   eye movement sit. Open its events before believing the rate.
 4. **Ignore Contacts and Map for placement.** Those pages lay channels out as
    implanted contacts, by shaft name. On scalp EEG or MEG they say that what
    they draw is a diagram of the names, not where the sensors are.

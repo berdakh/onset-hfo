@@ -105,11 +105,13 @@ def test_a_file_with_no_unit_is_read_in_the_unit_channels_tsv_gives():
     import numpy as np
     import pandas as pd
 
+    from onset_hfo.io import _units_from_channels_tsv
+
     raw = mne.io.RawArray(np.full((2, 100), 50.0), mne.create_info(["Fp1", "Fp2"], 100.0, "eeg"),
                           verbose="ERROR")
     raw._orig_units = {"Fp1": "n/a", "Fp2": "uV"}        # Fp2's header did say
     channels = pd.DataFrame({"name": ["Fp1", "Fp2"], "units": ["uV", "uV"]})
-    assert openneuro._units_from_channels_tsv(raw, channels) == {"Fp1": "uV"}
+    assert _units_from_channels_tsv(raw, channels) == {"Fp1": "uV"}
     assert raw.get_data()[0, 0] == pytest.approx(50e-6), "50 µV, not 50 V"
     assert raw.get_data()[1, 0] == 50.0, "a channel whose file states its unit is left alone"
 
@@ -138,3 +140,26 @@ def test_an_empty_file_in_a_ctf_folder_is_written_not_fetched(archive, monkeypat
     local, _, _ = openneuro._whole_file(DS, CTF.split("/", 1)[1], ".ds", keys, folder, 500.0,
                                         openneuro._Transfer(None, None))
     assert (local / "BadChannels").exists() and (local / "BadChannels").stat().st_size == 0
+
+
+def test_any_file_with_a_bids_channels_table_beside_it_is_read_in_its_unit(tmp_path):
+    """The import dialog reads the file itself, not through the fetcher, so the
+    reader looks for the table: a BIDS sibling or a fetched window's own."""
+    import numpy as np
+
+    edfio = pytest.importorskip("edfio")
+    from onset_hfo.io import open_recording
+
+    data = np.random.default_rng(0).normal(size=2000) * 40.0           # µV numbers
+    signals = [edfio.EdfSignal(data, sampling_frequency=200.0, label=name,
+                               physical_dimension="") for name in ("Fp1", "Fp2")]
+    path = tmp_path / "sub-01_task-rest_eeg.edf"
+    edfio.Edf(signals).write(path)
+    as_volts = open_recording(path, t_stop=10.0)
+    assert float(np.abs(as_volts.raw.get_data()).max()) > 1.0, "a blank unit reads as volts"
+
+    (tmp_path / "sub-01_task-rest_channels.tsv").write_text(
+        "name\ttype\tunits\nFp1\tEEG\tuV\nFp2\tEEG\tuV\n")
+    read = open_recording(path, t_stop=10.0)
+    assert float(np.abs(read.raw.get_data()).max()) < 1e-3, "µV, from the table"
+    assert any("does not state the unit of 2 channels" in note for note in read.notes)
