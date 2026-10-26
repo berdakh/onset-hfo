@@ -236,7 +236,7 @@ def sliding_line_length(x: np.ndarray, window: int) -> np.ndarray:
 
 
 def sliding_hilbert_envelope(x: np.ndarray, window: int) -> np.ndarray:
-    """Amplitude envelope from the analytic signal, smoothed over a window.
+    r"""Amplitude envelope from the analytic signal, smoothed over a window.
 
     The envelope is :math:`|x + i\,\mathcal{H}\{x\}|`, where
     :math:`\mathcal{H}` is the Hilbert transform. Unlike RMS it is defined
