@@ -11,12 +11,10 @@ title.
 
 from __future__ import annotations
 
+from onset_hfo.chartstyle import SERIES
+
 __all__ = ["SERIES", "DETECTOR_LABELS", "MARK", "MUTED", "CURSOR", "GRID"]
 
-#: Categorical hues, in fixed order: the accent, then an orange. Under
-#: simulated protan, deutan and tritan vision (Machado 2009, full severity) the
-#: pair stays at least 111 CIE76 Delta-E apart; contrast on white 6.3:1 and 5.2:1.
-SERIES = ("#4F46E5", "#C2410C")
 #: A mark that is not a series (a recording's own point, a threshold): ink,
 #: not a third hue, so it is not mistaken for one.
 MARK = "#1D1D1F"

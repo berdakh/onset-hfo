@@ -246,7 +246,7 @@ class ResultStore:
         """Where the activity sits: each channel's shaft, side and region
         with its rate for `detector`, and how the leading channels
         distribute over shafts and sides. Carries no resection, by design:
-        see ``onset_review.contactmap``."""
+        it describes measured activity only."""
         if self.contacts is None or self.contacts.empty:
             return {"available": False,
                     "note": "no contact positions were saved with this analysis"}
