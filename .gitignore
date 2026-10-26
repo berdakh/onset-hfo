@@ -5,3 +5,7 @@ __pycache__/
 .ruff_cache/
 .venv/
 *.pickle
+
+# Local only: the preprint folder, and PDFs left at the top of the repo.
+paper/
+/*.pdf
