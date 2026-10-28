@@ -23,6 +23,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from onset_hfo.preprocess import notch_frequencies
+
 __all__ = ["Preview", "preview_signal", "apply_filters", "PreviewPanel", "SECONDS", "PAD"]
 
 #: Seconds shown.
@@ -151,9 +153,7 @@ def apply_filters(preview: Preview, cfg) -> tuple[np.ndarray, list[str]]:
                 f"low-pass {low:g} Hz" if low else "") if part))
         line = cfg.line_freq or preview.line_freq
         if cfg.notch and line:
-            freqs = (np.arange(line, nyquist - cfg.notch_width, line)
-                     if cfg.notch_harmonics else np.array([line]))
-            freqs = freqs[freqs < nyquist - 1]
+            freqs = notch_frequencies(sfreq, line, cfg.notch_harmonics)
             if len(freqs):
                 x = mne.filter.notch_filter(x[np.newaxis], sfreq, freqs,
                                             notch_widths=float(cfg.notch_width),
