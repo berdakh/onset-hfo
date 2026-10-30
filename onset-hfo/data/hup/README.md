@@ -25,3 +25,11 @@ interictal outcome study, unchanged, on a second archive.
 | `interictal/summary.json`, `interictal/per_patient.csv`, `interictal/per_channel.csv` | RMS ripple and fast-ripple rates on the five-minute interictal recordings, against the onset zone, the resection and outcome; a recording sampled too slowly for a band is a row saying so |
 
 Write-ups: `docs/ICTAL.md` and `docs/OUTCOME.md`, section "A second archive".
+
+Per-patient summaries can be rebuilt from the saved channel and seizure
+tables with `onset_hfo.ictal_study.per_patient`. When several channels have
+the same highest median EI, `top_in_zone` uses the first channel in name
+order, preserving the stored summary's convention. This is a deterministic
+tie break, not evidence that one tied channel leads another; the AUC still
+counts ties half. Regression tests rebuild both archives' onset and control
+patient tables, including HUP087's SOZ/non-SOZ tie at EI 0.5 in the control.

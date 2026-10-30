@@ -206,7 +206,9 @@ def per_patient(channels: pd.DataFrame, seizures: pd.DataFrame) -> pd.DataFrame:
                                              er_after=("er_after", "median"),
                                              high=("ei", lambda v: int((v >= EI_CUTOFF).sum())))
         meta = ok[ok["subject"] == subject].iloc[0]
-        top = merged.sort_values("ei", ascending=False).iloc[0]
+        # groupby orders channel names; preserve that order for an exact EI
+        # tie. An unstable sort can flip SOZ membership between equal leaders.
+        top = merged.sort_values("ei", ascending=False, kind="stable").iloc[0]
         rows.append({"subject": subject, "site": meta["site"],
                      "seizure_free": meta["seizure_free"], "engel": meta["engel"],
                      "n_seizures": int(part["run"].nunique()), "n_channels": len(merged),

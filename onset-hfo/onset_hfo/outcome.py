@@ -192,14 +192,12 @@ def rank_comparison(free: np.ndarray, recurrence: np.ndarray,
     AUC rather than a difference in means because the quantity being compared
     is a proportion on twenty patients: its mean is unstable and its rank is
     not.
+
+    Descriptive summaries retain the input scores' precision. The nine-decimal
+    tie convention applies to the rank comparison and its resampling only.
     """
-    # Rounded before ranking: a patient's value is often a mean of a few
-    # windows' fractions, and two equal ones (14/15 and 14/15) can differ in
-    # the last bit depending on the order the library summed them in. Left
-    # alone, that noise breaks the tie one way or the other and moves the AUC.
-    free = np.round(np.asarray([v for v in free if np.isfinite(v)], dtype=float), TIE_DECIMALS)
-    recurrence = np.round(np.asarray([v for v in recurrence if np.isfinite(v)], dtype=float),
-                          TIE_DECIMALS)
+    free = np.asarray([v for v in free if np.isfinite(v)], dtype=float)
+    recurrence = np.asarray([v for v in recurrence if np.isfinite(v)], dtype=float)
     n1, n2 = len(free), len(recurrence)
     out = {
         "n_seizure_free": n1, "n_recurrence": n2,
@@ -217,6 +215,12 @@ def rank_comparison(free: np.ndarray, recurrence: np.ndarray,
     if n1 < 2 or n2 < 2:
         return out
 
+    # Round for ranking, not for the means and medians above: a patient's
+    # value is often a mean of windows' fractions, and mathematically equal
+    # ones (14/15 and 14/15) can differ in their last bit with summation order.
+    # Preserving those ties must not replace the underlying descriptive data.
+    free = np.round(free, TIE_DECIMALS)
+    recurrence = np.round(recurrence, TIE_DECIMALS)
     auc = _auc(free, recurrence)
     out["auc"] = auc
     out["rank_biserial"] = 2.0 * auc - 1.0

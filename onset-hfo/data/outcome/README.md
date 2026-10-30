@@ -150,6 +150,21 @@ per-window channel counts are not committed, so they cannot be re-derived
 without re-running the screens on the archive. Every other column is
 unaffected.
 
+## Reproducing the group table
+
+```bash
+python scripts/rederive_outcome_tables.py --check
+```
+
+This checks the committed tables without rewriting them. Group means,
+medians and IQRs describe the original per-patient scores. The rank comparison
+rounds scores to nine decimal places only when identifying ties for the AUC,
+permutation test and bootstrap interval. Rounding the scores before computing
+their descriptive summaries changed one mean at the check's precision; keeping
+those two steps separate reproduces the table without relaxing the check or
+altering the rank-based results. A regression test runs the documented check
+against copies of the committed data and verifies that no file is rewritten.
+
 ## What was deliberately left out
 
 The archive's `participants.tsv` also carries **age, sex and handedness**.

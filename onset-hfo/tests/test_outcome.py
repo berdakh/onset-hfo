@@ -246,6 +246,24 @@ def test_auc_is_a_probability_with_ties_at_half():
     assert _auc(np.array([0.0]), np.array([1.0])) == 0.0
 
 
+def test_tie_rounding_preserves_the_precision_of_descriptive_summaries():
+    """A fraction such as 1/3 is rounded for ranks, not for its group mean.
+
+    Rounding every patient's fraction before taking the mean changed a
+    committed outcome-table cell at its ninth decimal. Nearly equal scores
+    must still tie in the AUC calculation.
+    """
+    free = np.array([1 / 3, 0.4])
+    recur = np.array([1 / 3 + 1e-11, 0.2])
+    out = rank_comparison(free, recur, n_boot=50)
+    for group, values in (("seizure_free", free), ("recurrence", recur)):
+        assert out[f"mean_{group}"] == pytest.approx(np.mean(values), rel=0, abs=1e-15)
+        assert out[f"median_{group}"] == pytest.approx(np.median(values), rel=0, abs=1e-15)
+    # Three strict wins and one tie, rather than treating the tiny difference
+    # between the two nominal 1/3 scores as a loss.
+    assert out["auc"] == 3.5 / 4
+
+
 def test_perfect_separation_is_significant_and_reported_as_such():
     free = np.array([0.9, 0.8, 0.7, 0.75, 0.95, 0.85])
     recur = np.array([0.1, 0.2, 0.3, 0.15, 0.25, 0.05])
