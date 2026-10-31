@@ -33,7 +33,7 @@ from onset_hfo.datasets import Recording
 
 __all__ = ["Prepared", "prepare", "ICA_METHODS", "ica_methods_available", "default_ica_method", "bipolar_pairs", "describe", "effective_reference",
            "filter_description", "learn_ptp_threshold", "REFERENCES", "laplacian_neighbours",
-           "parse_grid_columns", "LAPLACIAN_STRIP_MAX"]
+           "parse_grid_columns", "LAPLACIAN_STRIP_MAX", "notch_frequencies"]
 
 #: The reference schemes by name, with the sentence each gets in the steps.
 REFERENCES = {
@@ -300,6 +300,19 @@ def laplacian_neighbours(names: list[str], positions: dict | None = None,
 
 def _iir_params(cfg: PreprocessConfig) -> dict:
     return {"order": int(cfg.iir_order), "ftype": "butter", "output": "sos"}
+
+
+def notch_frequencies(sfreq: float, line_freq: float, harmonics: bool = True) -> np.ndarray:
+    """Mains frequencies below the analysis's existing 90%-of-Nyquist cutoff.
+
+    Shared with the filter preview so it cannot show removal of a harmonic
+    that the full preprocessing leaves in the signal. The cutoff is the same
+    for a fundamental-only notch as for a harmonic series.
+    """
+    nyquist = sfreq / 2.0
+    freqs = (np.arange(line_freq, nyquist, line_freq) if harmonics
+             else np.array([line_freq]))
+    return freqs[freqs < 0.9 * nyquist]
 
 
 def filter_description(cfg: PreprocessConfig, sfreq: float) -> str:
@@ -909,11 +922,8 @@ def prepare(rec: Recording, cfg: PreprocessConfig | None = None, verbose: bool =
         line_freq = cfg.line_freq if cfg.line_freq is not None else rec.line_freq
         if cfg.notch:
             source = "configured" if cfg.line_freq is not None else "from the dataset"
-            nyq = raw.info["sfreq"] / 2.0
-            freqs = ([f for f in np.arange(line_freq, nyq, line_freq) if f < 0.9 * nyq]
-                     if cfg.notch_harmonics
-                     else ([line_freq] if line_freq < 0.9 * nyq else []))
-            if freqs:
+            freqs = notch_frequencies(raw.info["sfreq"], line_freq, cfg.notch_harmonics)
+            if len(freqs):
                 raw.notch_filter(freqs=freqs, notch_widths=cfg.notch_width,
                                  fir_design="firwin", phase="zero", picks="all",
                                  verbose="ERROR")

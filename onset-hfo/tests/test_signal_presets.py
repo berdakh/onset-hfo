@@ -105,6 +105,79 @@ def test_the_preview_filters_with_the_page_s_settings(window):
     assert np.std(ripples) < np.std(before)
 
 
+def _notch_specifications(monkeypatch, sfreq, mains, cfg):
+    """Capture what each real filtering path asks MNE to notch."""
+    import mne
+
+    from onset_hfo.preprocess import prepare
+    from onset_hfo.synthetic import make_synthetic_recording
+
+    recording = make_synthetic_recording(
+        duration_s=8, sfreq=sfreq, line_freq=mains,
+        n_leads=1, contacts_per_lead=4, verbose=False)
+    analysis, preview = [], []
+    raw_notch = mne.io.BaseRaw.notch_filter
+    array_notch = mne.filter.notch_filter
+
+    def capture_analysis(raw, *args, **kwargs):
+        analysis.append((tuple(kwargs["freqs"]), kwargs["notch_widths"]))
+        return raw_notch(raw, *args, **kwargs)
+
+    def capture_preview(data, sfreq, freqs, **kwargs):
+        preview.append((tuple(freqs), kwargs["notch_widths"]))
+        return array_notch(data, sfreq, freqs, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(mne.io.BaseRaw, "notch_filter", capture_analysis)
+        prepare(recording, cfg, verbose=False)
+    source = Preview(label=recording.raw.ch_names[0], t0=0.0, sfreq=sfreq,
+                     signal=recording.raw.get_data()[0], line_freq=mains)
+    with monkeypatch.context() as patch:
+        patch.setattr(mne.filter, "notch_filter", capture_preview)
+        apply_filters(source, cfg)
+    return analysis, preview
+
+
+@pytest.mark.parametrize("sfreq,mains,expected", [
+    (1000.0, 50.0, tuple(range(50, 401, 50))),
+    (1000.0, 60.0, tuple(range(60, 421, 60))),
+    (2000.0, 50.0, tuple(range(50, 851, 50))),
+    (2000.0, 60.0, tuple(range(60, 841, 60))),
+])
+@pytest.mark.parametrize("harmonics", [True, False])
+def test_the_preview_and_analysis_notch_the_same_frequencies(
+        monkeypatch, sfreq, mains, expected, harmonics):
+    cfg = PreprocessConfig(notch_harmonics=harmonics)
+    analysis, preview = _notch_specifications(monkeypatch, sfreq, mains, cfg)
+    wanted = expected if harmonics else (mains,)
+    assert analysis == preview == [(wanted, 2.0)]
+
+
+@pytest.mark.parametrize("recorded,override,expected", [
+    (50.0, 60.0, tuple(range(60, 421, 60))),
+    (60.0, 50.0, tuple(range(50, 401, 50))),
+])
+def test_the_preview_and_analysis_use_the_mains_override_and_notch_width(
+        monkeypatch, recorded, override, expected):
+    cfg = PreprocessConfig(line_freq=override, notch_width=6.0)
+    analysis, preview = _notch_specifications(monkeypatch, 1000.0, recorded, cfg)
+    assert analysis == preview == [(expected, 6.0)]
+
+
+def test_the_preview_and_analysis_do_not_notch_when_disabled(monkeypatch):
+    cfg = PreprocessConfig(notch=False)
+    analysis, preview = _notch_specifications(monkeypatch, 1000.0, 60.0, cfg)
+    assert analysis == preview == []
+
+
+@pytest.mark.parametrize("mains", [450.0, 480.0])
+def test_the_preview_and_analysis_leave_fundamentals_at_the_cutoff_or_above(
+        monkeypatch, mains):
+    cfg = PreprocessConfig(line_freq=mains, notch_harmonics=False)
+    analysis, preview = _notch_specifications(monkeypatch, 1000.0, 50.0, cfg)
+    assert analysis == preview == []
+
+
 def test_the_preview_has_no_filter_start_up_at_its_edges():
     sfreq = 1000.0
     t = np.arange(int((SECONDS + 6) * sfreq)) / sfreq
