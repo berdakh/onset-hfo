@@ -691,23 +691,17 @@ def build_parser() -> argparse.ArgumentParser:
         "report-problem",
         help="show a problem report (versions, this machine, your note) and save it "
              "as a zip if you agree; nothing is sent")
-    try:
-        from onset_review.problemreport import add_arguments
-        add_arguments(problem)
-    except ImportError:      # pragma: no cover - the package ships both
-        pass
+    from onset_hfo.problemreport import add_arguments
+
+    add_arguments(problem)
     problem.set_defaults(func=_cmd_report_problem)
     return p
 
 
 def _cmd_report_problem(args) -> int:
-    """The report itself lives in `onset_review.problemreport`."""
-    try:
-        from onset_review.problemreport import run
-    except ImportError as error:      # pragma: no cover - the package ships both
-        print(f"The problem report lives in onset_review, which could not be "
-              f"imported ({error}).", file=sys.stderr)
-        return 2
+    """Show and optionally save a report using the base installation."""
+    from onset_hfo.problemreport import run
+
     return run(args)
 
 

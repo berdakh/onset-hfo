@@ -37,9 +37,11 @@ import os
 import platform
 import sys
 import time
-import zipfile
-from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
+
+from onset_hfo import problemreport
+from onset_hfo.problemreport import Bundle
 
 __all__ = ["log_dir", "setup", "about", "report_text", "write_report", "LOG_NAME",
            "CRASH_NAME", "logger", "Bundle", "build_bundle", "write_bundle"]
@@ -152,17 +154,8 @@ def about() -> dict:
     """Versions, machine and settings, for a report. No recording data."""
     from onset_review import __version__
 
-    try:
-        from onset_hfo.config import PIPELINE_VERSION
-    except Exception:      # noqa: BLE001
-        PIPELINE_VERSION = "?"     # noqa: N806
-    out = {
-        "onset-review": __version__, "pipeline": PIPELINE_VERSION,
-        "developer": __import__("onset_review").DEVELOPER,
-        "python": sys.version.split()[0], "executable": sys.executable,
-        "platform": platform.platform(), "machine": platform.machine(),
-        "cpus": os.cpu_count(),
-    }
+    out = problemreport.about()
+    out["onset-review"] = __version__
     try:
         from onset_agent.hardware import total_ram_gb
 
@@ -198,9 +191,7 @@ def about() -> dict:
     return out
 
 
-def _redact(text: str) -> str:
-    home = str(Path.home())
-    return text.replace(home, "~") if home and home != "/" else text
+_redact = problemreport.redact
 
 
 def latest_model_check() -> Path | None:
@@ -242,37 +233,6 @@ def flush() -> None:
         handler.flush()
 
 
-@dataclass
-class Bundle:
-    """Everything a problem report would contain, as the exact text of each file.
-
-    The preview and the zip are both made from this, so they cannot differ.
-    `files` maps a file name to its redacted text, `report.txt` first.
-    """
-
-    files: dict[str, str] = field(default_factory=dict)
-    #: False for a command line report, which carries no window log.
-    with_logs: bool = True
-
-    def manifest(self) -> list[dict]:
-        """One row per file: its name, lines and size, for a person to read
-        before deciding what to send."""
-        return [{"name": name, "lines": len(text.splitlines()),
-                 "bytes": len(text.encode("utf-8"))}
-                for name, text in self.files.items()]
-
-    def with_description(self, description: str) -> Bundle:
-        """The same bundle with a new `report.txt` carrying `description`."""
-        files = dict(self.files)
-        files["report.txt"] = report_text(description=description, with_logs=self.with_logs)
-        return Bundle(files, self.with_logs)
-
-    def only(self, names) -> Bundle:
-        """The bundle restricted to `names`, in the original order."""
-        keep = set(names)
-        return Bundle({n: t for n, t in self.files.items() if n in keep}, self.with_logs)
-
-
 def _log_files() -> list[Path]:
     folder = log_dir()
     files = [folder / LOG_NAME] + [folder / f"{LOG_NAME}.{n}" for n in range(1, BACKUPS + 1)]
@@ -297,18 +257,12 @@ def build_bundle(description: str = "", with_logs: bool = True) -> Bundle:
         for file in _log_files():
             if file.is_file():
                 files[file.name] = _redact(file.read_text(encoding="utf-8", errors="replace"))
-    return Bundle(files, with_logs)
+    return Bundle(files, with_logs, partial(report_text, with_logs=with_logs))
 
 
 def write_bundle(bundle: Bundle, path: str | Path) -> Path:
     """Write exactly `bundle` as one zip, and nothing else."""
-    path = Path(path)
-    if path.suffix.lower() != ".zip":
-        path = path.with_suffix(".zip")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as zipped:
-        for name, text in bundle.files.items():
-            zipped.writestr(name, text)
+    path = problemreport.write_bundle(bundle, path)
     logger.info("problem report written: %s (%s)", _redact(str(path)),
                 ", ".join(bundle.files))
     return path

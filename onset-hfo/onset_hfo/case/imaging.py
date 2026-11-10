@@ -449,7 +449,7 @@ def draw_on_mri(figure, case, contacts: list[str] | None = None, centre: str | N
     import nibabel as nib
     from nilearn import plotting
 
-    from onset_review.studycharts import SERIES
+    from onset_hfo.chartstyle import SERIES
 
     path = t1_path(case)
     native = load_native(case)
