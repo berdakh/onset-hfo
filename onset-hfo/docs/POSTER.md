@@ -14,7 +14,7 @@ documents: [`EXPO.md`](EXPO.md) for what to say at the stand,
 
 > **In HFO analysis the unit of analysis decides whether a result is
 > reproducible. Across five minutes of one recording an expert's busiest-channel
-> answer holds for 9 of 20 patients; across five whole recordings it holds for
+> answer holds for 10 of 20 patients; across five whole recordings it holds for
 > 18. The p-value this project once published as its headline was the most
 > favourable of five minutes.**
 
@@ -47,7 +47,7 @@ Each clause of the claim, and exactly what backs it.
 
 | Clause | Evidence | Source |
 |---|---|---|
-| "expert's busiest-channel answer holds for 9 of 20 across five minutes" | 5 disjoint 60 s windows tiling the same run, analysed identically | [`OUTCOME.md` § A whole run is a stable unit](OUTCOME.md) |
+| "expert's busiest-channel answer holds for 10 of 20 across five minutes" | 5 disjoint 60 s windows tiling the same run, analysed identically | [`OUTCOME.md` § A whole run is a stable unit](OUTCOME.md) |
 | "…holds for 18 of 20 across five whole recordings" | 5 runs per subject from different nights; only `sub-08` and `sub-18` move | same |
 | "the p-value once published as the headline was the most favourable of five minutes" | expert arm p ranges 0.007–0.613 across the five minutes; 0.007 is the minimum | [`OUTCOME.md` § But which minute you pick matters](OUTCOME.md) |
 | the detector is the more reproducible of the two at short windows | same busiest channel in all five minutes: 9/20 (rms) vs 6/20 (expert); same inside/outside answer 15/20 vs 10/20; AUC spread 0.09 vs 0.25 | [`OUTCOME.md` § Our detector is more stable](OUTCOME.md) |
@@ -113,8 +113,8 @@ Printed small on the board, and said out loud when asked:
 > spanning 0.566–0.819 and p spanning 0.007–0.613; the automated detector gave
 > 9 of 20 and 15 of 20, with AUC spanning 0.667–0.756. Changing the unit of
 > analysis from a minute to a whole recording raised the experts' agreement
-> with themselves from 9 of 20 to 18 of 20, while the detector was unchanged at
-> 16 of 20. An earlier version of this analysis, computed on the first 60
+> with themselves from 10 of 20 to 18 of 20, and the detector's from 15 of 20
+> to 17 of 20. An earlier version of this analysis, computed on the first 60
 > seconds, reported AUC 0.82 and p = 0.007 — the most favourable of the five
 > minutes — and that figure is published alongside its correction.
 >
@@ -131,7 +131,7 @@ Printed small on the board, and said out loud when asked:
 | 2 | **What one detection is** | Wideband, band-passed, and the event's spectrum against the recording's own 1/f background. A real oscillation leaves a bump above the dashed line; filter ringing does not. | `img/real_example_event.png` |
 | 3 | **Against surgical outcome** | The primary table, both arms, with CI, p, and the power floor stated beneath it. | table + `img/real_rates_rms.png` |
 | 4 | **Which minute you pick** | The five-window spread for both arms; the p range 0.007–0.613 called out. This is the panel the claim rests on. | `img/window_stability.png` |
-| 5 | **A whole run is stable** | 9/20 → 18/20 for the experts; 16/20 → 16/20 for the detector. The growing-window curve going flat from 240 s (experts) and 180 s (detector). | `img/run_stability.png` |
+| 5 | **A whole run is stable** | 10/20 → 18/20 for the experts; 15/20 → 17/20 for the detector. The growing-window curve going flat from 240 s (experts) and 180 s (detector). | `img/run_stability.png` |
 | 6 | **What we corrected, and what we will not say** | The 60 s → 300 s correction published next to the original; the four non-claims; the multiplicity note. | none — type only |
 
 Footer strip: the four addresses from [`../../site/handout.html`](../../site/handout.html),

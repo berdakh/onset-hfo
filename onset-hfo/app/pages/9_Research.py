@@ -35,7 +35,7 @@ st.markdown("""
 | Detects HFOs in real interictal recordings | **Yes** — agreement with expert markings, ρ ≈ 0.7 on channel ranking |
 | Beats a published detector | **No, and not claimed.** The reference *is* a published detector; these are agreement numbers |
 | The map relates to surgical outcome | **Direction yes, significance no.** AUC 0.71, p = 0.12 on 13 vs 7 patients; none of the study's 34 comparisons reaches p < 0.05 even before correction |
-| The measurement is stable | **Across whole runs mostly** (16 of the 18 patients with more than one run, expert markings; 14 of 18 for our detector), **within a minute no** — a 60 s window changed the headline once |
+| The measurement is stable | **Across whole runs mostly** (16 of the 18 patients with more than one run, expert markings; 15 of 18 for our detector), **within a minute no** — a 60 s window changed the headline once |
 | Distinguishes epileptic from physiological ripples | **No.** Nothing in the pipeline tries. The one available proxy — whether a ripple rides a discharge — was screened against outcome and does **not** localise better than the merged rate in ripples; in fast ripples one arm separates by one metric and falls below chance by the tie-aware one |
 | The choice of detector is the limiting factor | **No, measured.** Four features, each swept on real data: at its best threshold none ranks channels better than RMS by more than 0.021 ρ, inside what twenty patients can resolve. The ceiling is the reference standard and the unit of analysis |
 | Validated for clinical use | **No.** Not a medical device |

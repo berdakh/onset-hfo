@@ -77,7 +77,7 @@ METHODS = (
             "0.71 (95% interval 0.49–0.92), permutation p = 0.12.",
             "With this program's RMS detector: AUC 0.71 (0.49–0.92), p = 0.12.",
             "That answer, inside the resection or not, was the same on every night "
-            "recorded for 18 of 20 patients on the expert markings and 16 of 20 with the "
+            "recorded for 18 of 20 patients on the expert markings and 17 of 20 with the "
             "RMS detector: it is a property of the patient more than of the recording.",
             "On a second archive (OpenNeuro ds004100, HUP), 15 interictal recordings were "
             "sampled fast enough for ripples: the ripple rate ranked the onset zone above "

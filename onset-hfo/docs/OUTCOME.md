@@ -431,19 +431,19 @@ The per-patient answer, across that patient's own runs:
 
 | | across 5 disjoint **minutes** of one run | across 5 **runs** (different nights) |
 |---|---|---|
-| expert | 9/20 patients unchanged | **18/20** |
-| rms | 16/20 | **16/20** |
+| expert | 10/20 patients unchanged | **18/20** |
+| rms | 15/20 | **17/20** |
 
 This is the clearest result in the whole stability exercise. The expert
-markings doubled their agreement with themselves when the unit of analysis
-became a whole run instead of a minute of one, and only `sub-08` and `sub-18`
-move at all. Our detector is unchanged at 16/20 — it was already the more
-reproducible of the two at short windows, and it gains nothing from the longer
-unit because it had not lost anything.
+markings nearly doubled their agreement with themselves when the unit of
+analysis became a whole run instead of a minute of one, and only `sub-08` and
+`sub-18` move at all. Our detector gains less — it was already the more
+reproducible of the two at short windows — and `sub-08`, `sub-14` and
+`sub-15` move.
 
 The group statistic moves correspondingly little between nights: expert AUC
-0.623–0.723 (range 0.100), ours 0.575–0.723 (range 0.148), against 0.253 and
-0.090 between minutes.
+0.623–0.723 (range 0.100), ours 0.623–0.762 (range 0.139), against 0.253 and
+0.089 between minutes.
 
 **Read the per-run numbers with one caveat.** Two subjects (`sub-07`,
 `sub-17`, both recurrences) have a single run in the archive, so the per-run
@@ -459,42 +459,51 @@ document.
 |---|---|---|
 | median candidate-set size, expert | 2 | **1** |
 | median candidate-set size, rms | 2 | **1** |
-| largest set, expert | 24 channels | **5** |
-| largest set, rms | 37 channels | **5** |
-| patients where the leader stands alone, expert | 48% of runs | **13/20** |
+| largest set, expert | 27 channels | **4** |
+| largest set, rms | 37 channels | **7** |
+| patients where the leader stands alone, expert | 46% of runs | **13/20** |
+| patients where the leader stands alone, rms | 47% of runs | **14/20** |
 
-*This table, the window study and the screens in `data/outcome/` were computed
-with the approximate rate interval used before 0.3.17 and have not been re-run
-(they need the archive). Only the whole-run tables above were re-derived with
-the exact interval, from the committed per-channel counts.*
+*Every table in this document, this one included, was re-run after 0.3.24
+with five patients' electrodes read correctly, and all of them now use the
+exact rate interval of 0.3.17.*
 
 This is what more recording was supposed to buy and, unlike the window study,
 it delivers: the Poisson intervals narrow, ties resolve, and the worst case
 stops being absurd. A patient whose busiest channel could not be told apart
-from 23 others in one run has a set of at most five once five runs are added
+from 26 others in one run has a set of at most four once five runs are added
 together.
 
-### It does not rescue the group result
+### It does not establish the group result
 
-| source | metric | seizure-free | recurrence | AUC | p |
-|---|---|---|---|---|---|
-| expert | `top_channel_resected` | 0.85 | 0.57 | 0.637 | 0.29 |
-| rms | `top_channel_resected` | 0.85 | 0.43 | 0.709 | 0.12 |
-| expert | `candidates_resected` | 0.89 | 0.59 | 0.709 | 0.09 |
-| rms | `candidates_resected` | 0.74 | 0.50 | 0.632 | 0.36 |
-| rms | `top_channel_resected` (ripple) | 0.62 | 0.14 | 0.736 | 0.07 |
+| source | metric | seizure-free | recurrence | AUC | p | Bonferroni |
+|---|---|---|---|---|---|---|
+| expert | `top_channel_resected` | 0.85 | 0.43 | 0.709 | 0.12 | 1.00 |
+| rms | `top_channel_resected` | 0.92 | 0.43 | 0.747 | **0.031** | 0.74 |
+| expert | `candidates_resected` | 0.88 | 0.54 | 0.769 | **0.041** | 0.99 |
+| rms | `candidates_resected` | 0.84 | 0.43 | 0.714 | 0.063 | 1.00 |
+| expert | `candidates_all_resected` | 0.85 | 0.29 | 0.780 | **0.022** | 0.54 |
+| rms | `top3_resected` | 0.77 | 0.38 | 0.780 | **0.031** | 0.75 |
+| rms | `top_channel_resected` (ripple) | 0.62 | 0.29 | 0.665 | 0.35 | 1.00 |
 
-**Nothing in the pooled table reaches p < 0.05**; its minimum is 0.070.
-Pooling actually *lowers* the expert argmax arm (0.709 on a single run
-to 0.637), because the recurrence group's mean rises from 0.43 to 0.57 — with
-more data, more recurrence patients turn out to have had their busiest
-fast-ripple channel removed, which is evidence against the hypothesis rather
-than noise in our favour.
+**Four of the 24 pooled comparisons reach p < 0.05 before correction**, all
+in the fast-ripple band and all in the direction Fedele et al. predict, where
+chance alone would give about one. **None survives correction**: the
+smallest Bonferroni p is 0.54. The comparisons are not independent — they are
+four ways of asking one question of the same patients — so the four are
+closer to one result than to four, and that result does not survive the table
+it sits in.
+
+Pooling leaves the expert argmax arm where it was on a single run (0.709,
+p = 0.12). Through 0.3.24 it *lowered* it to 0.637 and nothing in this table
+reached p < 0.05; this document read that as evidence against the
+hypothesis. With the five patients' electrodes read correctly, that reading
+does not stand.
 
 One line that will be tempting to quote and should not be: pooled, **our
-detector edges the expert markings** on the pre-specified metric for the first
-time (0.709 against 0.637). At p = 0.12, on 20 patients, in a table of 24
-comparisons, that is what a coin does. It is in the table because leaving it
+detector edges the expert markings** on the pre-specified metric (0.747,
+p = 0.031, against 0.709). Uncorrected, on 20 patients, in a table of 24
+comparisons, that is not a result. It is in the table because leaving it
 out would be the same sin as quoting it.
 
 ### What this settles

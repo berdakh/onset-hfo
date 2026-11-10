@@ -423,7 +423,7 @@ def test_every_patient_is_either_clean_or_carries_a_reason():
                     or row["stable_across_runs_rms"] is False)
         assert bool(notes) == bool(problems), f"{subject}: {notes} vs {problems}"
         clean += not notes
-    assert clean == 5, f"{clean} patients trip none of the four checks, expected 5"
+    assert clean == 6, f"{clean} patients trip none of the four checks, expected 6"
 
 
 def test_an_unknown_subject_gets_a_caveat_rather_than_an_empty_all_clear():

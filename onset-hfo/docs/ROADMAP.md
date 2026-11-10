@@ -807,17 +807,20 @@ prunes each slice after use. What it found:
 
 * **A whole run is a stable unit of measurement; a minute is not.** The
   per-patient answer holds across five different nights for **18/20** patients
-  (experts) and 16/20 (ours), against 9/20 and 16/20 across five minutes of a
-  single run. The expert markings doubled their agreement with themselves; our
-  detector was already there and gained nothing, because it had not lost
-  anything.
+  (experts) and 17/20 (ours), against 10/20 and 15/20 across five minutes of a
+  single run. The expert markings nearly doubled their agreement with
+  themselves; our detector, already the more reproducible at short windows,
+  gained less.
 * **Pooling a patient's runs resolves the ties.** Median candidate set 2 -> 1,
-  worst case 24 channels -> 5 (expert) and 37 -> 5 (ours). This is what more
+  worst case 27 channels -> 4 (expert) and 37 -> 7 (ours). This is what more
   recording was supposed to buy, and unlike the window study it delivers.
-* **It does not rescue the group result.** Nothing in the pooled table reaches
-  p < 0.05 (minimum 0.070), and pooling *lowers* the expert argmax arm from
-  0.709 to 0.637 because more recurrence patients turn out to have had their
-  busiest channel removed.
+* **It does not establish the group result.** Four of the 24 pooled
+  comparisons reach p < 0.05 before correction (the detector's busiest
+  fast-ripple channel, AUC 0.747, p = 0.031, among them) and none survives it
+  (smallest Bonferroni 0.54). Pooling leaves the expert argmax arm at 0.709.
+  (Re-run after 0.3.24: before five patients' electrodes were read correctly,
+  nothing in the pooled table reached p < 0.05 and pooling lowered the expert
+  arm to 0.637.)
 
 So the quantity this pipeline measures is a property of the **patient**, not
 of the recording session. That was the precondition for anything clinical and

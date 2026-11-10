@@ -273,8 +273,8 @@ Four things this page does *not* show, because they do not exist:
 **The rows are honest about themselves, which is the most this can offer.** The
 caveats on the second tab are computed from the committed tables, not written
 by hand: resection coverage, tie sets, window stability and run stability, per
-patient. Five of the twenty patients trip none of them; the other fifteen do,
-and a screen that only showed the five would be the same mistake as reporting
+patient. Six of the twenty patients trip none of them; the other fourteen do,
+and a screen that only showed the six would be the same mistake as reporting
 the best of five minutes.
 """)
     st.info("Design, every group table, and the full list of what the study "

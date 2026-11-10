@@ -103,25 +103,27 @@ with tab_runs:
     if figure.exists():
         st.image(str(figure), width="stretch")
     st.dataframe(pd.DataFrame([
-        ("expert", "9/20", "18/20"),
-        ("our RMS detector", "16/20", "16/20"),
+        ("expert", "10/20", "18/20"),
+        ("our RMS detector", "15/20", "17/20"),
     ], columns=["source", "same answer across 5 minutes of one run",
                 "same answer across a patient's first 5 runs"]),
         width="stretch", hide_index=True)
     st.caption("The two patients with a single run count as unchanged: of the 18 "
-               "with more than one run, 16 (experts) and 14 (our detector) keep "
+               "with more than one run, 16 (experts) and 15 (our detector) keep "
                "their answer. Runs are not always from different nights.")
     st.markdown("""
 The archive holds **385 runs** across the 20 subjects — 1 to 39 each, not the
 1–6 the `nights` column suggests, because a night contributes several
 five-minute segments.
 
-The expert markings **doubled their agreement with themselves** once the unit of
-analysis became a whole run instead of a minute of one. Pooling a patient's runs
-also resolves the ties: median candidate set 2 → 1, worst case 24 channels → 5.
+The expert markings **nearly doubled their agreement with themselves** once the
+unit of analysis became a whole run instead of a minute of one. Pooling a
+patient's runs also resolves the ties: median candidate set 2 → 1, worst case
+27 channels → 4.
 
-**For the expert markings, then, a whole run is more stable than a minute,
-though not perfectly so; for our detector it is not more stable.** Whether the
+**For the expert markings, then, a whole run is much more stable than a
+minute, though not perfectly so; for our detector it is a little more stable
+(15/20 → 17/20).** Whether the
 measurement *predicts outcome* is what twenty patients cannot settle.
 """)
 
