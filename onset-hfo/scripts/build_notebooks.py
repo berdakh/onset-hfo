@@ -2270,8 +2270,9 @@ nb9 = [
 means: one row per detector, band and threshold, averaged over the 20
 patients of ds003498 (the first 60 s of each patient's first run, scored on
 the channels the experts reviewed). `docs/EVALUATION.md` and the Validation
-page quote them: channel-rank ρ 0.66 for ripples with the RMS detector at
-2.0 SD, 0.61 for fast ripples at 5.0 SD.
+page quote them: channel-rank ρ 0.685 for ripples with the RMS detector at the
+shipped 2.0 SD (0.698 at 1.75 SD, the best), and 0.645 for fast ripples at
+5.0 SD.
 
 This notebook starts one step earlier, from the per-patient scores the means
 are averaged from (`data/benchmark/per_patient.csv.gz`), and:
@@ -2400,8 +2401,8 @@ def operating_point(band, detector, threshold):
 operating_point("ripple", "rms", 2.0)"""),
     code("""operating_point("fast_ripple", "rms", 5.0)"""),
     md("""
-The fast-ripple figures the documents quote, ρ 0.61 and precision 0.54, are
-means over **19** patients: at 5.0 SD the detector found no fast ripple on
+The fast-ripple figures the documents quote, ρ 0.645 and precision 0.756,
+are means over **19** patients: at 5.0 SD the detector found no fast ripple on
 sub-10's reviewed channels, where the experts marked 100, so neither value is
 defined for that patient. Its recall (0) and F1 (0) are in the means beside
 them, which are over all 20.

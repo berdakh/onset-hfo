@@ -46,7 +46,7 @@ it. 20 rows, 930 bytes.
 | `expert_ripples`, `expert_fast_ripples` | the same, split by band |
 
 Totals across the cohort: **41,187** marked events — 35,620 ripples and 5,567
-fast ripples — on 6 to 65 reviewed channels per subject. Per subject per 60 s
+fast ripples — on 14 to 65 reviewed channels per subject. Per subject per 60 s
 that is a mean of **1,781 ripples** and **278 fast ripples**.
 
 **Why this file exists.** Every `recall` in `agreement_sweep.csv` is a fraction
@@ -76,7 +76,8 @@ are comparable. 79 rows, same columns.
 detector × band × criterion optima sat on an endpoint, which is the grid
 running out rather than an optimum. Extending moved one materially:
 short-time energy's fast-ripple rank agreement went from 0.570 at 8.0 SD to
-**0.601 at 12.0 SD**. All sixteen are now interior.
+**0.601 at 12.0 SD** (0.606 and 0.637 since five patients were re-scored
+after 0.3.24). All sixteen are interior.
 
 Regenerate offline, from the slices already in `artifacts/data/`:
 
@@ -98,7 +99,7 @@ the original networked one.
 
 One row per patient, band, detector and threshold: 20 patients × 2 bands ×
 4 detectors × 17 thresholds (0.5–15 SD, the union of the grids above), 2,720
-rows, 140 KB. Every row of `agreement_sweep.csv` and `four_detector_sweep.csv`
+rows, 160 KB. Every row of `agreement_sweep.csv` and `four_detector_sweep.csv`
 is the mean of the matching rows here, with undefined values left out,
 rounded to three decimals; all 113 reproduce exactly, and
 `tests/test_study_reproduction.py` keeps it so.
@@ -116,26 +117,30 @@ rounded to three decimals; all 113 reproduce exactly, and
 
 **How many patients a mean is over.** Recall is defined for every patient:
 each has expert events of both bands on the channels scored. Precision and
-ρ are undefined in the 118 rows where the detector found nothing, so the means
+ρ are undefined in the 52 rows where the detector found nothing, so the means
 of those two columns are over fewer patients at high thresholds, while F1 (0
 there) is over all 20. One quoted figure is affected: the RMS detector's
-fast-ripple ρ 0.61 and precision 0.54 at 5.0 SD are over 19 patients, because
-it found nothing on sub-10's reviewed channels at that threshold.
+fast-ripple ρ 0.645 and precision 0.756 at 5.0 SD are over 19 patients,
+because it finds nothing on sub-10's reviewed channels at that threshold.
 
-**Five patients are scored on 6 of their 24 reviewed channels.** In sub-02,
-sub-05, sub-06, sub-07 and sub-08 the recording names six electrodes ECL, ECR,
-AHL, AHR, PHL and PHR, while the archive's markings (and the resection sheet,
-`clinical_ch_sheet_zurich.xlsx`) name them EL, ER, HL, HR, PL and PR, the
-names sub-09's recording itself uses. Only the amygdala contacts (AL, AR)
-match, so 18 reviewed channels per patient, and the 2,697 expert events on
-them, are not scored: **38,490 of the 41,187 marked events are**, and
-`cohort.csv`'s `n_reviewed_channels` (6 for these five) counts the channels
-scored, while its event counts include the unscored ones. The correspondence
-E→EC, H→AH, P→PH is likely but not confirmed by the archive, so nothing here
-maps one name onto another.
+**Five patients' markings use other electrode names than their recordings.**
+In sub-02, sub-05, sub-06, sub-07 and sub-08 the recording names the
+hippocampal and entorhinal electrodes AH, EC and PH, while the archive's
+markings (and the resection sheet, `clinical_ch_sheet_zurich.xlsx`) use
+another scheme, and which letter is which differs between patients. Through
+0.3.24 nothing mapped one onto the other, so those patients were scored on
+the 6 of their 24 reviewed channels whose names matched — and in four of
+them those six carried another electrode's markings — and 2,697 of the 41,187
+marked events were never scored. The pairing is now read from the signals
+and applied when the markings are loaded (`onset_hfo/archive_electrodes.csv`,
+which holds the evidence), and these five patients' rows, and every mean, were
+re-run with it. All 41,187 events are now scored. `cohort.csv`'s
+`n_reviewed_channels` counts the channels scored.
 
 Regenerated with `onset_hfo.benchmark.benchmark_subject`, patient by patient,
 from the 60 s slices; the per-patient tables of the original runs were in the
-untracked `artifacts/` and were not kept. The patient descriptions it records
-match `cohort.csv` exactly. Read and checked step by step in
+untracked `artifacts/` and were not kept. Before the five patients were
+re-scored, this file reproduced every committed mean exactly, and the patient
+descriptions it records matched `cohort.csv`; the means and `cohort.csv` were
+then rebuilt from it. Read and checked step by step in
 [`notebooks/09_benchmark_per_patient.ipynb`](../../notebooks/09_benchmark_per_patient.ipynb).
