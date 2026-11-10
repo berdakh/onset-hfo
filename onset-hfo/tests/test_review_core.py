@@ -610,16 +610,32 @@ def test_the_patient_record_reads_the_committed_tables():
     assert record["rz_coverage"] == pytest.approx(1.0)
 
 
-def test_a_patient_with_partial_resection_coverage_carries_the_missing_contacts():
-    """The single most important caveat for five of these twenty patients.
+def test_a_patient_with_partial_resection_coverage_carries_the_missing_contacts(tmp_path):
+    """The caveat a reviewer must not miss, when it applies.
 
-    In sub-02 only a quarter of the contacts the surgeon removed appear in the
-    recording, so anything said about "inside the resection" describes that
-    quarter. A reviewer who is not told reads it as describing the resection.
+    If only part of the contacts the surgeon removed appear in the recording,
+    anything said about "inside the resection" describes that part, and a
+    reviewer who is not told reads it as describing the resection. No
+    committed patient is like that any more: sub-02 read 0.25 through 0.3.24,
+    until its electrodes were read in the recording's names. So the record is
+    checked on a copy of the tables with sub-02 as it read then.
     """
-    record = _record("sub-02")
+    import shutil
+    from pathlib import Path
+
+    assert _record("sub-02")["rz_coverage"] == pytest.approx(1.0)
+    assert not _record("sub-02")["missing"]
+
+    root = Path(__file__).resolve().parents[1] / "data" / "outcome"
+    copy = tmp_path / "outcome"
+    shutil.copytree(root, copy)
+    recordings = pd.read_csv(copy / "recordings.csv", dtype={"missing": object})
+    thin = recordings["subject"] == "sub-02"
+    recordings.loc[thin, "rz_coverage"] = 0.25
+    recordings.loc[thin, "missing"] = "ER1, ER2, ER3, ER4"
+    recordings.to_csv(copy / "recordings.csv", index=False)
+    record = _record("sub-02", data_dir=copy)
     assert record["rz_coverage"] == pytest.approx(0.25)
-    assert record["missing"]
     assert "ER1" in record["missing"]
 
 
