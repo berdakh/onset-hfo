@@ -111,7 +111,7 @@ result and what it does and does not support. One file, opens in a browser.
 
 Otherwise, run something:
 
-## Eight notebooks, runnable in Colab
+## Nine notebooks, runnable in Colab
 
 Each notebook is the scriptable route to something the desktop application
 does; the badge opens it in Google Colab, where the first cell installs the
@@ -127,6 +127,7 @@ package.
 | 6 | [**Agent benchmark**](notebooks/06_agent_benchmark.ipynb) [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/berdakh/onset-hfo/blob/master/onset-hfo/notebooks/06_agent_benchmark.ipynb) | Tool-use competence of an open-weight model, by size and quantization | GPU runtime |
 | 7 | [**Annotation**](notebooks/07_annotation.ipynb) [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/berdakh/onset-hfo/blob/master/onset-hfo/notebooks/07_annotation.ipynb) | Blinded, stratified marking of detector windows by two readers, and their agreement | one 60 s slice |
 | 8 | [**Assistant evaluation**](notebooks/08_assistant_evaluation.ipynb) [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/berdakh/onset-hfo/blob/master/onset-hfo/notebooks/08_assistant_evaluation.ipynb) | The 111-question evaluation of the assistant under Qwen2.5 | GPU runtime, Ollama |
+| 9 | [**Benchmark, patient by patient**](notebooks/09_benchmark_per_patient.ipynb) [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/berdakh/onset-hfo/blob/master/onset-hfo/notebooks/09_benchmark_per_patient.ipynb) | The detector benchmark's per-patient scores: every committed mean rebuilt, the patients behind each, one patient re-scored | nothing (one 60 s slice for the last step) |
 
 ## Or, locally, in two minutes
 

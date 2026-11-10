@@ -89,7 +89,7 @@ For the research framing rather than the code, read
 | `docs/` | nineteen documents; reading order at the end of this file |
 | `data/` | **committed extracts** so every published number can be checked from a fresh clone with no download |
 | `artifacts/` | **gitignored** — where runs actually write, and the dataset cache |
-| `notebooks/` | eight notebooks, each with a Colab badge; 06 and 08 need a GPU runtime |
+| `notebooks/` | nine notebooks, each with a Colab badge; 06 and 08 need a GPU runtime |
 | `scripts/` | studies too long for a test: the model ladder, the sub-population screen, the multiplier ablation |
 | `app/` | the no-install demo: a Streamlit site over the committed results (`app/README.md`) |
 | `tests/` | about seventy files, 1,719 tests, all offline |
