@@ -143,8 +143,8 @@ FULL_RUN_S = 300.0
 #: first version of this analysis did -- destroys exactly the channel ranking
 #: the outcome question depends on.
 BAND_THRESHOLD_SD: dict[str, float] = {
-    "ripple": THRESHOLDS["interictal-agreement"],   # 2.0 SD, rank rho 0.655
-    "fast_ripple": THRESHOLDS["literature"],        # 5.0 SD, rank rho 0.610
+    "ripple": THRESHOLDS["interictal-agreement"],   # 2.0 SD, rank rho 0.685
+    "fast_ripple": THRESHOLDS["literature"],        # 5.0 SD, rank rho 0.645
 }
 
 #: Fallback for a band with no measured operating point.
@@ -685,8 +685,9 @@ def compare_groups(subjects: pd.DataFrame, participants: pd.DataFrame,
     # twice. A duplicate is the same metric on the same per-patient values,
     # which is the same test however the arm is labelled -- under 0.3.17's
     # exact interval the detector's whole-tied-set-resected values happen to
-    # agree patient for patient across the two scopes in the fast-ripple band,
-    # so that pair counts once too. Matching on the AUC and p alone, as this
+    # agree patient for patient across the two scopes (in both bands since
+    # five ds003498 patients' electrodes were read correctly), so those pairs
+    # count once too. Matching on the AUC and p alone, as this
     # used to, would also merge two different arms whose summaries tied.
     per_arm = merged.set_index(["subject", *keys])
     seen: set[tuple] = set()

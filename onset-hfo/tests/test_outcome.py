@@ -428,6 +428,6 @@ def test_the_verdict_names_the_window_that_was_analysed():
     full = verdict((0.0, 300.0))
     assert "a 300-second window and 20 patients" in full
     assert "60-second" not in full
-    assert "35-comparison Bonferroni" in full
+    assert "34-comparison Bonferroni" in full
     assert "a 60-second window" in verdict((0.0, 60.0))
     assert "a 45-second window" in verdict((30.0, 75.0))

@@ -88,8 +88,8 @@ neither is defined there (`data/benchmark/per_patient.csv.gz`).
 half.** Ripples rank best around 2 SD (1.75 on this grid, 2.0 shipped),
 fast ripples at 5.0 SD — an interior maximum of a 2–10 sweep, not a boundary.
 Running the ripple value in the fast-ripple band costs precision 0.756 →
-0.127: a mean of 1,341 detections per 60 s against a mean of 278
-expert-marked fast ripples. A single
+0.127: a mean of 1,341 detections per 60 s against a
+mean of 278 expert-marked fast ripples. A single
 threshold for both bands is not a simplification, it is a bug, and
 [OUTCOME.md](OUTCOME.md) shows what it costs downstream. `config.THRESHOLDS`
 now carries `interictal-agreement-fast-ripple` alongside the ripple values,
