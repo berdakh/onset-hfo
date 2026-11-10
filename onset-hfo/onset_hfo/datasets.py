@@ -24,6 +24,7 @@ carries the data *and* the provenance needed to cite it later.
 
 from __future__ import annotations
 
+import functools
 import json
 import os
 import re
@@ -57,6 +58,8 @@ __all__ = [
     "read_tsv_text",
     "OfflineError",
     "offline",
+    "archive_electrode_names",
+    "rename_contacts",
 ]
 
 _BYTES_PER_SAMPLE = {"IEEE_FLOAT_32": 4, "INT_16": 2, "UINT_16": 2, "IEEE_FLOAT_64": 8}
@@ -554,6 +557,15 @@ def _load_cached_slice(slice_dir: Path, meta: dict, verbose: bool = True) -> Rec
     truth = reviewed = None
     if spec.has_hfo_annotations:
         truth, reviewed = parse_hfo_annotations(events, window=(t_start, float(meta["t_stop"])))
+        names = archive_electrode_names(spec, meta["subject"])
+        if names:
+            for column in ("channel", "contact", "contact_b"):
+                truth[column] = [rename_contacts(v, names) for v in truth[column]]
+            reviewed = sorted(rename_contacts(c, names) for c in reviewed)
+            notes.append(
+                "the archive's markings name this patient's electrodes differently from the "
+                "recording; they are read as " + ", ".join(f"{a}={b}" for a, b in names.items())
+                + " (onset_hfo/archive_electrodes.csv)")
         notes.append(
             f"expert HFO markings: {len(truth)} events on {len(reviewed)} reviewed channels "
             f"({', '.join(reviewed[:6])}{', ...' if len(reviewed) > 6 else ''})")
@@ -737,6 +749,59 @@ def _seizure_times(events: pd.DataFrame | None,
     if offset is not None and offset <= onset:
         offset = None
     return (onset, offset, kind) if with_kind else (onset, offset)
+
+
+#: Where an archive's markings and clinical sheet name an electrode
+#: differently from the recording they belong to. In five ds003498 patients
+#: the recording calls the hippocampal and entorhinal electrodes AH, EC and
+#: PH while the markings and the resection sheet use another scheme, and
+#: which letter is which differs between patients: the pairing is not a
+#: renaming anyone wrote down. It was found from the signals: for every
+#: assignment of the four archive electrodes on a side to the four recorded
+#: ones, how many of the experts' marks land on an RMS detection (ripple band,
+#: 2.0 SD, within 20 ms) beyond what chance coverage would give, on the first
+#: 60 s of run 1. Both sides of every patient choose the same assignment. The
+#: columns are that evidence: the marks on the archive electrode, the share
+#: landing on a detection on the assigned recording electrode (``recall``),
+#: the share chance alone would give (``chance``), and the best other
+#: electrode. A row with no marks was assigned by elimination.
+ARCHIVE_ELECTRODES = Path(__file__).with_name("archive_electrodes.csv")
+
+_CONTACT = re.compile(r"^([A-Za-z']+?)(\d+)$")
+
+
+def archive_electrode_names(dataset: str | DatasetSpec | None, subject: str) -> dict[str, str]:
+    """Archive electrode name -> the recording's, for one subject.
+
+    Empty when the two agree, which is every subject of every archive except
+    the five in :data:`ARCHIVE_ELECTRODES`.
+    """
+    table = _archive_electrodes()
+    rows = table[(table["dataset"] == _spec(dataset).dataset_id) & (table["subject"] == subject)]
+    return dict(zip(rows["archive"].str.upper(), rows["recording"], strict=True))
+
+
+@functools.lru_cache(maxsize=1)
+def _archive_electrodes() -> pd.DataFrame:
+    return pd.read_csv(ARCHIVE_ELECTRODES)
+
+
+def rename_contacts(name: str, names: dict[str, str]) -> str:
+    """``"AL1-AL2"`` -> ``"AHL1-AHL2"`` under ``{"AL": "AHL"}``.
+
+    Every contact of a bipolar name is renamed on its own and all at once, so
+    a mapping that swaps two electrodes (``A`` to ``AH`` and ``E`` to ``A``)
+    cannot rename one contact twice. A contact whose electrode is not in
+    ``names`` is left as it was.
+    """
+    if not names or not name:
+        return name
+    out = []
+    for contact in str(name).split("-"):
+        match = _CONTACT.match(contact)
+        electrode = match.group(1).upper() if match else None
+        out.append(f"{names[electrode]}{match.group(2)}" if electrode in names else contact)
+    return "-".join(out)
 
 
 #: ``ripple_HL2-3`` -> kind "ripple", contacts HL2 and HL3.
