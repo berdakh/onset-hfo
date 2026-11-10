@@ -91,3 +91,51 @@ network, so with the slices cached the whole sweep runs with
 `ONSET_HFO_OFFLINE=1`. The 27 cells this run shares with `agreement_sweep.csv`
 reproduce it **exactly**, which is how the offline path was checked against
 the original networked one.
+
+---
+
+## `per_patient.csv.gz` — the scores the means were averaged from
+
+One row per patient, band, detector and threshold: 20 patients × 2 bands ×
+4 detectors × 17 thresholds (0.5–15 SD, the union of the grids above), 2,720
+rows, 140 KB. Every row of `agreement_sweep.csv` and `four_detector_sweep.csv`
+is the mean of the matching rows here, with undefined values left out,
+rounded to three decimals; all 113 reproduce exactly, and
+`tests/test_study_reproduction.py` keeps it so.
+
+| column | meaning |
+|---|---|
+| `subject`, `run`, `band`, `detector`, `threshold_sd` | the cell |
+| `n_truth` | expert events of the band on the reviewed channels |
+| `n_detections`, `n_true_positives`, `n_false_positives`, `n_missed` | the detector's events and how they matched, within 20 ms on the same channel |
+| `precision`, `recall`, `f1` | event-level; precision is empty when the detector found nothing |
+| `n_channels` | reviewed channels the ranking is over |
+| `spearman_rho`, `p_value` | rank correlation of each channel's detection count with its expert count; empty when it is undefined |
+| `top5_overlap`, `top_k` | channels shared by the two top-k lists, and k (5, or fewer channels) |
+| `expert_top`, `ours_top` | the two top-k lists |
+
+**How many patients a mean is over.** Recall is defined for every patient:
+each has expert events of both bands on the channels scored. Precision and
+ρ are undefined in the 118 rows where the detector found nothing, so the means
+of those two columns are over fewer patients at high thresholds, while F1 (0
+there) is over all 20. One quoted figure is affected: the RMS detector's
+fast-ripple ρ 0.61 and precision 0.54 at 5.0 SD are over 19 patients, because
+it found nothing on sub-10's reviewed channels at that threshold.
+
+**Five patients are scored on 6 of their 24 reviewed channels.** In sub-02,
+sub-05, sub-06, sub-07 and sub-08 the recording names six electrodes ECL, ECR,
+AHL, AHR, PHL and PHR, while the archive's markings (and the resection sheet,
+`clinical_ch_sheet_zurich.xlsx`) name them EL, ER, HL, HR, PL and PR, the
+names sub-09's recording itself uses. Only the amygdala contacts (AL, AR)
+match, so 18 reviewed channels per patient, and the 2,697 expert events on
+them, are not scored: **38,490 of the 41,187 marked events are**, and
+`cohort.csv`'s `n_reviewed_channels` (6 for these five) counts the channels
+scored, while its event counts include the unscored ones. The correspondence
+E→EC, H→AH, P→PH is likely but not confirmed by the archive, so nothing here
+maps one name onto another.
+
+Regenerated with `onset_hfo.benchmark.benchmark_subject`, patient by patient,
+from the 60 s slices; the per-patient tables of the original runs were in the
+untracked `artifacts/` and were not kept. The patient descriptions it records
+match `cohort.csv` exactly. Read and checked step by step in
+[`notebooks/09_benchmark_per_patient.ipynb`](../../notebooks/09_benchmark_per_patient.ipynb).

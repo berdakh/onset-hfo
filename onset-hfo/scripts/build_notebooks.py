@@ -2284,7 +2284,7 @@ are averaged from (`data/benchmark/per_patient.csv.gz`), and:
    can be checked as well as the means.
 
 Sections 1–3 need no network and no GPU. Section 4 downloads one patient's
-60 s slice (about 10 MB) unless it is cached.
+60 s slice (20–30 MB) unless it is cached.
 
 Read every precision as **agreement**, not accuracy: the reference is the
 validated output of the source study's own detector, not a census of every
@@ -2301,8 +2301,7 @@ channel-level ones (`n_channels` … `ours_top`) from the benchmark's rank
 agreement, the Spearman correlation between each channel's expert count and
 its detection count.
 """),
-    code("""import numpy as np
-import pandas as pd
+    code("""import pandas as pd
 from pathlib import Path
 
 BENCH = Path("data/benchmark")
@@ -2357,11 +2356,11 @@ A patient drops out of a mean when the value is undefined for them:
 - **precision** when the detector found nothing on the reviewed channels;
 - **recall** when the experts marked no event of that band there;
 - **ρ** when fewer than three channels were reviewed, or when one side has
-  the same count on every channel (often: the detector found nothing).
+  the same count on every channel.
 
 **F1 is never undefined.** It is 0 whenever precision or recall is, so the
-F1 mean is over every patient while the precision and recall means beside
-it may not be.
+F1 mean is over every patient while the precision and ρ means beside it may
+not be. The cells where a mean is over fewer than all 20 patients:
 """),
     code("""counts = patients.groupby(KEYS).agg(
     patients=("subject", "nunique"), precision=("precision", "count"),
@@ -2369,12 +2368,16 @@ it may not be.
 ).reset_index()
 counts[(counts[["precision", "recall", "rank_rho"]] < counts[["patients"]].values).any(axis=1)]"""),
     md("""
-Recall is undefined for the same patients at every threshold: it depends only
-on the expert markings. These patients have no expert event of the band on
-their reviewed channels:
+Why, in this cohort: every patient has expert events of both bands on their
+reviewed channels, so recall is always defined, and every undefined
+precision or ρ is a patient for whom the detector found nothing at that
+threshold:
 """),
-    code("""no_truth = patients[patients.n_truth == 0].groupby("band").subject.unique()
-{band: sorted(s) for band, s in no_truth.items()}"""),
+    code("""undefined = patients[patients.precision.isna() | patients.spearman_rho.isna()]
+print(f"patients with no expert event of a band: {int((patients.n_truth == 0).sum())} rows")
+print(f"rows with precision or rho undefined: {len(undefined)}; "
+      f"detections in them: {sorted(undefined.n_detections.unique())}")
+undefined.groupby("subject").size().rename("undefined cells").to_frame().T"""),
     md("""
 ## 3. The patients behind the quoted operating points
 
@@ -2396,6 +2399,13 @@ def operating_point(band, detector, threshold):
 
 operating_point("ripple", "rms", 2.0)"""),
     code("""operating_point("fast_ripple", "rms", 5.0)"""),
+    md("""
+The fast-ripple figures the documents quote, ρ 0.61 and precision 0.54, are
+means over **19** patients: at 5.0 SD the detector found no fast ripple on
+sub-10's reviewed channels, where the experts marked 100, so neither value is
+defined for that patient. Its recall (0) and F1 (0) are in the means beside
+them, which are over all 20.
+"""),
     md("""
 ## 4. Re-score one patient from the recording
 
@@ -2420,7 +2430,7 @@ check[KEYS + [f"{v}_{s}" for v in values for s in ("fresh", "stored")]]""",
     md("""
 ## 5. Regenerate the whole file
 
-About an hour on a laptop, after downloading the 20 slices (about 200 MB):
+About an hour on a laptop, after downloading the 20 slices (about 500 MB):
 
 ```python
 from onset_hfo.benchmark import benchmark_cohort
