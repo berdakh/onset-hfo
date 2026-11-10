@@ -2376,7 +2376,7 @@ threshold:
     code("""undefined = patients[patients.precision.isna() | patients.spearman_rho.isna()]
 print(f"patients with no expert event of a band: {int((patients.n_truth == 0).sum())} rows")
 print(f"rows with precision or rho undefined: {len(undefined)}; "
-      f"detections in them: {sorted(undefined.n_detections.unique())}")
+      f"detections in them: {sorted(int(n) for n in undefined.n_detections.unique())}")
 undefined.groupby("subject").size().rename("undefined cells").to_frame().T"""),
     md("""
 ## 3. The patients behind the quoted operating points
