@@ -50,13 +50,13 @@ with tab_result:
     st.markdown("""
 The direction is the one [Fedele et al. 2017](https://www.nature.com/articles/s41598-017-13064-1)
 predicts — the study this dataset comes from — and with **13 seizure-free
-patients against 7 recurrences it does not reach significance**. Nothing in the
-whole study survives correction for its 35 distinct comparisons, and
-`min_detectable_auc(13, 7)` is **0.85**, so this cohort could not have
-established either number.
+patients against 7 recurrences it does not reach significance**. None of the
+study's 34 distinct comparisons reaches p < 0.05 even before correction (the
+smallest p is 0.057), and `min_detectable_auc(13, 7)` is **0.85**, so this
+cohort could not have established either number.
 
 **Concentration localises; proportion does not.** The share of a patient's HFOs
-inside the resection shows nothing even for the experts (AUC 0.48 — a coin
+inside the resection shows nothing even for the experts (AUC 0.53 — a coin
 flip), while *which channel is busiest* on the same events gives 0.71. "Most of
 this patient's HFOs were inside the resection" is largely a statement about how
 big the resection was.
@@ -64,8 +64,8 @@ big the resection was.
 **And the pipeline stopped picking a winner.** The data picks a single channel
 in fewer than half the patients — worst case, 27 tied channels out of 37 — so
 `candidates_resected` reports the share of the *tied set* that was removed.
-Being honest about ties costs 0.022 AUC for the experts and 0.071 for our
-detector, whose fast-ripple leader is tied in 14 of 20 patients.
+Reporting the tied set moves the AUC by +0.016 for the experts and −0.005 for
+our detector, whose fast-ripple leader is tied in 13 of 20 patients.
 """)
 
 
@@ -91,7 +91,7 @@ of five minutes.
 
 One thing the study was not designed to find: **our detector is more stable
 across windows than the expert markings** — AUC spread 0.09 against 0.25, same
-busiest channel in 12/20 patients against 7/20. Read it as reproducibility, not
+busiest channel in 9/20 patients against 6/20. Read it as reproducibility, not
 accuracy: the detector agrees with itself more than the experts agree with
 themselves, and the experts are still closer to the outcome.
 """)
@@ -159,8 +159,8 @@ pooled by subject mean, using this study's own metric functions.
             width="stretch", hide_index=True)
         st.caption("Ripple band, read from `data/outcome/subpopulation_groups.csv`. "
                    "Every row is 13 seizure-free against 7 recurrences — no "
-                   "patient is lost from any arm, which is why this band and not "
-                   "the pre-specified one carries the answer.")
+                   "patient is lost from any arm, which is not true of the "
+                   "pre-specified fast-ripple band (below).")
 
         gains = []
         for metric, part in split.groupby("metric", sort=False):
@@ -170,14 +170,15 @@ pooled by subject mean, using this study's own metric functions.
         st.error(
             "**It does not help.** Every sub-population arm is at or below the "
             "merged rate: best gains of " + ", ".join(gains) + ". The "
-            "spike-coupled arm sits at chance on all three, and on "
-            "`top_channel_resected` the sign is *reversed* — 0.600 in the "
-            "seizure-free patients against 0.667 in the recurrences.")
+            "spike-coupled arm sits near chance on all three — on "
+            "`top_channel_resected`, 0.692 in the seizure-free patients "
+            "against 0.657 in the recurrences.")
 
         st.markdown("""
-**Why this is reported in the ripple band and not the pre-specified fast-ripple
-one.** The spike-coupled population in the fast-ripple band is too small to rank
-channels with, and an argmax over it is a coin flip.
+**Why the ripple band is shown first and not the pre-specified fast-ripple
+one.** The spike-coupled population in the fast-ripple band is thin — a median
+of 9 events per window, fewer than 5 in 38 of 100 windows — and one seizure-free
+patient (sub-10) has none at all, so that arm is 12 against 7.
 """)
         meas = panels.subpopulation_measurability()
         if not meas.empty:
@@ -188,22 +189,26 @@ channels with, and an argmax over it is a coin flip.
             st.caption("Out of 100 subject-windows per population per band.")
 
         st.warning("""
-**And that near-empty population produced the most flattering numbers in the
-whole screen** — spike-coupled 0.806 (p = 0.025) and 0.826 (p = 0.021), both
-apparently beating the merged rate. Three checks retire them. The tie-aware
+**And that thin population gives the most flattering numbers in the whole
+screen.** In fast ripples the spike-coupled arm's `top_channel_resected` is
+**AUC 0.875, p = 0.004**, Bonferroni 0.033 across that band's nine rows, and its
+`share_in_rz` 0.857 (p = 0.009). That is reported as measured. Three things
+argue against reading it as a gain of the split. The tie-aware
 `candidates_resected` metric, which exists precisely to catch an argmax over a
-set that is mostly ties, puts the same arm at **0.479** — below chance. The
-merged arm replicates across bands (0.753 → 0.747) while the coupled arm
-collapses (0.806 → 0.487), which is noise in one arm rather than a band effect.
-And the band effect that *should* be there is: merged `share_in_rz` falls
-0.714 → 0.527 from fast ripples to ripples, as fast ripples localising better
-predicts.
+set that is mostly ties, puts the same arm at **0.446** — below chance. The
+merged arm replicates across bands (0.791 → 0.747) while the coupled arm
+collapses (0.875 → 0.533). And it is one of many comparisons, on five 60 s
+windows and 12 seizure-free patients against 7: a hypothesis for a larger
+cohort, not a result. The band effect that *should* be there is: merged
+`share_in_rz` falls 0.703 → 0.516 from fast ripples to ripples, as fast ripples
+localising better predicts. Before five patients' electrodes were read in the
+recording's names (corrected after 0.3.24) the same arm gave 0.806, p = 0.025.
 """)
 
         st.info("""
 **One thing the split does measure reliably.** The spike-coupled share of all
-ripples is a stable patient property — within-subject SD 0.013 against
-between-subject 0.063, so an ICC of about 0.96. It is a real and repeatable
+ripples is a stable patient property — within-subject SD 0.012 against
+between-subject 0.056, so an ICC of about 0.96. It is a real and repeatable
 feature of a patient. It just does not predict where the surgeon cut, which is
 more useful to know than either "no signal" or "promising". Full tables:
 `docs/EVALUATION.md` §3b.
@@ -212,23 +217,27 @@ more useful to know than either "no signal" or "promising". Full tables:
 
 with tab_honesty:
     st.error("""
-**Nothing here survives correction.** One of the study's 35 comparisons reaches
-p < 0.05 uncorrected — our detector, *ripple* band (not the pre-specified
-fast-ripple one), `candidates_resected`, AUC 0.786, p = 0.032, **Bonferroni
-1.00**. In 35 uncorrected tests chance alone produces about two such rows, so
-one is *fewer* than expected. It is on this page because leaving it out would
-be the same sin as quoting it.
+**Nothing here reaches p < 0.05, even before correction.** The smallest p among
+the study's 34 distinct comparisons is 0.057 — our detector, *ripple* band (not
+the pre-specified fast-ripple one), `candidates_resected` on all channels, AUC
+0.758. In 34 uncorrected tests chance alone would produce about two rows below
+0.05. Through 0.3.24 one did — the same detector, band and metric, AUC 0.786,
+p = 0.032, Bonferroni 1.00 — and it went when five patients' electrodes, named
+differently in the markings and the recording, were corrected.
 """)
     st.markdown("""
 - **Thirteen against seven is a very small study.** Only a very large separation
   (AUC ≥ 0.85) could reach 80% power. A p above 0.05 here means *underpowered*,
   not *no effect*.
-- **Thirty-five comparisons, uncorrected.** The Bonferroni column is in
-  `groups.csv`; nothing survives it.
+- **Thirty-four distinct comparisons, uncorrected.** The Bonferroni column is
+  in `groups.csv`; nothing survives it.
 - **The published headline changed once already** (0.82 → 0.71). Treat that as
   the calibration for how much weight any single number here can carry.
-- **Resected contacts that were never recorded cannot be scored.** In five
-  temporal-lobe patients only 4 of 16 appear in the recording.
+- **Five patients' electrode names are inferred.** In sub-02, -05, -06, -07 and
+  -08 the markings and resection sheet name the hippocampal and entorhinal
+  electrodes differently from the recording; the pairing was read from the signals. Through
+  0.3.24 those patients appeared to have only 4 of 16 resected contacts
+  recorded; all 16 were, under other names (corrected after 0.3.24).
 - **Retrospective, one centre, one surgical team.** The randomised
   [HFO Trial](https://www.thelancet.com/journals/laneur/article/PIIS1474-4422(22)00311-8/fulltext)
   (Lancet Neurology 2022) tested HFO-guided resection prospectively and did not

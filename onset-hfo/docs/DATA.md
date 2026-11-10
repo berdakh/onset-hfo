@@ -52,9 +52,14 @@ reviewer noticed is absent from the file, so "recall" means *recall of those
 validated events*, and an event we find that they did not is counted against
 us even when it may be real.
 
-**Only some channels were reviewed.** The study kept the three most mesial
-bipolar channels in temporal-lobe cases, so a typical recording has markings
-on ~23 of ~43 possible channels. A detection on an unreviewed channel is
+**Only some channels were reviewed.** The annotators marked 14 to 65 bipolar
+channels per subject, so a typical recording has markings on ~24 of ~46
+possible channels. (This page used to say the study kept only the three most
+mesial bipolar channels in temporal-lobe cases. That was wrong, corrected after
+0.3.24: in five patients the markings name the hippocampal and entorhinal
+electrodes differently from the recording, so 18 of their 24 reviewed channels
+went unmatched; `onset_hfo/archive_electrodes.csv` now pairs them.) A
+detection on an unreviewed channel is
 **unjudged, not wrong**, and every score in this repository is restricted to
 reviewed channels for that reason. `Recording.reviewed_channels` carries the
 list; forgetting to use it silently halves precision.
@@ -99,13 +104,16 @@ them onto bipolar channels; `onset_hfo/outcome.py` uses them. See
 
 Two things to know before relying on that sheet:
 
-* **Recorded channels are a subset of implanted contacts.** In 15 of 20
-  subjects every resected contact appears in the recording. In the other five
-  — all temporal-lobe cases, where the study kept only the three most mesial
-  bipolar channels — only 4 of 16 listed resected contacts were recorded.
-  `Resection.coverage()` reports this per subject and the outcome study writes
-  it to `recordings.csv`; do not quote a "share inside the resection" for
-  those five without it.
+* **Every resected contact is in the recording.** In all 20 subjects each
+  contact the sheet lists as resected appears in the recording (`rz_coverage`
+  1.0). Through 0.3.24 five temporal-lobe subjects seemed to have only 4 of 16
+  recorded, which this page put down to the study keeping only the three most
+  mesial bipolar channels. That was wrong: the sheet names their hippocampal
+  and entorhinal electrodes differently from the recording, and the other
+  twelve contacts were there under those names (corrected after 0.3.24, see
+  `onset_hfo/archive_electrodes.csv`). `Resection.coverage()` still reports
+  coverage per subject and the outcome study writes it to `recordings.csv`;
+  on other data, do not quote a "share inside the resection" without it.
 * **The sheet has a typo.** Subject 15's `excluded` cell reads `1ll22-24`
   where every other token on the row says `tll`. `expand_contact_ranges`
   returns unparsable chunks rather than dropping them, and `resection_map`

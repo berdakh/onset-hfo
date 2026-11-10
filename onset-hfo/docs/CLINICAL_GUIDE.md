@@ -544,12 +544,14 @@ What the archive records: the epilepsy type, whether imaging found a lesion,
 how many nights were recorded, how many channels the annotators reviewed, how
 many contacts the surgeon removed, and whether any were eloquent cortex.
 
-**The resection-coverage line is the one to read.** In five of these twenty
-patients only a quarter of the contacts the surgeon removed appear in the
-recording at all. When that is the case this panel says so in orange, because
-everything the software then says about "inside the resection" for that patient
-describes a quarter of their resection — and the number looks identical either
-way.
+**The resection-coverage line is the one to read.** When some of the contacts
+the surgeon removed do not appear in the recording, this panel says so in
+orange, because everything the software then says about "inside the resection"
+for that patient describes only part of their resection — and the number looks
+identical either way. In these twenty patients every resected contact is
+recorded. Through 0.3.24 five of them seemed to have only a quarter of theirs,
+because the archive's resection sheet names their hippocampal and entorhinal
+electrodes differently from the recording; that was corrected after 0.3.24.
 
 **The surgical outcome is hidden until you ask for it.** Knowing a patient
 became seizure-free changes how you read the same rate table, and this software
@@ -1014,11 +1016,12 @@ kind of number the program shows it says what that number was measured
 against on public data, how well it agreed, and where it fails:
 
 - **Finding HFOs** — the detectors against the expert markings of ds003498:
-  best channel-rank ρ 0.66 for ripples and 0.61 for fast ripples, precision
-  0.51 and 0.54, read as agreement rather than accuracy.
+  best channel-rank ρ 0.70 for ripples (RMS at 1.75 SD; the shipped 2.0 SD
+  is within 0.02) and 0.65 for fast ripples, precision 0.53 and 0.76, read as
+  agreement rather than accuracy.
 - **Interictal HFOs and surgical outcome** — ds003498, 13 seizure-free
-  against 7 with recurrence: AUC 0.71, p = 0.12, not significant; 0.67 with
-  the RMS detector; and the replication on HUP.
+  against 7 with recurrence: AUC 0.71, p = 0.12, not significant; the same
+  with the RMS detector; and the replication on HUP.
 - **Ictal onset: the Epileptogenicity Index** — ds003029, 28 patients:
   median AUC 0.80 (0.70–0.87), falling to 0.52 with the onset put 40 s
   before the seizure; on HUP, 54 patients, 0.79.
@@ -1502,7 +1505,7 @@ simpler, and none of the caveats above apply.
 
 Step 12 is the one most worth doing, and the one most likely to surprise you.
 Across these twenty patients, the annotators' own busiest fast-ripple channel
-is the same channel in only **7 of 20 patients** when you compare one minute of
+is the same channel in only **6 of 20 patients** when you compare one minute of
 a recording against another minute of the *same* recording. That is the
 experts, not our detector. A single-minute answer — from anyone — is less
 stable than it looks, which is why this interface puts confidence intervals and
@@ -2039,16 +2042,16 @@ the findings are right. That is what the studies are for.
 Cohort figures from [`EVALUATION.md`](EVALUATION.md), 20 patients, against the
 annotators' 41,187 marked events, on reviewed channels only.
 
-**Ripple band, individual events.** At 2.0 SD the detector agrees with about
-half of what it marks (precision 0.51) and finds about a third of what the
-annotators marked (recall 0.38). Raising the threshold to 5.0 SD buys precision
-0.59 and costs recall — 0.12.
+**Ripple band, individual events.** At 2.0 SD the detector agrees with a
+little over half of what it marks (precision 0.58) and finds about half of what
+the annotators marked (recall 0.48). Raising the threshold to 5.0 SD buys
+precision 0.71 and costs recall — 0.16.
 
-**Fast ripple band.** Much harder. At 2.0 SD precision is 0.086: eleven
-detections for every real one. It takes 5.0 SD to reach precision 0.54.
+**Fast ripple band.** Much harder. At 2.0 SD precision is 0.127: about eight
+detections for every marked one. It takes 5.0 SD to reach precision 0.76.
 
 **Ranking channels is easier than marking events,** which is the useful part:
-the detector's channel ordering correlates with the annotators' at ρ ≈ 0.65
+the detector's channel ordering correlates with the annotators' at ρ ≈ 0.69
 (ripples, 2.0 SD) even where individual-event agreement is poor. If what you
 want is "which channels", that is a better-supported question than "which
 events".
@@ -2057,8 +2060,8 @@ events".
 not another opinion — see [`OUTCOME.md`](OUTCOME.md). On the whole recording,
 the channel with the most expert-marked fast ripples was inside the resection
 in 11 of 13 patients who became seizure-free and 3 of 7 whose seizures
-returned: **AUC 0.71, p = 0.12**. Our detector, same channels: 10 of 13 versus
-3 of 7, AUC 0.67, p = 0.17. **Neither is significant.** An earlier version of
+returned: **AUC 0.71, p = 0.12**. Our detector, same channels: the same 11 of
+13 versus 3 of 7, AUC 0.71, p = 0.12. **Neither is significant.** An earlier version of
 this analysis, on the first minute only, gave AUC 0.82 and p = 0.007, and that
 number was wrong in the sense that matters: it does not survive looking at the
 other four minutes of the same recordings. Two patients accounted for the whole
@@ -2095,9 +2098,8 @@ candidate sets and a second window.
 
 5. **"This tells me what to resect."** It does not. No part of this software
    has been validated against a surgical decision, the cohort is twenty
-   patients, five of whom have only a quarter of their resected contacts
-   present in the recording at all, and the one outcome comparison it has been
-   through did not separate the groups. [`LIMITATIONS.md`](LIMITATIONS.md) is
+   patients, and the one outcome comparison it has been through did not
+   separate the groups. [`LIMITATIONS.md`](LIMITATIONS.md) is
    the full list and is shorter than this guide.
 
 ---

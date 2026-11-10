@@ -15,7 +15,7 @@ documents: [`EXPO.md`](EXPO.md) for what to say at the stand,
 > **In HFO analysis the unit of analysis decides whether a result is
 > reproducible. Across five minutes of one recording an expert's busiest-channel
 > answer holds for 9 of 20 patients; across five whole recordings it holds for
-> 18. The single significant p-value this project ever reported was the most
+> 18. The p-value this project once published as its headline was the most
 > favourable of five minutes.**
 
 The two-sentence version, for a passer-by:
@@ -27,8 +27,8 @@ The two-sentence version, for a passer-by:
 ### Why this claim, and not the obvious one
 
 The obvious poster claim is *"our detector predicts surgical outcome"*. We
-cannot make it: on this cohort neither our detector (AUC 0.67, p = 0.17) nor
-the experts' own markings (AUC 0.71, p = 0.12) reach significance, and with 13
+cannot make it: on this cohort neither our detector nor the experts' own
+markings (both AUC 0.71, p = 0.12) reach significance, and with 13
 seizure-free against 7 recurrences the smallest effect the design can detect at
 80% power is AUC 0.85. A poster claiming prediction here would be claiming
 something the data cannot carry.
@@ -49,20 +49,20 @@ Each clause of the claim, and exactly what backs it.
 |---|---|---|
 | "expert's busiest-channel answer holds for 9 of 20 across five minutes" | 5 disjoint 60 s windows tiling the same run, analysed identically | [`OUTCOME.md` § A whole run is a stable unit](OUTCOME.md) |
 | "…holds for 18 of 20 across five whole recordings" | 5 runs per subject from different nights; only `sub-08` and `sub-18` move | same |
-| "the single significant p-value was the most favourable of five minutes" | expert arm p ranges 0.007–0.613 across the five minutes; 0.007 is the minimum | [`OUTCOME.md` § But which minute you pick matters](OUTCOME.md) |
-| the detector is the more reproducible of the two at short windows | same busiest channel in all five minutes: 12/20 (rms) vs 7/20 (expert); same inside/outside answer 16/20 vs 9/20; AUC spread 0.09 vs 0.25 | [`OUTCOME.md` § Our detector is more stable](OUTCOME.md) |
-| the outcome estimate itself is settled on a whole run | AUC identical from 180 s to 300 s — identical, not merely close | [`OUTCOME.md` § The estimate settles](OUTCOME.md) |
-| the headline outcome numbers | expert 11/13 vs 3/7, AUC 0.71 (0.49–0.92), p = 0.12; rms 10/13 vs 3/7, AUC 0.67 (0.45–0.89), p = 0.17 | [`OUTCOME.md`](OUTCOME.md) primary table |
+| "the p-value once published as the headline was the most favourable of five minutes" | expert arm p ranges 0.007–0.613 across the five minutes; 0.007 is the minimum | [`OUTCOME.md` § But which minute you pick matters](OUTCOME.md) |
+| the detector is the more reproducible of the two at short windows | same busiest channel in all five minutes: 9/20 (rms) vs 6/20 (expert); same inside/outside answer 15/20 vs 10/20; AUC spread 0.09 vs 0.25 | [`OUTCOME.md` § Our detector is more stable](OUTCOME.md) |
+| the outcome estimate itself is settled on a whole run | AUC identical from 240 s to 300 s for the experts and from 180 s for the detector — identical, not merely close | [`OUTCOME.md` § The estimate settles](OUTCOME.md) |
+| the headline outcome numbers | expert 11/13 vs 3/7, AUC 0.71 (0.49–0.92), p = 0.12; rms the same 11/13 vs 3/7, AUC 0.71 (0.49–0.92), p = 0.12 | [`OUTCOME.md`](OUTCOME.md) primary table |
 | the power floor | 13 vs 7 detects AUC ≥ 0.85 at 80% power | `onset_hfo.outcome.min_detectable_auc` |
-| multiplicity | 35 distinct comparisons; one at p = 0.032 uncorrected, Bonferroni 1.00; chance alone gives ~2 | [`OUTCOME.md`](OUTCOME.md), [`LIMITATIONS.md`](LIMITATIONS.md) |
-| detector agreement with expert markings | ripple 2.0 SD: precision 0.51, recall 0.38, channel-rank ρ 0.66. fast ripple 5.0 SD: 0.54 / 0.20 / 0.61, over 41,187 marked events | [`EVALUATION.md`](EVALUATION.md) |
+| multiplicity | 34 distinct comparisons; none reaches p < 0.05 even uncorrected (smallest 0.057); chance alone gives ~2 | [`OUTCOME.md`](OUTCOME.md), [`LIMITATIONS.md`](LIMITATIONS.md) |
+| detector agreement with expert markings | ripple 2.0 SD: precision 0.58, recall 0.48, channel-rank ρ 0.69. fast ripple 5.0 SD: 0.76 / 0.29 / 0.65, over 41,187 marked events | [`EVALUATION.md`](EVALUATION.md) |
 
 Two caveats that belong **on the poster**, not in a drawer:
 
 - The across-runs comparison is restricted to the 18 subjects with more than
   one run (13 seizure-free against 5), so its absolute AUCs are not comparable
   to the 13-vs-7 numbers elsewhere.
-- At 30 s the detector arm covers only 16 of 20 patients, because the rest
+- At 30 s the detector arm covers only 18 of 20 patients, because the rest
   produce no fast-ripple detections in that little data. Its short-window
   points are a different cohort and are not part of the same curve.
 
@@ -103,15 +103,15 @@ Printed small on the board, and said out loud when asked:
 >
 > On whole recordings the busiest channel lay inside the resection in 11 of 13
 > seizure-free patients against 3 of 7 with recurrence (AUC 0.71, 95% CI
-> 0.49–0.92, p = 0.12) using expert markings, and 10 of 13 against 3 of 7 (AUC
-> 0.67, 0.45–0.89, p = 0.17) using a threshold-crossing RMS detector. Neither
+> 0.49–0.92, p = 0.12) using expert markings, and the same 11 of 13 against 3 of
+> 7 using a threshold-crossing RMS detector. Neither
 > reaches significance; these group sizes detect only AUC ≥ 0.85 at 80% power.
 >
 > Reproducibility separated the two arms sharply. Across five minutes of one
-> recording the expert markings gave the same busiest channel for 7 of 20
-> patients and the same inside/outside answer for 9 of 20, with group AUC
+> recording the expert markings gave the same busiest channel for 6 of 20
+> patients and the same inside/outside answer for 10 of 20, with group AUC
 > spanning 0.566–0.819 and p spanning 0.007–0.613; the automated detector gave
-> 12 of 20 and 16 of 20, with AUC spanning 0.650–0.740. Changing the unit of
+> 9 of 20 and 15 of 20, with AUC spanning 0.667–0.756. Changing the unit of
 > analysis from a minute to a whole recording raised the experts' agreement
 > with themselves from 9 of 20 to 18 of 20, while the detector was unchanged at
 > 16 of 20. An earlier version of this analysis, computed on the first 60
@@ -131,7 +131,7 @@ Printed small on the board, and said out loud when asked:
 | 2 | **What one detection is** | Wideband, band-passed, and the event's spectrum against the recording's own 1/f background. A real oscillation leaves a bump above the dashed line; filter ringing does not. | `img/real_example_event.png` |
 | 3 | **Against surgical outcome** | The primary table, both arms, with CI, p, and the power floor stated beneath it. | table + `img/real_rates_rms.png` |
 | 4 | **Which minute you pick** | The five-window spread for both arms; the p range 0.007–0.613 called out. This is the panel the claim rests on. | `img/window_stability.png` |
-| 5 | **A whole run is stable** | 9/20 → 18/20 for the experts; 16/20 → 16/20 for the detector. The growing-window curve going flat from 180 s. | `img/run_stability.png` |
+| 5 | **A whole run is stable** | 9/20 → 18/20 for the experts; 16/20 → 16/20 for the detector. The growing-window curve going flat from 240 s (experts) and 180 s (detector). | `img/run_stability.png` |
 | 6 | **What we corrected, and what we will not say** | The 60 s → 300 s correction published next to the original; the four non-claims; the multiplicity note. | none — type only |
 
 Footer strip: the four addresses from [`../../site/handout.html`](../../site/handout.html),

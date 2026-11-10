@@ -94,8 +94,8 @@ Scored against expert HFO markings on the 20 patients of
 [ds003498](https://openneuro.org/datasets/ds003498). The reference is the
 validated output of *another detector*, not a census of every oscillation, so
 an event we find that it never proposed counts against us whether or not it is
-real. **These are agreement numbers. Precision around 0.6 is a floor, not a
-measurement.**
+real. **These are agreement numbers. Precision around 0.7–0.8 is a floor, not
+a measurement.**
 
 Per patient per 60 s that is a mean of
 **{cohort['expert_ripples'].mean():,.0f} marked ripples** and
@@ -209,8 +209,8 @@ at a shared threshold measures the threshold rather than the feature.
         "**Why line length peaks lower here than in the table above.** These are "
         "two different grids, and on the 27 thresholds they share they agree "
         "*exactly* — the largest difference in any metric is 0. The older sweep "
-        "simply never ran line length below 2.0 SD, so its optimum of 2.5 was "
-        "the grid stopping too high; this one runs down to 0.5 and finds 1.5. "
+        "simply never ran line length below 2.0 SD, so its optimum landed on "
+        "2.0, the grid stopping too high; this one runs down to 0.5 and finds 1.5. "
         "That is the boundary problem the warning above describes, caught on an "
         "arm that had not been extended.")
 
@@ -224,11 +224,11 @@ at a shared threshold measures the threshold rather than the feature.
                         f"(`{m['winner']}`)")
 
     st.success("""
-**Both margins are ties.** Two more detectors, each given its own sweep on real
-data, bought no measurable improvement in channel ranking over the two already
-there. That is a useful thing to have paid for: it says the ceiling here is not
+**Both margins are within what twenty patients can resolve.** Two more
+detectors, each given its own sweep on real data, bought no established
+improvement in channel ranking over the two already there. That is a useful thing to have paid for: it says the ceiling here is not
 the choice of feature. What is left is the reference standard — the markings are
-another detector's validated output, so precision above about 0.6 is not
+another detector's validated output, so precision much above 0.7–0.8 is not
 available — and the unit of analysis, which the Outcome page shows dominates
 everything else measured here.
 """)
@@ -239,8 +239,8 @@ is RMS before the square root, so under a *fixed* threshold the two would select
 identical samples. They do not, because `median + 5 robustSD` sits at about the
 98th percentile of an RMS trace and the 96th of a squared one: squaring is not
 affine and stretches the upper tail relative to the median. Run short-time
-energy at RMS's fast-ripple threshold and its rank agreement falls from 0.601 to
-**0.485**. The Hilbert envelope, by contrast, wants almost exactly what RMS
+energy at RMS's fast-ripple threshold and its rank agreement falls from 0.637 to
+**0.577**. The Hilbert envelope, by contrast, wants almost exactly what RMS
 wants. Each feature needs its own sweep, and the table above is what that looks
 like.
 """)
@@ -286,10 +286,10 @@ measured one.
 
 **The two bands want different operating points, by a factor of
 {THRESHOLDS["interictal-agreement-fast-ripple"] / THRESHOLDS["interictal-agreement"]:g}.**
-Ripples rank best at {THRESHOLDS["interictal-agreement"]:g} SD, fast ripples at
+Ripples rank best around {THRESHOLDS["interictal-agreement"]:g} SD, fast ripples at
 {THRESHOLDS["interictal-agreement-fast-ripple"]:g} SD. Running the ripple value
 in the fast-ripple band drops precision from {fr_tuned.precision:.2f} to
-**{fr_wrong.precision:.2f}** — fewer than one detection in ten is an
+**{fr_wrong.precision:.2f}** — about one detection in eight is an
 expert-marked event, at a mean of {fr_wrong.detections:,.0f} detections per 60 s
 against {cohort['expert_fast_ripples'].mean():.0f} marked ones. One threshold
 for both bands is a bug, not a simplification, and it flattened the outcome
@@ -297,8 +297,9 @@ result on the next page until it was found.
 
 **Channel ranking is the number that matters.** Nobody operates on an event;
 they operate on tissue. ρ is the agreement between our per-channel rates and the
-experts', and it peaks at a different threshold from F1 — which is why both are
-reported instead of one headline.
+experts'. In ripples it peaks with F1 (1.75 SD on this grid, within 0.02 of
+the shipped value); in fast ripples it peaks at 5.0 SD and F1 at 4.0 — which is
+why both are reported instead of one headline.
 """)
 
 # --------------------------------------------------------------------------
@@ -326,8 +327,9 @@ st.warning(
     "four run at their *default* 5.0 SD here, and 5.0 SD is a materially more "
     "permissive point on a squared feature — it finds 294 events on one "
     "recording where RMS finds 132. On real data at its own tuned threshold it "
-    "matches RMS rather than beating it. A detector comparison at a shared "
-    "threshold is a comparison of thresholds.")
+    "matches RMS within what twenty patients can resolve, rather than beating "
+    "it. A detector comparison at a shared threshold is a comparison of "
+    "thresholds.")
 
 st.info(
     "Reproduce the sweep: `python -m onset_hfo.cli benchmark`, about an hour "

@@ -103,8 +103,8 @@ the annotators actually reviewed.</p>
 <table>
 <thead><tr><th>Band</th><th>Thr.</th><th>Prec.</th><th>Recall</th><th>Rank <span class="lc">ρ</span></th></tr></thead>
 <tbody>
-  <tr><td>ripple</td><td class="n">2.0 SD</td><td class="n">0.51</td><td class="n">0.38</td><td class="n">0.66</td></tr>
-  <tr><td>fast ripple</td><td class="n">5.0 SD</td><td class="n">0.54</td><td class="n">0.20</td><td class="n">0.61</td></tr>
+  <tr><td>ripple</td><td class="n">2.0 SD</td><td class="n">0.58</td><td class="n">0.48</td><td class="n">0.69</td></tr>
+  <tr><td>fast ripple</td><td class="n">5.0 SD</td><td class="n">0.76</td><td class="n">0.29</td><td class="n">0.65</td></tr>
 </tbody>
 </table>
 <p class="note">That is <em>agreement</em>, not accuracy: the reference is another
@@ -122,13 +122,13 @@ fast ripples inside the tissue the surgeon removed?</p>
 <thead><tr><th>HFO source</th><th>Sz-free<br>(n=13)</th><th>Recur.<br>(n=7)</th><th>AUC (95% CI)</th><th>p</th></tr></thead>
 <tbody>
   <tr><td>Expert markings</td><td class="n">11 / 13</td><td class="n">3 / 7</td><td class="n">0.71 (0.49–0.92)</td><td class="n">0.12</td></tr>
-  <tr><td>Our RMS detector</td><td class="n">10 / 13</td><td class="n">3 / 7</td><td class="n">0.67 (0.45–0.89)</td><td class="n">0.17</td></tr>
+  <tr><td>Our RMS detector</td><td class="n">11 / 13</td><td class="n">3 / 7</td><td class="n">0.71 (0.49–0.92)</td><td class="n">0.12</td></tr>
 </tbody>
 </table>
 <p class="note">The direction Fedele et al. (2017) predicts. Thirteen against seven can
 only detect AUC ≥ 0.85 at 80% power, so this cohort could not have established either
-number. Of 35 distinct comparisons in the full study, one reaches p = 0.032 uncorrected —
-fewer than the ~2 that 35 tests produce by chance, and its Bonferroni p is 1.00.</p>
+number. Of 34 distinct comparisons in the full study, none reaches p &lt; 0.05 even
+uncorrected (the smallest is 0.057), where 34 tests would produce ~2 by chance.</p>
 
 <div class="warn"><strong>The most useful result.</strong> On the first 60 seconds of
 the same recordings — same code, same pre-specified metric — the expert arm gave
