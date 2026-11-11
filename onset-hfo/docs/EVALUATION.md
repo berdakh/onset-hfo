@@ -38,20 +38,31 @@ or run [`notebooks/03_validation_and_benchmark.ipynb`](../notebooks/03_validatio
 
 **Cohort**: all 20 subjects of ds003498, first 60 s of run-01 each, 2000 Hz,
 slow-wave sleep. **41,187 expert-marked events** in total (35,620 ripples,
-5,567 fast ripples), on the 6–65 channels per subject that the annotators
+5,567 fast ripples), on the 14–65 channels per subject that the annotators
 reviewed. Scoring is restricted to those channels: a detection elsewhere is
 unjudged, not wrong.
+
+*Corrected after 0.3.24.* In five patients (sub-02, sub-05, sub-06, sub-07,
+sub-08) the archive's markings name the hippocampal and entorhinal electrodes
+differently from the recording, and differently from patient to patient.
+Through 0.3.24 those patients were scored on the 6 of their 24 reviewed
+channels whose names matched, and in four of them even those six carried
+another electrode's markings, so 2,697 of the 41,187 events were never
+scored. The pairing is now read from the signals
+(`onset_hfo/archive_electrodes.csv`, `data/benchmark/README.md`) and every
+number in this section was re-run with it.
 
 ### Ripple band (80–250 Hz), cohort means
 
 | detector | threshold | precision | recall | F1 | rank ρ | top-5 shared |
 |---|---|---|---|---|---|---|
-| RMS | 1.5 SD | 0.432 | 0.478 | **0.418** | 0.592 | 3.05 / 5 |
-| RMS | 2.0 SD | 0.507 | 0.381 | 0.400 | **0.655** | 3.30 / 5 |
-| RMS | 3.0 SD | 0.590 | 0.231 | 0.296 | 0.529 | 2.90 / 5 |
-| RMS | **5.0 SD (shipped default)** | 0.591 | 0.118 | 0.165 | 0.368 | 2.55 / 5 |
-| line length | 2.0 SD | 0.572 | 0.272 | 0.332 | 0.514 | 2.95 / 5 |
-| line length | 5.0 SD | 0.557 | 0.077 | 0.106 | 0.354 | 2.20 / 5 |
+| RMS | 1.5 SD | 0.479 | 0.573 | 0.489 | 0.673 | 2.95 / 5 |
+| RMS | 1.75 SD | 0.526 | 0.533 | **0.498** | **0.698** | 2.95 / 5 |
+| RMS | 2.0 SD | 0.579 | 0.477 | 0.494 | 0.685 | 3.05 / 5 |
+| RMS | 3.0 SD | 0.694 | 0.313 | 0.400 | 0.611 | 2.75 / 5 |
+| RMS | **5.0 SD (shipped default)** | 0.709 | 0.164 | 0.245 | 0.479 | 2.35 / 5 |
+| line length | 2.0 SD | 0.669 | 0.362 | 0.436 | 0.645 | 2.85 / 5 |
+| line length | 5.0 SD | 0.636 | 0.114 | 0.174 | 0.433 | 2.05 / 5 |
 
 ### Fast ripple band (250–500 Hz), cohort means
 
@@ -59,21 +70,26 @@ Analysable at last: these recordings are 2000 Hz, the ictal one was 1000.
 
 | detector | threshold | precision | recall | F1 | rank ρ | top-5 shared |
 |---|---|---|---|---|---|---|
-| RMS | 2.0 SD | 0.086 | 0.529 | 0.145 | 0.436 | 3.40 / 5 |
-| RMS | 3.0 SD | 0.235 | 0.351 | 0.275 | 0.520 | 3.45 / 5 |
-| RMS | 3.5 SD | 0.329 | 0.291 | **0.296** | 0.590 | 3.70 / 5 |
-| RMS | 4.0 SD | 0.411 | 0.250 | 0.291 | 0.585 | 3.65 / 5 |
-| RMS | **5.0 SD** | 0.543 | 0.204 | 0.264 | **0.610** | 3.55 / 5 |
-| RMS | 6.0 SD | 0.632 | 0.170 | 0.230 | 0.580 | 3.35 / 5 |
-| RMS | 8.0 SD | 0.720 | 0.112 | 0.161 | 0.543 | 3.05 / 5 |
-| RMS | 10.0 SD | 0.710 | 0.083 | 0.122 | 0.509 | 3.20 / 5 |
-| line length | 5.0 SD | 0.643 | 0.173 | 0.234 | 0.560 | 3.45 / 5 |
+| RMS | 2.0 SD | 0.127 | 0.649 | 0.204 | 0.512 | 3.05 / 5 |
+| RMS | 3.0 SD | 0.339 | 0.468 | 0.388 | 0.595 | 3.40 / 5 |
+| RMS | 3.5 SD | 0.472 | 0.400 | 0.428 | 0.618 | 3.70 / 5 |
+| RMS | 4.0 SD | 0.598 | 0.357 | **0.436** | 0.615 | 3.65 / 5 |
+| RMS | **5.0 SD** | 0.756 | 0.288 | 0.394 | **0.645** | 3.40 / 5 |
+| RMS | 6.0 SD | 0.784 | 0.237 | 0.344 | 0.592 | 3.25 / 5 |
+| RMS | 8.0 SD | 0.779 | 0.153 | 0.241 | 0.575 | 2.80 / 5 |
+| RMS | 10.0 SD | 0.757 | 0.107 | 0.177 | 0.535 | 2.85 / 5 |
+| line length | 5.0 SD | 0.784 | 0.238 | 0.345 | 0.577 | 3.25 / 5 |
+
+The fast-ripple means at 5.0 SD are over 19 patients for precision and ρ: the
+detector finds nothing on sub-10's reviewed channels at that threshold, so
+neither is defined there (`data/benchmark/per_patient.csv.gz`).
 
 **The two bands want different operating points, by a factor of two and a
-half.** Ripples rank best at 2.0 SD, fast ripples at 5.0 SD — an interior
-maximum of a 2–10 sweep, not a boundary. Running the ripple value in the
-fast-ripple band costs precision 0.543 → 0.086: a mean of 1,142 detections
-per 60 s against a mean of 278 expert-marked fast ripples. A single
+half.** Ripples rank best around 2 SD (1.75 on this grid, 2.0 shipped),
+fast ripples at 5.0 SD — an interior maximum of a 2–10 sweep, not a boundary.
+Running the ripple value in the fast-ripple band costs precision 0.756 →
+0.127: a mean of 1,341 detections per 60 s against a
+mean of 278 expert-marked fast ripples. A single
 threshold for both bands is not a simplification, it is a bug, and
 [OUTCOME.md](OUTCOME.md) shows what it costs downstream. `config.THRESHOLDS`
 now carries `interictal-agreement-fast-ripple` alongside the ripple values,
@@ -83,36 +99,40 @@ and `onset_hfo.outcome.BAND_THRESHOLD_SD` maps bands to them.
 
 **The shipped default is wrong for interictal HFO work, and now we know by how
 much.** At 5.0 SD — Staba's published value, which this pipeline inherited —
-the ripple detector finds 12% of the expert-marked events and ranks channels
-at ρ = 0.37. At 2.0 SD it finds 38% and ranks at ρ = 0.66. The threshold was
+the ripple detector finds 16% of the expert-marked events and ranks channels
+at ρ = 0.48. At 2.0 SD it finds 48% and ranks at ρ = 0.685. The threshold was
 never tuned to the simulator on principle; it turns out the principle
 protected a value that real data does not support. `config.THRESHOLDS` now
 carries both, measured and named, and `--threshold interictal-agreement`
 selects the better one. The default stays 5.0 so that published ictal results
 do not silently change; a future release should split the defaults by task.
 
-**The two criteria disagree slightly, and both are reported.** F1 peaks at
-1.5 SD, channel-rank agreement at 2.0 SD. Both are interior maxima — the sweep
-was extended downwards precisely because the first grid put its optimum on
-the edge, which is not an optimum but a boundary. Channel ranking is the more
-clinically meaningful of the two: nobody operates on an event.
+**The two criteria now agree.** F1 and channel-rank agreement both peak at
+1.75 SD (0.498 and 0.698); the shipped 2.0 SD, chosen when rank agreement
+peaked there, gives 0.494 and 0.685. Both are interior maxima — the sweep was
+extended downwards precisely because the first grid put its optimum on the
+edge, which is not an optimum but a boundary. The difference between 1.75 and
+2.0 SD is smaller than anything this cohort can resolve, and the shipped value
+stays. Channel ranking is the more clinically meaningful of the two criteria:
+nobody operates on an event.
 
-**Precision plateaus around 0.6, and that is expected.** The reference is the
-validated output of the original study's Morphology detector — not a census of
-every oscillation. Events we find that it did not are counted as false
-positives whether or not they are real, so 0.6 is a floor on our precision,
-not a measurement of it. The honest reading: *we reproduce roughly half of a
-different detector's validated events and rank the same channels as active at
-ρ ≈ 0.65.*
+**Precision plateaus around 0.7–0.8, and that is expected.** The reference is
+the validated output of the original study's Morphology detector — not a
+census of every oscillation. Events we find that it did not are counted as
+false positives whether or not they are real, so the plateau is a floor on our
+precision, not a measurement of it. The honest reading: *we reproduce roughly
+half of a different detector's validated ripples and rank the same channels
+as active at ρ ≈ 0.7.*
 
-**RMS beats line length on real data**, reversing their order on synthetic
-data (0.679 vs 0.697 F1 there). A detector comparison that holds only on
+**RMS beats line length on real data** (rank agreement 0.685 against 0.645
+at 2.0 SD), reversing their order on synthetic data (0.679 vs 0.697 F1 there). A detector comparison that holds only on
 simulated signal is a comparison of simulators.
 
 **Per-subject variability is large** and the cohort mean hides it: reviewed
-channels range from 6 to 65, expert events per 60 s from 644 to 7,935, and
-per-subject best F1 from 0.14 to 0.56 (median 0.48). `artifacts/results/benchmark_ds003498/scores.csv`
-has every row.
+channels range from 14 to 65, expert events per 60 s from 644 to 7,935, and
+per-subject best ripple F1 from 0.41 to 0.73 (median 0.55).
+`data/benchmark/per_patient.csv.gz` has every patient's row, and
+`notebooks/09_benchmark_per_patient.ipynb` rebuilds every mean above from it.
 
 ---
 
@@ -126,9 +146,9 @@ removal made the patient seizure-free?
 The short version, on whole 300-second runs: expert markings, fast-ripple
 band, the busiest channel was inside the resection in 11 of 13 seizure-free
 patients and 3 of 7 recurrences (AUC 0.71, p = 0.12); our detector on the same
-channels, 10 of 13 versus 3 of 7 (AUC 0.67, p = 0.17). Nothing reaches
-p < 0.05 after correction; one of 35 uncorrected comparisons reaches 0.032,
-which is fewer than chance produces.
+channels gives the same 11 of 13 versus 3 of 7 (AUC 0.71, p = 0.12). None of
+the comparisons reaches p < 0.05 even before correction (the smallest p is
+0.057), where chance alone would produce about two.
 
 **The number that matters is the one that moved.** On the first 60 seconds of
 the same recordings the expert arm gave AUC 0.82, p = 0.007 — and that is what
@@ -272,24 +292,30 @@ tissue:
 
 | detector | best SD | rank ρ | F1 | precision | recall | detections/60 s |
 |---|---|---|---|---|---|---|
-| short-time energy | 4.0 | **0.658** | 0.414 | 0.513 | 0.396 | 1,081 |
-| RMS | 2.0 | **0.655** | 0.400 | 0.507 | 0.381 | 1,035 |
-| line length | 1.5 | 0.602 | 0.402 | 0.505 | 0.391 | 1,055 |
-| Hilbert envelope | 1.5 | 0.578 | 0.385 | 0.456 | 0.404 | 1,163 |
+| short-time energy | 3.0 | **0.706** | 0.505 | 0.511 | 0.564 | 1,650 |
+| RMS | 2.0 | **0.685** | 0.494 | 0.579 | 0.477 | 1,184 |
+| line length | 1.5 | 0.668 | 0.489 | 0.569 | 0.485 | 1,224 |
+| Hilbert envelope | 1.5 | 0.610 | 0.460 | 0.508 | 0.491 | 1,362 |
 
 **Fast ripple band (250–500 Hz)**
 
 | detector | best SD | rank ρ | F1 | precision | recall | detections/60 s |
 |---|---|---|---|---|---|---|
-| Hilbert envelope | 5.0 | **0.613** | 0.270 | 0.546 | 0.208 | 71 |
-| RMS | 5.0 | **0.610** | 0.264 | 0.543 | 0.204 | 71 |
-| short-time energy | 12.0 | 0.601 | 0.259 | 0.583 | 0.200 | 69 |
-| line length | 5.0 | 0.560 | 0.234 | 0.643 | 0.173 | 58 |
+| Hilbert envelope | 5.0 | **0.651** | 0.399 | 0.759 | 0.292 | 100 |
+| RMS | 5.0 | **0.645** | 0.394 | 0.756 | 0.288 | 100 |
+| short-time energy | 12.0 | 0.637 | 0.387 | 0.768 | 0.281 | 96 |
+| line length | 5.0 | 0.577 | 0.345 | 0.784 | 0.238 | 83 |
 
-**Both margins are ties.** 0.658 against 0.655 in ripples, 0.613 against 0.610
-in fast ripples — three thousandths of a Spearman correlation across twenty
-patients. Two more detectors, each tuned on real data, bought **no measurable
-improvement in channel ranking** over the two that were already there. That is
+(RMS's grid here has no 1.75 SD point, which is where `agreement_sweep.csv`
+puts its ripple optimum; at 2.0 SD the two files agree.)
+
+**Both margins are within what twenty patients can resolve.** 0.706 against
+0.685 in ripples, 0.651 against 0.645 in fast ripples. Patient by patient the
+leader's ρ minus RMS's is +0.020 (bootstrap 95% interval −0.011 to +0.053,
+better in 14 of 20 patients) in ripples and +0.006 (−0.011 to +0.024, better
+in 9 of 19) in fast ripples. Two more detectors, each tuned on real data,
+bought **no established improvement in channel ranking** over the two that
+were already there. That is
 a useful thing to have paid for: it says the ceiling here is not the choice of
 feature.
 
@@ -301,12 +327,12 @@ feature:
 
 | | RMS | line length | Hilbert | short-time energy |
 |---|---|---|---|---|
-| **ripple** | 2.0 | 1.5 | 1.5 | **4.0** |
+| **ripple** | 2.0 | 1.5 | 1.5 | **3.0** |
 | **fast ripple** | 5.0 | 5.0 | 5.0 | **12.0** |
 
-Short-time energy needs **twice** the ripple threshold and **2.4×** the
+Short-time energy needs **1.5×** the ripple threshold and **2.4×** the
 fast-ripple threshold that RMS does. Run it at RMS's 5.0 SD in the fast-ripple
-band — the obvious thing to do — and rank agreement falls from 0.601 to 0.485.
+band — the obvious thing to do — and rank agreement falls from 0.637 to 0.577.
 The Hilbert envelope, by contrast, wants almost exactly what RMS wants (1.5
 against 2.0; 5.0 against 5.0), which is the same story the synthetic agreement
 matrix told: those two are the closest pair in the family.
@@ -327,9 +353,10 @@ ripple sweep had to be extended downwards for exactly this reason.
 
 Extending (down to 0.5 for the ripple arms, up to 15.0 for short-time energy in
 fast ripples) moved one of them materially: **short-time energy's fast-ripple
-rank agreement went from 0.570 at 8.0 SD to 0.601 at 12.0 SD.** Had the grid
-not been extended, that detector would have been reported a full 0.03 worse
-than it is. All sixteen optima are now interior.
+rank agreement went from 0.570 at 8.0 SD to 0.601 at 12.0 SD** (0.606 and
+0.637 since the five patients were re-scored after 0.3.24). Had the grid not
+been extended, that detector would have been reported 0.03 worse than it is.
+All sixteen optima are interior, before and after the re-scoring.
 
 ---
 
@@ -453,7 +480,7 @@ about the ripples themselves.
 that cannot be seen consistently in the waveform is a split you carry forward,
 not one you resolve.
 
-### Does the split localise the resection better? Measured: no
+### Does the split localise the resection better? Not in the ripple band; in fast ripples, one arm by one metric
 
 The question that would make the split clinically interesting is not whether
 the two populations *differ* — measured above, weakly — but whether either one
@@ -470,74 +497,83 @@ seizure-free against recurrence, and `floor` is that arm's own
 | metric | population | n | mean SF | mean rec | AUC | 95% CI | p | Bonferroni | floor |
 |---|---|---|---|---|---|---|---|---|---|
 | top_channel_resected | merged | 13/7 | 0.600 | 0.229 | 0.747 | 0.527–0.934 | 0.072 | 0.644 | 0.85 |
-| | spike_coupled | 13/6 | 0.600 | 0.667 | **0.487** | 0.231–0.737 | 0.950 | 1.000 | 0.87 |
+| | spike_coupled | 13/7 | 0.692 | 0.657 | **0.533** | 0.280–0.775 | 0.830 | 1.000 | 0.85 |
 | | independent | 13/7 | 0.538 | 0.171 | 0.736 | 0.516–0.923 | 0.073 | 0.656 | 0.85 |
-| candidates_resected | merged | 13/7 | 0.560 | 0.369 | 0.648 | 0.396–0.868 | 0.311 | 1.000 | 0.85 |
-| | spike_coupled | 13/6 | 0.509 | 0.488 | **0.513** | 0.218–0.795 | 0.949 | 1.000 | 0.87 |
-| | independent | 13/7 | 0.515 | 0.363 | 0.621 | 0.363–0.852 | 0.403 | 1.000 | 0.85 |
-| share_in_rz | merged | 13/7 | 0.379 | 0.393 | 0.527 | 0.253–0.791 | 0.877 | 1.000 | 0.85 |
-| | spike_coupled | 13/6 | 0.508 | 0.536 | **0.474** | 0.218–0.731 | 0.898 | 1.000 | 0.87 |
-| | independent | 13/7 | 0.375 | 0.385 | 0.516 | 0.253–0.780 | 0.938 | 1.000 | 0.85 |
+| candidates_resected | merged | 13/7 | 0.544 | 0.370 | 0.615 | 0.352–0.846 | 0.437 | 1.000 | 0.85 |
+| | spike_coupled | 13/7 | 0.497 | 0.440 | **0.549** | 0.275–0.802 | 0.742 | 1.000 | 0.85 |
+| | independent | 13/7 | 0.493 | 0.355 | 0.615 | 0.352–0.846 | 0.437 | 1.000 | 0.85 |
+| share_in_rz | merged | 13/7 | 0.371 | 0.402 | 0.516 | 0.242–0.791 | 0.938 | 1.000 | 0.85 |
+| | spike_coupled | 13/7 | 0.552 | 0.578 | **0.462** | 0.209–0.725 | 0.817 | 1.000 | 0.85 |
+| | independent | 13/7 | 0.359 | 0.395 | 0.484 | 0.220–0.758 | 0.938 | 1.000 | 0.85 |
 
-**Every sub-population gain over the merged rate is negative**: −0.011,
-−0.027, −0.011. The spike-coupled arm sits at chance on all three metrics, and
-on `top_channel_resected` the sign is *reversed* — 0.600 in the seizure-free
-patients against 0.667 in the recurrences.
+**No sub-population gains over the merged rate**: the independent arm moves by
+−0.011, 0.000 and −0.033, the spike-coupled arm by −0.214, −0.066 and
+−0.055. The spike-coupled arm sits near chance on all three metrics.
 
-**The arms are not scored on quite the same patients**, which the `n` column is
-there to show. A patient whose spike-coupled population is empty in all five
-windows has no share and no busiest channel in that arm, so it drops out of
-that arm alone — and putting a 0 there instead would read as "none of this
-patient's events were resected", which is a different claim. In the ripple band
-that costs one patient (sub-08, a recurrence) from the coupled arm and nobody
-from the other two. In the fast ripple band it costs two from the coupled arm
-(sub-08 and sub-10) and one from the independent arm (sub-05) — which is a
-second reason its numbers are not the ones reported.
+*Re-run after 0.3.24*, when five patients' electrodes were read in the
+recording's names (§0). Every patient now has events in every population in
+the ripple band; in the fast ripple band one seizure-free patient (sub-10) has
+no spike-coupled fast ripple in any window and drops out of that arm alone,
+because putting a 0 there would read as "none of this patient's events were
+resected", which is a different claim.
 
-### Why the fast ripple band could not answer this, and what it looked like
+### The fast ripple band: one arm now separates, and three things argue against reading it
 
-The pre-specified arm for the outcome study is fast ripples, and it is the arm
-this screen cannot use — **the spike-coupled population there is too small to
-rank channels with**:
+The pre-specified arm for the outcome study is fast ripples, and there the
+spike-coupled population is thin:
 
 | | coupled events per window: min · Q1 · median · max | windows with <5 | subjects whose median is <5 |
 |---|---|---|---|
-| fast ripple | 0 · 0 · **1** · 54 | 56/100 | 11/20 |
-| ripple | 0 · 17 · **36** · 306 | 8/100 | 1/20 |
+| fast ripple | 0 · 0 · **9** · 54 | 38/100 | 7/20 |
+| ripple | 0 · 31.5 · **64** · 306 | 7/100 | 1/20 |
 
-An argmax over a median of one event is a coin flip, and it duly produced the
-best-looking numbers in this whole section: spike-coupled
-`top_channel_resected` **0.806** (p = 0.025) and `share_in_rz` **0.826**
-(p = 0.021), both apparently beating the merged rate, both on 12 patients
-against 6. Neither survives Bonferroni, neither clears its own 0.88 floor, and
-both are artifacts. Three things say so:
+| metric | population | n | mean SF | mean rec | AUC | 95% CI | p | Bonferroni | floor |
+|---|---|---|---|---|---|---|---|---|---|
+| top_channel_resected | merged | 13/7 | 0.877 | 0.457 | 0.791 | 0.582–0.973 | 0.011 | 0.101 | 0.85 |
+| | spike_coupled | 12/7 | 0.858 | 0.229 | **0.875** | 0.696–1.000 | **0.004** | **0.033** | 0.86 |
+| | independent | 13/7 | 0.815 | 0.457 | 0.731 | 0.500–0.934 | 0.083 | 0.751 | 0.85 |
+| candidates_resected | merged | 13/7 | 0.587 | 0.485 | 0.593 | 0.308–0.857 | 0.522 | 1.000 | 0.85 |
+| | spike_coupled | 12/7 | 0.390 | 0.465 | **0.446** | 0.185–0.738 | 0.726 | 1.000 | 0.86 |
+| | independent | 13/7 | 0.556 | 0.480 | 0.571 | 0.286–0.846 | 0.643 | 1.000 | 0.85 |
+| share_in_rz | merged | 13/7 | 0.666 | 0.459 | 0.703 | 0.418–0.923 | 0.157 | 1.000 | 0.85 |
+| | spike_coupled | 12/7 | 0.774 | 0.292 | **0.857** | 0.643–1.000 | 0.009 | 0.081 | 0.86 |
+| | independent | 13/7 | 0.655 | 0.463 | 0.692 | 0.418–0.912 | 0.183 | 1.000 | 0.85 |
 
-- **The tie-aware metric contradicts them.** `candidates_resected` — which
+Spike-coupled `top_channel_resected` gives **AUC 0.875, p = 0.004**, survives
+the Bonferroni correction across this screen's nine rows (0.033) and clears
+its own 0.86 floor. Before the five patients were read correctly it was 0.806,
+p = 0.025, and survived neither; this document then called it an artifact of
+an argmax over a median of one event per window, and the median is now nine.
+It is reported here as measured. Three things still argue against reading it
+as a gain of the split:
+
+- **The tie-aware metric contradicts it.** `candidates_resected` — which
   exists precisely to catch an argmax over a set that is mostly ties — puts
-  the fast-ripple spike-coupled arm at **0.479**, worst of the three and below
-  chance, while it agrees with the other two arms.
+  the same arm at **0.446**, worst of the three and below chance.
 - **The merged arm replicates across bands and the coupled arm does not.**
-  `top_channel_resected` for merged is 0.753 (fast ripple) against 0.747
-  (ripple). Only the coupled arm collapses, 0.806 → 0.487. That is the
-  signature of noise in one arm rather than a property of one band.
-- **The pipeline is otherwise behaving.** Merged `share_in_rz` falls
-  0.714 → 0.527 from fast ripples to ripples, reproducing the standard
-  finding that fast ripples localise better. The band effect that *should* be
-  there, is.
+  `top_channel_resected` for merged is 0.791 (fast ripple) against 0.747
+  (ripple); the coupled arm goes 0.875 → 0.533. A property of the split should
+  not vanish in the band where the population is seven times larger.
+- **It is one of many comparisons.** Nine rows here, eighteen across both
+  bands, and the screens and studies of this document before them. On five
+  60 s windows rather than the whole run, on 12 seizure-free patients against
+  7, it is a hypothesis for a cohort large enough to test it, not a result.
 
-**What this does and does not establish.** It does not show that the split is
-worthless. Group sizes this small resolve very little: the floor is **0.85** at
-13/7, **0.86** at 12/7, **0.87** at 13/6 and **0.88** at 12/6, and **not one of
-the eighteen arms clears its own floor** — the merged 0.747 included. What it
-shows is that *on the evidence available here there is no gain to report*, and
-that the one result which looked like a gain came from a population of one
-event per minute. The ripple band answer is a **secondary** analysis: it is not
-comparable to the published fast-ripple AUC, and it was run only because the
-pre-specified arm was unmeasurable.
+The band effect that *should* be there, is: merged `share_in_rz` falls
+0.703 → 0.516 from fast ripples to ripples, reproducing the standard finding
+that fast ripples localise better.
+
+**What this does and does not establish.** Group sizes this small resolve
+very little: the floor is **0.85** at 13/7 and **0.86** at 12/7, and in the
+ripple band no arm reaches it. On the evidence available here there is no
+gain of the split to report in the ripple band, and in the fast ripple band
+one arm that separates by one metric and fails by the tie-aware one. The
+ripple band answer is a **secondary** analysis: it is not comparable to the
+published fast-ripple AUC.
 
 One thing the split does measure reliably. The spike-coupled *share* of all
-ripples is a stable patient property — within-subject SD across windows 0.013
-against between-subject SD 0.063, so ICC ≈ 0.96. It is a real and repeatable
+ripples is a stable patient property — within-subject SD across windows 0.012
+against between-subject SD 0.056, so ICC ≈ 0.96. It is a real and repeatable
 feature of a patient. It just does not predict where the surgeon cut.
 
 Reproduce (offline, from the slices already in `artifacts/data/`, ~40 min):
@@ -559,14 +595,14 @@ python scripts/run_subpopulation_outcome.py \
   five 60 s windows rather than the whole 300 s run, and in the ripple band
   rather than the pre-specified fast ripple one. Neither is the study a
   clinical claim would need.
-- **The negative localisation result is "no gain to report", not "no
-  effect".** At 13 seizure-free against 7 recurrences the screen could only
-  have resolved an AUC of 0.85 or better, and no arm in it reaches its own
-  floor. It is strong enough to retire the apparent fast-ripple gain, not to
-  rule out a real one.
+- **The ripple-band result is "no gain to report", not "no effect".** At 13
+  seizure-free against 7 recurrences the screen could only have resolved an
+  AUC of 0.85 or better, and no ripple arm reaches its own floor. The one
+  fast-ripple arm that does is contradicted by the tie-aware metric, and is
+  neither retired nor established by this screen.
 - **And the arms are not scored on identical patients.** A patient with an
-  empty sub-population drops out of that arm; one does in the ripple band,
-  three across the fast ripple one.
+  empty sub-population drops out of that arm; one does, sub-10, from the
+  fast-ripple spike-coupled arm.
 - **No classifier, and none is planned on this evidence.** Training one on a
   proxy and reading it as the thing is the failure mode this section exists to
   avoid.
@@ -577,7 +613,7 @@ where that is affordable and sampled at 200,000 draws where it is not.
 
 ---
 
-## 3c. Does the montage change the rate ranking? Measured: the bipolar montage wins on both yardsticks, in both bands
+## 3c. Does the montage change the rate ranking? Measured: the bipolar montage agrees best with the experts; against outcome it ties with the common average
 
 `ROADMAP.md` carried this as the cheapest unmeasured experiment in the list.
 The pipeline re-references to a bipolar montage because that is standard HFO
@@ -600,7 +636,7 @@ RMS detector at each band's own operating point (ripple 2.0 SD, fast ripple
 The unit is the hard part. The annotators marked HFOs on *bipolar pairs* and
 the archive stores *referential contacts*, so the two referential arms are
 scored on the contacts the reviewed pairs are built from — the same physical
-electrodes (26 pairs and 31 contacts per patient on average), in the unit
+electrodes (31 pairs and 37 contacts per patient on average), in the unit
 each arm actually ranks. Expert counts are projected onto contacts (a contact
 is credited with every marking on a reviewed pair it belongs to) and rankings
 are compared by Spearman on that unit. Event-level precision and recall need
@@ -621,19 +657,24 @@ Cohort means of per-patient means over the five windows.
 
 | band | metric | bipolar | referential | average |
 |---|---|---|---|---|
-| ripple | Spearman ρ with the expert | **0.536** | 0.302 | 0.381 |
-| ripple | top-5 channels shared with the expert | **2.86** / 5 | 2.07 / 5 | 2.07 / 5 |
-| ripple | event-level F1 | **0.422** | 0.336 | 0.393 |
-| fast ripple | Spearman ρ with the expert | **0.559** | 0.327 | 0.353 |
-| fast ripple | top-5 channels shared with the expert | **3.66** / 5 | 2.66 / 5 | 2.85 / 5 |
-| fast ripple | event-level F1 | 0.295 | 0.235 | **0.323** |
+| ripple | Spearman ρ with the expert | **0.594** | 0.299 | 0.429 |
+| ripple | top-5 channels shared with the expert | **2.70** / 5 | 1.68 / 5 | 1.67 / 5 |
+| ripple | event-level F1 | **0.498** | 0.371 | 0.422 |
+| fast ripple | Spearman ρ with the expert | **0.630** | 0.402 | 0.445 |
+| fast ripple | top-5 channels shared with the expert | **3.45** / 5 | 2.27 / 5 | 2.58 / 5 |
+| fast ripple | event-level F1 | **0.402** | 0.309 | 0.392 |
 
 Patient by patient, the bipolar arm has the highest ρ in 15 of 20 (ripple)
-and 18 of 20 (fast ripple); it beats the archive's reference in 17 and 19,
-and the common average in 16 and 18. The one cell it loses, fast-ripple F1,
-it loses on recall (0.225 against 0.324) while keeping the better precision
-(0.578 against 0.384): the common average finds more of the marked events and
-more that were not marked.
+and 19 of 20 (fast ripple); it beats the archive's reference in 17 and 20,
+and the common average in 16 and 19. The common average has the higher recall
+in both bands (0.594 against 0.523 in ripples, 0.405 against 0.300 in fast
+ripples) and the lower precision (0.368 against 0.551, 0.445 against 0.739):
+it finds more of the marked events and more that were not marked.
+
+*Re-run after 0.3.24* with five patients' electrodes read in the recording's
+names (§0). Before, the common average won fast-ripple F1 (0.323 against
+0.295) and the bipolar arm was first on seven of the eight outcome cells
+below.
 
 ### Against surgical outcome
 
@@ -643,57 +684,60 @@ from any arm** in either band.
 
 | band | metric | bipolar | referential | average |
 |---|---|---|---|---|
-| ripple | `top_channel_resected` | 0.747 [0.53–0.93], *p* 0.072 | 0.681 [0.42–0.92], *p* 0.175 | **0.764** [0.53–0.96], *p* 0.046 |
-| ripple | `top3_resected` | **0.698** | 0.604 | 0.626 |
-| ripple | `share_in_rz` | **0.527** | 0.429 | 0.484 |
-| ripple | `candidates_resected` | **0.648** | 0.505 | 0.626 |
-| fast ripple | `top_channel_resected` | **0.753** [0.53–0.95], *p* 0.038 | 0.615 [0.33–0.87], *p* 0.411 | 0.720 [0.47–0.92], *p* 0.106 |
-| fast ripple | `top3_resected` | **0.654** | 0.566 | 0.626 |
-| fast ripple | `share_in_rz` | **0.714** | 0.560 | 0.549 |
-| fast ripple | `candidates_resected` | **0.577** | 0.374 | 0.533 |
+| ripple | `top_channel_resected` | 0.747 [0.53–0.93], *p* 0.072 | 0.709 [0.44–0.95], *p* 0.148 | **0.753** [0.51–0.96], *p* 0.063 |
+| ripple | `top3_resected` | **0.780** | 0.681 | 0.692 |
+| ripple | `share_in_rz` | **0.516** | 0.418 | 0.505 |
+| ripple | `candidates_resected` | 0.615 | 0.544 | **0.670** |
+| fast ripple | `top_channel_resected` | 0.791 [0.58–0.97], *p* 0.011 | 0.648 [0.36–0.90], *p* 0.298 | **0.802** [0.57–0.98], *p* 0.020 |
+| fast ripple | `top3_resected` | **0.709** | 0.577 | 0.703 |
+| fast ripple | `share_in_rz` | **0.703** | 0.560 | 0.615 |
+| fast ripple | `candidates_resected` | 0.593 | 0.500 | **0.626** |
 
-The bipolar arm is first on seven of the eight cells. The exception is
-ripple `top_channel_resected`, where the common average edges it by 0.017
-inside intervals 0.4 wide. The archive's own reference is last on all eight.
-The fast-ripple bipolar `top_channel_resected` of 0.753 (*p* 0.038) is, to the
-third decimal, the `plain` row of §6c — the same pipeline on the same windows
-— which is the cross-check that the two screens agree on what they share.
+The bipolar arm is first on four of the eight cells and the common average on
+the other four, by 0.005 to 0.088, always inside intervals
+0.4–0.6 wide. The archive's own reference is last on all eight. The fast-ripple
+bipolar `top_channel_resected` of 0.791 (*p* 0.011) is, to the third decimal,
+the `plain` row of §6c — the same pipeline on the same windows — which is the
+cross-check that the two screens agree on what they share.
 
 ### How much the montage moves the ranking at all
 
 `rho_vs_bipolar` is the Spearman between each arm's ranking and the shipped
 default's, on the pairs both can rank (contact counts averaged onto pairs).
-Its per-patient median is 0.52 (ripple) and 0.69 (fast ripple) for the
-archive's reference and 0.76 / 0.77 for the common average, and the minima
-are below zero (−0.16 and −0.58): in some patients the referential ranking is
-unrelated to the bipolar one, or reversed. The referential arms also find
-*more* events — 1,449 and 1,523 ripples per window on average against 1,131,
-and 193 and 155 fast ripples against 94 — and are less often empty in the
-fast-ripple band (7 and 3 of 100 windows against 16). More events, lower
-agreement and a worse localisation is the signature of noise shared through
-the reference being counted as events on the channels that carry it, which
-is the mechanism the bipolar montage exists to remove.
+Its per-patient median is 0.63 (ripple) and 0.68 (fast ripple) for the
+archive's reference and 0.78 / 0.75 for the common average, and the
+referential minima are below zero (−0.16 and −0.20): in some patients the
+referential ranking is unrelated to the bipolar one, or reversed. The
+referential arms also find *more* events — 1,678 and 1,786 ripples per window
+on average against 1,276, and 223 and 202 fast ripples against 110. For the
+archive's reference, more events, lower agreement and a worse localisation is
+the signature of noise shared through the reference being counted as events
+on the channels that carry it, which is the mechanism the bipolar montage
+exists to remove. The common average shares the first two and not the third.
 
 ### What this does not establish
 
 - **No AUC difference between arms is significant, and none is claimed.**
   With 13 against 7 only an AUC of 0.85 or better is resolvable (§0b), and the
-  arms' intervals overlap everywhere. The finding is the *direction*,
-  consistent across the eight outcome cells and across 15–19 of 20 patients on
-  the expert yardstick.
+  arms' intervals overlap everywhere. The findings are *directions*: the
+  bipolar arm agrees best with the expert ranking in 15–20 of 20 patients, and
+  the archive's reference localises worst on all eight outcome cells. Between
+  the bipolar arm and the common average the outcome yardstick does not choose.
 - **The expert yardstick favours the bipolar arm by construction.** The
   annotators read bipolar channels, so a referential ranking is being judged
   through a projection. That is why the outcome yardstick, which has no such
-  bias, was run alongside it; it points the same way.
+  bias, was run alongside it; it agrees about the archive's reference and is
+  silent between the other two.
 - **Pairing is still by contact number** (item 3 of the roadmap), so this
   measures the bipolar montage as shipped, not a distance-based one.
 - **Event-level numbers for the referential arms are projected**, as
   described above, and should be read as "what a reader of the pair would
   have been shown" rather than as the detector's own precision.
 
-**Decision.** The bipolar montage stays the default. The preprocessing panel
-keeps the other two references available for comparison, and this section is
-what to expect when they are chosen.
+**Decision.** The bipolar montage stays the default: it agrees best with the
+expert markings and localises no worse than the common average. The
+preprocessing panel keeps the other two references available for comparison,
+and this section is what to expect when they are chosen.
 
 Reproduce: `ONSET_HFO_OFFLINE=1 python scripts/run_montage_comparison.py`
 (about 40 minutes on the cached slices), or
@@ -879,21 +923,22 @@ Committed extract:
 
 ### Ripple band: the multiplier helps, consistently
 
-Survey 2.0 SD, 984.5 events per window (median), tied set of 5. **No patient is
+Survey 2.0 SD, 984.5 events per window (median), tied set of 6. **No patient is
 lost from any arm**, so every cell below is 13 seizure-free against 7
 recurrences.
 
 | metric | plain | ×1.25 | ×1.5 | ×2.0 | best gain |
 |---|---|---|---|---|---|
-| `top_channel_resected` | 0.747 | **0.813** | 0.786 | 0.813 | **+0.066** |
-| `tied_set_argmax_resected` | 0.736 | **0.830** | 0.813 | 0.797 | **+0.093** |
-| `top3_resected` | 0.698 | 0.687 | **0.725** | 0.714 | +0.027 |
-| `share_in_rz` | 0.527 | 0.527 | 0.560 | 0.615 | +0.088 |
+| `top_channel_resected` | 0.747 | **0.846** | 0.808 | 0.802 | **+0.099** |
+| `tied_set_argmax_resected` | 0.736 | **0.830** | 0.791 | 0.802 | **+0.093** |
+| `top3_resected` | **0.780** | 0.775 | 0.764 | **0.780** | 0.000 |
+| `share_in_rz` | 0.516 | 0.516 | 0.516 | 0.571 | +0.055 |
 
 All three re-test points beat plain on both argmax metrics, so this is not one
-lucky choice of re-test threshold. The largest and most consistent gain is on
-`tied_set_argmax_resected` — the metric built to isolate what the multiplier is
-*for* — where permutation p falls from 0.086 to 0.014. **This is the first
+lucky choice of re-test threshold. The gain is on the two argmax metrics —
+`tied_set_argmax_resected` is the one built to isolate what the multiplier is
+*for*, and there permutation p falls from 0.086 to 0.014 — and nowhere else:
+`top3_resected` does not move. **This is the first
 evidence in this repository that the mechanism distinguishing S2/S3 from S0/S1
 carries information rather than noise.**
 
@@ -901,9 +946,9 @@ carries information rather than noise.**
 
 | metric | plain | ×1.25 | ×1.5 | ×2.0 |
 |---|---|---|---|---|
-| `top_channel_resected` | **0.753** | 0.643 | 0.643 | 0.593 |
+| `top_channel_resected` | **0.791** | 0.665 | 0.659 | 0.610 |
 | — patients scored | 13/7 | 13/7 | 13/7 | 13/7 |
-| `tied_set_argmax_resected` | **0.687** | 0.610 | 0.621 | 0.621 |
+| `tied_set_argmax_resected` | **0.736** | 0.643 | 0.621 | 0.599 |
 | — patients scored | 13/7 | 13/7 | 13/7 | 13/7 |
 
 **Every patient is now scored in every arm**, which is the difference between
@@ -914,14 +959,16 @@ for the window, and at 2.0× all five windows of five patients gone, a quarter
 of the cohort. `rank_channels` now refuses to fire on a re-test that measured
 nothing (see `unmeasured_at`), so no patient drops out for that reason.
 
-**What the fix changed, decomposed.** A silent re-test occurred in 84 of 600
-multiplied windows (82 fast ripple, 2 ripple). Those 84 split two ways, and the
-earlier write-up conflated them:
+**What the fix changed, decomposed.** A silent re-test occurred in 29 of 600
+multiplied windows, all fast ripple (84 before five patients' electrodes were
+read correctly: with 6 reviewed channels instead of 24, those patients' windows
+were often empty). The 29 split two ways, and an earlier write-up conflated
+them:
 
-* **36 were real annihilation** — the survey found events, the stricter pass
+* **14 were real annihilation** — the survey found events, the stricter pass
   found none anywhere, and a working ranking was zeroed. These are rescued: the
   score is now the survey rate, robustness 1.0.
-* **48 had no events at the survey threshold either.** A fast-ripple window with
+* **15 had no events at the survey threshold either.** A fast-ripple window with
   nothing in it scores zero because there is nothing there, not because the rule
   misfired. Those still read zero, correctly, and the fix deliberately does not
   rescue them: there is no rate to defend.
@@ -931,20 +978,18 @@ where it should.
 
 **The fast-ripple harm survives the fix, and is now cleaner.** It could
 previously have been argued as survivorship. It cannot now, because nothing
-drops out: on the complete 13/7 cohort plain scores 0.753 (p = 0.038) and every
-multiplied arm is worse — 0.643, 0.643, 0.593 (p = 0.275, 0.275, 0.523).
-`tied_set_argmax_resected`, which already kept all 13/7 for both rules, agrees:
-0.687 plain against 0.610–0.621 multiplied. Two arms *rose* against the old
-table (2.0× went 0.528 → 0.593) and that is not an improvement in the rule — it
-is five patients rejoining the comparison. **The multiplier hurts in the fast
+drops out: on the complete 13/7 cohort plain scores 0.791 (p = 0.011) and every
+multiplied arm is worse — 0.665, 0.659, 0.610 (p = 0.214, 0.214, 0.396).
+`tied_set_argmax_resected`, which keeps all 13/7 for both rules, agrees: 0.736
+plain against 0.599–0.643 multiplied. **The multiplier hurts in the fast
 ripple band, measured on every patient.**
 
 ### What the rule is actually doing
 
 | band | mean robustness (×2.0) | channels demoted per window | leader moved |
 |---|---|---|---|
-| ripple | 0.218 | 26.2 | 44% of windows |
-| fast ripple | 0.781 | 7.7 | 42% of windows |
+| ripple | 0.226 | 30.7 | 50% of windows |
+| fast ripple | 0.766 | 8.7 | 35% of windows |
 
 The two bands get wildly different treatment from the same rule, because
 robustness is a ratio of rates at two thresholds and that ratio is governed by
@@ -971,9 +1016,9 @@ applied unconditionally.
 
 ### What this does not establish
 
-The power floors are 0.85 at 13/7, 0.87 at 11/7 and 13/6, 0.88 at 9/6. **The
-best AUC anywhere in this section is 0.830** — ripple `tied_set_argmax_resected`
-at ×1.25, on 13/7 — so **not one arm clears its own floor.** The ripple gain is
+Every arm is 13/7, where the power floor is 0.85. **The best AUC anywhere in
+this section is 0.846** — ripple `top_channel_resected` at ×1.25 — so **not one
+arm clears the floor**, though that one comes within 0.004 of it. The ripple gain is
 *consistent with* a real effect, direction-consistent across three re-test
 points and two metrics, and it is not a demonstrated one. The fast-ripple
 degradation is the better-supported half, because it survives the one metric

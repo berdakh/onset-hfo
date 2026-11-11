@@ -6,7 +6,7 @@ sub-04,expert,fast_ripple,top_channel_resected,5,1,1.0,0.0,True
 sub-05,expert,fast_ripple,top_channel_resected,5,1,1.0,0.0,True
 sub-06,expert,fast_ripple,top_channel_resected,5,1,1.0,0.0,True
 sub-07,expert,fast_ripple,top_channel_resected,1,1,0.0,0.0,True
-sub-08,expert,fast_ripple,top_channel_resected,5,2,0.8,1.0,False
+sub-08,expert,fast_ripple,top_channel_resected,5,2,0.6,1.0,False
 sub-09,expert,fast_ripple,top_channel_resected,5,1,1.0,0.0,True
 sub-10,expert,fast_ripple,top_channel_resected,5,1,1.0,0.0,True
 sub-11,expert,fast_ripple,top_channel_resected,5,1,1.0,0.0,True
@@ -23,10 +23,10 @@ sub-01,rms,fast_ripple,top_channel_resected,5,1,1.0,0.0,True
 sub-02,rms,fast_ripple,top_channel_resected,5,1,1.0,0.0,True
 sub-03,rms,fast_ripple,top_channel_resected,5,1,0.0,0.0,True
 sub-04,rms,fast_ripple,top_channel_resected,5,1,1.0,0.0,True
-sub-05,rms,fast_ripple,top_channel_resected,5,1,0.0,0.0,True
-sub-06,rms,fast_ripple,top_channel_resected,4,2,0.75,1.0,False
+sub-05,rms,fast_ripple,top_channel_resected,5,1,1.0,0.0,True
+sub-06,rms,fast_ripple,top_channel_resected,5,1,1.0,0.0,True
 sub-07,rms,fast_ripple,top_channel_resected,1,1,0.0,0.0,True
-sub-08,rms,fast_ripple,top_channel_resected,4,2,0.5,1.0,False
+sub-08,rms,fast_ripple,top_channel_resected,5,2,0.6,1.0,False
 sub-09,rms,fast_ripple,top_channel_resected,5,1,1.0,0.0,True
 sub-10,rms,fast_ripple,top_channel_resected,5,1,1.0,0.0,True
 sub-11,rms,fast_ripple,top_channel_resected,5,1,1.0,0.0,True

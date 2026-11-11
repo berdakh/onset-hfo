@@ -55,8 +55,10 @@ from onset_hfo.datasets import (
     _dataset_url,
     _http_get,
     _spec,
+    archive_electrode_names,
     expand_contact_ranges,
     read_tsv_text,
+    rename_contacts,
 )
 
 __all__ = [
@@ -198,16 +200,20 @@ def resection_map(dataset: str | DatasetSpec | None = "ds003498",
     map sees them and can exclude them deliberately.
     """
     sheet = fetch_clinical_sheet(dataset, cache_dir=cache_dir)
+    spec = _spec(dataset)
     out: dict[str, Resection] = {}
     for _, row in sheet.iterrows():
         rz_text = "" if pd.isna(row["rz"]) else str(row["rz"])
         ex_text = "" if pd.isna(row["excluded"]) else str(row["excluded"])
         resected, bad_rz = expand_contact_ranges(rz_text)
         eloquent, bad_ex = expand_contact_ranges(ex_text)
+        # The sheet uses the markings' electrode names, which in a few
+        # patients are not the recording's (`datasets.archive_electrode_names`).
+        names = archive_electrode_names(spec, row["subject"])
         record = Resection(
             subject=row["subject"],
-            resected=tuple(dict.fromkeys(c.upper() for c in resected)),
-            eloquent=tuple(dict.fromkeys(c.upper() for c in eloquent)),
+            resected=tuple(dict.fromkeys(rename_contacts(c.upper(), names) for c in resected)),
+            eloquent=tuple(dict.fromkeys(rename_contacts(c.upper(), names) for c in eloquent)),
             rz_text=rz_text, excluded_text=ex_text,
             unparsed=tuple(bad_rz + bad_ex),
         )

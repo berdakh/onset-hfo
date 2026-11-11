@@ -49,7 +49,7 @@ def test_the_detector_figures_are_the_benchmark_s():
         top = rows.iloc[0]
         assert rows.index[0] == "rms"
         assert f"{top['rank_rho']:.2f} for {name}" in text
-        assert f"at {top['threshold_sd']:.1f} SD" in text
+        assert f"at {top['threshold_sd']:g} SD" in text
         assert f"{top['precision']:.2f}" in text
     events = int(studytables.benchmark_cohort()["n_expert_events"].sum())
     assert f"{events:,} expert-marked HFOs" in text
@@ -73,7 +73,8 @@ def test_the_outcome_figures_are_the_outcome_study_s():
             f"p = {rms['p_permutation']:.2f}") in text
     n_sf, n_rec = int(expert["n_seizure_free"]), int(expert["n_recurrence"])
     assert f"{n_sf} seizure-free and {n_rec} with recurrence" in text
-    assert (groups["p_permutation"] < 0.05).sum() == 1, "one, before correction"
+    assert (groups["p_permutation"] < 0.05).sum() == 0, "none, even before correction"
+    assert "none of the study's comparisons reaches p < 0.05 even before correction" in text
     assert (groups["p_bonferroni"] >= 0.05).all(), "none survives correction"
     assert f"is {min_detectable_auc(n_sf, n_rec):.2f}" in text
     runs = pd.read_csv(DATA / "stability" / "decision_stability_across_runs.csv")

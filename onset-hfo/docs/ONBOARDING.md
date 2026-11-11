@@ -31,8 +31,8 @@ a medical device, no clinical claim, no recommendation anywhere in the schema.
 This repository publishes its own negative results and retracts its own
 apparent findings. [`OUTCOME.md`](OUTCOME.md) opens by saying nothing separates
 the groups after correction, and that *the most important finding is that an
-earlier version of this analysis appeared to*. Three recent studies concluded
-"this buys nothing" and were written up in full anyway
+earlier version of this analysis appeared to*. Three recent studies found no
+established gain and were written up in full anyway
 ([`EVALUATION.md`](EVALUATION.md) §1b, §3b, §6c).
 
 So the question you will be asked about your work is not "did it work?" but
@@ -89,10 +89,10 @@ For the research framing rather than the code, read
 | `docs/` | nineteen documents; reading order at the end of this file |
 | `data/` | **committed extracts** so every published number can be checked from a fresh clone with no download |
 | `artifacts/` | **gitignored** — where runs actually write, and the dataset cache |
-| `notebooks/` | eight notebooks, each with a Colab badge; 06 and 08 need a GPU runtime |
+| `notebooks/` | nine notebooks, each with a Colab badge; 06 and 08 need a GPU runtime |
 | `scripts/` | studies too long for a test: the model ladder, the sub-population screen, the multiplier ablation |
 | `app/` | the no-install demo: a Streamlit site over the committed results (`app/README.md`) |
-| `tests/` | about seventy files, 1,719 tests, all offline |
+| `tests/` | about seventy files, 1,744 tests, all offline |
 | `paper/` | **the preprint — untracked on purpose. Never commit it.** |
 
 ### `onset_hfo/` — the modules worth knowing first
@@ -150,25 +150,26 @@ shipped 60 s analysis the app and tests read).
 ## Results you should know before changing anything
 
 **Against expert HFO markings** (20 patients, 41,187 marked events, §0): the two
-bands want operating points a factor of 2.5 apart — ripples rank best at
-**2.0 SD** (ρ = 0.655), fast ripples at **5.0 SD** (ρ = 0.610). The shipped
-default of 5.0 is *known to be wrong for ripple work*: it finds 12% of the
-expert-marked events and ranks at ρ = 0.37. It stays 5.0 so that published
+bands want operating points a factor of 2.5 apart — ripples rank best around
+**2.0 SD** (ρ = 0.685; 0.698 at 1.75), fast ripples at **5.0 SD** (ρ = 0.645).
+The shipped default of 5.0 is *known to be wrong for ripple work*: it finds 16%
+of the expert-marked events and ranks at ρ = 0.48. It stays 5.0 so that published
 ictal results do not silently change, and `BAND_THRESHOLD_SD` carries the
 measured values.
 
 **Against surgical outcome** ([`OUTCOME.md`](OUTCOME.md)): the expert
 fast-ripple leader was inside the resection in 11 of 13 seizure-free patients
-and 3 of 7 recurrences — AUC 0.71, p = 0.12. Our detector: 0.67, p = 0.17.
-**Nothing survives correction**, and the power floor of 0.85 is why.
+and 3 of 7 recurrences — AUC 0.71, p = 0.12. Our detector: the same, 0.71,
+p = 0.12. **Nothing reaches p < 0.05 even before correction**, and the power
+floor of 0.85 is why.
 
 **Three measured nulls**, each worth reading as a model of how to report one:
 
 | study | answer |
 |---|---|
 | §1b — two extra detectors (`hilbert`, `short_time_energy`) | buy nothing over RMS |
-| §3b — splitting ripples by discharge coupling | does not localise the resection better |
-| §6c — the agent's robustness multiplier | helps in the ripple band, *annihilates the ranking* in the fast-ripple band |
+| §3b — splitting ripples by discharge coupling | does not localise the resection better in ripples; in fast ripples one arm separates by one metric and falls below chance by the tie-aware one |
+| §6c — the agent's robustness multiplier | helps in the ripple band, *hurts* in the fast-ripple band on every patient |
 
 ---
 
@@ -181,7 +182,7 @@ All of these are load-bearing and none is obvious from reading the code.
    only place that mapping is written down, and a test pins it against the
    Engel scores.
 2. **One threshold for both bands is a bug, not a simplification.** Running the
-   ripple value in the fast-ripple band costs precision 0.543 → 0.086. Use
+   ripple value in the fast-ripple band costs precision 0.756 → 0.127. Use
    `outcome.BAND_THRESHOLD_SD`.
 3. **`candidate_channels` needs integer event counts.** It decides which
    channels are statistically tied using **Poisson** intervals. Hand it a

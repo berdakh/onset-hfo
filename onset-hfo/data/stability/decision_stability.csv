@@ -4,9 +4,9 @@ sub-02,expert,fast_ripple,5,1,1.0,True
 sub-03,expert,fast_ripple,5,2,0.6,False
 sub-04,expert,fast_ripple,5,1,1.0,True
 sub-05,expert,fast_ripple,5,1,1.0,True
-sub-06,expert,fast_ripple,5,2,0.8,False
-sub-07,expert,fast_ripple,5,2,0.2,False
-sub-08,expert,fast_ripple,5,2,0.4,False
+sub-06,expert,fast_ripple,5,1,1.0,True
+sub-07,expert,fast_ripple,5,2,0.6,False
+sub-08,expert,fast_ripple,5,2,0.2,False
 sub-09,expert,fast_ripple,5,1,1.0,True
 sub-10,expert,fast_ripple,5,2,0.8,False
 sub-11,expert,fast_ripple,5,1,1.0,True
@@ -20,11 +20,11 @@ sub-18,expert,fast_ripple,5,2,0.6,False
 sub-19,expert,fast_ripple,5,2,0.2,False
 sub-20,expert,fast_ripple,5,1,0.0,True
 sub-01,rms,fast_ripple,5,1,1.0,True
-sub-02,rms,fast_ripple,2,1,1.0,True
+sub-02,rms,fast_ripple,5,1,1.0,True
 sub-03,rms,fast_ripple,5,2,0.4,False
 sub-04,rms,fast_ripple,5,1,1.0,True
-sub-05,rms,fast_ripple,1,1,0.0,True
-sub-06,rms,fast_ripple,3,1,1.0,True
+sub-05,rms,fast_ripple,5,2,0.8,False
+sub-06,rms,fast_ripple,5,1,1.0,True
 sub-07,rms,fast_ripple,5,1,0.0,True
 sub-08,rms,fast_ripple,3,1,0.0,True
 sub-09,rms,fast_ripple,5,1,1.0,True

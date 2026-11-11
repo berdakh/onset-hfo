@@ -1,5 +1,5 @@
 metric,source,n_windows,auc_min,auc_max,auc_median,auc_sd,p_min,p_max,auc_range
-top_channel_resected,expert,5,0.566,0.819,0.632,0.113,0.007,0.613,0.253
-top_channel_resected,rms,5,0.65,0.74,0.702,0.04,0.047,0.299,0.09
-candidates_resected,expert,5,0.478,0.637,0.577,0.064,0.336,0.891,0.159
-candidates_resected,rms,5,0.458,0.693,0.61,0.09,0.2,0.81,0.235
+top_channel_resected,expert,5,0.566,0.819,0.67,0.099,0.007,0.613,0.253
+top_channel_resected,rms,5,0.667,0.756,0.709,0.041,0.038,0.268,0.089
+candidates_resected,expert,5,0.5,0.78,0.67,0.109,0.039,1.0,0.28
+candidates_resected,rms,5,0.468,0.714,0.588,0.095,0.13,0.845,0.246

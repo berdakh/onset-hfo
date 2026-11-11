@@ -49,3 +49,25 @@ def test_saved_ictal_patient_scores_reproduce(folder, prefix):
     columns = ["auc_ei", "auc_er", "n_channels", "n_soz", "n_seizures", "top_in_zone"]
     pd.testing.assert_frame_equal(rebuilt[columns], stored[columns], check_exact=False,
                                   rtol=1e-12, atol=1e-12)
+
+
+def test_benchmark_means_reproduce_from_the_per_patient_scores():
+    """Every committed cohort mean is the mean of `per_patient.csv.gz`'s rows,
+    undefined values left out, to three decimals: exactly, not approximately."""
+    bench = Path(__file__).resolve().parents[1] / "data" / "benchmark"
+    patients = pd.read_csv(bench / "per_patient.csv.gz")
+    keys = ["band", "detector", "threshold_sd"]
+    rebuilt = patients.groupby(keys).agg(
+        precision=("precision", "mean"), recall=("recall", "mean"), f1=("f1", "mean"),
+        detections=("n_detections", "mean"), rank_rho=("spearman_rho", "mean"),
+        top5_overlap=("top5_overlap", "mean")).round(3).reset_index()
+    for name in ("agreement_sweep.csv", "four_detector_sweep.csv"):
+        committed = pd.read_csv(bench / name)
+        both = committed.merge(rebuilt, on=keys, how="left", suffixes=("", "_rebuilt"))
+        assert len(both) == len(committed)
+        for column in ("precision", "recall", "f1", "detections", "rank_rho", "top5_overlap"):
+            pd.testing.assert_series_equal(both[column], both[f"{column}_rebuilt"],
+                                           check_names=False, obj=f"{name} {column}")
+    reviewed = patients.groupby("subject")["n_channels"].first()
+    cohort = pd.read_csv(bench / "cohort.csv").set_index("subject")
+    assert reviewed.equals(cohort["n_reviewed_channels"].rename("n_channels"))

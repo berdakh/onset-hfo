@@ -111,7 +111,7 @@ result and what it does and does not support. One file, opens in a browser.
 
 Otherwise, run something:
 
-## Eight notebooks, runnable in Colab
+## Nine notebooks, runnable in Colab
 
 Each notebook is the scriptable route to something the desktop application
 does; the badge opens it in Google Colab, where the first cell installs the
@@ -127,6 +127,7 @@ package.
 | 6 | [**Agent benchmark**](notebooks/06_agent_benchmark.ipynb) [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/berdakh/onset-hfo/blob/master/onset-hfo/notebooks/06_agent_benchmark.ipynb) | Tool-use competence of an open-weight model, by size and quantization | GPU runtime |
 | 7 | [**Annotation**](notebooks/07_annotation.ipynb) [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/berdakh/onset-hfo/blob/master/onset-hfo/notebooks/07_annotation.ipynb) | Blinded, stratified marking of detector windows by two readers, and their agreement | one 60 s slice |
 | 8 | [**Assistant evaluation**](notebooks/08_assistant_evaluation.ipynb) [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/berdakh/onset-hfo/blob/master/onset-hfo/notebooks/08_assistant_evaluation.ipynb) | The 111-question evaluation of the assistant under Qwen2.5 | GPU runtime, Ollama |
+| 9 | [**Benchmark, patient by patient**](notebooks/09_benchmark_per_patient.ipynb) [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/berdakh/onset-hfo/blob/master/onset-hfo/notebooks/09_benchmark_per_patient.ipynb) | The detector benchmark's per-patient scores: every committed mean rebuilt, the patients behind each, one patient re-scored | nothing (one 60 s slice for the last step) |
 
 ## Or, locally, in two minutes
 
@@ -245,14 +246,14 @@ removed?*
 | source | seizure-free (n=13) | recurrence (n=7) | AUC (95% CI) | p |
 |---|---|---|---|---|
 | expert markings | 11/13 | 3/7 | 0.71 (0.49–0.92) | 0.12 |
-| our RMS detector | 10/13 | 3/7 | 0.67 (0.45–0.89) | 0.17 |
+| our RMS detector | 11/13 | 3/7 | 0.71 (0.49–0.92) | 0.12 |
 
 The direction is the one [Fedele et al. 2017](https://www.nature.com/articles/s41598-017-13064-1)
 predicts — the study this dataset comes from — and with 13 patients against 7
 it does not reach significance. `min_detectable_auc(13, 7)` is **0.85**, so
-this cohort could not have established either number. Nothing in the study
-survives correction for the 35 distinct comparisons the study runs: one row
-reaches p = 0.032 uncorrected, and chance alone produces about two.
+this cohort could not have established either number. None of the 34 distinct
+comparisons the study runs reaches p < 0.05 even before correction (the
+smallest is 0.057), where chance alone produces about two.
 
 **The most useful result is that an earlier version of this table said
 something stronger.** On the first 60 seconds of the same recordings, the same
@@ -267,10 +268,10 @@ by side, is in [`docs/OUTCOME.md`](docs/OUTCOME.md).
 **How unstable?** Now measured. Across five disjoint 60-second windows of the
 same recordings, the expert AUC spans 0.566–0.819 and its p-value 0.007–0.613 —
 the published 0.007 was the best of five minutes. The growing-window curve does
-settle from 180 s, so the whole-run number above is a settled estimate of one
-recording. And the result that was not designed for: **our detector is more
+settle, from 240 s for the experts and 180 s for our detector, so the whole-run
+number above is a settled estimate of one recording. And the result that was not designed for: **our detector is more
 stable across windows than the expert markings** (AUC spread 0.09 vs 0.25, same
-busiest channel in 12/20 patients vs 7/20). Figure and tables in
+busiest channel in 9/20 patients vs 6/20). Figure and tables in
 [`docs/OUTCOME.md`](docs/OUTCOME.md).
 
 ```bash
@@ -283,14 +284,14 @@ python -m onset_hfo.cli stability          # 11 windows: does any of it hold?
 the share of the channels that *cannot be told apart from the busiest one*
 (overlapping Poisson rate intervals) which the surgeon removed. On whole runs
 the data picks a single channel in only 9 of 20 patients — worst case, 27 tied
-channels out of 37 — and reporting the set instead of a winner costs 0.022 AUC
-for the expert markings and 0.071 for our detector.
+channels out of 37 — and reporting the set instead of a winner moves the AUC by
++0.016 for the expert markings and −0.005 for our detector.
 Never quote the single-channel number without `n_candidates` beside it.
 
 **And the reassuring one.** Across five *different nights* the per-patient
-answer holds for 18 of 20 patients (experts) and 16 of 20 (ours) — against
-9 and 16 across five *minutes* of a single run. Pooling a patient's runs cuts
-the median candidate set from 2 channels to 1 and the worst case from 24 to 5.
+answer holds for 18 of 20 patients (experts) and 17 of 20 (ours) — against
+10 and 15 across five *minutes* of a single run. Pooling a patient's runs cuts
+the median candidate set from 2 channels to 1 and the worst case from 27 to 4.
 So the quantity measured here is a property of the **patient**, not of the
 recording session; a minute was simply too short a unit. It still does not
 predict outcome on twenty patients — nothing here survives correction.
@@ -305,24 +306,25 @@ scored only on the channels the annotators reviewed:
 
 | band | detector | threshold | precision | recall | F1 | channel-rank ρ |
 |---|---|---|---|---|---|---|
-| ripple | RMS | 1.5 SD | 0.43 | 0.48 | **0.42** | 0.59 |
-| ripple | RMS | 2.0 SD | 0.51 | 0.38 | 0.40 | **0.66** |
-| ripple | RMS | 5.0 SD *(default)* | 0.59 | 0.12 | 0.17 | 0.37 |
-| fast ripple | RMS | 3.5 SD | 0.33 | 0.29 | **0.30** | 0.59 |
-| fast ripple | RMS | 5.0 SD | 0.54 | 0.20 | 0.26 | **0.61** |
-| fast ripple | RMS | 2.0 SD | 0.09 | 0.53 | 0.15 | 0.44 |
+| ripple | RMS | 1.75 SD | 0.53 | 0.53 | **0.50** | **0.70** |
+| ripple | RMS | 2.0 SD | 0.58 | 0.48 | 0.49 | 0.69 |
+| ripple | RMS | 5.0 SD *(default)* | 0.71 | 0.16 | 0.25 | 0.48 |
+| fast ripple | RMS | 4.0 SD | 0.60 | 0.36 | **0.44** | 0.62 |
+| fast ripple | RMS | 5.0 SD | 0.76 | 0.29 | 0.39 | **0.65** |
+| fast ripple | RMS | 2.0 SD | 0.13 | 0.65 | 0.20 | 0.51 |
 
 Read that as **agreement, not accuracy**: the reference is the validated
 output of another detector, so an event we find that it never proposed counts
 against us either way. The useful sentence is *we reproduce about half of a
 published detector's validated events and rank the same channels active at
-ρ ≈ 0.66*.
+ρ ≈ 0.7*.
 
 It also shows the shipped default is wrong for this task — 5.0 SD comes from
-the ictal literature and finds 12% of interictal ripple markings. `--threshold
-interictal-agreement` (2.0 SD) is the measured operating point **for ripples**.
+the ictal literature and finds 16% of interictal ripple markings. `--threshold
+interictal-agreement` (2.0 SD, within 0.02 of the 1.75 SD optimum on F1
+and ρ) is the measured operating point **for ripples**.
 Fast ripples want 5.0 SD on the same cohort, and running 2.0 SD there drops
-precision to 0.09 and erases the outcome signal above. One threshold for both
+precision to 0.13 and erases the outcome signal above. One threshold for both
 bands is a bug, not a simplification.
 
 **Against synthetic ground truth**, where every event is known by construction

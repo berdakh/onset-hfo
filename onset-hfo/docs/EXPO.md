@@ -135,8 +135,8 @@ Tab **Does the window matter?** — the one to spend time on:
 Tab **What it cannot support**:
 
 > And this is the page we would want you to read first. Thirteen against seven
-> can only detect a very large effect. Nothing here survives correction for
-> multiple comparisons. It is retrospective, one centre, one surgical team.
+> can only detect a very large effect. Nothing here reaches significance, even
+> before correcting for multiple comparisons. It is retrospective, one centre, one surgical team.
 
 **Why this lands:** you have just done, unprompted, the thing they spend their
 professional lives wishing vendors would do.
@@ -155,16 +155,16 @@ professional lives wishing vendors would do.
 
 **"Is it better than my technician / my fellow?"**
 No, and we do not claim it. We *agree* with expert markings — channel-ranking
-correlation about 0.66, event-level F1 about 0.42. The reference we score
+correlation about 0.7, event-level F1 about 0.5. The reference we score
 against is itself a published detector's output after human validation, so
 these are agreement numbers, not accuracy. What we are better at is being
 consistent: across five separate minutes of the same recording our detector
-gave the same answer for 16 of 20 patients and the human markings for 9 of 20.
+gave the same answer for 15 of 20 patients and the human markings for 10 of 20.
 Reproducibility, not accuracy.
 
 **"Would it have changed a surgical decision?"**
-We cannot say, and nobody should let us. Nothing in the study survives
-correction for multiple comparisons.
+We cannot say, and nobody should let us. Nothing in the study reaches
+significance, even before correction for multiple comparisons.
 
 **"What about the HFO Trial?"**
 [Jacobs et al., *Lancet Neurology* 2022.] Seventy-eight patients randomised to
@@ -217,8 +217,12 @@ anyone claiming otherwise.
 - Never "validated". Nothing here is validated on patients.
 - Never imply the assistant could support a clinical decision. It is refused
   from doing so by design, and that refusal is the demo.
-- Do not oversell the one uncorrected p = 0.032 in the table. Thirty-five
-  comparisons produce about two such rows by chance.
+- Do not oversell a small p-value from any table. The outcome study's 34
+  comparisons have none below 0.05 (the smallest is 0.057, where chance alone
+  would give about two); the p = 0.032 an earlier release showed went when five
+  patients' electrode names were corrected after 0.3.24. The sub-population
+  screen's fast-ripple arm at p = 0.004 is contradicted by its own tie-aware
+  metric and is not a finding.
 
 ---
 

@@ -46,10 +46,13 @@ needs. This one does:
 
 Two things to know before trusting a number from it:
 
-- **Recorded channels are a subset of implanted contacts.** In 15 of 20 subjects
-  every resected contact appears in the recording; in the other five — all
-  temporal-lobe cases, where the study kept only the three most mesial bipolar
-  channels — only 4 of 16 do. `rz_coverage` reports this per subject.
+- **Five patients' electrodes are named differently in the markings and the
+  recording.** In sub-02, sub-05, sub-06, sub-07 and sub-08 the markings and the
+  clinical sheet use another scheme for the hippocampal and entorhinal
+  electrodes, and the pairing was read from the signals
+  (`onset_hfo/archive_electrodes.csv`). Before that was done (corrected after
+  0.3.24) only 4 of their 16 resected contacts seemed to be recorded; all are.
+  `rz_coverage` reports this per subject.
 - **The clinical sheet has a typo.** Subject 15's excluded list reads `1ll22-24`
   where every other token on the row says `tll`. The parser surfaces unparsable
   chunks rather than quietly returning a smaller resection.

@@ -51,9 +51,10 @@ METHODS = (
               "run, 41,187 expert-marked HFOs, scored on the channels the experts "
               "reviewed."),
         findings=(
-            "Channel ranking against the experts': best channel-rank ρ 0.66 for ripples "
-            "(RMS detector at 2.0 SD) and 0.61 for fast ripples (RMS at 5.0 SD).",
-            "Precision 0.51 and 0.54 at those thresholds. Read it as agreement, not "
+            "Channel ranking against the experts': best channel-rank ρ 0.70 for ripples "
+            "(RMS detector at 1.75 SD; the shipped 2.0 SD is within 0.02 of it) and 0.65 "
+            "for fast ripples (RMS at 5 SD).",
+            "Precision 0.53 and 0.76 at those thresholds. Read it as agreement, not "
             "accuracy: the reference is another detector's validated output, not a "
             "census of every oscillation.",
         ),
@@ -74,9 +75,9 @@ METHODS = (
             "On the expert markings, the busiest fast-ripple channel was inside the "
             "resection in 85% of the seizure-free patients and 43% of the others: AUC "
             "0.71 (95% interval 0.49–0.92), permutation p = 0.12.",
-            "With this program's RMS detector: AUC 0.67 (0.45–0.89), p = 0.17.",
+            "With this program's RMS detector: AUC 0.71 (0.49–0.92), p = 0.12.",
             "That answer, inside the resection or not, was the same on every night "
-            "recorded for 18 of 20 patients on the expert markings and 16 of 20 with the "
+            "recorded for 18 of 20 patients on the expert markings and 17 of 20 with the "
             "RMS detector: it is a property of the patient more than of the recording.",
             "On a second archive (OpenNeuro ds004100, HUP), 15 interictal recordings were "
             "sampled fast enough for ripples: the ripple rate ranked the onset zone above "
@@ -84,10 +85,9 @@ METHODS = (
             "10 seizure-free patients from the 5 with recurrence.",
         ),
         limits=(
-            "Neither comparison above reached significance. Of the study's "
-            "comparisons one reached p < 0.05 before correction, fewer than chance alone "
-            "would give, and none survives correction for multiple comparisons: read "
-            "every result as hypothesis-generating.",
+            "Neither comparison above reached significance, and none of the study's "
+            "comparisons reaches p < 0.05 even before correction for multiple "
+            "comparisons: read every result as hypothesis-generating.",
             "Thirteen against seven patients can detect only a very large effect: the "
             "smallest AUC it would find with 80% power is 0.85.",
             "The study's result describes groups of patients; it predicts nothing about "
@@ -99,10 +99,10 @@ METHODS = (
             ("text", "**The busiest channel is often not one channel.** On the expert "
                      "markings the ranking singles out one channel in only 9 of 20 "
                      "patients, and in one patient 27 channels are tied with the busiest; "
-                     "the RMS detector's leader is tied in 14 of 20. So the study also "
+                     "the RMS detector's leader is tied in 13 of 20. So the study also "
                      "asks what share of the tied channels was resected, which the figure "
-                     "shows: AUC 0.69 (0.44–0.91), p = 0.16, on the expert markings and "
-                     "0.60 (0.31–0.88), p = 0.47, with the detector."),
+                     "shows: AUC 0.73 (0.49–0.93), p = 0.08, on the expert markings and "
+                     "0.70 (0.44–0.92), p = 0.13, with the detector."),
             ("figure", "window"),
             ("text", "**The result that did not hold up.** The first version of this "
                      "study analysed the first 60 s of each recording and found AUC 0.82, "

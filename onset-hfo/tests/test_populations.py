@@ -286,22 +286,23 @@ def test_the_split_does_not_localise_better_than_the_merged_rate():
                 f"nothing and would need rewriting")
 
 
-def test_the_fast_ripple_coupled_population_is_too_small_to_rank_channels():
-    """Why the answer comes from the ripple band at all.
+def test_the_fast_ripple_coupled_population_is_the_thin_one():
+    """Why the main answer comes from the ripple band.
 
     The pre-specified arm is fast ripples. Its spike-coupled population has a
-    median of one event per 60 s window, so an argmax over it is a coin flip
-    -- and it is that arm, not the ripple one, that appears to beat merged.
+    median of 9 events per 60 s window and fewer than five in over a third of
+    windows (a median of one before five patients' electrodes were read
+    correctly), against 64 in the ripple band.
     """
     frame = _screen()
     coupled = frame[frame["population"] == SPIKE_COUPLED]
     fast = coupled[coupled["band"] == "fast_ripple"]["n_events"]
     ripple = coupled[coupled["band"] == "ripple"]["n_events"]
 
-    assert fast.median() <= 2, f"fast-ripple coupled median is now {fast.median()}"
-    assert (fast < 5).sum() > len(fast) // 2, \
-        "most fast-ripple windows should have almost no coupled events"
-    assert ripple.median() > 10 * max(fast.median(), 1), \
+    assert fast.median() <= 10, f"fast-ripple coupled median is now {fast.median()}"
+    assert (fast < 5).sum() > len(fast) // 3, \
+        "a third of fast-ripple windows should have almost no coupled events"
+    assert ripple.median() > 5 * max(fast.median(), 1), \
         "the ripple band is used because it carries the events; it no longer does"
 
 
@@ -348,26 +349,27 @@ def test_the_merged_arm_replicates_across_bands_and_the_coupled_arm_does_not():
 POWER_FLOORS = {(13, 7): 0.85, (12, 7): 0.86, (13, 6): 0.87, (12, 6): 0.88}
 
 
-def test_nothing_in_the_screen_clears_its_own_power_floor():
+def test_only_the_arm_the_tie_aware_metric_contradicts_clears_its_power_floor():
     """13 seizure-free against 7 recurrences resolves an AUC of 0.85 or better.
 
-    So the negative result is 'no gain to report', not 'no effect' -- and no
-    positive one here would have been reportable either.
-
-    Asserted against the *lowest* of the four floors rather than each arm's
-    own: if no arm reaches 0.85 then none reaches its own floor either, since
-    every floor is at least that. Losing patients only raises the floor.
+    In the ripple band nothing reaches it: 'no gain to report', not 'no
+    effect'. In the fast ripple band one arm does -- the spike-coupled busiest
+    channel, 0.875 at 12/7 -- and §3b reports it as measured together with
+    what argues against it: the tie-aware metric puts the same arm below
+    chance. If a second arm crosses, or that contradiction goes away, §3b
+    needs rewriting.
     """
     result = _analysed_full()
     sizes = {(int(r.n_SF), int(r.n_rec)) for r in result.itertuples()}
     assert sizes <= set(POWER_FLOORS), f"unrecorded group size in {sizes}"
 
-    lowest = min(POWER_FLOORS[s] for s in sizes)
-    worst = result.loc[result.auc.idxmax()]
-    assert worst.auc < lowest, (
-        f"{worst.band}/{worst.metric}/{worst.population} now reaches "
-        f"{worst.auc:.3f} against a floor of at least {lowest} at n = "
-        f"{worst.n_SF}/{worst.n_rec}; §3b's hedging needs revisiting")
+    floor = result.apply(lambda r: POWER_FLOORS[(int(r.n_SF), int(r.n_rec))], axis=1)
+    above = result[result.auc >= floor]
+    assert [(r.band, r.metric, r.population) for r in above.itertuples()] == \
+        [("fast_ripple", "top_channel_resected", SPIKE_COUPLED)], above
+    tie_aware = result.set_index(["band", "metric", "population"]).loc[
+        ("fast_ripple", "candidates_resected", SPIKE_COUPLED), "auc"]
+    assert tie_aware < 0.5
 
 
 def test_the_recorded_power_floors_are_what_the_simulation_gives():

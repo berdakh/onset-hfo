@@ -2255,6 +2255,203 @@ comes only from that reading.
 ]
 
 
+# =========================================================================
+# 9. The detector benchmark, patient by patient
+# =========================================================================
+
+NB9 = "09_benchmark_per_patient.ipynb"
+nb9 = [
+    md(f"""
+# Onset-HFO 9 — The detector benchmark, patient by patient
+
+{badge(NB9)}
+
+`data/benchmark/agreement_sweep.csv` and `four_detector_sweep.csv` are cohort
+means: one row per detector, band and threshold, averaged over the 20
+patients of ds003498 (the first 60 s of each patient's first run, scored on
+the channels the experts reviewed). `docs/EVALUATION.md` and the Validation
+page quote them: channel-rank ρ 0.685 for ripples with the RMS detector at the
+shipped 2.0 SD (0.698 at 1.75 SD, the best), and 0.645 for fast ripples at
+5.0 SD.
+
+This notebook starts one step earlier, from the per-patient scores the means
+are averaged from (`data/benchmark/per_patient.csv.gz`), and:
+
+1. rebuilds every committed cohort mean from them and compares the two;
+2. counts how many patients each mean is over, and says why a patient drops
+   out of one;
+3. shows the patients behind the two quoted operating points;
+4. re-scores one patient from the recording itself, so the per-patient file
+   can be checked as well as the means.
+
+Sections 1–3 need no network and no GPU. Section 4 downloads one patient's
+60 s slice (20–30 MB) unless it is cached.
+
+Read every precision as **agreement**, not accuracy: the reference is the
+validated output of the source study's own detector, not a census of every
+oscillation (`docs/EVALUATION.md` §0).
+"""),
+    code(SETUP),
+    md("""
+## 0. The per-patient file
+
+One row per patient, band, detector and threshold. The event-level columns
+(`n_truth` … `f1`) come from `onset_hfo.evaluate.evaluate_detections`, a
+detection matching an expert event within 20 ms on the same channel; the
+channel-level ones (`n_channels` … `ours_top`) from the benchmark's rank
+agreement, the Spearman correlation between each channel's expert count and
+its detection count.
+"""),
+    code("""import pandas as pd
+from pathlib import Path
+
+BENCH = Path("data/benchmark")
+KEYS = ["band", "detector", "threshold_sd"]
+patients = pd.read_csv(BENCH / "per_patient.csv.gz")
+print(f"{len(patients):,} rows: {patients.subject.nunique()} patients, "
+      f"{patients.groupby(KEYS).ngroups} detector x band x threshold cells")
+patients.head()"""),
+    md("""
+## 1. Rebuild the committed means
+
+A cohort mean is the mean over patients with the undefined values left out,
+rounded to three decimals: what `BenchmarkResult.summary` writes. `detections`
+is the mean number of detections per patient in the 60 s.
+"""),
+    code("""METRICS = ["precision", "recall", "f1", "detections", "rank_rho", "top5_overlap"]
+
+rebuilt = patients.groupby(KEYS).agg(
+    precision=("precision", "mean"), recall=("recall", "mean"), f1=("f1", "mean"),
+    detections=("n_detections", "mean"), rank_rho=("spearman_rho", "mean"),
+    top5_overlap=("top5_overlap", "mean")).round(3).reset_index()
+
+
+def compare(name):
+    committed = pd.read_csv(BENCH / name)
+    both = committed.merge(rebuilt, on=KEYS, how="left", suffixes=("", "_rebuilt"))
+    gap = pd.DataFrame({m: (both[m] - both[f"{m}_rebuilt"]).abs() for m in METRICS})
+    exact = int((gap.fillna(0) == 0).all(axis=1).sum())
+    print(f"{name}: {len(committed)} rows; {exact} reproduce exactly, "
+          f"{int(both['f1_rebuilt'].isna().sum())} have no per-patient rows; "
+          f"largest difference {gap.max().max():.3f}")
+    return both, gap
+
+
+sweep, sweep_gap = compare("agreement_sweep.csv")
+four, four_gap = compare("four_detector_sweep.csv")"""),
+    md("""
+Any row that does not reproduce exactly, with the committed and rebuilt
+values side by side (an empty table means none):
+"""),
+    code("""def differing(both, gap):
+    rows = both[(gap.fillna(0) > 0).any(axis=1)]
+    return rows[KEYS + [c for m in METRICS for c in (m, f"{m}_rebuilt")]]
+
+
+pd.concat([differing(sweep, sweep_gap), differing(four, four_gap)])"""),
+    md("""
+## 2. How many patients each mean is over
+
+A patient drops out of a mean when the value is undefined for them:
+
+- **precision** when the detector found nothing on the reviewed channels;
+- **recall** when the experts marked no event of that band there;
+- **ρ** when fewer than three channels were reviewed, or when one side has
+  the same count on every channel.
+
+**F1 is never undefined.** It is 0 whenever precision or recall is, so the
+F1 mean is over every patient while the precision and ρ means beside it may
+not be. The cells where a mean is over fewer than all 20 patients:
+"""),
+    code("""counts = patients.groupby(KEYS).agg(
+    patients=("subject", "nunique"), precision=("precision", "count"),
+    recall=("recall", "count"), f1=("f1", "count"), rank_rho=("spearman_rho", "count"),
+).reset_index()
+counts[(counts[["precision", "recall", "rank_rho"]] < counts[["patients"]].values).any(axis=1)]"""),
+    md("""
+Why, in this cohort: every patient has expert events of both bands on their
+reviewed channels, so recall is always defined, and every undefined
+precision or ρ is a patient for whom the detector found nothing at that
+threshold:
+"""),
+    code("""undefined = patients[patients.precision.isna() | patients.spearman_rho.isna()]
+print(f"patients with no expert event of a band: {int((patients.n_truth == 0).sum())} rows")
+print(f"rows with precision or rho undefined: {len(undefined)}; "
+      f"detections in them: {sorted(int(n) for n in undefined.n_detections.unique())}")
+undefined.groupby("subject").size().rename("undefined cells").to_frame().T"""),
+    md("""
+## 3. The patients behind the quoted operating points
+
+The two operating points the documents quote, one row per patient. The last
+row of each table is the cohort mean, over the patients for whom the value is
+defined.
+"""),
+    code("""COLUMNS = ["subject", "n_truth", "n_detections", "precision", "recall", "f1",
+           "n_channels", "spearman_rho", "top5_overlap"]
+
+
+def operating_point(band, detector, threshold):
+    rows = patients[(patients.band == band) & (patients.detector == detector)
+                    & (patients.threshold_sd == threshold)][COLUMNS].set_index("subject")
+    mean = rows.mean().to_frame("cohort mean").T
+    defined = rows.count().to_frame("patients with a value").T
+    return pd.concat([rows, mean, defined]).round(3)
+
+
+operating_point("ripple", "rms", 2.0)"""),
+    code("""operating_point("fast_ripple", "rms", 5.0)"""),
+    md("""
+The fast-ripple figures the documents quote, ρ 0.645 and precision 0.756,
+are means over **19** patients: at 5.0 SD the detector found no fast ripple on
+sub-10's reviewed channels, where the experts marked 100, so neither value is
+defined for that patient. Its recall (0) and F1 (0) are in the means beside
+them, which are over all 20.
+"""),
+    md("""
+## 4. Re-score one patient from the recording
+
+`benchmark_subject` is the function the whole file was made with: it fetches
+the patient's slice, preprocesses it, runs each detector at each threshold on
+the reviewed channels and scores the detections against the expert markings.
+Change `SUBJECT` to check another patient.
+"""),
+    code("""from onset_hfo.benchmark import benchmark_subject
+
+SUBJECT = "sub-01"
+run = benchmark_subject(SUBJECT, thresholds=(2.0, 5.0), detectors=("rms",),
+                        bands=("ripple", "fast_ripple"), verbose=False)
+fresh = pd.DataFrame(run.rows).merge(pd.DataFrame(run.ranks), on=["subject", "run", *KEYS])
+stored = patients[patients.subject == SUBJECT]
+check = fresh.merge(stored, on=["subject", *KEYS], suffixes=("_fresh", "_stored"))
+values = ["n_truth", "n_detections", "precision", "recall", "f1", "spearman_rho"]
+largest = max((check[f"{v}_fresh"] - check[f"{v}_stored"]).abs().max() for v in values)
+print(f"{SUBJECT}: {len(check)} cells re-scored; largest difference {largest:.2e}")
+check[KEYS + [f"{v}_{s}" for v in values for s in ("fresh", "stored")]]""",
+         tags=("network",)),
+    md("""
+## 5. Regenerate the whole file
+
+About an hour on a laptop, after downloading the 20 slices (about 500 MB):
+
+```python
+from onset_hfo.benchmark import benchmark_cohort
+
+result = benchmark_cohort(
+    subjects=[f"sub-{i:02d}" for i in range(1, 21)],
+    detectors=("rms", "line_length", "hilbert", "short_time_energy"),
+    bands=("ripple", "fast_ripple"),
+    thresholds=(0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0,
+                6.0, 8.0, 10.0, 12.0, 15.0))
+```
+
+`result.scores` and `result.ranking`, joined on patient, band, detector and
+threshold, are this file; `data/benchmark/README.md` says which columns were
+kept. `onset-hfo benchmark` on the command line does the same and writes the
+tables to `artifacts/results/`.
+"""),
+]
+
+
 def execute(path: Path, timeout: int = 5400) -> None:
     """Run a notebook in place and keep its outputs.
 
@@ -2336,6 +2533,7 @@ NOTEBOOKS = [
     (6, NB6, nb6, GPU_METADATA),
     (7, NB7, nb7, None),
     (8, NB8, nb8, GPU_METADATA),
+    (9, NB9, nb9, None),
 ]
 
 

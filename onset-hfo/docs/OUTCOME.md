@@ -37,7 +37,16 @@ recording (300 s per patient, every expert marking), the channel with the
 most expert-marked fast ripples was inside the resection in 11 of 13 patients
 who became seizure-free and 3 of 7 whose seizures returned — AUC 0.71, 95% CI
 0.49–0.92, permutation p = 0.12. Our detector, same channels, same metric:
-10 of 13 versus 3 of 7, AUC 0.67, p = 0.17.
+the same 11 of 13 versus 3 of 7, AUC 0.71, p = 0.12.
+
+*Re-run after 0.3.24.* In five patients (sub-02, sub-05, sub-06, sub-07,
+sub-08) the archive's markings and resection sheet name the hippocampal and
+entorhinal electrodes differently from the recording, and differently from
+patient to patient. Until the pairing was read from the signals
+(`onset_hfo/archive_electrodes.csv`), those patients were analysed on 6 of
+their 24 reviewed channels with a quarter of their resection, and every table
+in this document was re-run once it was. The expert headline above did not
+move; the detector's rose from 0.67 (p = 0.17).
 
 On the **first 60 seconds** of the same recordings, the same code, the same
 pre-specified metric, the expert arm gave AUC **0.82, p = 0.007** — which is
@@ -55,10 +64,10 @@ So the honest reading is **three statements, in this order**:
    effect is in the direction Fedele et al. 2017 predicts, and with 13 versus
    7 patients it does not reach significance. That is a power statement, not a
    refutation.
-2. **Our detector is close to the expert arm, not far from it.** AUC 0.67
-   against 0.71, with overlapping intervals. The gap the 60-second analysis
-   appeared to show (0.70 vs 0.82) largely closed — and it closed because the
-   *expert* number came down, not because ours went up.
+2. **Our detector matches the expert arm.** AUC 0.71 against 0.71, the same
+   patients inside and outside. The gap the 60-second analysis appeared to
+   show (0.74 vs 0.82) closed because the *expert* number came down, not
+   because ours went up.
 3. **The ranking is window-dependent, and that is now the most concrete
    problem in this repository.** A conclusion that changes between minute one
    and minutes one-to-five is not yet a measurement.
@@ -97,12 +106,13 @@ who disagrees.
 - Contacts the source study excluded because electrical stimulation of them
   evoked motor or language responses are dropped (`--keep-eloquent` keeps
   them). 30 channels across 3 subjects.
-- **Resected contacts that were never recorded cannot be scored.** In 15 of
-  20 subjects every resected contact is present. In the other five — all
-  temporal-lobe cases, where the source study kept only the three most mesial
-  bipolar channels — only 4 of 16 listed resected contacts were recorded.
-  `recordings.csv` carries `rz_coverage` per subject, and those five sit at
-  0.25. Their numbers describe a quarter of a resection.
+- **Resected contacts that were never recorded cannot be scored.** None are
+  missing: every contact the clinical sheet lists as resected is in its
+  patient's recording, and `recordings.csv` carries `rz_coverage` per subject
+  (1.0 for all twenty). Through 0.3.24 five of them read 0.25, and this
+  document explained it as the source study keeping only the most mesial
+  channels. That was wrong: the other twelve contacts were recorded under
+  other electrode names than the sheet's (see the note under the headline).
 - The clinical sheet contains one typo (subject 15's excluded list says
   `1ll22-24` where every other token on the row says `tll`). The parser
   reports it rather than silently returning a smaller zone; three contacts
@@ -136,28 +146,30 @@ surviving preprocessing.
 | source | band | scope | seizure-free | recurrence | AUC (95% CI) | p |
 |---|---|---|---|---|---|---|
 | expert | **fast ripple** | reviewed | **11/13 (0.85)** | **3/7 (0.43)** | **0.71 (0.49–0.92)** | 0.12 |
-| rms | fast ripple | reviewed | 10/13 (0.77) | 3/7 (0.43) | 0.67 (0.45–0.89) | 0.17 |
-| rms | ripple | reviewed | 8/13 (0.62) | 1/7 (0.14) | 0.74 (0.55–0.92) | 0.07 |
-| expert | ripple | reviewed | 4/13 (0.31) | 2/7 (0.29) | 0.51 (0.29–0.73) | 1.00 |
-| rms | fast ripple | all | 7/13 (0.54) | 3/7 (0.43) | 0.56 (0.34–0.78) | 1.00 |
+| rms | fast ripple | reviewed | 11/13 (0.85) | 3/7 (0.43) | 0.71 (0.49–0.92) | 0.12 |
+| rms | ripple | reviewed | 8/13 (0.62) | 2/7 (0.29) | 0.66 (0.45–0.86) | 0.35 |
+| expert | ripple | reviewed | 5/13 (0.38) | 3/7 (0.43) | 0.48 (0.26–0.70) | 1.00 |
+| rms | fast ripple | all | 10/13 (0.77) | 3/7 (0.43) | 0.67 (0.45–0.89) | 0.17 |
 
 ### `share_in_rz` — the metric that carries nothing
 
 | source | band | scope | median (free) | median (recur) | AUC (95% CI) | p |
 |---|---|---|---|---|---|---|
-| expert | fast ripple | reviewed | 0.50 | 0.41 | 0.48 (0.22–0.77) | 0.94 |
-| rms | fast ripple | reviewed | 0.80 | 0.22 | 0.71 (0.46–0.91) | 0.14 |
-| expert | ripple | reviewed | 0.19 | 0.30 | 0.41 (0.15–0.68) | 0.54 |
-| rms | ripple | reviewed | 0.48 | 0.38 | 0.52 (0.24–0.79) | 0.94 |
+| expert | fast ripple | reviewed | 0.54 | 0.39 | 0.53 (0.24–0.82) | 0.88 |
+| rms | fast ripple | reviewed | 0.79 | 0.39 | 0.71 (0.45–0.93) | 0.14 |
+| expert | ripple | reviewed | 0.19 | 0.29 | 0.46 (0.20–0.74) | 0.82 |
+| rms | ripple | reviewed | 0.48 | 0.38 | 0.51 (0.23–0.79) | 1.00 |
 
-`top3_resected` sits between the two (expert fast ripple AUC 0.63, p = 0.35).
-Of the 35 distinct comparisons in the full table, **one** reaches p < 0.05 —
-our detector, ripple band, `candidates_resected`, p = 0.032, Bonferroni 1.00 —
-and chance alone would produce about two. (The table has 36 rows of arms, but
-under the exact rate interval of 0.3.17 the detector's
-`candidates_all_resected` fast-ripple values are identical patient for patient
-on reviewed and on all channels, so that test counts once.) Every metric, source, scope and band is
-in `groups.csv`.
+`top3_resected` sits between the two (expert fast ripple AUC 0.69, p = 0.16).
+Of the 34 distinct comparisons in the full table, **none** reaches p < 0.05
+even before correction — the smallest is 0.057, our detector, ripple band,
+`candidates_resected` on all channels — where chance alone would produce about
+two. (The table has 36 rows of arms, but under the exact rate interval of
+0.3.17 the detector's `candidates_all_resected` values are identical patient
+for patient on reviewed and on all channels, in both bands, so each pair
+counts once.) Through 0.3.24 one comparison reached p = 0.032; it was one of
+the arms the five patients' electrode names had distorted. Every metric,
+source, scope and band is in `groups.csv`.
 
 ---
 
@@ -169,8 +181,8 @@ the first minute.
 
 | | expert, fast ripple | rms, fast ripple |
 |---|---|---|
-| **first 60 s** | 12/13 vs 2/7 — AUC **0.82**, p = **0.007** | 10/12 vs 3/7 — AUC 0.70, p = 0.13 |
-| **whole 300 s** | 11/13 vs 3/7 — AUC 0.71, p = 0.12 | 10/13 vs 3/7 — AUC 0.67, p = 0.17 |
+| **first 60 s** | 12/13 vs 2/7 — AUC **0.82**, p = **0.007** | 11/12 vs 3/7 — AUC 0.74, p = 0.038 |
+| **whole 300 s** | 11/13 vs 3/7 — AUC 0.71, p = 0.12 | 11/13 vs 3/7 — AUC 0.71, p = 0.12 |
 
 Five times the data, a weaker result. Two patients account for all of it:
 
@@ -181,8 +193,9 @@ Five times the data, a weaker result. Two patients account for all of it:
 - **sub-15** (seizure-free). The opposite: inside at 60 s, outside at 300 s.
 
 Our detector moved on two patients as well (sub-14 flipped out; sub-10, which
-produced no fast-ripple detections at all in 60 s, produced 15 in 300 s and
-rejoins the cohort — which is why its `n` goes from 12 to 13).
+produced no fast-ripple detections at all in 60 s, produces some in 300 s and
+rejoins the cohort — which is why its `n` goes from 12 to 13). Its first
+minute flattered it too: p = 0.038 there, 0.12 on the whole run.
 
 Three things follow, and they are the actionable part of this document:
 
@@ -194,10 +207,10 @@ default is now the whole run. Anything published from the 60 s window is
 superseded by the table above.
 
 **"Which channel is busiest" is a fragile statistic on this much data.** It is
-an argmax over 6–65 channels whose rates have overlapping confidence
+an argmax over 14–65 channels whose rates have overlapping confidence
 intervals. The next section measures exactly how fragile: across five disjoint
 minutes of the same recording, the experts' busiest channel is the same channel
-in only 7 of 20 patients.
+in only 6 of 20 patients.
 
 **A 20-patient study cannot distinguish these two results from each other.**
 `min_detectable_auc(13, 7)` = 0.85. Both 0.82 and 0.71 sit below that floor,
@@ -209,7 +222,7 @@ recordings give expert AUCs from 0.566 to 0.819.
 
 ## How stable is any of this? — the window study
 
-Everything above is an argmax over 6–65 channels whose Poisson rate intervals
+Everything above is an argmax over 14–65 channels whose Poisson rate intervals
 overlap. So the obvious question is whether it survives a change of analysis
 window. `onset-hfo stability` answers it in two arms — growing windows from
 the start of the run, and five **disjoint** 60-second windows that tile it —
@@ -225,20 +238,21 @@ python -m onset_hfo.cli stability     # 11 windows, ~90 min after the first fetc
 
 | window | expert AUC | p | rms AUC | p |
 |---|---|---|---|---|
-| 0–30 s | 0.632 | 0.36 | 0.650 | 0.30 |
-| **0–60 s** | **0.819** | **0.007** | 0.702 | 0.13 |
-| 0–120 s | 0.742 | 0.06 | 0.661 | 0.33 |
-| 0–180 s | 0.709 | 0.12 | 0.670 | 0.17 |
-| 0–240 s | 0.709 | 0.12 | 0.670 | 0.17 |
-| 0–300 s | 0.709 | 0.12 | 0.670 | 0.17 |
+| 0–30 s | 0.742 | 0.06 | 0.708 | 0.08 |
+| **0–60 s** | **0.819** | **0.007** | 0.744 | 0.038 |
+| 0–120 s | 0.742 | 0.06 | 0.631 | 0.31 |
+| 0–180 s | 0.780 | 0.02 | 0.709 | 0.12 |
+| 0–240 s | 0.709 | 0.12 | 0.709 | 0.12 |
+| 0–300 s | 0.709 | 0.12 | 0.709 | 0.12 |
 
-Identical from 180 s onward — not merely close, identical, meaning no
-patient's answer changed in the last two minutes. The whole-run number is a
-settled estimate of *this recording*, and the 60-second result was an
-excursion rather than an undersampled version of it.
+Identical from 240 s onward for the experts and from 180 s for the detector —
+not merely close, identical, meaning no patient's answer changed in the last
+minute or two. The whole-run number is a settled estimate of *this
+recording*, and the 60-second result was an excursion rather than an
+undersampled version of it.
 
 One caveat the table shows in its own `n` columns (`curve.csv`): at 30 s the
-detector arm covers only 16 of 20 patients and at 60–120 s only 19, because
+detector arm covers only 18 of 20 patients and at 60–120 s only 19, because
 the rest produce no fast-ripple detections in that little data. Its short-window
 points are computed over a different cohort and should not be read as part of
 the same curve. The expert arm is 20 patients at every window.
@@ -250,8 +264,8 @@ identically:
 
 | source | AUC range | sd | p range |
 |---|---|---|---|
-| expert | 0.566 – 0.819 | 0.113 | **0.007 – 0.613** |
-| rms | 0.650 – 0.740 | 0.040 | 0.047 – 0.299 |
+| expert | 0.566 – 0.819 | 0.099 | **0.007 – 0.613** |
+| rms | 0.667 – 0.756 | 0.041 | 0.038 – 0.268 |
 
 The expert p-value swings from 0.007 to 0.61 depending on which minute is
 analysed. **The 0.007 that reached this project's README was the most
@@ -264,8 +278,8 @@ The result this study was not designed to find:
 
 | | expert | rms |
 |---|---|---|
-| same busiest channel in all five windows | 7/20 | **12/20** |
-| same inside/outside answer in all five windows | 9/20 | **16/20** |
+| same busiest channel in all five windows | 6/20 | **9/20** |
+| same inside/outside answer in all five windows | 10/20 | **15/20** |
 | AUC spread across minutes | 0.25 | **0.09** |
 
 Some of that is deflation — a statistic nearer chance has less room to swing —
@@ -276,15 +290,16 @@ pipeline buys it. Read it as *reproducibility*, not accuracy: the detector
 agrees with itself more than the experts agree with themselves, and it is
 still the experts who are closer to the outcome.
 
-For the detector the honest footnote is that six patients have fewer than five
-usable windows (no fast-ripple detections in some minute), so their "never
-moves" is over fewer comparisons. The decision figure, 16/20, uses whatever
-windows each patient has and reports the count in `decision_stability.csv`.
+For the detector the honest footnote is that three patients have fewer than
+five usable windows (no fast-ripple detections in some minute), so their
+"never moves" is over fewer comparisons. The decision figure, 15/20, uses
+whatever windows each patient has and reports the count in
+`decision_stability.csv`.
 
 ### Channel identity is fragile; the decision on top of it is less so
 
-The two stability measures come apart — 7/20 against 9/20 for the experts,
-12/20 against 16/20 for us — and the gap is the useful part. When the two or
+The two stability measures come apart — 6/20 against 10/20 for the experts,
+9/20 against 15/20 for us — and the gap is the useful part. When the two or
 three busiest channels are all inside the resection, or all outside it, the
 argmax can wander between them without the answer changing. Worst case is
 sub-12, where the experts' busiest channel is a *different channel in every
@@ -296,8 +311,8 @@ the leader — rather than a winner. `metrics.leader_separation` already uses
 exactly that rule to decide whether a recording has a leader at all;
 `_top_channel_resected` took a bare argmax and did not. The next section is
 what happened when that was fixed: the data picks a single channel in fewer
-than half the patients, and reporting the tied set instead costs 0.022 AUC for
-the experts and 0.071 for our detector.
+than half the patients, and reporting the tied set instead moves the AUC by
++0.016 for the experts and −0.005 for our detector.
 
 ---
 
@@ -318,8 +333,8 @@ itself as the window grows and needed no tuning.
 
 | | expert | rms |
 |---|---|---|
-| patients where the leader stands alone | **9/20** | **6/20** |
-| median candidate-set size | 2 | 2.5 |
+| patients where the leader stands alone | **9/20** | **7/20** |
+| median candidate-set size | 2 | 2 |
 | largest candidate set | 27 of 37 channels (sub-12) | 10 of 37 |
 
 So `top_channel_resected` was reporting a winner the data had chosen in fewer
@@ -338,23 +353,22 @@ Fast-ripple band, reviewed channels, whole runs:
 | source | metric | seizure-free | recurrence | AUC (95% CI) | p |
 |---|---|---|---|---|---|
 | expert | `top_channel_resected` | 0.85 | 0.43 | 0.709 (0.49–0.92) | 0.12 |
-| expert | `candidates_resected` | 0.78 | 0.52 | 0.687 (0.44–0.91) | 0.16 |
-| rms | `top_channel_resected` | 0.77 | 0.43 | 0.670 (0.45–0.89) | 0.17 |
-| rms | `candidates_resected` | 0.65 | 0.50 | 0.599 (0.31–0.88) | 0.47 |
+| expert | `candidates_resected` | 0.80 | 0.46 | 0.725 (0.49–0.93) | 0.08 |
+| rms | `top_channel_resected` | 0.85 | 0.43 | 0.709 (0.49–0.92) | 0.12 |
+| rms | `candidates_resected` | 0.77 | 0.43 | 0.703 (0.44–0.92) | 0.13 |
 
-AUC moves by 0.022 for the experts and by 0.071 for us in the fast-ripple
-band. (In the *ripple* band the same metric is our detector's best row in the
-whole study, p = 0.032 uncorrected — see the caution above: one hit in 35
-comparisons is what chance produces.) **Being honest about ties costs little
-for the expert markings and visibly for our detector**, whose fast-ripple
-leader is tied with others in 14 of 20 patients: part of the detector's 0.670
-came from naming a single channel the data had not chosen. That is the
-argument for reporting the set: the per-patient statement becomes true, and
-the cohort-level number stops borrowing confidence it did not have.
+AUC moves by +0.016 for the experts and by −0.005 for us in the fast-ripple
+band. **Being honest about ties costs nothing measurable at the group level**,
+for either source, though our detector's fast-ripple leader is tied with
+others in 13 of 20 patients. That is the argument for reporting the set: the
+per-patient statement becomes true, and the cohort-level number does not
+depend on a single channel the data had not chosen. (Through 0.3.24 the set
+cost the detector 0.071; most of that came from the five patients whose
+electrodes were misread.)
 
 `candidates_all_resected` — was the *whole* tied set removed? — is the more
-demanding question and does worse (expert 0.665, p = 0.35; rms 0.478,
-p = 1.00), which is what you would expect of a stricter criterion on twenty
+demanding question and does no better (expert 0.703, p = 0.16; rms 0.593,
+p = 0.64), which is what you would expect of a stricter criterion on twenty
 patients.
 
 ### It makes the per-patient number steadier, and the group number no steadier
@@ -363,21 +377,20 @@ Across the five disjoint 60-second windows:
 
 | | expert | rms |
 |---|---|---|
-| mean per-patient movement, `top_channel_resected` | 0.55 | 0.20 |
-| mean per-patient movement, `candidates_resected` | **0.30** | **0.18** |
+| mean per-patient movement, `top_channel_resected` | 0.50 | 0.25 |
+| mean per-patient movement, `candidates_resected` | **0.35** | **0.27** |
 | AUC spread, `top_channel_resected` | 0.25 | 0.09 |
-| AUC spread, `candidates_resected` | **0.16** | **0.24** |
+| AUC spread, `candidates_resected` | **0.28** | **0.25** |
 
-Both arms' *per-patient* values move less — which is the point, since that is
-what a clinician would read. The *group* statistic is another matter: its
-spread halves for the experts and more than doubles for our detector.
+The experts' *per-patient* values move less with the set — which is the
+point, since that is what a clinician would read — and our detector's do not
+(0.25 against 0.27). The *group* statistic spreads more for both.
 
 The reason is visible in the set sizes. In a 60-second window the median
-candidate set is 4.5 channels (expert) and 3.5 (rms), against 2 on the whole
-run, and the set size swings by a mean of 7 and 9 channels respectively
-between windows. Our detector sees a median of 30 fast-ripple events per
-60-second window against the experts' 134, so its intervals are wider and its
-set size is the more volatile of the two. **Candidate sets do not rescue a
+candidate set is 4 channels for both sources, against 2 on the whole run, and
+the set size swings by a mean of 10 and 11 channels between windows. Our
+detector sees a median of 58 fast-ripple events per 60-second window against
+the experts' 167, so its intervals are wider. **Candidate sets do not rescue a
 short window; they make its uncertainty visible.** On the whole run — the
 default — both arms sit at a median set of 2.
 
@@ -418,19 +431,19 @@ The per-patient answer, across that patient's own runs:
 
 | | across 5 disjoint **minutes** of one run | across 5 **runs** (different nights) |
 |---|---|---|
-| expert | 9/20 patients unchanged | **18/20** |
-| rms | 16/20 | **16/20** |
+| expert | 10/20 patients unchanged | **18/20** |
+| rms | 15/20 | **17/20** |
 
 This is the clearest result in the whole stability exercise. The expert
-markings doubled their agreement with themselves when the unit of analysis
-became a whole run instead of a minute of one, and only `sub-08` and `sub-18`
-move at all. Our detector is unchanged at 16/20 — it was already the more
-reproducible of the two at short windows, and it gains nothing from the longer
-unit because it had not lost anything.
+markings nearly doubled their agreement with themselves when the unit of
+analysis became a whole run instead of a minute of one, and only `sub-08` and
+`sub-18` move at all. Our detector gains less — it was already the more
+reproducible of the two at short windows — and `sub-08`, `sub-14` and
+`sub-15` move.
 
 The group statistic moves correspondingly little between nights: expert AUC
-0.623–0.723 (range 0.100), ours 0.575–0.723 (range 0.148), against 0.253 and
-0.090 between minutes.
+0.623–0.723 (range 0.100), ours 0.623–0.762 (range 0.139), against 0.253 and
+0.089 between minutes.
 
 **Read the per-run numbers with one caveat.** Two subjects (`sub-07`,
 `sub-17`, both recurrences) have a single run in the archive, so the per-run
@@ -446,42 +459,51 @@ document.
 |---|---|---|
 | median candidate-set size, expert | 2 | **1** |
 | median candidate-set size, rms | 2 | **1** |
-| largest set, expert | 24 channels | **5** |
-| largest set, rms | 37 channels | **5** |
-| patients where the leader stands alone, expert | 48% of runs | **13/20** |
+| largest set, expert | 27 channels | **4** |
+| largest set, rms | 37 channels | **7** |
+| patients where the leader stands alone, expert | 46% of runs | **13/20** |
+| patients where the leader stands alone, rms | 47% of runs | **14/20** |
 
-*This table, the window study and the screens in `data/outcome/` were computed
-with the approximate rate interval used before 0.3.17 and have not been re-run
-(they need the archive). Only the whole-run tables above were re-derived with
-the exact interval, from the committed per-channel counts.*
+*Every table in this document, this one included, was re-run after 0.3.24
+with five patients' electrodes read correctly, and all of them now use the
+exact rate interval of 0.3.17.*
 
 This is what more recording was supposed to buy and, unlike the window study,
 it delivers: the Poisson intervals narrow, ties resolve, and the worst case
 stops being absurd. A patient whose busiest channel could not be told apart
-from 23 others in one run has a set of at most five once five runs are added
+from 26 others in one run has a set of at most four once five runs are added
 together.
 
-### It does not rescue the group result
+### It does not establish the group result
 
-| source | metric | seizure-free | recurrence | AUC | p |
-|---|---|---|---|---|---|
-| expert | `top_channel_resected` | 0.85 | 0.57 | 0.637 | 0.29 |
-| rms | `top_channel_resected` | 0.85 | 0.43 | 0.709 | 0.12 |
-| expert | `candidates_resected` | 0.89 | 0.59 | 0.709 | 0.09 |
-| rms | `candidates_resected` | 0.74 | 0.50 | 0.632 | 0.36 |
-| rms | `top_channel_resected` (ripple) | 0.62 | 0.14 | 0.736 | 0.07 |
+| source | metric | seizure-free | recurrence | AUC | p | Bonferroni |
+|---|---|---|---|---|---|---|
+| expert | `top_channel_resected` | 0.85 | 0.43 | 0.709 | 0.12 | 1.00 |
+| rms | `top_channel_resected` | 0.92 | 0.43 | 0.747 | **0.031** | 0.74 |
+| expert | `candidates_resected` | 0.88 | 0.54 | 0.769 | **0.041** | 0.99 |
+| rms | `candidates_resected` | 0.84 | 0.43 | 0.714 | 0.063 | 1.00 |
+| expert | `candidates_all_resected` | 0.85 | 0.29 | 0.780 | **0.022** | 0.54 |
+| rms | `top3_resected` | 0.77 | 0.38 | 0.780 | **0.031** | 0.75 |
+| rms | `top_channel_resected` (ripple) | 0.62 | 0.29 | 0.665 | 0.35 | 1.00 |
 
-**Nothing in the pooled table reaches p < 0.05**; its minimum is 0.070.
-Pooling actually *lowers* the expert argmax arm (0.709 on a single run
-to 0.637), because the recurrence group's mean rises from 0.43 to 0.57 — with
-more data, more recurrence patients turn out to have had their busiest
-fast-ripple channel removed, which is evidence against the hypothesis rather
-than noise in our favour.
+**Four of the 24 pooled comparisons reach p < 0.05 before correction**, all
+in the fast-ripple band and all in the direction Fedele et al. predict, where
+chance alone would give about one. **None survives correction**: the
+smallest Bonferroni p is 0.54. The comparisons are not independent — they are
+four ways of asking one question of the same patients — so the four are
+closer to one result than to four, and that result does not survive the table
+it sits in.
+
+Pooling leaves the expert argmax arm where it was on a single run (0.709,
+p = 0.12). Through 0.3.24 it *lowered* it to 0.637 and nothing in this table
+reached p < 0.05; this document read that as evidence against the
+hypothesis. With the five patients' electrodes read correctly, that reading
+does not stand.
 
 One line that will be tempting to quote and should not be: pooled, **our
-detector edges the expert markings** on the pre-specified metric for the first
-time (0.709 against 0.637). At p = 0.12, on 20 patients, in a table of 24
-comparisons, that is what a coin does. It is in the table because leaving it
+detector edges the expert markings** on the pre-specified metric (0.747,
+p = 0.031, against 0.709). Uncorrected, on 20 patients, in a table of 24
+comparisons, that is not a result. It is in the table because leaving it
 out would be the same sin as quoting it.
 
 ### What this settles
@@ -497,20 +519,19 @@ below the AUC 0.85 this cohort would need.
 
 ## What the numbers say
 
-**Fast ripples localise better than ripples in the expert arm; in ours the two
-bands are indistinguishable.** For the experts, fast ripples give AUC 0.71
-against 0.51 for ripples, on the same patients, channels and metric — matching
-a decade of clinical literature holding that ripples are the less specific
-marker. For our detector the ripple arm (0.74, p = 0.07) actually edges the
-fast-ripple arm (0.67, p = 0.17), and the intervals overlap heavily. Read that
-as "our detector does not reproduce the band distinction", not as "ripples are
-better": with this cohort neither number is established, and taking the
-larger one because it is larger is the error this document exists to avoid.
+**Fast ripples localise better than ripples, in both arms.** For the experts,
+fast ripples give AUC 0.71 against 0.48 for ripples, on the same patients,
+channels and metric — matching a decade of clinical literature holding that
+ripples are the less specific marker. Our detector shows the same order (0.71
+against 0.66). Through 0.3.24 its ripple arm (0.74, p = 0.07) edged its
+fast-ripple arm, and this document read that as "our detector does not
+reproduce the band distinction"; with five patients' electrodes read
+correctly it does. With this cohort neither number is established.
 Either way, it is why these 2 kHz recordings matter — the project's other
 dataset is 1 kHz and cannot support fast-ripple analysis at all.
 
 **Concentration localises; proportion does not.** `share_in_rz` shows nothing
-in the expert arm at all (AUC 0.48 — a coin flip), while
+in the expert arm at all (AUC 0.53 — a coin flip), while
 `top_channel_resected` on exactly the same events gives 0.71. The clinically
 useful statement is not *most of this patient's HFOs were in the resection* —
 that is largely a statement about how large the resection was — but *the one
@@ -521,26 +542,26 @@ conclusion that held identically at both window lengths.
 **Band-specific operating points are not a refinement, they are the
 difference between a result and noise.** The first version of this analysis
 used 2.0 SD in both bands, because that is the value the ripple benchmark
-prefers. In the fast-ripple band 2.0 SD runs at precision 0.086 — a mean of
-1,142 detections per 60 s against a mean of 278 expert-marked fast ripples —
+prefers. In the fast-ripple band 2.0 SD runs at precision 0.127 — a mean of
+1,341 detections per 60 s against a mean of 278 expert-marked fast ripples —
 and the detector's outcome arm was correspondingly flat. At the fast-ripple
-band's own measured operating point (5.0 SD, rank ρ 0.610) the same code
+band's own measured operating point (5.0 SD, rank ρ 0.645) the same code
 recovers a usable ranking. Nothing about the outcome data was used to pick
 either number; both come from channel-rank agreement with the experts, which
 is a different question on data that says nothing about surgery.
 
 **The event-starvation problem was real and the full run fixes it.** At 5.0 SD
-in 60 s, five of twenty subjects yielded one or zero fast-ripple detections
-and sub-10 yielded none at all, so a per-patient statistic was being computed
-from a single event. Over 300 s every subject produces detections and the
+in 60 s, sub-10 yields no fast-ripple detection on its reviewed channels (five
+of twenty yielded one or none through 0.3.24, when five patients were scored
+on 6 channels), so a per-patient statistic was being computed from nothing. Over 300 s every subject produces detections and the
 cohort is complete. That was a genuine defect of the 60-second window — it is
 just not the defect that was holding the detector back.
 
 **The positive control did its job, and what it revealed was not what it was
 built to reveal.** It was built to tell "our detector is worse than the
 experts" apart from "this study is underpowered". The 60-second run looked
-like the first. The full run says the second: expert 0.71 and ours 0.67, both
-null, intervals almost entirely overlapping. A control that changes the
+like the first. The full run says the second: expert 0.71 and ours 0.71, both
+null, the same patients inside and outside. A control that changes the
 conclusion when you give it more data has earned its place.
 
 ## A second archive: HUP (ds004100)
@@ -583,11 +604,10 @@ zone above the rest on a second archive.
   reaches 80% power. A p above 0.05 here means "underpowered", not "no
   effect". Every row carries an effect size and a bootstrap CI for that
   reason.
-- **Thirty-five comparisons, uncorrected.** The Bonferroni column is in the
-  table and **nothing survives it**. One row reaches p < 0.05 uncorrected (our
-  detector, ripple band, `candidates_resected`, p = 0.032), which is fewer than
-  the ~2 that 35 tests produce by chance. Read every row as
-  hypothesis-generating.
+- **Thirty-four comparisons.** The Bonferroni column is in the table and
+  **nothing survives it**; nothing reaches p < 0.05 even uncorrected (the
+  smallest is 0.057), where 34 tests would produce about two by chance. Read
+  every row as hypothesis-generating.
 - **The published headline changed once already.** The 60-second version of
   this analysis reported AUC 0.82, p = 0.007 and it reached the project's
   README and landing page before the full run was done. Both are now corrected

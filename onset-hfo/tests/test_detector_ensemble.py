@@ -9,6 +9,8 @@ answers that. These tests pin the machinery; the measured answers live in
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -361,19 +363,36 @@ def test_no_arms_optimum_sits_on_the_edge_of_the_swept_grid():
 
 
 def test_the_two_added_detectors_did_not_improve_the_ranking():
-    """The measured answer to 'was adding them worth it'. It was not.
+    """The measured answer to 'was adding them worth it'. Not established.
 
     Pinned because it is the kind of null that quietly becomes a positive
     claim when someone re-runs with a different grid and quotes the winner.
+    The margins are cohort means; what EVALUATION.md §1b claims is that,
+    patient by patient, the leader's advantage over RMS has a bootstrap
+    interval that includes zero.
     """
+    import pandas as pd
+
     frame = _sweep()
     best = (frame.loc[frame.groupby(["band", "detector"])["rank_rho"].idxmax()]
-            .set_index(["band", "detector"])["rank_rho"])
+            .set_index(["band", "detector"]))
+    patients = pd.read_csv(Path(__file__).resolve().parents[1] / "data" / "benchmark"
+                           / "per_patient.csv.gz")
+    for band, leader in (("ripple", "short_time_energy"), ("fast_ripple", "hilbert")):
+        margin = best.loc[(band, leader), "rank_rho"] - best.loc[(band, "rms"), "rank_rho"]
+        assert 0 <= margin < 0.03, f"{band} margin over RMS is now {margin:.3f}"
 
-    ripple_margin = best[("ripple", "short_time_energy")] - best[("ripple", "rms")]
-    fast_margin = best[("fast_ripple", "hilbert")] - best[("fast_ripple", "rms")]
-    assert 0 <= ripple_margin < 0.01, f"ripple margin over RMS is now {ripple_margin:.3f}"
-    assert 0 <= fast_margin < 0.01, f"fast-ripple margin over RMS is now {fast_margin:.3f}"
+        def rho(detector, band=band):
+            cut = best.loc[(band, detector), "threshold_sd"]
+            rows = patients[(patients.band == band) & (patients.detector == detector)
+                            & (patients.threshold_sd == cut)]
+            return rows.set_index("subject")["spearman_rho"]
+
+        diff = (rho(leader) - rho("rms")).dropna().to_numpy()
+        rng = np.random.default_rng(0)
+        means = [rng.choice(diff, len(diff)).mean() for _ in range(4000)]
+        lo, hi = np.percentile(means, [2.5, 97.5])
+        assert lo < 0 < hi, f"{band}: {leader} beats RMS per patient, [{lo:.3f}, {hi:.3f}]"
 
 
 def test_short_time_energy_needs_its_own_threshold_on_real_data():
@@ -382,8 +401,8 @@ def test_short_time_energy_needs_its_own_threshold_on_real_data():
     best = (frame.loc[frame.groupby(["band", "detector"])["rank_rho"].idxmax()]
             .set_index(["band", "detector"])["threshold_sd"])
 
-    assert best[("ripple", "short_time_energy")] == 2 * best[("ripple", "rms")]
-    assert best[("fast_ripple", "short_time_energy")] > 2 * best[("fast_ripple", "rms")]
+    assert best[("ripple", "short_time_energy")] == 1.5 * best[("ripple", "rms")]
+    assert best[("fast_ripple", "short_time_energy")] == 2.4 * best[("fast_ripple", "rms")]
     # The envelope, by contrast, wants what RMS wants.
     assert abs(best[("fast_ripple", "hilbert")] - best[("fast_ripple", "rms")]) < 0.01
 

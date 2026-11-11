@@ -728,28 +728,33 @@ class PipelineConfig:
 THRESHOLDS: dict[str, float] = {
     # Staba et al. 2002, and this package's default.
     "literature": 5.0,
-    # Highest agreement with expert channel ranking on ds003498 (rho 0.655).
-    # Channel ranking is the clinically meaningful comparison: nobody operates
-    # on an event, they operate on tissue.
+    # Highest agreement with expert channel ranking on ds003498 when it was
+    # measured (rho 0.655). Channel ranking is the clinically meaningful
+    # comparison: nobody operates on an event, they operate on tissue. Since
+    # five patients' electrodes were read correctly (after 0.3.24) it gives
+    # rho 0.685 and the optimum is 1.75 SD (0.698). The preset stays: the
+    # outcome and HUP studies run at it as an operating point fixed before
+    # them, and moving it for 0.013 would tune them on their own data.
     "interictal-agreement": 2.0,
-    # Highest event-level F1 on the same cohort (0.418). Finds more events and
-    # is wrong more often; prefer it when recall matters more than precision.
+    # Highest event-level F1 on the same cohort when measured (0.418; 0.489
+    # now, against 0.498 at 1.75 SD). Finds more events and is wrong more
+    # often; prefer it when recall matters more than precision.
     "interictal-recall": 1.5,
     # The same criterion measured in the FAST RIPPLE band on the same cohort,
-    # where the answer is 5.0 SD (rho 0.610, an interior maximum of a 2-10
+    # where the answer is 5.0 SD (rho 0.645, an interior maximum of a 2-10
     # sweep) -- numerically the literature value, but arrived at by
     # measurement and listed separately so the coincidence is not mistaken
     # for a default nobody checked.
     #
     # The gap between this and ``interictal-agreement`` is the practical
-    # point: at 2.0 SD the fast-ripple detector runs at precision 0.086 and
-    # returns ~1,140 detections per 60 s against a mean of 278 expert-marked
+    # point: at 2.0 SD the fast-ripple detector runs at precision 0.127 and
+    # returns ~1,340 detections per 60 s against a mean of 278 expert-marked
     # fast ripples per subject. One threshold for both bands is not a
     # simplification, it is a bug.
     #
     # That "278" was "~70" here until the Detectors page started reading
     # ``data/benchmark/`` instead of restating it: 70.6 is this detector's own
-    # mean detection count at 5.0 SD, not the expert count, and the same
+    # mean detection count at 5.0 SD at the time, not the expert count, and the same
     # sentence in EVALUATION.md said 228. Three copies, two of them wrong;
     # ``data/benchmark/cohort.csv`` now carries the per-subject counts so the
     # number has a file behind it. See ``tests/test_studytables.py``.

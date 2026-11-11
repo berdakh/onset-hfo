@@ -35,10 +35,15 @@ archive holds for that patient, `lesion` is 1 when imaging found one.
 **`recordings.csv`** — what the analysed run actually contained.
 `n_reviewed` is the channels the annotators reviewed, which is the only set
 anything is scored on. `rz_coverage` is the fraction of the contacts the
-clinical sheet lists as resected that appear in the recording at all —
-**the most important column in this directory**, because in five patients it
-is 0.25, so their "share inside the resection" describes a quarter of their
-resection. `missing` names the contacts that fell out.
+clinical sheet lists as resected that appear in the recording at all, and
+`missing` names the contacts that do not. It is 1.0 for every patient. Through
+0.3.24 it read 0.25 for five patients (sub-02, sub-05, sub-06, sub-07,
+sub-08), and those patients' 24 reviewed channels read as 6: the clinical
+sheet and the markings name their hippocampal and entorhinal electrodes
+differently from the recording, and nothing mapped one onto the other. The
+contacts had not "fallen out"; they were recorded under other names. The
+pairing is now read from the signals (`onset_hfo/archive_electrodes.csv`)
+and every table here was re-run with it.
 
 **`subjects.csv`** — every metric the study computes, for each patient, in
 each band (`ripple`, `fast_ripple`), each scope (`reviewed` channels only, or
@@ -60,14 +65,16 @@ This one is **not** the per-subject grain of the three files above: it is five
 60 s windows per patient rather than the whole 300 s run, because the whole run
 is not cached and fetching it needs the archive. The analysis pools the windows
 by subject mean. `n_events` is the population's event count in that window and
-is the column to read first — in the fast ripple band its median is **1**, which
-is why the screen's answer comes from the ripple band and is reported as a
-secondary analysis.
+is the column to read first — for the spike-coupled population in the fast
+ripple band its median is **9**, and 38 of 100 windows hold fewer than 5, which
+is why the screen's main answer comes from the ripple band and is reported as
+a secondary analysis.
 
-**The answer is no**, in the ripple band where the populations are large enough
-to measure: every sub-population AUC is at or below the merged one. §3b has the
-tables and why the flattering fast-ripple numbers in this file are artifacts of
-an argmax over a near-empty set.
+**The answer is no** in the ripple band, where the populations are large
+enough to measure: every sub-population AUC is at or below the merged one. In
+the fast ripple band the spike-coupled busiest channel separates the groups
+(AUC 0.875, p = 0.004) while the tie-aware metric puts the same arm below
+chance; §3b has the tables and what argues against reading it as a gain.
 
 **`robustness_ablation.csv`** — the ablation of
 `onset_agent.planner.rank_channels`'s robustness multiplier
@@ -85,16 +92,16 @@ Two columns exist because the multiplied score is **not an event count**:
 | `score_mass`, `score_mass_{resected,partial,spared}` | the summed *score*, which for `multiplied` is not a count |
 
 `retest_silent == 1` marks a window where the stricter pass found no events on
-any channel: 84 of the 600 multiplied windows, 82 of them fast ripple. The rule
+any channel: 29 of the 600 multiplied windows, all fast ripple. The rule
 no longer fires on those (`planner.rank_channels`, `unmeasured_at`), because a
 robustness of 0 from "nothing was detected here" means *unmeasured*, not
 *refuted*. `n_events_stricter` is the count it is derived from.
 
-`score_mass == 0` now marks only the 48 windows where the **survey** found
+`score_mass == 0` now marks only the 15 windows where the **survey** found
 nothing either — a fast-ripple minute with nothing in it, where zero is the
 right answer rather than a destroyed ranking. Those are the rows whose metrics
-are NaN. Before the fix there were 84, conflating the 48 genuinely-empty
-windows with 36 in which a working ranking was zeroed.
+are NaN. Before the fix there would have been 29, conflating the 15
+genuinely-empty windows with 14 in which a working ranking was zeroed.
 
 `candidates_resected` and its companions are populated for `plain` only:
 `candidate_channels` needs integer counts for its Poisson intervals.
@@ -139,16 +146,13 @@ answer.
 
 ## Which rate interval
 
-`subjects.csv` and `../stability/outcome_groups_300s.csv` use the exact
-(Garwood) Poisson interval of 0.3.17: `python scripts/rederive_outcome_tables.py`
-rebuilt them from `channels.csv.gz`, after first reproducing the 0.3.16 files
-exactly with the old interval. The tied-set columns (`n_candidates`,
-`candidates_resected`, `candidates_all_resected`, `leader_alone`) of the
-per-window screens here -- `subpopulation_*`, `robustness_*`, `montage_*` --
-were computed with the normal approximation used before 0.3.17. Their
-per-window channel counts are not committed, so they cannot be re-derived
-without re-running the screens on the archive. Every other column is
-unaffected.
+Every table here uses the exact (Garwood) Poisson interval of 0.3.17.
+`subjects.csv` and `../stability/outcome_groups_300s.csv` were first rebuilt
+with it from `channels.csv.gz` by `python scripts/rederive_outcome_tables.py`;
+the per-window screens -- `subpopulation_*`, `robustness_*`, `montage_*` --
+kept the normal approximation in their tied-set columns until they were
+re-run on the archive after 0.3.24, with the five patients' electrodes read
+correctly.
 
 ## Reproducing the group table
 

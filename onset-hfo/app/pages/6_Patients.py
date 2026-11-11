@@ -53,7 +53,8 @@ if (band, scope) != (panels.PRIMARY["band"], panels.PRIMARY["scope"]):
     st.warning(f"You are looking at **{band} / {scope}**, which is not the arm the "
                f"study pre-specified (fast_ripple / reviewed). Every number on the "
                f"Outcome page comes from the pre-specified arm; these are among the "
-               f"same 35 comparisons, none of which survives correction.")
+               f"same 34 distinct comparisons, none of which reaches p < 0.05 "
+               f"even before correction.")
 
 cohort = overview(band, scope)
 if cohort.empty:
@@ -93,7 +94,7 @@ with tab_cohort:
     # there may this tab claim to be showing the same number twice.
     provenance = ("*is* the AUC on [the Outcome page](/Outcome), written out as "
                   "patients" if primary else
-                  "is one of the study's 35 comparisons; the Outcome page reports "
+                  "is one of the study's 34 comparisons; the Outcome page reports "
                   "the pre-specified fast-ripple arm, not this one")
     st.markdown(f"""
 That gap — **{counts[0][2]} of the seizure-free patients against
@@ -140,17 +141,23 @@ detector and the experts mostly disagree about *rates*, and mostly agree about
         "`resected?` is 1 when the busiest channel lay inside the resection, 0 when "
         "it did not. `share inside` is the proportion of that patient's events "
         "inside it — which localises nothing" +
-        (" (cohort AUC 0.48, against 0.71 for `resected?` on the same events)"
+        (" (cohort AUC 0.53, against 0.71 for `resected?` on the same events)"
          if primary else "") +
         " and is here so you can see that for yourself.")
 
-    thin = cohort[cohort["rz_coverage"] < 1.0]["subject"].tolist()
-    if thin:
-        st.warning(f"**{len(thin)} patients' resections were mostly not recorded** — "
-                   f"{', '.join(thin)}, at 25% coverage. Their `share inside` "
-                   f"describes a quarter of the tissue that was removed. They are in "
-                   f"the study because excluding them after seeing the numbers would "
-                   f"be worse.")
+    # Empty in the committed tables: every resected contact is recorded. Through
+    # 0.3.24 five patients read 0.25 here because their electrodes are named
+    # differently in the resection sheet and the recording; the check stays for
+    # data where a resection really was only partly recorded.
+    thin = cohort[cohort["rz_coverage"] < 1.0]
+    if len(thin):
+        listed = ", ".join(f"{name} ({coverage:.0%})" for name, coverage
+                           in zip(thin["subject"], thin["rz_coverage"], strict=True))
+        st.warning(f"**{len(thin)} patients' resections were not fully recorded** — "
+                   f"{listed} of the resected contacts appear in the recording. "
+                   f"Their `share inside` describes only that part of the tissue "
+                   f"that was removed. They are in the study because excluding "
+                   f"them after seeing the numbers would be worse.")
 
 
 # --------------------------------------------------------------------------
@@ -243,7 +250,8 @@ with tab_limits:
 **This screen cannot tell you anything about a patient.** It is a per-patient
 *view of a group result*, and the group result does not reach significance:
 13 seizure-free against 7 recurrences, `min_detectable_auc(13, 7) = 0.85`, and
-nothing among the study's 35 comparisons survives Bonferroni correction. A row
+none of the study's 34 distinct comparisons reaches p < 0.05 even before
+correction. A row
 here is one observation from a cohort too small to have established the effect
 it is an observation of.
 """)
@@ -265,8 +273,8 @@ Four things this page does *not* show, because they do not exist:
 **The rows are honest about themselves, which is the most this can offer.** The
 caveats on the second tab are computed from the committed tables, not written
 by hand: resection coverage, tie sets, window stability and run stability, per
-patient. Five of the twenty patients trip none of them; the other fifteen do,
-and a screen that only showed the five would be the same mistake as reporting
+patient. Six of the twenty patients trip none of them; the other fourteen do,
+and a screen that only showed the six would be the same mistake as reporting
 the best of five minutes.
 """)
     st.info("Design, every group table, and the full list of what the study "
