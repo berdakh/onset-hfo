@@ -411,3 +411,17 @@ def test_an_earlier_verdict_follows_its_event_through_a_re_analysis():
     assert out.verdict_of(moved) == "disagree"
     assert out.superseded[moved][0].reader == "Dr A"
     assert out.second_opinions()["disagreed"][0][0] == moved
+
+
+def test_a_read_remembers_which_file_it_was_given_on(request_):
+    """A read is found by the file's path. The fingerprint is how it is known
+    to be about the file now there and not one that replaced it."""
+    read = adj.Adjudication(fingerprint="size:10:aaaa")
+    read.judge_event(adj.event_key("A1-A2", 1.0, "rms"), "agree", reader="Dr A")
+    adj.save(request_, read)
+    back = adj.load(request_)
+    assert back.fingerprint == "size:10:aaaa"
+    assert adj.reconcile(back, []).fingerprint == "size:10:aaaa"
+    # An archive window has none, and its file does not grow a field.
+    plain = adj.Adjudication()
+    assert "fingerprint" not in plain.to_json()

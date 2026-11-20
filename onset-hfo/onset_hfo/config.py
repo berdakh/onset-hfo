@@ -805,4 +805,52 @@ THRESHOLDS: dict[str, float] = {
 
 #: Version string stamped into every result table and report, so that a number
 #: someone quotes months from now can be traced back to the code that made it.
-PIPELINE_VERSION = "0.1.0"
+def _package_version() -> str:
+    """The installed package's version, or the one this source tree declares.
+
+    `PIPELINE_VERSION` was the literal "0.1.0" through twenty-odd releases, so
+    every saved result and report said it came from a pipeline that had
+    changed many times since. It is now the version of the code that ran.
+    """
+    try:
+        from importlib.metadata import PackageNotFoundError, version
+
+        try:
+            return version("onset-hfo")
+        except PackageNotFoundError:
+            pass
+    except ImportError:                     # pragma: no cover
+        pass
+    return _SOURCE_VERSION
+
+
+#: What `pyproject.toml` declares, for a source tree that is not installed.
+#: A test holds the two together.
+_SOURCE_VERSION = "0.3.24"
+PIPELINE_VERSION = _package_version()
+
+
+def software_versions() -> dict[str, str]:
+    """The versions that decide what an analysis computes, for its record.
+
+    The filters are MNE's and SciPy's, and their defaults have changed
+    between releases; a result that cannot name them cannot be reproduced.
+    """
+    import platform
+
+    out = {"onset-hfo": PIPELINE_VERSION, "python": platform.python_version()}
+    for name in ("mne", "numpy", "scipy", "pandas"):
+        try:
+            out[name] = str(__import__(name).__version__)
+        except Exception:                   # noqa: BLE001 -- absent or odd; say so
+            out[name] = "unknown"
+    return out
+
+
+def config_digest(config: dict) -> str:
+    """A short, stable fingerprint of a configuration (`PipelineConfig.as_dict`)."""
+    import hashlib
+    import json
+
+    text = json.dumps(config, sort_keys=True, default=str, separators=(",", ":"))
+    return hashlib.sha256(text.encode()).hexdigest()[:16]

@@ -432,3 +432,46 @@ def test_the_steps_say_which_contacts_were_not_analysed(recording):
     steps = prepare(record, verbose=False).steps
     line = [s for s in steps if "NOT ANALYSED" in s]
     assert len(line) == 1 and "ZZ7 (no neighbouring contact" in line[0]
+
+
+# -- what a result says about how it was made ---------------------------------
+
+
+def test_the_version_stamped_on_a_result_is_the_version_that_ran():
+    """It was the literal "0.1.0" through twenty-odd releases."""
+    import re
+    from pathlib import Path
+
+    import onset_review
+    from onset_hfo import config
+
+    declared = re.search(r'^version = "([^"]+)"',
+                         (Path(config.__file__).parents[1] / "pyproject.toml").read_text(),
+                         re.MULTILINE).group(1)
+    assert config._SOURCE_VERSION == declared == onset_review.__version__
+    assert config.PIPELINE_VERSION == declared
+
+
+def test_a_saved_result_names_its_software_and_its_settings(result, tmp_path):
+    import json
+
+    from onset_hfo.config import config_digest
+
+    saved = json.loads((result.save(tmp_path) / "config.json").read_text())
+    assert set(saved["software"]) >= {"onset-hfo", "python", "mne", "numpy", "scipy"}
+    assert saved["config_sha256_16"] == config_digest(result.config.as_dict())
+    other = result.config.as_dict()
+    other["rms"]["threshold_sd"] = 4.5
+    assert config_digest(other) != saved["config_sha256_16"]
+
+
+def test_a_file_fingerprint_follows_the_content_not_the_name(tmp_path):
+    from onset_hfo.io import file_fingerprint
+
+    a, b = tmp_path / "a.bin", tmp_path / "renamed.bin"
+    a.write_bytes(b"x" * 3_000_000)
+    b.write_bytes(b"x" * 3_000_000)
+    assert file_fingerprint(a) == file_fingerprint(b) and file_fingerprint(a).startswith("size:3000000:")
+    b.write_bytes(b"x" * 2_999_999 + b"y")
+    assert file_fingerprint(a) != file_fingerprint(b)
+    assert file_fingerprint(tmp_path / "missing.bin") == ""

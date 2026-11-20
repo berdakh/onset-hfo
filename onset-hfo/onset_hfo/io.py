@@ -472,7 +472,39 @@ def open_recording(path: str | Path, *, t_start: float = 0.0,
         subject=subject or safe_label(path), task=task, run=run,
         t_offset=float(t_start), line_freq=float(line_freq),
         dataset_id="", citation="", notes=notes,
+        fingerprint=file_fingerprint(path),
     )
+
+
+def file_fingerprint(path) -> str:
+    """What identifies a recording's content without reading all of it.
+
+    SHA-256 over the file's size and its first and last mebibyte, as
+    `size:<bytes>:<16 hex>`. A whole-file hash of a multi-gigabyte recording
+    on every open would be minutes the reader waits; this is milliseconds,
+    and two different recordings sharing a size, a header and a tail is not
+    a case that arises. For a recording kept as a folder, its largest file.
+    Empty when the file cannot be read, which is said by its absence.
+    """
+    import hashlib
+
+    path = Path(path)
+    try:
+        if path.is_dir():
+            files = [p for p in path.rglob("*") if p.is_file()]
+            if not files:
+                return ""
+            path = max(files, key=lambda p: p.stat().st_size)
+        size = path.stat().st_size
+        digest = hashlib.sha256(str(size).encode())
+        with open(path, "rb") as handle:
+            digest.update(handle.read(1 << 20))
+            if size > (1 << 20):
+                handle.seek(max(0, size - (1 << 20)))
+                digest.update(handle.read(1 << 20))
+    except OSError:
+        return ""
+    return f"size:{size}:{digest.hexdigest()[:16]}"
 
 
 #: What a clinical exporter wraps a contact name in: "POL LA1", "EEG LA1-Ref",

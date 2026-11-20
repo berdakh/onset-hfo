@@ -259,6 +259,11 @@ class Adjudication:
     #: written to the file: it is about this load, and exists so the window
     #: can say that earlier verdicts were not read and where they now are.
     set_aside: str = ""
+    #: The content fingerprint of the file these verdicts were given on
+    #: (`onset_hfo.io.file_fingerprint`), for a file read from disk. A read
+    #: is found by the file's path; this is how it is known to be about the
+    #: file now at that path and not one that replaced it.
+    fingerprint: str = ""
     #: Free text about the window as a whole, which is the thing a reader
     #: actually wants to write at the end of a read.
     note: str = ""
@@ -480,6 +485,7 @@ class Adjudication:
             "schema": SCHEMA,
             "window": self.window,
             "reader": self.reader,
+            **({"fingerprint": self.fingerprint} if self.fingerprint else {}),
             "note": self.note,
             "draft": self.draft,
             "draft_by": self.draft_by,
@@ -510,6 +516,7 @@ class Adjudication:
         return cls(
             window=str(data.get("window", "")),
             reader=str(data.get("reader", "")),
+            fingerprint=str(data.get("fingerprint", "")),
             note=str(data.get("note", "")),
             draft=str(data.get("draft", "")),
             draft_by=str(data.get("draft_by", "")),
@@ -688,6 +695,7 @@ def reconcile(read: Adjudication, events,
     # would let the next save erase what the reader wrote or signed off.
     return Adjudication(
         window=read.window, reader=read.reader, note=read.note,
+        fingerprint=read.fingerprint,
         events=carried, channels=dict(read.channels),
         orphaned={key: replace(read.events[key], match="orphan")
                   for key in sorted(orphans)},

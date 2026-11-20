@@ -26,6 +26,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from onset_hfo.config import config_digest, software_versions
 from onset_hfo.privacy import shown_name
 from onset_hfo.quality import REASONS, quality_summary
 from onset_review import adjudication, trends
@@ -120,6 +121,12 @@ def _header(session: ReviewSession, reviewer: str | None) -> list[str]:
         ("Sampling rate", f"{session.sfreq:g} Hz"),
         ("Reviewed on", now),
         ("Software", _credit()),
+        ("Versions", ", ".join(f"{name} {version}"
+                               for name, version in software_versions().items())),
+        ("Analysis settings", f"fingerprint `{config_digest(request.pipeline_config().as_dict())}`"),
+        *([("File fingerprint", f"`{fingerprint}`")]
+          if (fingerprint := str(getattr(getattr(session, "recording", None),
+                                         "fingerprint", "") or "")) else []),
     ]
     named = reviewer or ", ".join(session.read.readers) or session.read.reader
     if named:

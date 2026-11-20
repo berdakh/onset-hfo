@@ -158,6 +158,11 @@ class Recording:
     reviewed_channels: list[str] = field(default_factory=list)
     line_freq: float = 60.0
     dataset_id: str = ""
+    #: For a file read from disk: what identifies its *content* (see
+    #: `onset_hfo.io.file_fingerprint`). A report that names a file by name
+    #: alone cannot say which version of it, or whether it is the file now
+    #: at that path.
+    fingerprint: str = ""
     citation: str = ""
     notes: list[str] = field(default_factory=list)
 
@@ -209,6 +214,7 @@ class Recording:
             "reviewed_channels": list(self.reviewed_channels),
             "citation": self.citation,
             "notes": list(self.notes),
+            **({"file_fingerprint": self.fingerprint} if self.fingerprint else {}),
         }
 
 

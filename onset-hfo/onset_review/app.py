@@ -607,8 +607,21 @@ class _Review:
         carried = (self.parts.session.read.reader
                    if self.parts is not None else "")
         stored.reader = (carried or (self.args.reader or "")).strip()
+        current = str(getattr(getattr(session, "recording", None), "fingerprint", "") or "")
+        other_file = bool(stored.fingerprint and current
+                          and stored.fingerprint != current and not stored.empty)
+        if current:
+            stored.fingerprint = current if not other_file else stored.fingerprint
         session.read = adjudication.reconcile(stored, session.events)
         self._orphans = len(session.read.orphaned)
+        if other_file:
+            # Found by path, and the file at that path is not the one judged.
+            session.notes.append(
+                "THESE VERDICTS WERE GIVEN ON A DIFFERENT FILE: the saved read "
+                "for this window belongs to a recording with another content "
+                f"fingerprint ({stored.fingerprint}; this file is {current}). "
+                "The file at this path was replaced or re-exported. Check "
+                "every verdict against the signal before relying on it.")
         if session.read.set_aside:
             # Said in the window's own notes, which the report prints: a read
             # that silently starts again from nothing looks like no read was
