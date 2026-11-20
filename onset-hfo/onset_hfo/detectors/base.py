@@ -93,12 +93,20 @@ class Event:
     #: there is energy in the band; this says the energy is a peak. A sharp
     #: discharge has plenty of the first and none of the second.
     peak_contrast_db: float = float("nan")
+    #: How far the in-band peak stands above the next band up, in dB
+    #: (`onset_hfo.spectral.event_band_margin`). Near zero for broadband
+    #: energy -- muscle, movement -- that does not stop at the band's edge.
+    band_margin_db: float = float("nan")
     n_peaks: int = 0
     n_cycles: float = float("nan")
     accepted: bool = True
     reject_reason: str | None = None
     co_occurs_with_spike: bool = False
     contacts: list[str] = field(default_factory=list)
+    #: Things about an *accepted* event a reader should look at before
+    #: counting it (`onset_hfo.validate.FLAGS`): "broadband", "multichannel".
+    #: A flag removes nothing and changes no rate.
+    flags: list[str] = field(default_factory=list)
 
     @property
     def duration_ms(self) -> float:
@@ -125,14 +133,15 @@ def events_to_frame(events: list[Event]) -> pd.DataFrame:
         return pd.DataFrame(columns=[
             "channel", "start", "stop", "duration_ms", "detector", "band_low", "band_high",
             "score", "peak_amplitude_uv", "peak_frequency_hz", "spectral_prominence_db",
-            "peak_contrast_db",
+            "peak_contrast_db", "band_margin_db",
             "n_peaks", "n_cycles", "accepted", "reject_reason", "co_occurs_with_spike",
-            "contacts"])
+            "contacts", "flags"])
     rows = []
     for e in events:
         d = e.to_dict()
         d["band_low"], d["band_high"] = d.pop("band")
         d["contacts"] = "|".join(e.contacts)
+        d["flags"] = "|".join(e.flags)
         rows.append(d)
     return pd.DataFrame(rows).sort_values(["channel", "start"]).reset_index(drop=True)
 
@@ -150,6 +159,9 @@ def frame_to_events(df: pd.DataFrame) -> list[Event]:
             spectral_prominence_db=float(r.get("spectral_prominence_db", float("nan"))),
             # Absent from results saved before the measure existed.
             peak_contrast_db=float(r.get("peak_contrast_db", float("nan"))),
+            band_margin_db=float(r.get("band_margin_db", float("nan"))),
+            flags=[f for f in ("" if pd.isna(r.get("flags", "")) else
+                               str(r.get("flags", ""))).split("|") if f],
             n_peaks=int(r.get("n_peaks", 0) or 0),
             n_cycles=float(r.get("n_cycles", float("nan"))),
             accepted=bool(r.get("accepted", True)),

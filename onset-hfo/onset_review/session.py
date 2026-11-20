@@ -40,7 +40,7 @@ from onset_hfo.quality import (
     reject_unusable_events,
     segment_quality,
 )
-from onset_hfo.validate import validate_events
+from onset_hfo.validate import flag_note, validate_events
 from onset_review.adjudication import Adjudication
 
 __all__ = ["ReviewRequest", "ReviewSession", "load_session",
@@ -911,6 +911,8 @@ def streamed_session(request: ReviewRequest, cache_dir: Path | None = None,
     if request.check_quality and analysis.quality is not None:
         notes.append(quality_summary(analysis.quality, analysis.segments,
                                      kept=request.keep_channels))
+    if flag_note(events):
+        notes.append(flag_note(events))
 
     say(1.0, "Ready")
     session = ReviewSession(
@@ -1084,7 +1086,8 @@ def session_from_recording(record: Recording, request: ReviewRequest,
                + list(getattr(record, "notes", []))
                + ([quality_summary(quality, segments,
                                    kept=request.keep_channels)]
-                  if cfg.check_quality else [])),
+                  if cfg.check_quality else [])
+               + ([flag_note(events)] if flag_note(events) else [])),
         citation=str(getattr(record, "citation", "")),
         sfreq=float(prep.sfreq), t_offset=float(prep.t_offset),
         montage=prep.montage, modality=getattr(prep, "modality", "ieeg"),

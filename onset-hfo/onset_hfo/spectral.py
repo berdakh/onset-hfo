@@ -17,7 +17,7 @@ import numpy as np
 from scipy.signal import detrend
 
 __all__ = ["event_psd", "event_spectral_peak", "background_level_db",
-           "event_peak_contrast"]
+           "event_peak_contrast", "event_band_margin"]
 
 
 def event_psd(x: np.ndarray, sfreq: float) -> tuple[np.ndarray, np.ndarray]:
@@ -147,3 +147,36 @@ def event_peak_contrast(x: np.ndarray, sfreq: float, band: tuple[float, float]
     if not left.any() or not right.any():
         return float("nan")
     return float(excess[peak] - max(excess[left].min(), excess[right].min()))
+
+
+def event_band_margin(x: np.ndarray, sfreq: float, band: tuple[float, float]) -> float:
+    """How far the in-band peak stands above the *next band up*, in dB.
+
+    Muscle, movement and amplifier noise are broadband: a burst of them
+    passes every test an oscillation passes inside 80-250 Hz, and is just as
+    strong at 300-500 Hz. A ripple is not. This is the in-band peak of the
+    excess over the 1/f background minus the largest excess between 1.2 and
+    2 times the band's upper edge -- large for an oscillation confined to the
+    band, near zero or negative for energy that carries on above it.
+
+    ``nan`` when the sampling rate leaves no band above to compare with
+    (below about 670 Hz for ripples), or the spectrum cannot be measured.
+    """
+    freqs, psd = event_psd(x, sfreq)
+    if freqs.size == 0:
+        return float("nan")
+    ceiling = 0.9 * sfreq / 2
+    in_band = (freqs >= band[0]) & (freqs <= min(band[1], ceiling))
+    above = (freqs > 1.2 * band[1]) & (freqs <= min(2.0 * band[1], ceiling))
+    if in_band.sum() < 2 or above.sum() < 2:
+        return float("nan")
+    background = background_level_db(freqs, psd, band)
+    if background is None:
+        return float("nan")
+    with np.errstate(divide="ignore"):
+        excess = 10.0 * np.log10(np.maximum(psd, 1e-30)) - background
+    inside = excess[in_band & np.isfinite(excess)]
+    over = excess[above & np.isfinite(excess)]
+    if not inside.size or not over.size:
+        return float("nan")
+    return float(inside.max() - over.max())

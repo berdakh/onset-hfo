@@ -42,7 +42,12 @@ from onset_hfo.quality import (
     segment_quality,
 )
 from onset_hfo.report import Report, build_report
-from onset_hfo.validate import flag_spike_cooccurrence, rejection_summary, validate_events
+from onset_hfo.validate import (
+    flag_note,
+    flag_spike_cooccurrence,
+    rejection_summary,
+    validate_events,
+)
 
 __all__ = ["PipelineResult", "run_pipeline"]
 
@@ -286,6 +291,9 @@ def run_pipeline(recording: Recording, config: PipelineConfig | None = None,
     if hfo_skipped:
         notes.append(hfo_skipped)
     notes += population_notes(events, duration)
+    flagged = flag_note([e for evs in events.values() for e in evs])
+    if flagged:
+        notes.append(flagged)
     if cfg.check_quality:
         notes.append(quality_summary(quality, segments))
 

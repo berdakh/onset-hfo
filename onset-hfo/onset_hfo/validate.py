@@ -40,7 +40,20 @@ from onset_hfo.config import BANDS, ValidationConfig
 from onset_hfo.detectors.base import Event, bandpass, robust_scale
 from onset_hfo.preprocess import Prepared
 
-__all__ = ["validate_events", "flag_spike_cooccurrence", "rejection_summary", "reason_kind"]
+__all__ = ["validate_events", "flag_spike_cooccurrence", "rejection_summary", "reason_kind",
+           "FLAGS", "flag_events", "flag_summary", "flag_note"]
+
+#: What each flag on an accepted event means, in a sentence a reader can act
+#: on. A flag removes nothing: the event is counted, and it is marked.
+FLAGS: dict[str, str] = {
+    "broadband": "as strong above the band as inside it — what muscle, movement "
+                 "and amplifier noise look like, and an oscillation confined to "
+                 "the band does not",
+    "multichannel": "candidates on most of the other electrodes at the same "
+                    "moment — more often movement, muscle or the reference than "
+                    "a ripple, which is a few millimetres across; a seizure or "
+                    "a spreading discharge does the same",
+}
 
 
 def validate_events(events: list[Event], prep: Prepared,
@@ -90,7 +103,68 @@ def validate_events(events: list[Event], prep: Prepared,
         e.reject_reason = None
     if getattr(prep, "modality", "ieeg") == "eeg":
         reject_concurrent(events, len(prep.ch_names), cfg.scalp_max_concurrent_fraction)
+    flag_events(events, cfg, intracranial=getattr(prep, "modality", "ieeg") == "ieeg")
     return events
+
+
+def flag_events(events: list[Event], cfg: ValidationConfig | None = None,
+                intracranial: bool = True) -> list[Event]:
+    """Mark accepted HFOs a reader should look at before counting. See `FLAGS`.
+
+    Nothing is rejected here and no rate changes. Both conditions are as
+    consistent with a finding as with an artefact, so the reader is told and
+    the decision is theirs.
+    """
+    from onset_hfo.preprocess import _shaft_of
+
+    cfg = cfg or ValidationConfig()
+    hfos = [e for e in events if e.detector != "spike"]
+    for e in hfos:
+        e.flags = [f for f in e.flags if f not in FLAGS]
+        margin = getattr(e, "band_margin_db", float("nan"))
+        if (e.accepted and cfg.broadband_margin_db and np.isfinite(margin)
+                and margin < cfg.broadband_margin_db):
+            e.flags.append("broadband")
+
+    if not intracranial or not cfg.multichannel_fraction:
+        return events
+    by_detector: dict[str, list[Event]] = {}
+    for e in hfos:
+        by_detector.setdefault(e.detector, []).append(e)
+    for group in by_detector.values():
+        shafts = np.array([_shaft_of(str(e.channel).split("-")[0]) for e in group])
+        n_others = len(set(shafts)) - 1
+        if n_others < cfg.multichannel_min_electrodes:
+            continue
+        starts = np.array([e.start for e in group])
+        stops = np.array([e.stop for e in group])
+        needed = max(cfg.multichannel_min_electrodes,
+                     int(np.ceil(cfg.multichannel_fraction * n_others)))
+        for e, shaft in zip(group, shafts, strict=True):
+            if not e.accepted:
+                continue
+            overlap = (starts < e.stop) & (stops > e.start) & (shafts != shaft)
+            if len(set(shafts[overlap])) >= needed:
+                e.flags.append("multichannel")
+    return events
+
+
+def flag_summary(events: list[Event]) -> dict[str, int]:
+    """How many accepted HFOs carry each flag."""
+    counts = Counter(flag for e in events if e.accepted and e.detector != "spike"
+                     for flag in getattr(e, "flags", []))
+    return {flag: int(counts[flag]) for flag in FLAGS if counts.get(flag)}
+
+
+def flag_note(events: list[Event]) -> str:
+    """One sentence for the notes of an analysis, or "" when nothing is flagged."""
+    counts = flag_summary(events)
+    if not counts:
+        return ""
+    accepted = sum(1 for e in events if e.accepted and e.detector != "spike")
+    parts = "; ".join(f"{n} {flag} ({FLAGS[flag]})" for flag, n in counts.items())
+    return (f"FLAGGED, still counted: of {accepted} accepted HFO(s), {parts}. "
+            f"Look at these before reading a rate off their channels.")
 
 
 def reject_concurrent(events: list[Event], n_channels: int, fraction: float) -> list[Event]:

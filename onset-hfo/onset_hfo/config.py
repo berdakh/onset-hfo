@@ -323,6 +323,21 @@ class ValidationConfig:
     #: markings has not been measured, and the cohort tables in `data/` were
     #: computed before it existed. 0 turns it off and restores those.
     min_peak_contrast_db: float = 6.0
+    #: **Flag**, never reject, an accepted HFO whose in-band peak is less than
+    #: this many dB above the next band up (`spectral.event_band_margin`):
+    #: broadband energy, as muscle and movement produce. Synthetic 20-400 Hz
+    #: bursts, all of which the checks above accept, score a median of -1 dB
+    #: (95th percentile 3); implanted ripples a median of 9. The two overlap,
+    #: which is why this is a flag for a reader and changes no rate. 0 = off.
+    broadband_margin_db: float = 2.0
+    #: **Flag** an accepted intracranial HFO that coincides with candidates
+    #: on at least this fraction of the *other electrodes* (shafts, strips),
+    #: and on at least `multichannel_min_electrodes` of them. A ripple is a
+    #: few millimetres across; something on most of the implant at once is
+    #: more often movement, muscle or the reference. Not rejected: a seizure
+    #: and a spreading discharge do the same. 0 = off.
+    multichannel_fraction: float = 0.5
+    multichannel_min_electrodes: int = 2
     #: Reject if the raw low-band (1-30 Hz) amplitude in the window exceeds
     #: this many robust SDs -- the signature of a spike-induced false ripple,
     #: unless a clear spectral peak survives the check above.

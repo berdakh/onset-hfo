@@ -295,6 +295,7 @@ def _measurements(event) -> dict:
         "accepted": bool(event.accepted),
         "reject_reason": event.reject_reason or "",
         "with_spike": bool(event.co_occurs_with_spike),
+        "flags": list(getattr(event, "flags", []) or []),
     }
 
 
