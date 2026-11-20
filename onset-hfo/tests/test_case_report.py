@@ -155,6 +155,12 @@ def test_signoffs_are_for_content_and_versions_are_kept(case):
     assert "Not signed off for this content" in text and "Case P61" in text
     assert "LA1-LA2" in text and "smith" not in text.lower()
     assert "developed by Berdakh Abibullaev" in text
+    # What the results are worth is said before any channel is named.
+    assert casereport.EVIDENCE_HEADING in text
+    assert text.index(casereport.EVIDENCE_HEADING) < text.index("<h2>Summary</h2>")
+    assert text.index("NOT been shown to predict surgical outcome") < text.index("LA1-LA2")
+    assert "no channel named in it is a target" in text
+    assert "Contact positions:" in text
     with pytest.raises(ValueError):
         casereport.sign_off(case, "  ", "role")
     casereport.sign_off(case, "dr test", "neurophysiologist")
@@ -193,6 +199,12 @@ def test_the_validation_statements_match_the_study_tables():
     assert f"{variants['3.5mm']['median_mm']:.1f} mm at a 3.5 mm pitch" in VALIDATION["template"]
     assert f"{template['patients']} patients" in VALIDATION["template"]
     assert f"{template['real_labels']['in'] * 100:.0f}% of" in VALIDATION["template"]
+    # The lines at the top of the report quote the same tables.
+    from onset_review.casereport import EVIDENCE
+
+    assert f"median AUC {block['median']:.2f} in {ictal['patients']} patients" in EVIDENCE[1]
+    outcome = pd.read_csv(ROOT / "data" / "outcome" / "participants.csv")
+    assert f"in {len(outcome)} patients no comparison reached significance" in EVIDENCE[0]
 
 
 # -- the window --------------------------------------------------------------------------------

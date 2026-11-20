@@ -436,6 +436,15 @@ class ContactMapPanel(QWidget):
         schematic = (not self.frame.empty) and (self.frame["source"] != "archive").any()
         title = f"{view} view" + (" — schematic layout" if schematic else "")
         self.axes.set_title(title, fontsize=9, color=tokens.text_muted, loc="left")
+        # Which way round the picture is, on the picture.
+        left, right, bottom, top = contactmap.EDGES.get(view, ("", "", "", ""))
+        style = {"fontsize": 7, "color": tokens.text_muted,
+                 "transform": self.axes.transAxes, "clip_on": False}
+        self.axes.text(0.0, 0.5, left, ha="left", va="center", rotation=90, **style)
+        self.axes.text(1.0, 0.5, right, ha="right", va="center", rotation=270, **style)
+        self.axes.text(0.5, 0.0, bottom, ha="center", va="bottom", **style)
+        self.axes.text(0.5, 1.0, top, ha="center", va="top", **style)
+        self._schematic = bool(schematic)
 
     def _say_headline(self, frame) -> None:
         sides = frame["hemisphere"].map({"L": "left", "R": "right"}).fillna("unknown")
@@ -479,7 +488,17 @@ class ContactMapPanel(QWidget):
                 return None
             path = chosen
         path = Path(path)
-        self.figure.savefig(path, dpi=200, facecolor=self.figure.get_facecolor())
+        # Identity inside the image, for the life of the save: a picture on a
+        # slide has lost its file name.
+        mark = self.figure.text(
+            0.01, 0.004,
+            contactmap.stamp_text(self._session, self.measure_key(),
+                                  schematic=getattr(self, "_schematic", False)),
+            fontsize=5.5, ha="left", va="bottom", color=theme.current().text_muted)
+        try:
+            self.figure.savefig(path, dpi=200, facecolor=self.figure.get_facecolor())
+        finally:
+            mark.remove()
         return path
 
 

@@ -62,6 +62,51 @@ VIEWS = {
 }
 
 
+#: What lies at each edge of a view, as (left, right, bottom, top) of the
+#: picture, in the patient's terms. A flat map of dots over an outline is
+#: symmetric enough to be read either way round, and half a conference room
+#: reads an axial picture in the radiological convention, with the patient's
+#: left on the right. These are drawn on the picture, where a caption beside
+#: it is not.
+EDGES = {
+    "Top": ("patient's LEFT", "patient's RIGHT", "back", "front"),
+    "Right": ("back", "front", "down", "up"),
+    "Left": ("front", "back", "down", "up"),
+    "Front": ("patient's LEFT", "patient's RIGHT", "down", "up"),
+    "Back": ("patient's RIGHT", "patient's LEFT", "down", "up"),
+}
+
+
+def stamp_text(session, measure: str = "", schematic: bool = False) -> str:
+    """What a saved picture says about itself, inside the image.
+
+    Which recording, which window, what is drawn, whether the positions are
+    measured, and that it is not for navigation. A figure pasted into a slide
+    keeps this; it does not keep its file name or the caption next to it.
+    """
+    request = getattr(session, "request", None)
+    parts = []
+    if request is not None:
+        parts.append(str(getattr(request, "subject", "") or ""))
+        run = str(getattr(request, "run", "") or "")
+        if run:
+            parts.append(f"run {run}")
+        try:
+            start, stop = session.span
+            parts.append(f"{start:g}–{stop:g} s")
+        except (AttributeError, TypeError, ValueError):
+            pass
+        band = getattr(request, "band", "")
+        if band:
+            parts.append(str(band).replace("_", " "))
+    if measure:
+        parts.append(str(measure))
+    parts.append("SCHEMATIC positions, not this patient's anatomy" if schematic
+                 else "positions as supplied")
+    parts.append("research use, not for navigation")
+    return " · ".join(part for part in parts if part)
+
+
 def map_frame(session, resection=None, electrodes=None,
               measure: str = "primary", span: tuple | None = None) -> pd.DataFrame:
     """The layout frame with a ``value`` column for the chosen measure.

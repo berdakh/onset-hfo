@@ -218,7 +218,7 @@ def test_the_combined_table_puts_both_analyses_place_and_zone_together(tmp_path,
     assert found["both"] == ["LA1-LA2"]
     text = casemap.statement(table, found)
     assert "Highest interictal rate: LA1-LA2 (in the marked onset zone)" in text
-    assert "Singled out by both: LA1-LA2." in text and "2 of 4 channels placed" in text
+    assert "High on both measures (a description, not a target): LA1-LA2." in text and "2 of 4 channels placed" in text
 
 
 def test_nilearns_glass_brain_and_3d_view(tmp_path):

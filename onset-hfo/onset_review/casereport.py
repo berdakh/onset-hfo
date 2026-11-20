@@ -42,7 +42,24 @@ __all__ = ["fingerprint", "readiness", "sign_off", "signoff_status", "produce", 
 #: 110 dpi, less a margin.
 FIGURE_WIDTH = 560
 SIGNOFF_STATEMENT = ("I have reviewed the analyses, results and contact positions of this "
-                     "case as shown, and they may be used in its discussion.")
+                     "case as shown, and they may be used in its discussion as research "
+                     "information alongside the clinical review, not in place of it.")
+#: Printed directly under the title, ahead of any channel name. The report
+#: used to open with "Highest interictal rate: X" and keep what that is worth
+#: for its second-to-last section.
+EVIDENCE_HEADING = "How much weight this can bear"
+EVIDENCE = (
+    "Interictal HFO rate has NOT been shown to predict surgical outcome by this "
+    "software: in 20 patients no comparison reached significance (docs/OUTCOME.md).",
+    "The ictal index was tested against the onset zone clinicians marked, not "
+    "against outcome: it agrees with their opinion (median AUC 0.80 in 28 "
+    "patients) and has not been shown to improve on it (docs/ICTAL.md).",
+    "Only tissue with a contact in it was measured. A channel with the highest "
+    "rate is the highest among the contacts implanted; nothing here is evidence "
+    "about tissue no electrode reached.",
+    "Nothing in this report is a recommendation, and no channel named in it is "
+    "a target.",
+)
 #: What each method was measured to do, from the archive studies; a test holds
 #: these to the committed tables.
 VALIDATION = {
@@ -190,13 +207,20 @@ def _table(rows: list[dict], columns: list[tuple[str, str]]) -> str:
     return f"<table><tr>{head}</tr>{body}</table>"
 
 
-def _figure(path: Path, draw) -> str:
+def _figure(path: Path, draw, identity: str = "") -> str:
     from matplotlib.backends.backend_agg import FigureCanvasAgg
     from matplotlib.figure import Figure
 
     figure = Figure(figsize=(7.0, 3.6), dpi=130)
     FigureCanvasAgg(figure)
     draw(figure)
+    if identity:
+        # Inside the image: `interictal.png` on a slide says nothing about
+        # whose it is or which version of the case it came from.
+        from onset_review.studycharts import MUTED
+
+        figure.text(0.01, 0.004, identity, fontsize=5.5, ha="left", va="bottom",
+                    color=MUTED)
     figure.savefig(path, bbox_inches="tight")
     return f'<p><img src="{path.name}" width="{FIGURE_WIDTH}"></p>'
 
@@ -230,6 +254,8 @@ def build_html(case, version: int, folder: Path, by: str) -> str:
     from onset_review.report import DISCLAIMER
 
     print_ = fingerprint(case)
+    identity_ = (f"Case {case.case_id} · report v{version} · content {print_[:8]} · "
+                 f"research use, not for navigation")
     signoffs = [s for s in signoff_status(case) if s["current"]]
     inter, ictal = latest_result(case), latest_ictal(case)
     parts = [f"<h1>Case {_esc(case.case_id)} — report v{version}</h1>",
@@ -244,6 +270,15 @@ def build_html(case, version: int, folder: Path, by: str) -> str:
             ".</p>")
     else:
         parts.append("<p class='warn'><b>Not signed off for this content.</b> A draft.</p>")
+
+    # What it is worth, before what it says.
+    parts.append(f"<h2>{_esc(EVIDENCE_HEADING)}</h2><ul>" +
+                 "".join(f"<li>{_esc(line)}</li>" for line in EVIDENCE) + "</ul>")
+    electrodes_ = load_electrodes(case)
+    parts.append("<p><b>Contact positions:</b> " + (
+        _esc(positions_note(electrodes_)) if len(electrodes_) else
+        "none placed; every position-dependent statement below is absent, not negative."
+    ) + "</p>")
 
     # Summary
     parts.append("<h2>Summary</h2>")
@@ -291,8 +326,8 @@ def build_html(case, version: int, folder: Path, by: str) -> str:
 
             if seizure_caveat(_info):
                 parts.append(f"<p><b>{_esc(seizure_caveat(_info))}</b></p>")
-        parts.append(_figure(folder / "interictal.png",
-                             lambda f: draw_pooled(f, f.add_subplot(111), inter, top=15)))
+        parts.append(_figure(folder / "interictal.png", identity=identity_,
+                             draw=lambda f: draw_pooled(f, f.add_subplot(111), inter, top=15)))
         rows = [{"rank": "" if pd.isna(r.rank) else int(r.rank), "channel": r.channel,
                  "events": int(r.n_events), "rate": _fmt(r.rate_per_min),
                  "ci": f"{r.rate_ci_low:.2f}–{r.rate_ci_high:.2f}",
@@ -309,8 +344,8 @@ def build_html(case, version: int, folder: Path, by: str) -> str:
         parts.append("<h2>Ictal onset</h2>")
         parts.append(f"<p class='small'>{_esc(ictal.settings.get('method', ''))}.</p>")
         if len(ictal.combined):
-            parts.append(_figure(folder / "ictal.png",
-                                 lambda f: draw_ictal(f, f.add_subplot(111), ictal, top=15)))
+            parts.append(_figure(folder / "ictal.png", identity=identity_,
+                             draw=lambda f: draw_ictal(f, f.add_subplot(111), ictal, top=15)))
         rows = [{"rank": int(r.rank), "channel": r.channel, "ei": _fmt(r.median_ei),
                  "high": f"{int(r.seizures_high)} of {int(r.seizures)}",
                  "change": _fmt(r.median_change_s, "{:+.1f}")}
@@ -332,7 +367,8 @@ def build_html(case, version: int, folder: Path, by: str) -> str:
                                                   electrodes["source"].value_counts().items()))
                      + ".</p>")
         atlas = Atlas.load() if Atlas.available() else None
-        parts.append(_figure(folder / "map.png", lambda f: draw_combined(
+        parts.append(_figure(folder / "map.png", identity=identity_,
+                             draw=lambda f: draw_combined(
             f, table, atlas, positions=positions_kind(electrodes))))
         from onset_review.templatebrain import write_3d_view
 
