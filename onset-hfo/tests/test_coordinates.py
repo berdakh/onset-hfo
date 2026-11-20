@@ -235,3 +235,68 @@ def test_a_measured_position_settles_which_side_a_contact_is_on(tmp_path):
     # And without coordinates it stays honest about not knowing.
     plain = electrode_layout(session)
     assert set(plain["hemisphere"]) == {"?"}
+
+
+# -- left and right ----------------------------------------------------------
+
+_RAS = ("name,x,y,z\n"
+        "AL1,-30,-20,-15\nAL2,-35,-20,-15\nAL3,-40,-20,-15\n"
+        "BR1,30,-20,-15\nBR2,35,-20,-15\nBR3,40,-20,-15\n")
+
+
+def test_a_file_whose_sides_match_its_names_raises_no_question(tmp_path):
+    read = coordinates.read_coordinates(_write(tmp_path, "ras.csv", _RAS), _session())
+    assert read.side_checked == 2
+    assert read.side_conflicts == () and not read.mirrored
+    assert read.side_warning() == ""
+    assert "disagree" not in read.summary().lower()
+
+
+def test_a_mirrored_file_is_called_mirrored_before_it_is_drawn(tmp_path):
+    """LPS read as RAS puts every contact on the wrong side, and the picture
+    it draws looks exactly as finished as a correct one."""
+    flipped = "\n".join(
+        line if line.startswith("name") else
+        ",".join([line.split(",")[0], str(-float(line.split(",")[1])),
+                  *line.split(",")[2:]])
+        for line in _RAS.strip().splitlines()) + "\n"
+    read = coordinates.read_coordinates(_write(tmp_path, "lps.csv", flipped),
+                                        _session())
+    assert read.usable, "the reviewer decides; the file is not silently refused"
+    assert read.mirrored
+    assert read.side_conflicts == (("AL", "L", "R"), ("BR", "R", "L"))
+    text = read.summary()
+    assert "LEFT AND RIGHT DISAGREE on 2 of 2" in text
+    assert "MIRRORED" in text and "LPS" in text
+
+
+def test_one_shaft_on_the_wrong_side_is_named_and_not_called_a_mirror(tmp_path):
+    text = _RAS + "CL1,20,0,0\nCL2,25,0,0\nDR1,45,10,0\nDR2,50,10,0\n"
+    read = coordinates.read_coordinates(_write(tmp_path, "one.csv", text), _session())
+    assert read.side_conflicts == (("CL", "L", "R"),)
+    assert read.side_checked == 4 and not read.mirrored
+    assert "CL is named left and lies on the right" in read.summary()
+
+
+def test_the_side_check_skips_what_it_cannot_judge(tmp_path):
+    """No side in the name, or a shaft on the midline: neither is evidence."""
+    conflicts, checked = coordinates.laterality_audit(
+        ["P1", "P2", "ML1", "ML2", "AR1"], [30, 35, 1.0, 2.0, 0.030 * 1000])
+    assert conflicts == () and checked == 1
+    # Metres are scaled before the midline margin is applied.
+    conflicts, checked = coordinates.laterality_audit(
+        ["AL1", "AL2"], [0.030, 0.035], units="metres")
+    assert conflicts == (("AL", "L", "R"),) and checked == 1
+
+
+def test_coordinates_do_not_overrule_a_side_the_name_states(tmp_path):
+    """Settling the conflict in the file's favour would erase the only sign
+    that the file is mirrored."""
+    session = _session()
+    flipped = _RAS.replace(",-", ",+").replace(",3", ",-3").replace(",4", ",-4") \
+        .replace(",+", ",")
+    read = coordinates.read_coordinates(_write(tmp_path, "f.csv", flipped), session)
+    assert read.mirrored
+    layout = electrode_layout(session, electrodes=read.frame)
+    sides = dict(zip(layout["channel"], layout["hemisphere"], strict=True))
+    assert sides["AL1-AL2"] == "L" and sides["BR1-BR2"] == "R"

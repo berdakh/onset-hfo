@@ -86,6 +86,12 @@ class Coordinates:
     unplaced: tuple = ()                 #: contacts in the recording but not the file
     unused: tuple = ()                   #: contacts in the file but not the recording
     problems: tuple = ()                 #: why it cannot be used, if it cannot
+    #: Shafts whose name says one side and whose coordinates lie on the other,
+    #: as `(shaft, side the name says, side the coordinates say)`.
+    side_conflicts: tuple = ()
+    #: How many shafts had a side in their name and a position off the midline,
+    #: i.e. how many the check above could be made on.
+    side_checked: int = 0
 
     @property
     def usable(self) -> bool:
@@ -95,6 +101,41 @@ class Coordinates:
     def coverage(self) -> float:
         total = len(self.matched) + len(self.unplaced)
         return (len(self.matched) / total) if total else 0.0
+
+    @property
+    def mirrored(self) -> bool:
+        """Most shafts that could be checked lie on the side their name denies.
+
+        One shaft on the wrong side is a naming quirk or a midline electrode.
+        Most of them is a file in a left-handed frame -- LPS, which is what
+        DICOM and several planning systems write -- being read as RAS, and
+        the whole implant drawn mirrored."""
+        return (self.side_checked >= 2
+                and len(self.side_conflicts) * 2 > self.side_checked)
+
+    def side_warning(self) -> str:
+        """What the reviewer must be told about left and right, or ""."""
+        if not self.side_conflicts:
+            return ""
+        listed = "; ".join(f"{shaft} is named {_SIDE[named]} and lies on the "
+                           f"{_SIDE[placed]}"
+                           for shaft, named, placed in self.side_conflicts[:8])
+        more = (f"; and {len(self.side_conflicts) - 8} more"
+                if len(self.side_conflicts) > 8 else "")
+        if self.mirrored:
+            return (f"LEFT AND RIGHT DISAGREE on {len(self.side_conflicts)} of "
+                    f"{self.side_checked} electrodes: {listed}{more}. This "
+                    "software reads x as increasing toward the patient's "
+                    "right (RAS). A file written the other way round (LPS, as "
+                    "DICOM and several planning systems export) is drawn "
+                    "MIRRORED, every contact on the wrong side. Check the "
+                    "file's orientation before using these positions. If the "
+                    "trailing L or R in these names does not mean a side, the "
+                    "names are the thing to distrust instead.")
+        return (f"Left and right disagree on {len(self.side_conflicts)} of "
+                f"{self.side_checked} electrodes: {listed}{more}. Check these "
+                "against the implantation plan before reading a side off the "
+                "picture.")
 
     def summary(self) -> str:
         """One honest sentence, whatever the outcome."""
@@ -115,7 +156,54 @@ class Coordinates:
         if self.unused:
             text += (f" {len(self.unused)} name(s) in the file are not in this "
                      f"recording and were ignored.")
+        warning = self.side_warning()
+        if warning:
+            text += " " + warning
         return text
+
+
+_SIDE = {"L": "left", "R": "right"}
+
+#: Closer to the midline than this, in millimetres, a shaft's mean position
+#: says nothing about its side: interhemispheric and midline electrodes exist.
+MIDLINE_MM = 3.0
+
+
+def laterality_audit(names, xs, units: str = "millimetres") -> tuple[tuple, int]:
+    """Compare the side each electrode's name states with the side its
+    coordinates lie on. Returns `(conflicts, n_checked)`.
+
+    The name is read the one way this software reads names: a trailing `L` or
+    `R` on the letters (`AHL3` is left). An electrode whose name gives no side
+    is not checked, and neither is one within `MIDLINE_MM` of the midline. The
+    position is read as RAS, x increasing to the patient's right, which is
+    what every other part of this software assumes of a coordinate file and
+    what nothing in the file can confirm.
+    """
+    from onset_review.anatomy import parse_channel
+
+    scale = 1.0 if units == "millimetres" else 1000.0
+    by_shaft: dict = {}
+    for name, x in zip(names, xs, strict=True):
+        try:
+            value = float(x) * scale
+        except (TypeError, ValueError):
+            continue
+        if not np.isfinite(value):
+            continue
+        shaft, _, side, _ = parse_channel(str(name).upper())
+        if side in _SIDE:
+            by_shaft.setdefault((shaft, side), []).append(value)
+    conflicts, checked = [], 0
+    for (shaft, side), values in sorted(by_shaft.items()):
+        centre = float(np.mean(values))
+        if abs(centre) < MIDLINE_MM:
+            continue
+        checked += 1
+        placed = "L" if centre < 0 else "R"
+        if placed != side:
+            conflicts.append((shaft, side, placed))
+    return tuple(conflicts), checked
 
 
 def contacts_of(session) -> list:
@@ -170,8 +258,10 @@ def read_coordinates(path, session=None) -> Coordinates:
     matched = tuple(name for name in wanted if name in have)
     unplaced = tuple(name for name in wanted if name not in have)
     unused = tuple(sorted(have - set(wanted))) if wanted else ()
+    conflicts, checked = laterality_audit(frame["name"], frame["x"], units)
     return Coordinates(frame=frame, path=path, units=units, matched=matched,
-                       unplaced=unplaced, unused=unused, space=coordinate_space(path))
+                       unplaced=unplaced, unused=unused, space=coordinate_space(path),
+                       side_conflicts=conflicts, side_checked=checked)
 
 
 #: Coordinate systems a BIDS sidecar names that are a template, not a head.

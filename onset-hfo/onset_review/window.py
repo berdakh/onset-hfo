@@ -1836,17 +1836,29 @@ def _load_coordinates(host: QMainWindow, session: ReviewSession, panels: dict,
         QMessageBox.warning(host, "These coordinates cannot be used",
                             read.summary())
         return
-    answer = QMessageBox.question(
-        host, "Place the contacts from this file?",
+    # A file whose sides disagree with its own electrode names is not placed
+    # on a default button: the question is a warning, and Cancel is what
+    # Return gives.
+    doubtful = bool(read.side_conflicts)
+    ask = QMessageBox.warning if doubtful else QMessageBox.question
+    answer = ask(
+        host, ("Left and right disagree — place the contacts anyway?"
+               if doubtful else "Place the contacts from this file?"),
         f"{read.summary()}\n\nThe 3D view will use these positions instead of "
         f"the schematic layout. Nothing else in the analysis changes — "
         f"coordinates do not affect a rate.",
-        QMessageBox.Yes | QMessageBox.Cancel, QMessageBox.Yes)
+        QMessageBox.Yes | QMessageBox.Cancel,
+        QMessageBox.Cancel if doubtful else QMessageBox.Yes)
     if answer != QMessageBox.Yes:
         return
     session.electrodes = read.frame
     origin = (f"the coordinate file you supplied ({read.path.name}), read as "
               f"{read.units}")
+    if doubtful:
+        # Carried into the caption, which is what survives a screenshot.
+        origin += (f" — LEFT AND RIGHT UNVERIFIED: {len(read.side_conflicts)} "
+                   f"of {read.side_checked} electrodes lie on the side their "
+                   f"name denies")
     panels["brain"].set_electrodes(read.frame, origin=origin, space=read.space)
     panels["map"].set_electrodes(read.frame, origin=origin)
     if on_electrodes is not None:

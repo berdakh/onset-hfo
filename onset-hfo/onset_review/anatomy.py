@@ -355,7 +355,13 @@ def electrode_layout(session, resection=None, electrodes: pd.DataFrame | None = 
         # it), and plenty of real electrode names carry no L or R -- so a
         # layout built from coordinates should not keep reporting "side
         # unknown" about something it has just been told.
-        if sources and set(sources) == {"archive"} and abs(centre[0]) > 1e-4:
+        #
+        # Only where the name is silent. A name that says left over a position
+        # on the right is a conflict -- a mirrored file, most often -- and the
+        # coordinate import reports it as one; settling it here in the file's
+        # favour would erase the only sign that something is wrong.
+        if (hemisphere == "?" and sources and set(sources) == {"archive"}
+                and abs(centre[0]) > 1e-4):
             hemisphere = "L" if centre[0] < 0 else "R"
         rows.append({
             "channel": channel,
