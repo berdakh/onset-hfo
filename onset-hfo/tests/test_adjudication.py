@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from pathlib import Path
 
 import pytest
 
@@ -174,7 +175,8 @@ def test_a_read_survives_a_round_trip_through_disk(request_):
 
 def test_a_corrupt_file_costs_the_verdicts_but_not_the_window(request_):
     """Opening the recording has to work even when the read cannot be parsed,
-    and the unreadable file is left alone rather than overwritten."""
+    and the unreadable file is kept rather than overwritten -- beside where
+    it was, since left in place the next save would replace it."""
     read = adj.Adjudication()
     read.judge_event(adj.event_key("A1-A2", 1.0), "agree", reader="Dr Smith")
     path = adj.save(request_, read)
@@ -182,7 +184,7 @@ def test_a_corrupt_file_costs_the_verdicts_but_not_the_window(request_):
 
     recovered = adj.load(request_)
     assert recovered.empty
-    assert path.read_text(encoding="utf-8") == "{not json at all"
+    assert Path(recovered.set_aside).read_text(encoding="utf-8") == "{not json at all"
 
 
 def test_the_write_is_atomic_in_the_sense_that_matters(request_):
@@ -320,3 +322,48 @@ def test_channel_verdicts_and_the_window_note_survive_reconciliation():
     assert out.channels["A1-A2"].note == "popping electrode"
     assert out.note == "first minute only"
     assert out.reader == "Dr Smith"
+
+
+def test_an_unreadable_read_is_moved_aside_not_written_over(request_):
+    """A truncated file loaded as an empty read and stayed where it was, so
+    the next verdict's save replaced it: a crash during one write cost every
+    verdict before it."""
+    read = adj.Adjudication()
+    read.judge_event(adj.event_key("A1-A2", 1.0, "rms"), "agree", reader="Dr Smith")
+    path = adj.save(request_, read)
+    damaged = path.read_text(encoding="utf-8")[:40]
+    path.write_text(damaged, encoding="utf-8")
+
+    loaded = adj.load(request_)
+    assert loaded.events == {} and loaded.set_aside
+    assert not path.exists()
+    aside = [p for p in path.parent.iterdir() if ".unreadable-" in p.name]
+    assert [str(p) for p in aside] == [loaded.set_aside]
+    assert aside[0].read_text(encoding="utf-8") == damaged
+
+    loaded.judge_event(adj.event_key("A1-A2", 2.0, "rms"), "disagree", reader="Dr B")
+    adj.save(request_, loaded)
+    assert aside[0].read_text(encoding="utf-8") == damaged
+    assert "set_aside" not in path.read_text(encoding="utf-8")
+    assert adj.reconcile(loaded, []).set_aside == loaded.set_aside
+
+
+def test_a_read_of_the_wrong_shape_does_not_raise(request_):
+    path = adj.save(request_, adj.Adjudication())
+    path.write_text('{"events": ["not", "a", "mapping"]}', encoding="utf-8")
+    assert adj.load(request_).set_aside
+
+
+def test_a_near_match_does_not_take_another_verdicts_own_event():
+    """Two verdicts 30 ms apart; a re-run keeps only the later event. The
+    earlier verdict used to claim it as a near match, and the verdict that
+    was actually given to it was orphaned."""
+    read = adj.Adjudication(reader="Dr Smith")
+    gone = adj.event_key("A1-A2", 12.340, "rms")
+    kept = adj.event_key("A1-A2", 12.370, "rms")
+    read.judge_event(gone, "disagree")
+    read.judge_event(kept, "agree")
+
+    out = adj.reconcile(read, [_Event("A1-A2", 12.370)])
+    assert out.verdict_of(kept) == "agree" and out.events[kept].match == "exact"
+    assert list(out.orphaned) == [gone]

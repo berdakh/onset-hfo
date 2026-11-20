@@ -607,6 +607,15 @@ class _Review:
             stored.reader = (carried or (self.args.reader or "")).strip()
         session.read = adjudication.reconcile(stored, session.events)
         self._orphans = len(session.read.orphaned)
+        if session.read.set_aside:
+            # Said in the window's own notes, which the report prints: a read
+            # that silently starts again from nothing looks like no read was
+            # ever made.
+            session.notes.append(
+                "EARLIER VERDICTS NOT LOADED: the saved read for this window "
+                "could not be parsed and was moved to "
+                f"{session.read.set_aside}. Nothing in it was deleted; this "
+                "window starts from an empty read.")
 
     def trace_at(self, t_file: float) -> None:
         """Put the signal around `t_file` under the analysis already on screen.

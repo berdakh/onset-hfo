@@ -249,6 +249,10 @@ class Adjudication:
     #: person's recorded opinion because the software's opinion changed is the
     #: one behaviour this module must not have.
     orphaned: dict = field(default_factory=dict)
+    #: Where :func:`load` moved a stored read it could not parse, or "". Not
+    #: written to the file: it is about this load, and exists so the window
+    #: can say that earlier verdicts were not read and where they now are.
+    set_aside: str = ""
     #: Free text about the window as a whole, which is the thing a reader
     #: actually wants to write at the end of a read.
     note: str = ""
@@ -495,8 +499,10 @@ def load(request) -> Adjudication:
 
     A corrupt or unreadable file returns an empty read rather than stopping
     the window from opening: losing the reviewer's previous verdicts is bad,
-    but refusing to show them the recording at all is worse, and the file is
-    left on disk untouched for them to look at.
+    but refusing to show them the recording at all is worse. The file is
+    renamed `<window>.unreadable-<time>.json` beside where it was, so that
+    the next save cannot write over it, and the returned read's `set_aside`
+    names it.
     """
     path = path_for(request)
     blank = Adjudication(window=window_id(request))
@@ -504,13 +510,31 @@ def load(request) -> Adjudication:
         return blank
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        if not isinstance(data, dict):
+            raise ValueError("not a JSON object")
+        read = Adjudication.from_json(data)
+    except OSError:
         return blank
-    if not isinstance(data, dict):
+    except (ValueError, TypeError, AttributeError, KeyError):
+        # A file that cannot be read is still somebody's verdicts. Returning
+        # a blank read and leaving it in place meant the next verdict's save
+        # wrote over it. It is moved aside instead, where it stays until a
+        # person looks at it, and the blank read says where it went.
+        blank.set_aside = str(_set_aside(path) or "")
         return blank
-    read = Adjudication.from_json(data)
     read.window = read.window or blank.window
     return read
+
+
+def _set_aside(path: Path) -> Path | None:
+    """Rename an unreadable read out of the way of the next save."""
+    stamp = _dt.datetime.now(_dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    target = path.with_name(f"{path.stem}.unreadable-{stamp}.json")
+    try:
+        path.replace(target)
+    except OSError:
+        return None
+    return target
 
 
 def save(request, read: Adjudication) -> Path:
@@ -586,16 +610,24 @@ def reconcile(read: Adjudication, events,
         items.sort()
     taken: set = set()
 
+    # Exact matches first, all of them. In a single pass a verdict whose own
+    # event had gone could take, as a near match, the event another verdict
+    # was given to -- and that verdict, arriving second, was orphaned.
+    current = {key for items in by_channel.values() for _, key in items}
     for key, judged in read.events.items():
+        if key in current:
+            taken.add(key)
+            carried[key] = replace(judged, match="exact")
+
+    for key, judged in read.events.items():
+        if key in carried:
+            continue
         channel, start, detector = _split_key(key)
         candidates = by_channel.get(channel, [])
         best, best_gap, best_exact = None, float("inf"), False
         for when, candidate_key in candidates:
             if candidate_key in taken:
                 continue
-            if candidate_key == key:
-                best, best_gap, best_exact = candidate_key, 0.0, True
-                break
             # A verdict is about one kind of thing. "A real oscillation" given
             # to a ripple must not land on the discharge 10 ms away, or the
             # discharge is counted as confirmed by a reader who never judged
@@ -624,4 +656,5 @@ def reconcile(read: Adjudication, events,
         draft_verdicts=dict(read.draft_verdicts),
         limits=read.limits, limits_by=read.limits_by, limits_at=read.limits_at,
         limits_evidence=list(read.limits_evidence), limits_basis=read.limits_basis,
-        limits_verdicts=dict(read.limits_verdicts))
+        limits_verdicts=dict(read.limits_verdicts),
+        set_aside=read.set_aside)
