@@ -1,0 +1,17 @@
+band,scope,source,outcome,n,observed,expected,p_at_least,p_chance_min,p_chance_median,p_chance_max
+fast_ripple,all,expert,F,7,3,2.09,0.33,0.13,0.214,0.769
+fast_ripple,all,expert,S,13,11,2.41,3.64e-08,0.021,0.209,0.55
+fast_ripple,all,rms,F,7,3,2.09,0.33,0.13,0.214,0.769
+fast_ripple,all,rms,S,13,10,2.41,1.1e-06,0.021,0.209,0.55
+fast_ripple,reviewed,expert,F,7,3,3.0,0.66,0.143,0.5,0.784
+fast_ripple,reviewed,expert,S,13,11,4.26,5.1e-06,0.022,0.391,0.8
+fast_ripple,reviewed,rms,F,7,3,3.0,0.66,0.143,0.5,0.784
+fast_ripple,reviewed,rms,S,13,11,4.26,5.1e-06,0.022,0.391,0.8
+ripple,all,expert,F,7,3,2.09,0.33,0.13,0.214,0.769
+ripple,all,expert,S,13,5,2.41,0.0615,0.021,0.209,0.55
+ripple,all,rms,F,7,1,2.09,0.95,0.13,0.214,0.769
+ripple,all,rms,S,13,8,2.41,0.000263,0.021,0.209,0.55
+ripple,reviewed,expert,F,7,3,3.0,0.66,0.143,0.5,0.784
+ripple,reviewed,expert,S,13,5,4.26,0.43,0.022,0.391,0.8
+ripple,reviewed,rms,F,7,2,3.0,0.901,0.143,0.5,0.784
+ripple,reviewed,rms,S,13,8,4.26,0.0118,0.022,0.391,0.8
