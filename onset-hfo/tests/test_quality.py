@@ -423,7 +423,9 @@ def test_only_unambiguous_faults_remove_a_contact():
     findings. `QualityConfig.max_hf_ratio_sd` records the recording that
     settled where the line goes.
     """
-    assert set(SET_ASIDE) == {"flat", "clipped", "line_noise",
+    # `non_finite`: NaN or infinite samples. Absent in the plainest sense --
+    # there is no number to look at.
+    assert set(SET_ASIDE) == {"non_finite", "flat", "clipped", "line_noise",
                               "mostly_bad_segments"}
     assert "hf_noise" not in SET_ASIDE
     assert "amplitude" not in SET_ASIDE
@@ -546,3 +548,72 @@ def test_the_lean_is_biased_toward_calling_it_activity():
     # ...and below the least bursty contact the ds003498 annotators marked
     # heavily, which scored 8.2.
     assert cut < 8.2
+
+
+# -- samples that are not numbers --------------------------------------------
+
+
+def _with_nan(seconds: float = 0.5, average: bool = False):
+    import numpy as np
+
+    from onset_hfo.config import PipelineConfig
+    from onset_hfo.preprocess import prepare
+    from onset_hfo.synthetic import make_synthetic_recording
+
+    record = make_synthetic_recording(duration_s=30.0, seed=7, verbose=False)
+    data = record.raw.get_data()
+    victim = record.raw.ch_names[1]
+    data[1, 2000:2000 + int(seconds * record.raw.info["sfreq"])] = np.nan
+    record.raw._data[:] = data
+    cfg = PipelineConfig()
+    if average:
+        import dataclasses
+
+        cfg.preprocess = dataclasses.replace(cfg.preprocess, reference="average")
+    return victim, prepare(record, cfg.preprocess, verbose=False), cfg
+
+
+def test_a_contact_with_nan_samples_is_set_aside_not_given_a_rate_of_zero():
+    """Half a second of NaN on one contact. The filter spread it across the
+    whole channel, every quality test compared against NaN and came back
+    False, and the channel was reported good with no events."""
+    import numpy as np
+
+    from onset_hfo.quality import SET_ASIDE, channel_quality
+
+    victim, prep, cfg = _with_nan()
+    assert np.isfinite(prep.data).all()
+    built_from = [name for name in prep.ch_names if victim in prep.contacts_of(name)]
+    assert built_from and prep.non_finite == built_from
+    assert any("not numbers" in step and victim in step for step in prep.steps)
+
+    table = channel_quality(prep, cfg.quality).set_index("channel")
+    for name in built_from:
+        assert table.loc[name, "reason"] == "non_finite"
+        assert not table.loc[name, "good"]
+    assert "non_finite" in SET_ASIDE
+    # The rest of the montage is judged as if the gap were not there.
+    others = table.drop(index=built_from)
+    assert others["good"].all()
+    assert np.isfinite(others[["amplitude_sd", "hf_ratio_sd"]].to_numpy()).all()
+
+
+def test_one_nan_contact_does_not_take_an_average_reference_down_with_it():
+    import numpy as np
+
+    victim, prep, _ = _with_nan(average=True)
+    assert np.isfinite(prep.data).all()
+    assert prep.non_finite == [victim]
+    assert np.abs(prep.data[prep.index(victim)]).max() == 0.0
+    assert all(np.abs(prep.data[i]).max() > 0
+               for i, name in enumerate(prep.ch_names) if name != victim)
+
+
+def test_a_clean_recording_reports_no_such_contact():
+    from onset_hfo.preprocess import prepare
+    from onset_hfo.synthetic import make_synthetic_recording
+
+    prep = prepare(make_synthetic_recording(duration_s=10.0, seed=7, verbose=False),
+                   verbose=False)
+    assert prep.non_finite == []
+    assert not any("not numbers" in step for step in prep.steps)

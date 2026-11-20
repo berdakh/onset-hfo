@@ -95,8 +95,8 @@ STREAM_ABOVE_S = 180.0
 
 #: Worst first. `channel_quality` picks one reason per channel in a fixed
 #: order of seriousness; this is that order, used to merge the per-chunk
-#: verdicts into one. The first four set a contact aside; the rest flag it.
-REASON_SEVERITY = ("flat", "clipped", "line_noise", "mostly_bad_segments",
+#: verdicts into one. The first five set a contact aside; the rest flag it.
+REASON_SEVERITY = ("non_finite", "flat", "clipped", "line_noise", "mostly_bad_segments",
                    "hf_noise", "hf_active", "amplitude")
 
 

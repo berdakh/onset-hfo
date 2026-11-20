@@ -80,6 +80,10 @@ class Prepared:
     modality: str = "ieeg"
     #: The unit of `data`: µV for EEG of either kind, fT/cm or fT for MEG.
     unit: str = "µV"
+    #: Output channels built from a contact that held NaN or infinite samples
+    #: -- a gap or a dropout in the file. Their rows are zeros, not signal,
+    #: and the data-quality stage sets them aside as `non_finite`.
+    non_finite: list[str] = field(default_factory=list)
 
     @property
     def duration(self) -> float:
@@ -898,6 +902,29 @@ def prepare(rec: Recording, cfg: PreprocessConfig | None = None, verbose: bool =
         steps.append(f"dropped {len(marked)} channels the reviewer marked bad: "
                      f"{', '.join(sorted(marked))}")
 
+    # A contact with NaN or infinite samples -- a gap, a dropout, an export
+    # that wrote one for "no data". A filter spreads a single NaN across the
+    # whole channel, and every test after that is a comparison against NaN,
+    # which is False: the channel came out with no events, a rate of zero and
+    # a quality verdict of good. So such a contact is taken out of the signal
+    # here, before any filter sees it, and named. It is zeroed rather than
+    # dropped so that every stretch of a long recording keeps the same
+    # channels; the rows built from it are zeroed again after the montage and
+    # the quality stage sets them aside by name.
+    broken = [name for name, row in zip(raw.ch_names, raw.get_data(picks="all"),
+                                        strict=True)
+              if not np.isfinite(row).all()]
+    if broken:
+        raw.load_data()
+        raw.apply_function(lambda row: np.zeros_like(row), picks=broken,
+                           verbose="ERROR")
+        steps.append(
+            f"{len(broken)} contact(s) held samples that are not numbers (NaN or "
+            f"infinite: a gap or a dropout in the file) and are not analysed in "
+            f"this stretch: {', '.join(sorted(broken)[:12])}"
+            f"{', …' if len(broken) > 12 else ''}. Every channel built from one "
+            f"is set aside, not given a rate of zero")
+
     # 2/3. filtering ------------------------------------------------------
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
@@ -1061,7 +1088,18 @@ def prepare(rec: Recording, cfg: PreprocessConfig | None = None, verbose: bool =
                      + "). " + "; ".join(how)
                      + ". A noisy neighbour is shared by every contact beside it.")
 
+    lost: list[str] = []
+    if broken:
+        gone = set(broken)
+        lost = [name for name, pair in zip(names, pairs or [(n,) for n in names],
+                                           strict=True)
+                if gone & set(pair)]
+        if lost:
+            data = np.array(data, dtype=np.float64)
+            data[[names.index(name) for name in lost]] = 0.0
+
     prepared = Prepared(data=np.ascontiguousarray(data, dtype=np.float64), ch_names=names,
+                        non_finite=lost,
                         sfreq=float(raw.info["sfreq"]), t_offset=rec.t_offset, montage=montage,
                         line_freq=float(line_freq),
                         pairs=pairs, steps=steps, recording=rec, annotations=annotations,
