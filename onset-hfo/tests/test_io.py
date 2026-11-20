@@ -388,3 +388,35 @@ def test_a_file_low_passed_at_acquisition_says_which_bands_it_cannot_show(tmp_pa
     text = " ".join(narrow.notes)
     assert "ripples (80–250 Hz) or fast ripples (250–500 Hz)" in text
     assert acquisition_lowpass(open_recording(_fif_with(tmp_path)).raw) is None
+
+
+def test_an_exporters_decoration_is_taken_off_a_contact_name():
+    """`POL LA1`, `EEG LA1-Ref`: left as written, no contact is recognised,
+    no bipolar pair forms, and the analysis is silently monopolar."""
+    from onset_hfo.io import clean_contact_names
+
+    names = ["POL LA1", "EEG LA2-Ref", "SEEG RH 3", "LA4", "EKG", "POL DC01", "Fp1-REF"]
+    assert clean_contact_names(names) == {
+        "POL LA1": "LA1", "EEG LA2-Ref": "LA2", "SEEG RH 3": "RH3",
+        "POL DC01": "DC01", "Fp1-REF": "Fp1"}
+    # A rename that would merge two channels is not made.
+    assert clean_contact_names(["POL LA1", "LA1"]) == {}
+    assert clean_contact_names(["LA1", "LA2"]) == {}
+
+
+def test_a_decorated_file_is_paired_like_any_other(tmp_path):
+    import mne
+
+    from onset_hfo.preprocess import prepare
+
+    rng = np.random.default_rng(2)
+    names = [f"POL LA{i}" for i in range(1, 5)] + [f"EEG RH{i}-Ref" for i in range(1, 4)]
+    raw = mne.io.RawArray(rng.normal(0, 8e-6, size=(len(names), 8000)),
+                          mne.create_info(names, 2000.0, ch_types="seeg"), verbose="ERROR")
+    path = tmp_path / "decorated_raw.fif"
+    raw.save(path, verbose="ERROR")
+    record = open_recording(path)
+    assert record.raw.ch_names == ["LA1", "LA2", "LA3", "LA4", "RH1", "RH2", "RH3"]
+    assert any("read without it" in note for note in record.notes)
+    prep = prepare(record, verbose=False)
+    assert prep.montage == "bipolar" and len(prep.ch_names) == 5

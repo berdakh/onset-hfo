@@ -388,3 +388,47 @@ def test_the_band_pass_keeps_its_upper_edge_below_nyquist():
     rng = np.random.default_rng(0)
     out = bandpass(rng.standard_normal((1, 4000)), 400.0, (80.0, 250.0))
     assert out.shape == (1, 4000) and np.isfinite(out).all()
+
+
+# -- the bipolar montage says what it left out --------------------------------
+
+
+def test_a_grid_is_not_paired_across_the_end_of_a_row():
+    """G8 and G9 are numbered consecutively and lie a whole grid apart."""
+    from onset_hfo.preprocess import bipolar_pairs, bipolar_plan
+
+    grid = [f"G{i}" for i in range(1, 17)]
+    assert ("G8", "G9") in bipolar_pairs(grid)
+    rows = bipolar_pairs(grid, grid_columns=(("G", 8),))
+    assert ("G8", "G9") not in rows and ("G7", "G8") in rows and ("G9", "G10") in rows
+    assert len(rows) == 14
+
+    _, _, warnings_ = bipolar_plan([f"G{i}" for i in range(1, 33)])
+    assert len(warnings_) == 1 and "probably a grid" in warnings_[0]
+    assert bipolar_plan([f"G{i}" for i in range(1, 33)], grid_columns=(("G", 8),))[2] == []
+
+
+def test_every_contact_in_no_pair_is_named_with_its_reason():
+    """A name the pattern did not read, a duplicate number and a lone contact
+    all used to vanish from the analysis without a word."""
+    from onset_hfo.preprocess import bipolar_plan
+
+    pairs, left_out, _ = bipolar_plan(
+        ["LA1", "LA2", "LA02", "POL RH1", "X9", "LB1", "LB2"], exclude={"LB2"})
+    assert pairs == [("LA1", "LA2")]
+    assert left_out["POL RH1"].startswith("its name is not")
+    assert left_out["LA02"] == "it has the same number as LA2"
+    assert left_out["X9"] == "no neighbouring contact to pair it with"
+    assert left_out["LB2"] == "it was marked bad"
+    assert "LB1" in left_out
+
+
+def test_the_steps_say_which_contacts_were_not_analysed(recording):
+    from onset_hfo.preprocess import prepare
+
+    record = recording.__class__(**{**recording.__dict__, "raw": recording.raw.copy()})
+    lone = record.raw.ch_names[0]
+    record.raw.rename_channels({lone: "ZZ7"})
+    steps = prepare(record, verbose=False).steps
+    line = [s for s in steps if "NOT ANALYSED" in s]
+    assert len(line) == 1 and "ZZ7 (no neighbouring contact" in line[0]

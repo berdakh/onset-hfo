@@ -30,6 +30,7 @@ absence by saying so; nothing here invents them.
 
 from __future__ import annotations
 
+import re
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
@@ -396,6 +397,9 @@ def open_recording(path: str | Path, *, t_start: float = 0.0,
                 raw.set_channel_types(wanted, verbose="ERROR")
         with raw.info._unlock():
             raw.info["line_freq"] = float(line_freq)
+        renamed = clean_contact_names(raw.ch_names)
+        if renamed:
+            raw.rename_channels(renamed, verbose="ERROR")
 
     rescaled = _units_from_channels_tsv(raw, _channels_tsv_beside(path))
     types = set(raw.get_channel_types())
@@ -413,6 +417,11 @@ def open_recording(path: str | Path, *, t_start: float = 0.0,
         "no expert markings, no resected zone and no participant record come "
         "with an imported file, so anything in this software that compares "
         "against them is unavailable rather than empty",
+        *([f"{len(renamed)} channel name(s) carried the exporter's prefix or "
+           f"reference suffix and are read without it "
+           f"({', '.join(f'{a} as {b}' for a, b in list(renamed.items())[:4])}"
+           f"{', …' if len(renamed) > 4 else ''}): left as written, no contact on "
+           f"them is recognised and no bipolar pair is formed"] if renamed else []),
         *([f"the file does not state the unit of {len(rescaled)} channels; the BIDS "
            f"channels.tsv beside it gives it ({', '.join(sorted(set(rescaled.values())))}), "
            "so they were read in that unit rather than as volts"] if rescaled else []),
@@ -460,6 +469,34 @@ def open_recording(path: str | Path, *, t_start: float = 0.0,
         t_offset=float(t_start), line_freq=float(line_freq),
         dataset_id="", citation="", notes=notes,
     )
+
+
+#: What a clinical exporter wraps a contact name in: "POL LA1", "EEG LA1-Ref",
+#: "SEEG LA 1". None of it is part of the name the implantation plan uses.
+_NAME_PREFIX = re.compile(r"^(?:POL|EEG|SEEG|ECOG|IEEG)[\s_:]+", re.IGNORECASE)
+_NAME_SUFFIX = re.compile(r"[\s_-]+(?:REF|REFERENCE|AVG|AV|LE|MONO)\s*$", re.IGNORECASE)
+_CONTACT_NAME = re.compile(r"^[A-Za-z]+'?\d{1,3}$")
+
+
+def clean_contact_names(names) -> dict[str, str]:
+    """`{name in the file: contact name}` for the names an exporter decorated.
+
+    Only a name that *becomes* a contact name (letters, then a number) by
+    losing a known prefix, a reference suffix and its spaces is changed, and
+    only if the result collides with nothing: a rename that merged two
+    channels would be worse than the decoration. Everything else is left
+    exactly as the file has it.
+    """
+    wanted: dict[str, str] = {}
+    for name in names:
+        if _CONTACT_NAME.match(name):
+            continue
+        bare = _NAME_SUFFIX.sub("", _NAME_PREFIX.sub("", str(name).strip()))
+        bare = re.sub(r"\s+", "", bare)
+        if bare != name and _CONTACT_NAME.match(bare):
+            wanted[name] = bare
+    taken = [n for n in names if n not in wanted] + list(wanted.values())
+    return {old: new for old, new in wanted.items() if taken.count(new) == 1}
 
 
 def mains_in_signal(raw, picks=None) -> float | None:

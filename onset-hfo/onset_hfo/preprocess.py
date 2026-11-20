@@ -144,29 +144,73 @@ def _is_brain_channel(name: str, ch_type: str) -> bool:
     return not any(upper.startswith(p) for p in _NON_BRAIN)
 
 
-def bipolar_pairs(ch_names: list[str], exclude: set[str] | None = None) -> list[tuple[str, str]]:
+def bipolar_pairs(ch_names: list[str], exclude: set[str] | None = None,
+                  grid_columns=()) -> list[tuple[str, str]]:
     """Consecutive contacts on the same electrode, e.g. ``("AD1", "AD2")``.
 
     Both contacts must be present and neither may be excluded, so a bad
     contact removes the two pairs it would have formed rather than silently
     bridging a gap (AD1-AD3 would mix two distances and is never produced).
+
+    `grid_columns` (as `PreprocessConfig.grid_columns`) says how wide a grid
+    is, and a pair is then never formed across the end of a row: on an
+    8-wide grid `G8` and `G9` are numbered consecutively and lie a whole grid
+    apart.
+    """
+    return bipolar_plan(ch_names, exclude, grid_columns)[0]
+
+
+def bipolar_plan(ch_names: list[str], exclude: set[str] | None = None,
+                 grid_columns=()) -> tuple[list[tuple[str, str]], dict[str, str], list[str]]:
+    """The pairs, the contacts left out of every pair and why, and warnings.
+
+    A contact in no pair is not analysed under a bipolar montage. That used
+    to happen in silence: a name the pattern did not read, a second contact
+    with the same number (`LA1` and `LA01`), a single contact with no
+    neighbour. Each is returned here with its reason so the steps can name
+    it. The warnings are about pairs that *were* formed and may not be
+    neighbours: a lead long enough to be a grid, with no columns given.
     """
     exclude = exclude or set()
+    columns = {str(k).upper(): int(v) for k, v in (grid_columns or ())}
     by_lead: dict[str, dict[int, str]] = {}
+    left_out: dict[str, str] = {}
     for name in ch_names:
         m = _CONTACT_RE.match(name)
         if not m:
+            left_out[name] = "its name is not letters followed by a contact number"
             continue
-        by_lead.setdefault(m.group(1), {})[int(m.group(2))] = name
+        lead, number = by_lead.setdefault(m.group(1), {}), int(m.group(2))
+        if number in lead:
+            left_out[name] = f"it has the same number as {lead[number]}"
+            continue
+        lead[number] = name
     pairs: list[tuple[str, str]] = []
+    warnings_: list[str] = []
     for lead in sorted(by_lead):
         numbers = sorted(by_lead[lead])
+        width = columns.get(lead.upper())
         for n in numbers:
-            if n + 1 in by_lead[lead]:
-                a, b = by_lead[lead][n], by_lead[lead][n + 1]
-                if a not in exclude and b not in exclude:
-                    pairs.append((a, b))
-    return pairs
+            if n + 1 not in by_lead[lead]:
+                continue
+            if width and n % width == 0:
+                continue                # the end of a grid row: not neighbours
+            a, b = by_lead[lead][n], by_lead[lead][n + 1]
+            if a not in exclude and b not in exclude:
+                pairs.append((a, b))
+        if not width and len(numbers) > LAPLACIAN_STRIP_MAX:
+            warnings_.append(
+                f"{lead} has {len(numbers)} contacts and is probably a grid, but "
+                f"its columns were not given: contacts were paired by number, so "
+                f"each pair across the end of a row joins two contacts a whole "
+                f"grid apart. Give its columns ({lead}:8, say) to pair within rows")
+    paired = {name for pair in pairs for name in pair}
+    for lead in by_lead.values():
+        for name in lead.values():
+            if name not in paired and name not in left_out:
+                left_out[name] = ("it was marked bad" if name in exclude else
+                                  "no neighbouring contact to pair it with")
+    return pairs, left_out, warnings_
 
 
 #: ICA solvers MNE can run. Infomax is MNE's own; FastICA is scikit-learn's
@@ -1008,10 +1052,22 @@ def prepare(rec: Recording, cfg: PreprocessConfig | None = None, verbose: bool =
 
             pairs = double_banana_pairs(names)
         else:
-            pairs = bipolar_pairs(names, exclude=set())
+            pairs, left_out, pair_warnings = bipolar_plan(
+                names, exclude=set(), grid_columns=cfg.grid_columns)
+            steps.extend(f"WARNING: {text}" for text in pair_warnings)
+            if pairs and left_out:
+                shown = "; ".join(f"{name} ({why})"
+                                  for name, why in list(left_out.items())[:10])
+                steps.append(
+                    f"{len(left_out)} contact(s) are in no bipolar pair and are NOT "
+                    f"ANALYSED: {shown}"
+                    f"{f'; and {len(left_out) - 10} more' if len(left_out) > 10 else ''}")
         if not pairs:
-            steps.append("bipolar montage requested but no consecutive contact pairs were found; "
-                         "kept the original (monopolar) channels"
+            steps.append("WARNING: bipolar montage requested but no consecutive contact "
+                         "pairs were found in these channel names, so the channels are "
+                         "analysed AS RECORDED (monopolar), against whatever reference "
+                         "the amplifier used. Every rate below is for that reference, "
+                         "not for a bipolar pair"
                          if kind.key != "eeg" else
                          "the double banana needs 10-20 electrode names (Fp1, F7, T7, ...) "
                          "and found no pair of them; kept the original channels")
