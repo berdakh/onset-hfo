@@ -287,6 +287,10 @@ def build_html(case, version: int, folder: Path, by: str) -> str:
             parts.append(f"<p class='small'>Segments: {_esc(rule.describe())}; "
                          f"{len(frame)} chosen. Analysis: "
                          f"{_esc(_analysis_text(inter.settings.get('analysis', {})))}.</p>")
+            from onset_hfo.case.segments import seizure_caveat
+
+            if seizure_caveat(_info):
+                parts.append(f"<p><b>{_esc(seizure_caveat(_info))}</b></p>")
         parts.append(_figure(folder / "interictal.png",
                              lambda f: draw_pooled(f, f.add_subplot(111), inter, top=15)))
         rows = [{"rank": "" if pd.isna(r.rank) else int(r.rank), "channel": r.channel,

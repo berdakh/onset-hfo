@@ -252,3 +252,22 @@ def test_two_runs_in_the_same_second_get_their_own_folders(tmp_path, monkeypatch
     assert [f.name for f in (first, second, third)] == [
         "run-20261010-140242", "run-20261010-140242-02", "run-20261010-140242-03"]
     assert sorted(p.name for p in (tmp_path / "interictal").glob("run-*"))[-1] == third.name
+
+
+def test_a_rule_with_no_seizure_marked_says_the_distance_is_unverified():
+    """The rule read "at least 1 h from any seizure" and removed nothing,
+    because nothing was marked: a sentence about the marking, printed as if
+    it were about the patient."""
+    asleep = _marks([(0, "sleep-N2", 3600)])
+    rule = segments.SegmentRule()
+    frame, info = segments.choose([{"run": "01", "duration": 3600, "marks": asleep}], rule)
+    assert len(frame) and info["n_seizures_marked"] == 0
+    assert segments.seizure_caveat(info) == segments.NO_SEIZURE_MARKED
+    assert "UNVERIFIED" in segments.describe_choice(frame, info, rule)
+
+    _, marked = segments.choose([{"run": "01", "duration": 7200, "marks": NIGHT}],
+                                segments.SegmentRule(min_from_seizure_s=1800))
+    assert marked["n_seizures_marked"] >= 1
+    assert segments.seizure_caveat(marked) == ""
+    # A choice saved before the count was kept says nothing either way.
+    assert segments.seizure_caveat({}) == "" and segments.seizure_caveat(None) == ""
