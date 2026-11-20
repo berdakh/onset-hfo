@@ -235,6 +235,23 @@ def path_for(request) -> Path:
 # --------------------------------------------------------------------------
 
 
+#: What a rate cannot be read without, and what a recording does not say
+#: about itself: `(key, label, choices)`. HFO and discharge rates differ
+#: several-fold between NREM sleep and wakefulness, rise for hours after a
+#: seizure, and rise as anti-seizure medication is withdrawn for monitoring.
+#: The reader records each, or the report says in capitals that nobody did.
+CONDITIONS = (
+    ("state", "Vigilance state",
+     ("N2/N3 sleep", "N1 sleep", "REM sleep", "awake", "mixed", "not scored")),
+    ("since_seizure", "Since the last seizure",
+     ("more than 24 h", "6–24 h", "1–6 h", "under 1 h", "seizure in this window",
+      "unknown")),
+    ("medication", "Anti-seizure medication",
+     ("full dose", "being tapered", "withdrawn", "unknown")),
+)
+NOT_RECORDED = "NOT RECORDED"
+
+
 @dataclass
 class Adjudication:
     """One reader's verdicts on one window, and the bookkeeping around them."""
@@ -264,6 +281,10 @@ class Adjudication:
     #: is found by the file's path; this is how it is known to be about the
     #: file now at that path and not one that replaced it.
     fingerprint: str = ""
+    #: The conditions the window was recorded under, as the reader gave them:
+    #: `CONDITIONS` keys -> one of their choices, plus `by` and `at`. Empty
+    #: until somebody says; never guessed.
+    conditions: dict = field(default_factory=dict)
     #: Free text about the window as a whole, which is the thing a reader
     #: actually wants to write at the end of a read.
     note: str = ""
@@ -328,6 +349,22 @@ class Adjudication:
         if who and not self.reader:
             self.reader = who
         return judged
+
+    def set_conditions(self, values: dict, reader: str = "") -> None:
+        """Record what the window was recorded under. A blank value clears
+        that condition: "not recorded" is a state, and it is the default."""
+        kept = {key: str(values.get(key) or "").strip()
+                for key, _label, _choices in CONDITIONS}
+        kept = {key: value for key, value in kept.items() if value}
+        if kept:
+            kept["by"] = (reader or self.reader or "").strip()
+            kept["at"] = now()
+        self.conditions = kept
+
+    def condition_rows(self) -> list[tuple[str, str]]:
+        """`(label, value)` for every condition, `NOT_RECORDED` where blank."""
+        return [(label, self.conditions.get(key) or NOT_RECORDED)
+                for key, label, _choices in CONDITIONS]
 
     def set_draft(self, text: str, by: str, evidence: list | None = None,
                   basis: str | None = None, verdicts: dict | None = None) -> None:
@@ -398,7 +435,7 @@ class Adjudication:
     @property
     def empty(self) -> bool:
         return (not self.events and not self.channels and not self.orphaned
-                and not self.note.strip())
+                and not self.note.strip() and not self.conditions)
 
     @property
     def readers(self) -> list:
@@ -486,6 +523,7 @@ class Adjudication:
             "window": self.window,
             "reader": self.reader,
             **({"fingerprint": self.fingerprint} if self.fingerprint else {}),
+            **({"conditions": dict(self.conditions)} if self.conditions else {}),
             "note": self.note,
             "draft": self.draft,
             "draft_by": self.draft_by,
@@ -517,6 +555,7 @@ class Adjudication:
             window=str(data.get("window", "")),
             reader=str(data.get("reader", "")),
             fingerprint=str(data.get("fingerprint", "")),
+            conditions={str(k): str(v) for k, v in (data.get("conditions") or {}).items()},
             note=str(data.get("note", "")),
             draft=str(data.get("draft", "")),
             draft_by=str(data.get("draft_by", "")),
@@ -695,7 +734,7 @@ def reconcile(read: Adjudication, events,
     # would let the next save erase what the reader wrote or signed off.
     return Adjudication(
         window=read.window, reader=read.reader, note=read.note,
-        fingerprint=read.fingerprint,
+        fingerprint=read.fingerprint, conditions=dict(read.conditions),
         events=carried, channels=dict(read.channels),
         orphaned={key: replace(read.events[key], match="orphan")
                   for key in sorted(orphans)},

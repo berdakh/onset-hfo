@@ -634,7 +634,7 @@ class AssistantPanel(QWidget):
 
             return self.base_url.text().strip() or default_base_url()
         if kind == "ollama":
-            from onset_agent.backends import ollama_url
+            from onset_agent.hardware import ollama_url
 
             return ollama_url()
         return ""

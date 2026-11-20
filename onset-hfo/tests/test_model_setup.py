@@ -300,5 +300,13 @@ def test_nothing_is_sent_to_another_computer_without_being_asked(qapp, monkeypat
 
         panel.backend.setCurrentIndex(panel.backend.findData("scripted"))
         assert panel.model_address() == "" and panel._remote_allowed()
+
+        # Ollama's address comes from the environment, not from the field.
+        panel.backend.setCurrentIndex(panel.backend.findData("ollama"))
+        monkeypatch.setenv("OLLAMA_HOST", "http://127.0.0.1:11434")
+        assert panel._remote_allowed()
+        monkeypatch.setenv("OLLAMA_HOST", "http://gpu-box.example.org:11434")
+        panel.confirm_remote = lambda host: asked.append(host) or False
+        assert not panel._remote_allowed() and asked[-1] == "gpu-box.example.org"
     finally:
         panel.close()

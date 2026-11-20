@@ -425,3 +425,29 @@ def test_a_read_remembers_which_file_it_was_given_on(request_):
     # An archive window has none, and its file does not grow a field.
     plain = adj.Adjudication()
     assert "fingerprint" not in plain.to_json()
+
+
+# -- what the window was recorded under ---------------------------------------
+
+
+def test_recording_conditions_are_kept_with_the_read_and_never_guessed(request_):
+    read = adj.Adjudication(reader="Dr A")
+    assert dict(read.condition_rows()) == {
+        "Vigilance state": adj.NOT_RECORDED,
+        "Since the last seizure": adj.NOT_RECORDED,
+        "Anti-seizure medication": adj.NOT_RECORDED}
+    assert read.empty
+
+    read.set_conditions({"state": "N2/N3 sleep", "medication": "being tapered",
+                         "since_seizure": ""})
+    assert not read.empty
+    rows = dict(read.condition_rows())
+    assert rows["Vigilance state"] == "N2/N3 sleep"
+    assert rows["Since the last seizure"] == adj.NOT_RECORDED
+    assert read.conditions["by"] == "Dr A" and read.conditions["at"]
+
+    adj.save(request_, read)
+    back = adj.reconcile(adj.load(request_), [])
+    assert back.conditions["medication"] == "being tapered"
+    back.set_conditions({})
+    assert back.conditions == {}

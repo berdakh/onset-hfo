@@ -30,6 +30,7 @@ from onset_hfo.config import config_digest, software_versions
 from onset_hfo.privacy import shown_name
 from onset_hfo.quality import REASONS, quality_summary
 from onset_review import adjudication, trends
+from onset_review.adjudication import NOT_RECORDED
 from onset_review.session import DETECTOR_LABELS, ReviewSession
 
 __all__ = ["review_markdown", "write_review", "DISCLAIMER"]
@@ -131,8 +132,25 @@ def _header(session: ReviewSession, reviewer: str | None) -> list[str]:
     named = reviewer or ", ".join(session.read.readers) or session.read.reader
     if named:
         rows.append(("Reviewer", named))
-    return ["| field | value |", "|---|---|",
-            *[f"| {name} | {value} |" for name, value in rows], ""]
+    # What the rates below cannot be read without. Printed whether or not
+    # anyone filled it in: a blank that is not shown is a blank nobody sees.
+    conditions = session.read.condition_rows()
+    rows += [(label, value if value != NOT_RECORDED else f"**{NOT_RECORDED}**")
+             for label, value in conditions]
+    given_by = session.read.conditions.get("by")
+    if given_by:
+        rows.append(("Conditions given by",
+                     f"{given_by}, {session.read.conditions.get('at', '')}".strip(", ")))
+    out = ["| field | value |", "|---|---|",
+           *[f"| {name} | {value} |" for name, value in rows], ""]
+    missing = [label.lower() for label, value in conditions if value == NOT_RECORDED]
+    if missing:
+        out += [f"**Recording conditions not recorded: {', '.join(missing)}.** "
+                "Event rates differ several-fold between sleep and wakefulness, "
+                "rise after a seizure and rise as medication is withdrawn. "
+                "Without these the rates below cannot be compared with another "
+                "window, another night or another patient.", ""]
+    return out
 
 
 def review_markdown(session: ReviewSession, reviewer: str | None = None,

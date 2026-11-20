@@ -1311,3 +1311,24 @@ def test_another_window_is_analysed_with_this_windows_settings_once(review, reco
     other_band = dataclasses.replace(review.request, band="fast_ripple")
     assert windows.window_key(other_band) != windows.window_key(review.request)
 
+
+def test_the_report_says_what_the_window_was_recorded_under_or_that_nobody_said(review):
+    """Sleep or awake, how long since a seizure, medication: a rate cannot be
+    compared with another without them, and the report used to have no place
+    for any of the three."""
+    import dataclasses
+
+    from onset_review import adjudication
+
+    blank = report.review_markdown(review)
+    assert blank.count("**NOT RECORDED**") == 3
+    assert "Recording conditions not recorded: vigilance state" in blank
+
+    read = dataclasses.replace(review.read)
+    read.set_conditions({"state": "N2/N3 sleep", "since_seizure": "more than 24 h",
+                         "medication": "full dose"}, reader="Dr A")
+    filled = report.review_markdown(dataclasses.replace(review, read=read))
+    assert "| Vigilance state | N2/N3 sleep |" in filled
+    assert "| Conditions given by | Dr A" in filled
+    assert adjudication.NOT_RECORDED not in filled
+    assert "Recording conditions not recorded" not in filled
