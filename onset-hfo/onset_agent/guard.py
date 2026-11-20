@@ -26,17 +26,46 @@ from dataclasses import dataclass, field
 __all__ = ["check_question", "verify_answer", "collect_numbers", "GuardResult",
            "about_the_assistant", "numbers_in", "traced_to"]
 
+#: The same request in the words a surgeon uses for it: "cut out", "come
+#: out", "take out", "excise" all went past a list that knew only "resect"
+#: and "remove".
 DIRECTIVE = re.compile(
-    r"\b(resect\w*|ablat\w*|remov\w*|operat\w*|surg\w*|implant\w*|"
+    r"\b(resect\w*|ablat\w*|remov\w*|excis\w*|operat\w*|surg\w*|implant\w*|"
+    r"cut(?:ting)?\s+(?:out|away)|(?:come|comes|coming|take|taken|taking)\s+out|"
     r"treat\w*|therap\w*|medicat\w*|drug|dose|dosage|"
-    r"should (?:we|i|they|he|she)|recommend\w*|advise|advice|what would you do)\b",
+    r"should (?:we|i|they|he|she|come|go|be)|would you (?:cut|take|resect|remove)|"
+    r"recommend\w*|advise|advice|what would you do)\b",
     re.IGNORECASE)
 
 DIAGNOSIS = re.compile(
     r"\b(diagnos\w*|prognos\w*|outcome|cure[d]?|seizure[- ]?free|"
     r"does (?:this |the )?patient have|is (?:this|the) patient|"
-    r"where (?:do|does) (?:the )?seizures? (?:start|begin|originate)|"
-    r"seizure onset zone|soz|epileptogenic zone)\b",
+    r"where (?:do|does) (?:the )?seizures? (?:start|begin|originate|come from)|"
+    r"seizure onset zone|onset zone|soz|epileptogenic(?: zone)?|"
+    r"(?:epilep\w+|seizure) (?:focus|foci|generator|source)|"
+    r"(?:source|origin|generator|focus) of (?:the |this patient's |his |her )?"
+    r"(?:seizures?|epilepsy))\b",
+    re.IGNORECASE)
+
+#: What an *answer* must not say, whatever the question was. The gate on the
+#: question is the first line and can be talked around; this one reads the
+#: sentence that would be shown. Narrower than the lists above on purpose: an
+#: answer may say "this is a rate, not a seizure-onset zone", and may not say
+#: that a channel is one or that anything should be done to it.
+_DONE_TO = r"(?:resect\w*|remov\w*|ablat\w*|excis\w*|cut out|taken out|operated on|spared|left in)"
+_PLACE = (r"(?:seizure[- ]onset zone|onset zone|soz|epileptogenic zone|"
+          r"epilep\w+ (?:focus|zone|generator)|seizure (?:focus|generator|source)|"
+          r"(?:source|origin|focus) of (?:the |this patient's )?(?:seizures?|epilepsy))")
+ANSWER_DIRECTIVE = re.compile(
+    rf"\b(?:(?:should|must|ought to|needs? to|has to|have to)(?: not| also| probably| likely)? "
+    rf"(?:be |get )?{_DONE_TO}|"
+    rf"(?:i |we )?(?:recommend|advise|suggest)\w*\b[^.]{{0,60}}?\b{_DONE_TO}|"
+    rf"(?:candidates?|targets?) for (?:resection|removal|ablation|surgery|excision))\b",
+    re.IGNORECASE)
+ANSWER_DIAGNOSIS = re.compile(
+    rf"\b(?:is|are|as|marks?|indicates?|identifies|locali[sz]es|points? to|lies in|"
+    rf"corresponds? to)\s+(?:most likely |likely |probably |clearly |therefore |thus )?"
+    rf"(?:the |a |an |this patient's )?{_PLACE}\b",
     re.IGNORECASE)
 
 #: Another patient named in a question: a BIDS subject label (letters and
@@ -210,6 +239,17 @@ def verify_answer(text: str, evidence_ids: list[str], retrieved: set[str],
             problems.append(f"citation {eid!r} was never returned by a tool")
         elif store is not None and store.resolve(eid) is None:
             problems.append(f"citation {eid!r} does not exist in the saved results")
+
+    # What the answer says should be done, or says a channel *is*. No tool
+    # returns either, so no amount of evidence makes one traceable.
+    said = ANSWER_DIRECTIVE.search(text or "")
+    if said:
+        problems.append(f"the answer says what should be done ({said.group(0)!r}); "
+                        "this software reports measurements and recommends nothing")
+    said = ANSWER_DIAGNOSIS.search(text or "")
+    if said:
+        problems.append(f"the answer names a seizure-onset zone or focus ({said.group(0)!r}); "
+                        "a rate is a measurement, not a localisation")
 
     stripped = EVIDENCE_TOKEN.sub(" ", text)
     stripped = CHANNEL_TOKEN.sub(" ", stripped)
