@@ -16,7 +16,8 @@ from __future__ import annotations
 import numpy as np
 from scipy.signal import detrend
 
-__all__ = ["event_psd", "event_spectral_peak", "background_level_db"]
+__all__ = ["event_psd", "event_spectral_peak", "background_level_db",
+           "event_peak_contrast"]
 
 
 def event_psd(x: np.ndarray, sfreq: float) -> tuple[np.ndarray, np.ndarray]:
@@ -99,3 +100,50 @@ def event_spectral_peak(x: np.ndarray, sfreq: float, band: tuple[float, float]
     if not np.isfinite(excess[idx]):
         return float("nan"), float("nan")
     return float(freqs[idx]), float(excess[idx])
+
+
+def event_peak_contrast(x: np.ndarray, sfreq: float, band: tuple[float, float]
+                        ) -> float:
+    """How far the in-band peak stands above the troughs either side of it, dB.
+
+    :func:`event_spectral_peak` asks how far the spectrum rises above a
+    straight line fitted through the frequencies outside the band. A sharp
+    discharge fails to be a straight line: its spectrum is curved, sits above
+    the fit all the way through the band, and scores a "prominence" of many
+    dB with no peak in it anywhere -- the largest excess is simply at the
+    band's lower edge. This asks the other question, the one a reader asks of
+    a time-frequency picture: is there an *island*? The peak is the one
+    `event_spectral_peak` reports; the troughs are the lowest points of the
+    same excess curve from half an octave below the band up to the peak, and
+    from the peak to an octave above the band; the contrast is the peak over
+    the higher of the two. An oscillation has a trough on both sides. Energy
+    running through the band has none on the side it came from.
+
+    The same rule the event view reads its picture by
+    (`onset_review.detail.band_contrast`), measured here on the event's own
+    spectrum so that the detector and the viewer cannot disagree about what
+    counts. ``nan`` when it cannot be measured, which callers must treat as
+    unknown and never as a rejection.
+    """
+    freqs, psd = event_psd(x, sfreq)
+    if freqs.size == 0:
+        return float("nan")
+    top = min(band[1], 0.95 * sfreq / 2)
+    in_band = (freqs >= band[0]) & (freqs <= top)
+    if in_band.sum() < 2 or not np.any(psd[in_band] > 0):
+        return float("nan")
+    background = background_level_db(freqs, psd, band)
+    if background is None:
+        return float("nan")
+    with np.errstate(divide="ignore"):
+        excess = 10.0 * np.log10(np.maximum(psd, 1e-30)) - background
+    finite = np.isfinite(excess)
+    peak = int(np.argmax(np.where(in_band & finite, excess, -np.inf)))
+    if not np.isfinite(excess[peak]):
+        return float("nan")
+    index = np.arange(freqs.size)
+    left = finite & (freqs >= 0.5 * band[0]) & (index < peak)
+    right = finite & (freqs <= min(2.0 * band[1], 0.95 * sfreq / 2)) & (index > peak)
+    if not left.any() or not right.any():
+        return float("nan")
+    return float(excess[peak] - max(excess[left].min(), excess[right].min()))

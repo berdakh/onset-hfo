@@ -35,7 +35,7 @@ from onset_hfo.detectors.base import (
     threshold_segments,
 )
 from onset_hfo.preprocess import Prepared
-from onset_hfo.spectral import event_spectral_peak
+from onset_hfo.spectral import event_peak_contrast, event_spectral_peak
 
 FeatureFn = Callable[[np.ndarray, int], np.ndarray]
 
@@ -124,12 +124,13 @@ def detect_with_feature(
                 continue
             start = prep.t_offset + i0 / sf
             stop = prep.t_offset + i1 / sf
-            peak_freq = prominence = float("nan")
+            peak_freq = prominence = contrast = float("nan")
             if describe_spectrum:
                 pad = int(round(0.05 * sf))
                 raw_seg = prep.data[prep.ch_names.index(ch),
                                     max(0, i0 - pad): min(prep.data.shape[1], i1 + pad)]
                 peak_freq, prominence = event_spectral_peak(raw_seg, sf, cfg.band)
+                contrast = event_peak_contrast(raw_seg, sf, cfg.band)
             duration = stop - start
             events.append(Event(
                 channel=ch, start=start, stop=stop, detector=name, band=tuple(cfg.band),
@@ -137,6 +138,7 @@ def detect_with_feature(
                 peak_amplitude_uv=float(np.max(np.abs(seg))),
                 peak_frequency_hz=peak_freq,
                 spectral_prominence_db=prominence,
+                peak_contrast_db=contrast,
                 n_peaks=n_peaks,
                 n_cycles=float(duration * peak_freq) if np.isfinite(peak_freq) else float("nan"),
                 contacts=prep.contacts_of(ch),

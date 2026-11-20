@@ -88,6 +88,11 @@ class Event:
     peak_amplitude_uv: float = 0.0
     peak_frequency_hz: float = float("nan")
     spectral_prominence_db: float = float("nan")
+    #: How far that peak stands above the troughs either side of it, in dB
+    #: (`onset_hfo.spectral.event_peak_contrast`). The prominence above says
+    #: there is energy in the band; this says the energy is a peak. A sharp
+    #: discharge has plenty of the first and none of the second.
+    peak_contrast_db: float = float("nan")
     n_peaks: int = 0
     n_cycles: float = float("nan")
     accepted: bool = True
@@ -120,6 +125,7 @@ def events_to_frame(events: list[Event]) -> pd.DataFrame:
         return pd.DataFrame(columns=[
             "channel", "start", "stop", "duration_ms", "detector", "band_low", "band_high",
             "score", "peak_amplitude_uv", "peak_frequency_hz", "spectral_prominence_db",
+            "peak_contrast_db",
             "n_peaks", "n_cycles", "accepted", "reject_reason", "co_occurs_with_spike",
             "contacts"])
     rows = []
@@ -142,6 +148,8 @@ def frame_to_events(df: pd.DataFrame) -> list[Event]:
             peak_amplitude_uv=float(r.get("peak_amplitude_uv", 0.0)),
             peak_frequency_hz=float(r.get("peak_frequency_hz", float("nan"))),
             spectral_prominence_db=float(r.get("spectral_prominence_db", float("nan"))),
+            # Absent from results saved before the measure existed.
+            peak_contrast_db=float(r.get("peak_contrast_db", float("nan"))),
             n_peaks=int(r.get("n_peaks", 0) or 0),
             n_cycles=float(r.get("n_cycles", float("nan"))),
             accepted=bool(r.get("accepted", True)),

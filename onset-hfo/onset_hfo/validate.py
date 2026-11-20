@@ -70,6 +70,14 @@ def validate_events(events: list[Event], prep: Prepared,
                 _reject(e, f"in-band spectral peak only {prominence:.1f} dB above the 1/f "
                            f"background (< {cfg.min_peak_prominence_db:g} dB): probable filter ringing")
                 continue
+            contrast = getattr(e, "peak_contrast_db", float("nan"))
+            if (cfg.min_peak_contrast_db and np.isfinite(contrast)
+                    and contrast < cfg.min_peak_contrast_db):
+                _reject(e, f"no peak inside the band: its spectrum is only {contrast:.1f} dB "
+                           f"above the troughs either side (< {cfg.min_peak_contrast_db:g} dB), "
+                           f"energy passing through and not an oscillation: probable "
+                           f"ringing on a sharp transient")
+                continue
         else:
             i0 = max(0, int(round((e.start - prep.t_offset) * prep.sfreq)))
             i1 = min(prep.data.shape[1], int(round((e.stop - prep.t_offset) * prep.sfreq)))
@@ -142,6 +150,8 @@ def flag_spike_cooccurrence(hfo_events: list[Event], spike_events: list[Event],
 _REASON_KINDS = (
     (re.compile(r"^only \S+ cycles"), "too few cycles"),
     (re.compile(r"^in-band spectral peak only"), "no clear spectral peak, probably filter ringing"),
+    (re.compile(r"^no peak inside the band"),
+     "no peak inside the band, probably ringing on a sharp transient"),
     (re.compile(r"^spectrum not measurable"), "low-frequency transient, probably filter ringing"),
     (re.compile(r"other channels at once"),
      "on too many channels at once, probably muscle or movement"),

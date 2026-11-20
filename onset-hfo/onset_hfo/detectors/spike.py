@@ -84,7 +84,9 @@ def detect_spikes(prep: Prepared, cfg: SpikeConfig | None = None,
             if np.max(np.abs(deriv[left:right + 1])) < slope_threshold:
                 continue  # large but not sharp: a slow wave, not a spike
             jump = float(np.max(np.abs(raw_diff[row, max(0, left - 5):right + 5])))
-            if jump > cfg.max_raw_jump_sd * float(raw_diff_scale[row]):
+            if (jump > cfg.max_raw_jump_sd * float(raw_diff_scale[row])
+                    and _is_step(prep.data[idx[row], max(0, left - 5):right + 5],
+                                 sf, cfg)):
                 continue  # a discontinuity: instrumentation, not brain
             start = prep.t_offset + left / sf
             stop = prep.t_offset + right / sf
@@ -96,3 +98,24 @@ def detect_spikes(prep: Prepared, cfg: SpikeConfig | None = None,
                 contacts=prep.contacts_of(ch),
             ))
     return events
+
+
+def _is_step(window: np.ndarray, sfreq: float, cfg: SpikeConfig) -> bool:
+    """Whether the unfiltered signal crosses most of its excursion at once.
+
+    The fraction of the window's peak-to-peak range covered within
+    `cfg.step_ms`. It is a property of the waveform's shape: the same
+    discharge gives the same answer at 500 Hz and at 2 kHz, on a quiet
+    contact and a noisy one, which the jump in robust SDs does not.
+    """
+    limit = float(getattr(cfg, "max_step_fraction", 0.0) or 0.0)
+    if limit <= 0:
+        return True                     # the SD test alone, as it was
+    span = float(np.ptp(window)) if window.size else 0.0
+    if span <= 0:
+        return False
+    lag = max(1, int(round(float(cfg.step_ms) * sfreq / 1000.0)))
+    if window.size <= lag:
+        return False
+    moved = float(np.max(np.abs(window[lag:] - window[:-lag])))
+    return moved / span > limit
