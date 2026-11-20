@@ -199,7 +199,10 @@ def bandpass(data: np.ndarray, sfreq: float, band: tuple[float, float]) -> np.nd
     import mne
 
     low, high = band
-    high = min(high, 0.45 * sfreq * 2)  # keep below Nyquist with margin
+    # Keep below Nyquist with margin: 0.9 of it, the same limit `Bands.usable`
+    # holds the pipeline to. This read `0.45 * sfreq * 2` -- 0.9 of the
+    # *sampling rate* -- which clamped nothing.
+    high = min(high, 0.45 * sfreq)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         return mne.filter.filter_data(

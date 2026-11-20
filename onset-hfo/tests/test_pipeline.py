@@ -375,3 +375,16 @@ def test_excluding_every_channel_is_refused(recording):
         prepare(recording, replace(PreprocessConfig(),
                                    exclude=tuple(recording.raw.ch_names)),
                 verbose=False)
+
+
+def test_the_band_pass_keeps_its_upper_edge_below_nyquist():
+    """The clamp read `0.45 * sfreq * 2`, which is 0.9 of the sampling rate
+    and clamps nothing: a caller outside the pipeline asking for 80-250 Hz at
+    400 Hz got MNE's error instead of a band the recording can carry."""
+    import numpy as np
+
+    from onset_hfo.detectors.base import bandpass
+
+    rng = np.random.default_rng(0)
+    out = bandpass(rng.standard_normal((1, 4000)), 400.0, (80.0, 250.0))
+    assert out.shape == (1, 4000) and np.isfinite(out).all()
