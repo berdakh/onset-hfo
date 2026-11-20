@@ -1897,6 +1897,32 @@ def test_the_patient_panel_says_an_imported_window_has_no_record(qapp, recording
     assert "age, sex and handedness" not in text
 
 
+def test_an_imported_file_labelled_like_a_cohort_subject_gets_no_record(
+        qapp, recording):
+    """`sub-05` from a hospital is not the cohort's sub-05. Showing that
+    patient's epilepsy type and surgical outcome beside this EEG would be
+    another patient's chart on this one's screen."""
+    import pathlib
+
+    from onset_review.patient import PatientPanel
+    from onset_review.record import patient_record
+
+    assert patient_record("sub-05")["available"] is True
+    assert patient_record("sub-05", imported=True)["available"] is False
+    assert patient_record("sub-05", dataset="ds003029")["available"] is False
+    assert patient_record("sub-05", dataset="ds003498")["available"] is True
+
+    request = ReviewRequest(dataset="ds003498", subject="sub-05",
+                            path=pathlib.Path("sub-05.edf"),
+                            t_start=0.0, t_stop=float(recording.duration))
+    panel = PatientPanel(session_from_recording(recording, request))
+    assert panel.record["available"] is False
+    text = " ".join(label.text() for label in panel.findChildren(qt.QLabel))
+    assert "no participant record, no resected zone" in text
+    assert "Surgical outcome" not in text
+    assert not hasattr(panel, "outcome_shown")
+
+
 def test_the_command_line_flags_open_the_dialog_on_their_answer(qapp,
                                                                 recording_file):
     """`--window 0 30 --all-channels-as seeg` is an answer, not a suggestion.
