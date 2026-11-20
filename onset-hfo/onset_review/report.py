@@ -493,6 +493,20 @@ def _read_section(session: ReviewSession) -> list[str]:
             f"| Not real | {counts['disagree']} |",
             f"| Cannot tell | {counts['unsure']} |", ""]
 
+    second = read.second_opinions()
+    if second["n"]:
+        out += [f"**Two readers.** {second['n']} verdict(s) were given after "
+                f"another reader's on the same event or contact. They agreed on "
+                f"{second['agreed']} and differed on {len(second['disagreed'])}. "
+                f"The counts above are the later reader's; the earlier verdicts "
+                f"are kept in the read."
+                + (" Differed on: " + "; ".join(
+                    f"`{key}` ({before} said {_verdict_word(was)}, {after} said "
+                    f"{_verdict_word(is_)})"
+                    for key, before, was, after, is_ in second["disagreed"][:10])
+                   + ("; …" if len(second["disagreed"]) > 10 else "") + "."
+                   if second["disagreed"] else ""), ""]
+
     if judged < total:
         out += [f"**This is a partial read.** {total - judged} of {total} "
                 f"accepted events carry no verdict. The counts above are not "
@@ -626,3 +640,8 @@ def _quality_section(session: ReviewSession) -> list[str]:
                 "and leaves the judgement to whoever can look at the trace.",
                 ""]
     return out
+
+
+def _verdict_word(verdict: str) -> str:
+    return {"agree": "real", "disagree": "not real", "unsure": "cannot tell"}.get(
+        str(verdict), str(verdict))

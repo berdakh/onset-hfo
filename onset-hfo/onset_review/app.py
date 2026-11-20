@@ -597,14 +597,16 @@ class _Review:
         from onset_review import adjudication
 
         stored = adjudication.load(session.request)
-        if not stored.reader:
-            # Carried from the window being replaced. A reviewer who named
-            # themselves and then moved to the next minute is the same person,
-            # and being asked again at every window is how a reader learns to
-            # click past the question.
-            carried = (self.parts.session.read.reader
-                       if self.parts is not None else "")
-            stored.reader = (carried or (self.args.reader or "")).strip()
+        # Who is reading is whoever named themselves in *this* run of the
+        # application, carried from the window being replaced -- a reviewer
+        # who moved to the next minute is the same person, and being asked at
+        # every window is how a reader learns to click past the question.
+        # It is not whoever saved this window's file: on a shared workstation
+        # that put every verdict Dr B gave under Dr A's name, with no prompt.
+        # With nobody named yet the first verdict asks.
+        carried = (self.parts.session.read.reader
+                   if self.parts is not None else "")
+        stored.reader = (carried or (self.args.reader or "")).strip()
         session.read = adjudication.reconcile(stored, session.events)
         self._orphans = len(session.read.orphaned)
         if session.read.set_aside:

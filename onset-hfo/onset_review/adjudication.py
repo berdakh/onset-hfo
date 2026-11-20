@@ -249,6 +249,12 @@ class Adjudication:
     #: person's recorded opinion because the software's opinion changed is the
     #: one behaviour this module must not have.
     orphaned: dict = field(default_factory=dict)
+    #: Verdicts another reader gave before the one now in `events` or
+    #: `channels`: key -> [Judgement, ...], oldest first. A second reader's
+    #: click used to replace the first reader's verdict and leave no trace
+    #: that there had been one, or that the two disagreed. `events` is still
+    #: the verdict that counts; these are kept, saved, and reported.
+    superseded: dict = field(default_factory=dict)
     #: Where :func:`load` moved a stored read it could not parse, or "". Not
     #: written to the file: it is about this load, and exists so the window
     #: can say that earlier verdicts were not read and where they now are.
@@ -308,6 +314,11 @@ class Adjudication:
             note = previous.note
         judged = Judgement(verdict=verdict, reader=who, at=now(), note=note,
                            match=previous.match if previous else "")
+        # Someone else's verdict is not overwritten, it is superseded: kept
+        # under the same key with its reader and time. The same reader
+        # changing their mind replaces their own, as it always has.
+        if previous is not None and previous.reader and previous.reader != who:
+            self.superseded.setdefault(key, []).append(replace(previous, match=""))
         into[key] = judged
         if who and not self.reader:
             self.reader = who
@@ -393,11 +404,34 @@ class Adjudication:
         collapsing into a single "Reviewer" line.
         """
         seen = []
-        for judged in (list(self.events.values()) + list(self.channels.values())
-                       + list(self.orphaned.values())):
+        earlier = [judged for group in self.superseded.values() for judged in group]
+        for judged in (earlier + list(self.events.values())
+                       + list(self.channels.values()) + list(self.orphaned.values())):
             if judged.reader and judged.reader not in seen:
                 seen.append(judged.reader)
         return seen
+
+    def second_opinions(self) -> dict:
+        """What happened where one reader's verdict followed another's.
+
+        `n` events or channels carry an earlier verdict by someone else; on
+        `agreed` of them the latest earlier reader said the same as the one
+        now standing, and `disagreed` lists the rest as `(key, earlier
+        reader, earlier verdict, current reader, current verdict)`.
+        """
+        current = {**self.channels, **self.orphaned, **self.events}
+        agreed, disagreed = 0, []
+        for key, group in sorted(self.superseded.items()):
+            now_ = current.get(key)
+            if now_ is None or not group:
+                continue
+            before = group[-1]
+            if before.verdict == now_.verdict:
+                agreed += 1
+            else:
+                disagreed.append((key, before.reader, before.verdict,
+                                  now_.reader, now_.verdict))
+        return {"n": agreed + len(disagreed), "agreed": agreed, "disagreed": disagreed}
 
     def counts(self) -> dict:
         """How many of each verdict, over the whole window."""
@@ -467,6 +501,8 @@ class Adjudication:
                                                   **self.events}.items())},
             "channels": {key: judged.to_json()
                          for key, judged in sorted(self.channels.items())},
+            "superseded": {key: [judged.to_json() for judged in group]
+                           for key, group in sorted(self.superseded.items()) if group},
         }
 
     @classmethod
@@ -491,6 +527,8 @@ class Adjudication:
                     for key, value in (data.get("events") or {}).items()},
             channels={str(key): Judgement.from_json(value)
                       for key, value in (data.get("channels") or {}).items()},
+            superseded={str(key): [Judgement.from_json(value) for value in group]
+                        for key, group in (data.get("superseded") or {}).items()},
         )
 
 
@@ -600,6 +638,7 @@ def reconcile(read: Adjudication, events,
     """
     carried: dict = {}
     orphans: list = []
+    moved: dict = {}             # a verdict's stored key -> the key it now has
     # Current events, grouped by channel and sorted, so a verdict only ever
     # looks at the handful of events it could plausibly be about.
     by_channel: dict = {}
@@ -643,6 +682,7 @@ def reconcile(read: Adjudication, events,
             continue
         taken.add(best)
         carried[best] = replace(judged, match="exact" if best_exact else "near")
+        moved[key] = best
 
     # The paragraphs travel with the read: a re-analysis that dropped them
     # would let the next save erase what the reader wrote or signed off.
@@ -657,4 +697,7 @@ def reconcile(read: Adjudication, events,
         limits=read.limits, limits_by=read.limits_by, limits_at=read.limits_at,
         limits_evidence=list(read.limits_evidence), limits_basis=read.limits_basis,
         limits_verdicts=dict(read.limits_verdicts),
+        # Earlier readers' verdicts follow the verdict that superseded them.
+        superseded={moved.get(key, key): list(group)
+                    for key, group in read.superseded.items()},
         set_aside=read.set_aside)

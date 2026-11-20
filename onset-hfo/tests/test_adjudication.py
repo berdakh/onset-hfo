@@ -367,3 +367,47 @@ def test_a_near_match_does_not_take_another_verdicts_own_event():
     out = adj.reconcile(read, [_Event("A1-A2", 12.370)])
     assert out.verdict_of(kept) == "agree" and out.events[kept].match == "exact"
     assert list(out.orphaned) == [gone]
+
+
+# -- a second reader ----------------------------------------------------------
+
+
+def test_a_second_readers_verdict_does_not_erase_the_first(request_):
+    """Dr B's click replaced Dr A's verdict and left no sign there had been
+    one. The later verdict still counts; the earlier one is kept."""
+    key = adj.event_key("A1-A2", 3.0, "rms")
+    other = adj.event_key("A1-A2", 7.0, "rms")
+    read = adj.Adjudication()
+    read.judge_event(key, "agree", reader="Dr A", note="clear island")
+    read.judge_event(other, "agree", reader="Dr A")
+    read.judge_event(key, "disagree", reader="Dr B")
+    read.judge_event(other, "agree", reader="Dr B")
+
+    assert read.verdict_of(key) == "disagree" and read.events[key].reader == "Dr B"
+    assert [(j.reader, j.verdict, j.note) for j in read.superseded[key]] == [
+        ("Dr A", "agree", "clear island")]
+    assert read.readers == ["Dr A", "Dr B"]
+    second = read.second_opinions()
+    assert second["n"] == 2 and second["agreed"] == 1
+    assert second["disagreed"] == [(key, "Dr A", "agree", "Dr B", "disagree")]
+
+    # Changing your own mind is still a replacement, not a second opinion.
+    read.judge_event(key, "unsure", reader="Dr B")
+    assert len(read.superseded[key]) == 1
+
+    adj.save(request_, read)
+    back = adj.load(request_)
+    assert back.superseded[key][0].reader == "Dr A"
+    assert back.second_opinions()["n"] == 2
+
+
+def test_an_earlier_verdict_follows_its_event_through_a_re_analysis():
+    read = adj.Adjudication()
+    key = adj.event_key("A1-A2", 12.340, "rms")
+    read.judge_event(key, "agree", reader="Dr A")
+    read.judge_event(key, "disagree", reader="Dr B")
+    out = adj.reconcile(read, [_Event("A1-A2", 12.355)])
+    moved = adj.event_key("A1-A2", 12.355, "rms")
+    assert out.verdict_of(moved) == "disagree"
+    assert out.superseded[moved][0].reader == "Dr A"
+    assert out.second_opinions()["disagreed"][0][0] == moved
