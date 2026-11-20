@@ -51,7 +51,6 @@ rather than waved at: over the same 200 s, chunks of 30 s, 60 s and 100 s give
 from __future__ import annotations
 
 import math
-
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
