@@ -35,8 +35,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import mne
+import numpy as np
 import pandas as pd
 
+from onset_hfo.config import BANDS
 from onset_hfo.datasets import Recording
 
 __all__ = ["Format", "FORMATS", "detect_format", "supported_suffixes",
@@ -415,6 +417,31 @@ def open_recording(path: str | Path, *, t_start: float = 0.0,
            f"channels.tsv beside it gives it ({', '.join(sorted(set(rescaled.values())))}), "
            "so they were read in that unit rather than as volts"] if rescaled else []),
     ]
+    # Two things the file can say about itself that the person importing it
+    # may not know, and that decide whether an HFO count means anything.
+    seen = mains_in_signal(raw)
+    if seen is not None and abs(seen - float(line_freq)) > 1.0:
+        notes.append(
+            f"WARNING: the signal carries mains pickup at {seen:g} Hz, and this "
+            f"import was told {line_freq:g} Hz. The notch is on the wrong "
+            f"frequency: the interference and its harmonics "
+            f"({2 * seen:g}, {3 * seen:g}, {4 * seen:g} Hz) are still in the "
+            f"signal, inside or beside the ripple band. Import again with mains "
+            f"set to {seen:g} Hz")
+    cut = acquisition_lowpass(raw)
+    if cut is not None:
+        lost = [f"{label} ({band[0]:g}–{band[1]:g} Hz)"
+                for label, band in (("ripples", BANDS.ripple),
+                                    ("fast ripples", BANDS.fast_ripple))
+                if cut < band[1]]
+        if lost:
+            notes.append(
+                f"WARNING: the file's header says it was low-pass filtered at "
+                f"{cut:g} Hz when it was recorded or exported. Activity above "
+                f"that is attenuated however fast the file is sampled, so few "
+                f"or no events in {' or '.join(lost)} is what this file would "
+                f"show whether or not the brain produced them")
+
     if not (types & set(INTRACRANIAL_TYPES)):
         from onset_hfo.modality import MODALITIES, detect
 
@@ -433,6 +460,70 @@ def open_recording(path: str | Path, *, t_start: float = 0.0,
         t_offset=float(t_start), line_freq=float(line_freq),
         dataset_id="", citation="", notes=notes,
     )
+
+
+def mains_in_signal(raw, picks=None) -> float | None:
+    """50 or 60 if the signal plainly carries that mains frequency, else None.
+
+    A bare EDF does not say where it was recorded, and the import assumes
+    50 Hz when nobody does. This reads the answer off the data instead: the
+    power in a narrow line at each candidate against the spectrum either side
+    of it, on the median channel. None when neither stands out, or when both
+    do -- a clean recording is not evidence for either.
+    """
+    from scipy.signal import welch
+
+    sfreq = float(raw.info["sfreq"])
+    if sfreq < 150.0:
+        return None
+    try:
+        data = raw.get_data(picks=picks if picks is not None else "data")
+    except Exception:                       # noqa: BLE001 -- no data channels
+        return None
+    if data.size == 0 or data.shape[1] < int(2 * sfreq):
+        return None
+    data = data[np.isfinite(data).all(axis=1)]
+    if not len(data):
+        return None
+    freqs, power = welch(data, fs=sfreq, nperseg=int(min(data.shape[1], 4 * sfreq)),
+                         axis=-1)
+    power = np.median(power, axis=0)
+
+    def prominence(line: float) -> float:
+        peak = power[(freqs >= line - 0.5) & (freqs <= line + 0.5)]
+        around = power[((freqs >= line - 5) & (freqs <= line - 2))
+                       | ((freqs >= line + 2) & (freqs <= line + 5))]
+        if not len(peak) or not len(around) or float(np.median(around)) <= 0:
+            return 0.0
+        return float(peak.max() / np.median(around))
+
+    at = {50.0: prominence(50.0), 60.0: prominence(60.0)}
+    best = max(at, key=at.get)
+    other = min(at, key=at.get)
+    if at[best] < MAINS_PROMINENCE or at[best] < 3.0 * at[other]:
+        return None
+    return best
+
+
+#: How far a mains line must rise above the spectrum either side of it, as a
+#: power ratio, before the signal is taken to say which mains it was recorded
+#: on. Ten is a line nobody would miss on a spectrum; a notch at acquisition
+#: or a well-shielded room leaves nothing, and then nothing is concluded.
+MAINS_PROMINENCE = 10.0
+
+
+def acquisition_lowpass(raw) -> float | None:
+    """The low-pass the file's header declares, when it is below what the
+    sampling rate alone would allow. None when the header does not say, which
+    MNE reports as a low-pass at the Nyquist frequency."""
+    try:
+        cut = float(raw.info.get("lowpass") or 0.0)
+    except (TypeError, ValueError):
+        return None
+    nyquist = float(raw.info["sfreq"]) / 2.0
+    if not np.isfinite(cut) or cut <= 0 or cut >= 0.98 * nyquist:
+        return None
+    return cut
 
 
 def _unsupported(path: Path) -> str:
