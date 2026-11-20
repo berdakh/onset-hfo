@@ -147,6 +147,17 @@ def statement(table: pd.DataFrame, found: dict) -> str:
         parts.append("No onset zone is marked: tick its contacts to see the agreement.")
     placed = int(table["placed"].sum())
     parts.append(f"{placed} of {len(table)} channels placed on the template.")
+    # Said beside the rates, not left in a limitations file: the channels a
+    # reader looks at first that sit where ripples are physiological.
+    if len(table) and "where" in table and "rate_per_min" in table:
+        from onset_hfo.physiology import physiological_note
+
+        head = table[table["rate_per_min"].fillna(0) > 0].sort_values(
+            "rate_per_min", ascending=False).head(10)
+        note = physiological_note(head["channel"], head["where"].fillna(""),
+                                  how="by atlas label")
+        if note:
+            parts.append(note)
     return " ".join(parts) if parts else "Nothing analysed yet."
 
 

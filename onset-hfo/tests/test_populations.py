@@ -410,3 +410,25 @@ def test_the_arms_are_scored_on_nearly_the_same_patients():
             f"{row.band}/{row.metric}/{row.population} is scored on "
             f"{row.n_SF}/{row.n_rec} patients, {lost} fewer than merged "
             f"(limit {limit}); the arms are drifting apart")
+
+
+# -- where a high ripple rate is expected anyway ------------------------------
+
+
+def test_physiological_regions_are_named_and_others_are_not():
+    from onset_hfo.physiology import NOTE, expected_physiological, physiological_note
+
+    assert expected_physiological("left hippocampus") == \
+        "mesial temporal (hippocampal formation)"
+    assert expected_physiological("near Calcarine cortex") == "occipital"
+    assert expected_physiological("Right Precentral Gyrus") == "sensorimotor (peri-rolandic)"
+    for other in ("amygdala", "temporal pole", "frontal", "unmapped", "", None):
+        assert expected_physiological(other) == ""
+
+    note = physiological_note(["AHR1-AHR2", "FR3-FR4", "OL1-OL2"],
+                              ["anterior hippocampus", "frontal", "occipital"],
+                              how="going by the electrode's name")
+    assert "AHR1-AHR2 (mesial temporal" in note and "OL1-OL2 (occipital)" in note
+    assert "FR3-FR4" not in note and "going by the electrode's name" in note
+    assert NOTE in note and "not by itself evidence" in note
+    assert physiological_note(["FR3-FR4"], ["frontal"]) == ""

@@ -198,6 +198,9 @@ def review_markdown(session: ReviewSession, reviewer: str | None = None,
     out += [_table(findings, ["rank", "channel", "n_events", "rate", "annotators"]),
             "_Rate is events per minute with its 95% Poisson interval; every "
             "measurement per channel is in the appendix._", ""]
+    physiological = _physiological_note(session)
+    if physiological:
+        out += [physiological, ""]
 
     accord = trends.agreement_summary(session)
     agreement = trends.agreement(session)
@@ -671,3 +674,26 @@ def _quality_section(session: ReviewSession) -> list[str]:
 def _verdict_word(verdict: str) -> str:
     return {"agree": "real", "disagree": "not real", "unsure": "cannot tell"}.get(
         str(verdict), str(verdict))
+
+
+def _physiological_note(session, top: int = 10) -> str:
+    """Which of the highest-rate channels sit where ripples are physiological.
+
+    Regions come from the layout: an atlas label is not available for a single
+    window, so this is the structure the electrode's *name* claims, and says
+    so. A recording whose names say nothing gets no note -- which is not a
+    statement that none of its contacts is in hippocampus.
+    """
+    from onset_hfo.physiology import physiological_note
+    from onset_review.anatomy import electrode_layout
+
+    try:
+        layout = electrode_layout(session, electrodes=getattr(session, "electrodes", None))
+    except Exception:                       # noqa: BLE001 -- a note, not the analysis
+        return ""
+    if layout.empty or "region" not in layout:
+        return ""
+    head = layout.sort_values("rank").head(top)
+    head = head[head["n_events"] > 0]
+    return physiological_note(head["channel"], head["region"],
+                              how="going by the electrode's name")
