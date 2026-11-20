@@ -2018,12 +2018,42 @@ class MapPage(QWidget):
         self.refresh()
         self.changed.emit()
 
-    def import_file(self, path, space: str = "MNI152"):
+    def audit_file(self, path, space: str = "MNI152"):
+        """The file read, and what it is against this case's recorded contacts."""
         from onset_hfo.case.electrodes import read_coordinate_file
+        from onset_review.coordinates import audit_import
 
         frame = read_coordinate_file(path, space)
-        self._store(frame, "imported contact positions",
-                    f"{len(frame)} contact(s) from {Path(path).name} ({space})")
+        return frame, audit_import(frame["name"], frame["x"], self._recorded_names())
+
+    def _recorded_names(self) -> list[str]:
+        """Intracranial contact names in this case's recordings, and only those."""
+        import pandas as pd
+
+        from onset_hfo.case.electrodes import ELECTRODE_COLUMNS
+
+        return self._contact_names(pd.DataFrame(columns=list(ELECTRODE_COLUMNS)))
+
+    def import_file(self, path, space: str = "MNI152", confirm=None):
+        """Place this case's contacts from a file, after checking it is theirs.
+
+        A file none of whose names this case recorded is refused. One with
+        names never recorded here, contact counts that differ, or sides that
+        disagree with its own electrode names is placed only if `confirm`
+        (called with the audit) returns true -- and with no `confirm`, which
+        is what a script gives, it is not placed. What was found goes into
+        the case's log either way.
+        """
+        frame, audit = self.audit_file(path, space)
+        if audit.refused:
+            raise ValueError(audit.refused)
+        if audit.doubtful and not (confirm is not None and confirm(audit)):
+            raise ValueError("Not placed. " + audit.summary())
+        detail = (f"{len(frame)} contact(s) from {Path(path).name} ({space}), "
+                  f"sha256 {_sha256(path)[:16]}. {audit.summary()}")
+        if audit.doubtful:
+            detail += " PLACED AFTER CONFIRMATION of the above."
+        self._store(frame, "imported contact positions", detail)
         return frame
 
     def import_dialog(self):
@@ -2038,8 +2068,16 @@ class MapPage(QWidget):
                                          list(SPACES), 0, False)
         if not ok:
             return None
+        def confirm(audit) -> bool:
+            return QMessageBox.warning(
+                self, "This file may not be this patient's — place it anyway?",
+                audit.summary() + "\n\nPlacing it is recorded in the case's log "
+                "with everything above.",
+                QMessageBox.Yes | QMessageBox.Cancel,
+                QMessageBox.Cancel) == QMessageBox.Yes
+
         try:
-            return self.import_file(path, space)
+            return self.import_file(path, space, confirm=confirm)
         except (OSError, ValueError) as error:
             QMessageBox.warning(self, "Import coordinates", str(error))
             return None
@@ -2522,3 +2560,13 @@ def open_case_dialog(parent=None) -> Case | None:
     except FileNotFoundError as error:
         QMessageBox.warning(parent, "Open a case", str(error))
         return None
+
+
+def _sha256(path) -> str:
+    import hashlib
+
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for block in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()

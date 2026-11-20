@@ -368,3 +368,108 @@ def _normalise(frame: pd.DataFrame):
         return pd.DataFrame(), [
             "Every row in this file is missing a coordinate."]
     return out, []
+
+
+@dataclass
+class ImportAudit:
+    """A coordinate file checked against the contacts a case recorded.
+
+    The single-recording import has always shown its match before placing
+    anything. The case import did not look: any file was merged into the
+    case's contacts, so another patient's export -- same electrode names, as
+    SEEG names are -- placed cleanly, and this patient's rates were drawn on
+    that patient's geometry.
+    """
+
+    matched: tuple = ()          #: recorded and in the file
+    unplaced: tuple = ()         #: recorded, not in the file
+    unused: tuple = ()           #: in the file, never recorded in this case
+    #: Electrodes whose contact count differs: `(electrode, in file, recorded)`.
+    count_mismatch: tuple = ()
+    side_conflicts: tuple = ()
+    side_checked: int = 0
+    n_recorded: int = 0
+
+    @property
+    def mirrored(self) -> bool:
+        return (self.side_checked >= 2
+                and len(self.side_conflicts) * 2 > self.side_checked)
+
+    @property
+    def refused(self) -> str:
+        """Why the file cannot be this case's, or ""."""
+        if self.n_recorded and not self.matched:
+            return ("None of the contact names in this file is a contact this "
+                    "case recorded, so nothing can be placed from it. It is "
+                    "another patient's file, or its names are written "
+                    "differently (LA01 for LA1, say).")
+        return ""
+
+    @property
+    def doubtful(self) -> bool:
+        """Something a person should decide about before the positions are used."""
+        return bool(self.unused or self.count_mismatch or self.side_conflicts)
+
+    def summary(self) -> str:
+        if self.refused:
+            return self.refused
+        if not self.n_recorded:
+            return ("No recording in this case yet, so the names in the file "
+                    "could not be checked against its contacts.")
+        parts = [f"{len(self.matched)} of {self.n_recorded} recorded contacts "
+                 f"are in the file."]
+        if self.unplaced:
+            parts.append(f"{len(self.unplaced)} recorded contact(s) are not in "
+                         f"it and stay unplaced: {_some(self.unplaced)}.")
+        if self.unused:
+            parts.append(f"{len(self.unused)} name(s) in the file were NEVER "
+                         f"RECORDED in this case: {_some(self.unused)}. A file "
+                         f"from another patient looks like this.")
+        if self.count_mismatch:
+            parts.append("Contact counts differ: " + "; ".join(
+                f"{shaft} has {in_file} in the file and {recorded} recorded"
+                for shaft, in_file, recorded in self.count_mismatch[:8]) + ".")
+        sides = Coordinates(side_conflicts=self.side_conflicts,
+                            side_checked=self.side_checked).side_warning()
+        if sides:
+            parts.append(sides)
+        return " ".join(parts)
+
+
+def _some(names, limit: int = 8) -> str:
+    names = list(names)
+    return ", ".join(names[:limit]) + (f" and {len(names) - limit} more"
+                                       if len(names) > limit else "")
+
+
+def audit_import(names, xs, recorded) -> ImportAudit:
+    """Check a coordinate file's contacts against the ones a case recorded.
+
+    `names` and `xs` are the file's contact names and x in millimetres (RAS);
+    `recorded` is every intracranial contact name in the case's recordings.
+    Names are compared without regard to case and otherwise exactly: `LA01`
+    is not quietly taken for `LA1`, it is reported.
+    """
+    from onset_review.anatomy import parse_channel
+
+    have = [str(n).strip().upper() for n in names]
+    wanted = list(dict.fromkeys(str(n).strip().upper() for n in recorded))
+    matched = tuple(n for n in wanted if n in set(have))
+    unplaced = tuple(n for n in wanted if n not in set(have))
+    unused = tuple(sorted(set(have) - set(wanted))) if wanted else ()
+
+    def per_shaft(group) -> dict:
+        counts: dict = {}
+        for name in group:
+            shaft = parse_channel(name)[0]
+            counts[shaft] = counts.get(shaft, 0) + 1
+        return counts
+
+    in_file, in_case = per_shaft(set(have)), per_shaft(wanted)
+    mismatch = tuple((shaft, in_file[shaft], in_case[shaft])
+                     for shaft in sorted(set(in_file) & set(in_case))
+                     if in_file[shaft] != in_case[shaft]) if wanted else ()
+    conflicts, checked = laterality_audit(have, list(xs), "millimetres")
+    return ImportAudit(matched=matched, unplaced=unplaced, unused=unused,
+                       count_mismatch=mismatch, side_conflicts=conflicts,
+                       side_checked=checked, n_recorded=len(wanted))

@@ -338,3 +338,74 @@ def test_the_window_places_labels_zones_and_maps(qapp, tmp_path, monkeypatch, at
         assert "removed contact positions" in actions
     finally:
         window.close()
+
+
+# -- a coordinate file is checked against this case before it is placed -------
+
+
+def test_the_import_audit_says_what_does_not_belong():
+    from onset_review.coordinates import audit_import
+
+    recorded = ["AL1", "AL2", "AL3", "BR1", "BR2"]
+    own = audit_import(["AL1", "AL2", "AL3", "BR1", "BR2"], [-30, -35, -40, 30, 35],
+                       recorded)
+    assert not own.refused and not own.doubtful
+    assert "5 of 5 recorded contacts" in own.summary()
+
+    foreign = audit_import(["LA1", "LA2", "RH1"], [-30, -35, 30], recorded)
+    assert "another patient's file" in foreign.refused
+
+    partly = audit_import(["AL1", "AL2", "BR1", "BR2", "BR3", "CL1"],
+                          [-30, -35, 30, 35, 40, -20], recorded)
+    assert partly.doubtful and not partly.refused
+    assert partly.unplaced == ("AL3",) and partly.unused == ("BR3", "CL1")
+    assert ("AL", 2, 3) in partly.count_mismatch and ("BR", 3, 2) in partly.count_mismatch
+    assert "NEVER RECORDED" in partly.summary()
+
+    mirrored = audit_import(recorded, [30, 35, 40, -30, -35], recorded)
+    assert mirrored.doubtful and mirrored.mirrored
+    assert "MIRRORED" in mirrored.summary()
+    # LA01 is not quietly taken for LA1.
+    assert audit_import(["AL01"], [-30], ["AL1"]).refused
+
+
+def test_the_case_import_refuses_or_asks_and_logs_what_it_found(
+        qapp, tmp_path, monkeypatch, atlas_folder):
+    from onset_hfo.case.electrodes import load_electrodes
+    from onset_review.casewindow import CaseWindow
+
+    monkeypatch.setenv("ONSET_ATLAS_DIR", str(atlas_folder))
+    case = Case.create(tmp_path / "case", "P53")
+    window = CaseWindow(case, reader="dr test")
+    try:
+        assert window.show_step("map")
+        page = window.map_page
+        monkeypatch.setattr(page, "_recorded_names",
+                            lambda: ["AL1", "AL2", "BR1", "BR2"])
+
+        other = tmp_path / "other.tsv"
+        other.write_text("name\tx\ty\tz\nLA1\t-30\t0\t20\nLA2\t-35\t0\t20\n")
+        with pytest.raises(ValueError, match="another patient's file"):
+            page.import_file(other)
+
+        flipped = tmp_path / "lps.tsv"
+        flipped.write_text("name\tx\ty\tz\nAL1\t30\t0\t20\nAL2\t35\t0\t20\n"
+                           "BR1\t-30\t0\t20\nBR2\t-35\t0\t20\n")
+        with pytest.raises(ValueError, match="Not placed.*MIRRORED"):
+            page.import_file(flipped)                     # nobody to ask
+        with pytest.raises(ValueError, match="Not placed"):
+            page.import_file(flipped, confirm=lambda audit: False)
+        assert not len(load_electrodes(case))
+
+        seen = []
+        page.import_file(flipped, confirm=lambda audit: seen.append(audit) or True)
+        assert seen and seen[0].mirrored and len(load_electrodes(case)) == 4
+        logged = " ".join(str(entry) for entry in case.log)
+        assert "PLACED AFTER CONFIRMATION" in logged and "sha256" in logged
+
+        right = tmp_path / "ras.tsv"
+        right.write_text("name\tx\ty\tz\nAL1\t-30\t0\t20\nAL2\t-35\t0\t20\n"
+                         "BR1\t30\t0\t20\nBR2\t35\t0\t20\n")
+        page.import_file(right)                           # nothing to ask about
+    finally:
+        window.close()
