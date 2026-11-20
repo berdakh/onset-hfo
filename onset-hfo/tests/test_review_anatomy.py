@@ -116,6 +116,35 @@ def test_left_and_right_shafts_land_on_opposite_sides():
     assert right[0] == pytest.approx(-left[0])
 
 
+@pytest.mark.parametrize("shaft", ["A", "A'", "AH", "H'"])
+def test_a_shaft_whose_name_gives_no_side_is_not_drawn_in_a_hemisphere(shaft):
+    """`A1` used to be drawn at the very point `AR1` is: a side stated by a
+    picture that did not know it. A prime is not read as a side either, since
+    what it means differs between centres."""
+    from onset_review.anatomy import _inferred_position
+
+    assert parse_channel(f"{shaft}1")[2] == "?"
+    for index in (1, 4, 8):
+        assert _inferred_position(shaft, index, 8)[0] == 0.0
+    assert _inferred_position(shaft, 1, 8) != _inferred_position(shaft, 2, 8)
+
+
+def test_the_caption_names_the_shafts_whose_side_is_unknown():
+    import pandas as pd
+
+    from onset_review.anatomy import layout_caption
+
+    layout = pd.DataFrame({
+        "shaft": ["AR", "AHR", "A'", "H"], "hemisphere": ["R", "R", "?", "?"],
+        "region": ["amygdala", "anterior hippocampus", "amygdala", "hippocampus"],
+        "source": ["inferred"] * 4})
+    caption = layout_caption(layout)
+    assert "SIDE UNKNOWN for 2 shaft(s) — A', H" in caption
+    assert "not this patient's anatomy" in caption
+    sided = layout_caption(layout[layout["hemisphere"] == "R"])
+    assert "SIDE UNKNOWN" not in sided
+
+
 def test_a_bipolar_channel_is_drawn_between_its_two_contacts(review):
     """A pair localises to between its contacts, not to one of them."""
     from onset_review.anatomy import _inferred_position
