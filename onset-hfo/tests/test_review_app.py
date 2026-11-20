@@ -4183,3 +4183,25 @@ def test_a_pane_that_does_not_fit_beside_the_pages_opens_as_a_window(paged, monk
     monkeypatch.setattr(qt.QApplication, "primaryScreen", staticmethod(lambda: Narrow()))
     assert host._fit_pane(dock) is True and dock.isFloating()
     dock.setFloating(False)
+
+
+# -- what the assistant reads, against what the screen shows ------------------
+
+
+def test_the_assistant_says_when_its_evidence_is_not_the_analysis_on_screen():
+    """A long span is ranked over ten minutes and the assistant read one of
+    them, quoting its numbers as verified against tables they do not match."""
+    import types
+
+    from onset_review.assistant import evidence_scope
+
+    def session(span, keep=()):
+        request = types.SimpleNamespace(t_start=120.0, t_stop=180.0, keep_channels=keep)
+        return types.SimpleNamespace(request=request, span=span)
+
+    assert evidence_scope(session((120.0, 180.0))) == ""
+    long = evidence_scope(session((0.0, 600.0)))
+    assert "cover 0–600 s" in long and "only the 120–180 s" in long
+    kept = evidence_scope(session((120.0, 180.0), keep=("AR1-AR2",)))
+    assert "reinstated (AR1-AR2)" in kept and "still set aside" in kept
+    assert evidence_scope(types.SimpleNamespace()) == ""

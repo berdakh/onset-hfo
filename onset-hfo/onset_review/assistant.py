@@ -112,6 +112,42 @@ def parse_evidence_id(evidence_id: str) -> tuple[str, float] | None:
         return None
 
 
+def evidence_scope(session) -> str:
+    """Where the assistant's evidence differs from the tables on screen, or "".
+
+    The evidence is this project's pipeline run over the recording the
+    session holds. For a long span that recording is only the stretch the
+    trace shows: the tables rank ten minutes and the assistant would be
+    quoting, as verified, numbers from one of them. A contact the reviewer
+    reinstated has a rate on screen and none in the evidence. Neither is an
+    error in the answer, and both make it an answer about something else.
+    """
+    request = getattr(session, "request", None)
+    if request is None:
+        return ""
+    parts = []
+    try:
+        span_start, span_stop = session.span
+        shown = float(request.t_stop) - float(request.t_start)
+        if (span_stop - span_start) > shown + 1e-6:
+            parts.append(
+                f"the tables on screen cover {span_start:g}–{span_stop:g} s, and "
+                f"the assistant reads only the {request.t_start:g}–{request.t_stop:g} s "
+                f"the trace holds: its counts, rates and ranks are for that stretch "
+                f"and will not match the tables")
+    except (AttributeError, TypeError, ValueError):
+        pass
+    kept = list(getattr(request, "keep_channels", ()) or ())
+    if kept:
+        parts.append(
+            f"{len(kept)} contact(s) you reinstated ({', '.join(kept[:4])}"
+            f"{', …' if len(kept) > 4 else ''}) are analysed on screen and are "
+            f"still set aside in what the assistant reads")
+    if not parts:
+        return ""
+    return "The assistant's evidence is not the analysis on screen: " + "; ".join(parts) + "."
+
+
 class _StoreWorker(QThread):
     """Builds the saved analysis the agent reads, off the GUI thread.
 
@@ -584,6 +620,9 @@ class AssistantPanel(QWidget):
                              f"{html.escape(self._builder.error)}")
             return False
         self._store = self._builder.store
+        scope = evidence_scope(self._session)
+        if scope:
+            self._say_system("<b>" + html.escape(scope) + "</b>")
         return True
 
     # -- asking ------------------------------------------------------------
@@ -601,6 +640,16 @@ class AssistantPanel(QWidget):
         return self._draft(LIMITS_QUESTION, self.draftedLimits)
 
     def _draft(self, question: str, signal) -> bool:
+        scope = evidence_scope(self._session)
+        if scope:
+            # A paragraph that goes into the report is not drafted from a
+            # different analysis than the one the report tabulates.
+            self._say_system(
+                html.escape(scope) + " A paragraph for the report is not "
+                "drafted from it. Write it yourself, or analyse the window "
+                "the trace holds on its own.")
+            self.last_draft = None
+            return False
         self._drafting = True
         self.last_draft = None
         try:

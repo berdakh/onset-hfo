@@ -1310,3 +1310,4 @@ def test_another_window_is_analysed_with_this_windows_settings_once(review, reco
 
     other_band = dataclasses.replace(review.request, band="fast_ripple")
     assert windows.window_key(other_band) != windows.window_key(review.request)
+
