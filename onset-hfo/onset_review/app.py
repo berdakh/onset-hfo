@@ -138,7 +138,7 @@ def _request_from(args) -> object:
 
     if args.open_path is not None:
         return ReviewRequest(
-            dataset="", subject=args.subject or args.open_path.stem,
+            dataset="", subject=args.subject or _safe_label(args.open_path),
             path=args.open_path, line_freq=float(args.line_freq),
             channel_types=_channel_types(args), **common)
 
@@ -1166,3 +1166,9 @@ def _screenshot(app, parts, path: Path) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+def _safe_label(path) -> str:
+    from onset_hfo.privacy import safe_label
+
+    return safe_label(path)

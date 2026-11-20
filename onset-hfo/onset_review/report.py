@@ -26,6 +26,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from onset_hfo.privacy import shown_name
 from onset_hfo.quality import REASONS, quality_summary
 from onset_review import adjudication, trends
 from onset_review.session import DETECTOR_LABELS, ReviewSession
@@ -97,7 +98,7 @@ def _header(session: ReviewSession, reviewer: str | None) -> list[str]:
     # An imported window has no accession, and an empty cell in a document
     # that will be read beside a cohort result reads as a missing value rather
     # than an absent one.
-    source = (f"local file `{request.path.name}` (not a public archive "
+    source = (f"local file `{shown_name(request.path)}` (not a public archive "
               f"recording; nothing here has checked its provenance)"
               if request.imported else f"`{request.dataset}`")
     span_start, span_stop = session.span
@@ -384,7 +385,7 @@ def _methods_section(session: ReviewSession) -> list[str]:
     low, high = request.band_hz
     start, stop = session.span
     minutes = (stop - start) / 60.0
-    source = (f"the local file {request.path.name}" if request.imported
+    source = (f"the local file {shown_name(request.path)}" if request.imported
               else f"{request.dataset}")
     detectors = []
     for name in request.detectors:

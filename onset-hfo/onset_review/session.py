@@ -240,7 +240,9 @@ class ReviewRequest:
         return self.path is not None
 
     def label(self) -> str:
-        where = self.path.name if self.imported else self.dataset
+        from onset_hfo.privacy import shown_name
+
+        where = shown_name(self.path) if self.imported else self.dataset
         return (f"{where} · {self.subject} · run-{self.run} · "
                 f"{self.t_start:g}–{self.t_stop:g} s")
 

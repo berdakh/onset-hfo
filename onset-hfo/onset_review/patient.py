@@ -52,7 +52,7 @@ class PatientPanel(QWidget):
         column.setSpacing(2)
 
         column.addWidget(_title(session.request.subject))
-        where = (f"imported from {session.request.path.name}"
+        where = (f"imported from {_shown(session.request.path)}"
                  if self.imported else session.request.dataset)
         column.addWidget(muted(
             f"{where} · run {session.request.run} · "
@@ -258,3 +258,9 @@ def _facts(rows, palette) -> QWidget:
         grid.addWidget(key, index, 0)
         grid.addWidget(body, index, 1)
     return widget
+
+
+def _shown(path) -> str:
+    from onset_hfo.privacy import shown_name
+
+    return shown_name(path)

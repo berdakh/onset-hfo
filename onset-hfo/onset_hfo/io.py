@@ -41,6 +41,7 @@ import pandas as pd
 
 from onset_hfo.config import BANDS
 from onset_hfo.datasets import Recording
+from onset_hfo.privacy import looks_identifying, safe_label, shown_name, study_code
 
 __all__ = ["Format", "FORMATS", "detect_format", "supported_suffixes",
            "file_filter", "channel_overview", "recording_info", "recording_kind",
@@ -404,7 +405,10 @@ def open_recording(path: str | Path, *, t_start: float = 0.0,
     rescaled = _units_from_channels_tsv(raw, _channels_tsv_beside(path))
     types = set(raw.get_channel_types())
     notes = [
-        f"imported from {path.name} ({fmt.name}, via mne.io.{fmt.reader})",
+        f"imported from {shown_name(path)} ({fmt.name}, via mne.io.{fmt.reader})",
+        *(["the file's own name is not shown: " + looks_identifying(path.name.split(".")[0])
+           + ", so it is called " + study_code(path) + " in everything this "
+           "software writes"] if looks_identifying(path.name.split(".")[0]) else []),
         f"window {t_start:g}–{stop:g} s of a {duration:g} s recording; all "
         f"times reported by this pipeline are in original-recording seconds",
         f"mains frequency {line_freq:g} Hz, as given to this import and not "
@@ -464,8 +468,8 @@ def open_recording(path: str | Path, *, t_start: float = 0.0,
             "there is nothing the pipeline can analyse")
 
     return Recording(
-        raw=raw, source=f"local:{path.name}",
-        subject=subject or path.stem, task=task, run=run,
+        raw=raw, source=f"local:{shown_name(path)}",
+        subject=subject or safe_label(path), task=task, run=run,
         t_offset=float(t_start), line_freq=float(line_freq),
         dataset_id="", citation="", notes=notes,
     )

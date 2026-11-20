@@ -625,6 +625,59 @@ class AssistantPanel(QWidget):
             self._say_system("<b>" + html.escape(scope) + "</b>")
         return True
 
+    # -- where the question goes --------------------------------------------
+    def model_address(self) -> str:
+        """The address the chosen backend will send to, or "" for none."""
+        kind = str(self.backend.currentData() or "scripted")
+        if kind == "openai_compat":
+            from onset_review.assistant_config import default_base_url
+
+            return self.base_url.text().strip() or default_base_url()
+        if kind == "ollama":
+            from onset_agent.backends import ollama_url
+
+            return ollama_url()
+        return ""
+
+    def _remote_allowed(self) -> bool:
+        """Ask, once per address, before anything is sent off this machine.
+
+        The question, this recording's label, its channel names and every
+        rate and event the model asks for go to the model server. On this
+        computer that is nobody else's business; on another one it is a
+        disclosure, and the address field accepted any host without a word.
+        """
+        from onset_hfo.privacy import host_of, is_loopback
+
+        address = self.model_address()
+        if not address or is_loopback(address):
+            return True
+        allowed = getattr(self, "_remote_ok", None)
+        if allowed is None:
+            allowed = self._remote_ok = set()
+        if address in allowed:
+            return True
+        ask = getattr(self, "confirm_remote", None) or self._ask_remote
+        if ask(host_of(address) or address):
+            allowed.add(address)
+            return True
+        self._say_system(
+            f"Not sent. The model at {html.escape(host_of(address) or address)} is "
+            "not on this computer; choose a local model, or allow it when asked.")
+        return False
+
+    def _ask_remote(self, host: str) -> bool:
+        from qtpy.QtWidgets import QMessageBox
+
+        return QMessageBox.warning(
+            self, "Send this analysis to another computer?",
+            f"The model is at {host}, which is not this computer.\n\n"
+            "Your question, this recording's label and channel names, and the "
+            "rates and events the model asks for will be sent there. Nothing "
+            "in this software checks who runs that server or what it keeps.\n\n"
+            "Send it?",
+            QMessageBox.Yes | QMessageBox.Cancel, QMessageBox.Cancel) == QMessageBox.Yes
+
     # -- asking ------------------------------------------------------------
     def draft_findings(self) -> bool:
         """Ask for the findings paragraph and hand it on as a draft.
@@ -672,6 +725,8 @@ class AssistantPanel(QWidget):
         self.question.clear()
         self._say_user(text)
         if self._about(text):
+            return
+        if not self._remote_allowed():
             return
         if not self._ensure_store():
             return
