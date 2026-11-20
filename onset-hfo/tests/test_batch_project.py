@@ -437,3 +437,27 @@ def test_the_window_saves_a_project_and_reopens_it(qapp, recording, config, tmp_
         second.parts.panels["console"].clear_user_variables()
         second.parts.host.close()
         second.parts.panels["console"].shutdown()
+
+
+def test_a_project_member_cannot_be_written_beside_its_folder(tmp_path):
+    """`../proj_evil/x` resolves next to a folder called `proj`, and its path
+    still starts with that folder's -- which is all the check used to ask."""
+    import zipfile
+
+    bundle = tmp_path / "bad.onsetproj"
+    with zipfile.ZipFile(bundle, "w") as archive:
+        archive.writestr("project.json", "{}")
+        archive.writestr("../proj_evil/escaped.txt", "out")
+        archive.writestr("notes/kept.txt", "in")
+    folder = tmp_path / "proj"
+    project.open_project(bundle, folder=folder)
+    assert (folder / "notes" / "kept.txt").read_text() == "in"
+    assert not (tmp_path / "proj_evil").exists()
+
+
+def test_the_quality_switch_reaches_the_analysis_it_configures():
+    """The one-window analysis reads `check_quality` off the config, and the
+    request never wrote it there: "off" still ran the stage, and the report
+    said it had not."""
+    assert ReviewRequest(check_quality=False).pipeline_config().check_quality is False
+    assert ReviewRequest().pipeline_config().check_quality is True

@@ -282,6 +282,9 @@ class ReviewRequest:
                 detector_cfg = replace(detector_cfg,
                                        threshold_sd=float(self.threshold_sd))
             setattr(cfg, name, detector_cfg)
+        # The one-window analysis reads this off the config; without the copy
+        # "Check data quality: off" was ignored there and reported as off.
+        cfg.check_quality = bool(self.check_quality)
         return cfg
 
 

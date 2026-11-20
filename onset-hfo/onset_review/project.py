@@ -183,7 +183,9 @@ def open_project(path: str | Path, folder: str | Path | None = None,
         manifest = json.loads(bundle.read("project.json"))
         for member in bundle.namelist():
             target = (folder / member).resolve()
-            if not str(target).startswith(str(folder.resolve())):
+            # Not a string prefix: `../proj_evil/x` resolves beside a
+            # folder named `proj` and still starts with its path.
+            if not target.is_relative_to(folder.resolve()):
                 continue        # a member that would land outside the folder
             if member.endswith("/"):
                 continue
