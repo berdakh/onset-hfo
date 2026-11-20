@@ -225,6 +225,27 @@ def test_a_verdict_follows_its_event_through_a_small_onset_shift():
     assert out.orphaned == {}
 
 
+def test_a_verdict_on_an_oscillation_does_not_land_on_a_discharge():
+    """10 ms apart on the same channel, and not the same thing: "real" said of
+    a ripple would otherwise count the spike as confirmed by a reader who
+    never judged it."""
+    import dataclasses
+
+    read = adj.Adjudication(reader="Dr Smith")
+    ripple = adj.event_key("A1-A2", 12.340, "rms")
+    read.judge_event(ripple, "agree")
+    spike = dataclasses.replace(_Event("A1-A2", 12.330), detector="spike")
+
+    out = adj.reconcile(read, [spike])
+    assert out.events == {}
+    assert list(out.orphaned) == [ripple]
+
+    # Another oscillation detector finding it 10 ms off is the same event.
+    other = dataclasses.replace(_Event("A1-A2", 12.330), detector="line_length")
+    out = adj.reconcile(read, [other])
+    assert out.verdict_of(adj.event_key("A1-A2", 12.330, "line_length")) == "agree"
+
+
 def test_an_exact_match_is_reported_as_one():
     read = adj.Adjudication(reader="Dr Smith")
     key = adj.event_key("A1-A2", 12.340, "rms")

@@ -149,6 +149,11 @@ def _split_key(key: str) -> tuple[str, float, str]:
         return channel, float("nan"), detector
 
 
+def _kind(detector: str) -> str:
+    """What a detector finds: a discharge, or an oscillation."""
+    return "spike" if str(detector).strip().lower() == "spike" else "oscillation"
+
+
 def reader_name(default: str | None = None) -> str:
     """A sensible starting value for the reader's name, never a final one.
 
@@ -582,7 +587,7 @@ def reconcile(read: Adjudication, events,
     taken: set = set()
 
     for key, judged in read.events.items():
-        channel, start, _ = _split_key(key)
+        channel, start, detector = _split_key(key)
         candidates = by_channel.get(channel, [])
         best, best_gap, best_exact = None, float("inf"), False
         for when, candidate_key in candidates:
@@ -591,6 +596,13 @@ def reconcile(read: Adjudication, events,
             if candidate_key == key:
                 best, best_gap, best_exact = candidate_key, 0.0, True
                 break
+            # A verdict is about one kind of thing. "A real oscillation" given
+            # to a ripple must not land on the discharge 10 ms away, or the
+            # discharge is counted as confirmed by a reader who never judged
+            # it. Between two oscillation detectors the same event is the
+            # same event, so those still match.
+            if _kind(_split_key(candidate_key)[2]) != _kind(detector):
+                continue
             gap = abs(when - start)
             if gap <= tolerance_s and gap < best_gap:
                 best, best_gap = candidate_key, gap
