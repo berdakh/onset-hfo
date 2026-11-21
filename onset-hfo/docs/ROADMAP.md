@@ -27,10 +27,10 @@ are done and kept for what they found.
 
 **What just came off the board.** "Sub-populations against outcome" was item 5
 and is [answered](#6-physiological-versus-epileptic-ripples--reported-and-the-localisation-question-answered):
-in the ripple band splitting ripples by discharge coupling does **not** localise
-the resection better than the merged rate; in fast ripples one arm separates by
-one metric (AUC 0.875, p = 0.004) and falls below chance by the tie-aware one
-(0.446), which is not a gain to build on. It was thought to need the archive; it
+splitting ripples by discharge coupling does **not** localise the resection
+better than the merged rate in the ripple band, and in fast ripples no
+sub-population arm survives correction (the best, AUC 0.786, p = 0.026, is
+Bonferroni 0.236 and no better than the merged 0.791). It was thought to need the archive; it
 did not, because the cached 60 s slices were enough once the screen pooled five
 of them per patient.
 
@@ -384,7 +384,7 @@ resolve. Training on a proxy and reading it as the thing is the failure this
 item exists to avoid.
 
 **The interesting half, now measured: the split does not localise better in
-ripples, and in fast ripples one arm separates by one metric only.**
+ripples, and in fast ripples nothing survives correction.**
 Whether the spike-coupled rate predicts the resection better than the merged
 rate is the question that would make the split clinically meaningful. It was
 listed here as needing the archive, and it did not: the cached 60 s slices are
@@ -397,38 +397,41 @@ entry point `scripts/run_subpopulation_outcome.py`. The short version:
 names; the numbers below are the re-run's.
 
 - **In the ripple band, every sub-population arm is at or below the merged
-  rate** — gains of −0.011, 0.000 and −0.033 on the three outcome metrics.
-  The spike-coupled arm sits near chance on all three (0.533, 0.549, 0.462).
+  rate** — best gains of −0.049, −0.011 and 0.000 on the three outcome
+  metrics. The spike-coupled arm is not separated from chance on any of them
+  (0.599, 0.560, 0.516).
 - **The fast ripple band — the pre-specified arm — is thin.** Its
-  spike-coupled population has a median of **nine** events per 60 s window,
-  fewer than five in 38 of 100 subject-windows.
-- **And that thin population gives the best-looking numbers in the section.**
-  Spike-coupled `top_channel_resected` is AUC 0.875, p = 0.004, Bonferroni
-  0.033 across the band's nine rows, and `share_in_rz` 0.857 (p = 0.009,
-  Bonferroni 0.081); before the re-run they were 0.806 and 0.826 and survived
-  nothing. Reported as measured, three things argue against reading it as a
-  gain: the tie-aware `candidates_resected` metric puts the same arm at 0.446,
-  below chance; the merged arm replicates across bands (0.791 → 0.747) while
-  the coupled arm collapses (0.875 → 0.533); and it is one of many
-  comparisons. The band effect that should be there is (merged `share_in_rz`
-  falls 0.703 → 0.516 from fast ripples to ripples, as fast ripples localising
-  better predicts).
+  spike-coupled population has a median of **22** events per 60 s window
+  against 88 in the ripple band, and fewer than five in 27 of 100
+  subject-windows.
+- **And there nothing survives correction.** Spike-coupled
+  `top_channel_resected` is AUC 0.786, p = 0.026, Bonferroni 0.236 across the
+  band's nine rows — no better than the merged arm's 0.791 (Bonferroni 0.101).
+  Spike-coupled `share_in_rz` is 0.786 (p = 0.042, Bonferroni 0.381), 0.082
+  above the merged 0.703 and the only positive gain in either band. Three
+  things argue against reading that as a gain: the tie-aware
+  `candidates_resected` metric puts the same arm at 0.554, under the merged
+  0.593; it does not carry to the ripple band (0.786 → 0.516 for the share,
+  0.786 → 0.599 for the busiest channel, while the merged busiest channel
+  holds at 0.791 → 0.747); and it is one of many comparisons. The band effect
+  that should be there is (merged `share_in_rz` falls 0.703 → 0.516 from fast
+  ripples to ripples, as fast ripples localising better predicts).
 
 **What it does not establish.** Group sizes this small resolve very little —
-the power floor is 0.85 at 13/7 and 0.86 at 12/7, and in the ripple band no arm
-clears its own, the merged 0.747 included. The one fast-ripple arm that does is
-contradicted by the tie-aware metric: a hypothesis for a larger cohort, neither
-retired nor established. The ripple-band answer is a secondary analysis, not
+the power floor is 0.85 at 13/7 and 0.86 at 12/7, and no arm in either band
+clears its own, the merged 0.747 and 0.791 included. That is "no gain to
+report", not "no effect". The ripple-band answer is a secondary analysis, not
 comparable to the published fast-ripple AUC. The arms are also not scored on
 identical patients, because a patient whose sub-population is empty in every
 window drops out of that arm — none in the ripple band, one (sub-10) from the
 fast-ripple spike-coupled arm. **The lesson worth keeping** is that the
 tie-aware metric earned its place: it was added in item 10 step 3 to stop an
-argmax overclaiming, and here it is the thing that contradicts one.
+argmax overclaiming, and here it puts every busiest-channel AUC above 0.74
+back under 0.62.
 
 One property of the split *is* reliable: the spike-coupled share of all ripples
-is stable within a patient and varies between them (within-subject SD 0.012
-against between-subject 0.056, ICC ≈ 0.96). It is a real patient feature that
+is stable within a patient and varies between them (within-subject SD 0.016
+against between-subject 0.068, ICC ≈ 0.95). It is a real patient feature that
 does not predict the resection — which is a more useful thing to know than
 either "no signal" or "promising".
 

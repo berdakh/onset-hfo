@@ -28,12 +28,12 @@ the subject *listing* touches the network.
 
 Why both bands, when the pre-specified arm is fast ripples
 ----------------------------------------------------------
-Because in the fast ripple band the spike-coupled population is too small to
-rank channels with -- a median of **one** event per 60 s window, and under five
-in 56 of the 100 subject-windows. An argmax over that is a coin flip, and it
-duly produced an apparent AUC of 0.806 that the tie-aware
-`candidates_resected` metric contradicted at 0.479. The ripple band carries
-~30x the events, which converts "cannot tell" into an answer. The cost is that
+Because in the fast ripple band the spike-coupled population is thin -- a
+median of 22 events per 60 s window, and under five in 27 of the 100
+subject-windows. An argmax over that is unreliable: it gives an AUC of 0.786
+where the tie-aware `candidates_resected` metric gives 0.554. The ripple band
+carries four times the spike-coupled events (a median of 88), which converts
+"cannot tell" into an answer. The cost is that
 a ripple-band result is not comparable to the published fast-ripple AUC; this
 is a secondary analysis and is reported as one.
 """

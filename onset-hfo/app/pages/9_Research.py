@@ -36,7 +36,7 @@ st.markdown("""
 | Beats a published detector | **No, and not claimed.** The reference *is* a published detector; these are agreement numbers |
 | The map relates to surgical outcome | **Direction yes, significance no.** AUC 0.71, p = 0.12 on 13 vs 7 patients; none of the study's 34 comparisons reaches p < 0.05 even before correction |
 | The measurement is stable | **Across whole runs mostly** (16 of the 18 patients with more than one run, expert markings; 15 of 18 for our detector), **within a minute no** — a 60 s window changed the headline once |
-| Distinguishes epileptic from physiological ripples | **No.** Nothing in the pipeline tries. The one available proxy — whether a ripple rides a discharge — was screened against outcome and does **not** localise better than the merged rate in ripples; in fast ripples one arm separates by one metric and falls below chance by the tie-aware one |
+| Distinguishes epileptic from physiological ripples | **No.** Nothing in the pipeline tries. The one available proxy — whether a ripple rides a discharge — was screened against outcome and does **not** localise better than the merged rate in ripples; in fast ripples no sub-population arm survives correction or beats the merged busiest channel |
 | The choice of detector is the limiting factor | **No, measured.** Four features, each swept on real data: at its best threshold none ranks channels better than RMS by more than 0.021 ρ, inside what twenty patients can resolve. The ceiling is the reference standard and the unit of analysis |
 | Validated for clinical use | **No.** Not a medical device |
 """)
@@ -72,7 +72,7 @@ st.markdown("""
 5. **Physiological versus epileptic ripples** remains the biggest scientific
    gap, but it is no longer an experiment this project can run: the only proxy
    available in public data has now been measured: no gain in the ripple band,
-   and in fast ripples one arm that the tie-aware metric contradicts. Progress
+   and in fast ripples nothing that survives correction. Progress
    needs a labelled archive, not more analysis.
 """)
 
@@ -87,10 +87,11 @@ bootstrap interval, so the choice of feature is not where the headroom is.
 
 **Do the ripple sub-populations localise differently?** Not in the ripple band:
 splitting events by discharge coupling leaves every arm at or below the merged
-rate. In fast ripples the spike-coupled busiest-channel arm gives AUC 0.875,
-p = 0.004 (Bonferroni 0.033 across that screen's nine rows), and is reported as
-measured; the tie-aware metric puts the same arm at 0.446, it collapses to 0.533
-in ripples, and it is one of many comparisons. See the Outcome page.
+rate. In fast ripples the spike-coupled busiest-channel arm gives AUC 0.786,
+p = 0.026 (Bonferroni 0.236 across that band's nine rows), no better than the
+merged arm's 0.791; the tie-aware metric puts the same arm at 0.554, and it
+falls to 0.599 in ripples. Nothing in either band survives correction. See the
+Outcome page.
 
 **Is the re-planning ranking rule the right rule?** Conditionally. It helps in
 the ripple band at every re-test point — the first evidence here that the

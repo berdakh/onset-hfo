@@ -168,7 +168,7 @@ floor of 0.85 is why.
 | study | answer |
 |---|---|
 | §1b — two extra detectors (`hilbert`, `short_time_energy`) | buy nothing over RMS |
-| §3b — splitting ripples by discharge coupling | does not localise the resection better in ripples; in fast ripples one arm separates by one metric and falls below chance by the tie-aware one |
+| §3b — splitting ripples by discharge coupling | does not localise the resection better in ripples; in fast ripples no sub-population arm survives correction or beats the merged busiest channel |
 | §6c — the agent's robustness multiplier | helps in the ripple band, *hurts* in the fast-ripple band on every patient |
 
 ---

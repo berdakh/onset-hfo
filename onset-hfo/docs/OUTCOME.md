@@ -84,6 +84,21 @@ For each patient we compute how much of their HFO activity sat in tissue the
 surgeon removed, and ask whether that is higher in the patients who became
 seizure-free.
 
+**The detector arm counts every candidate the detector produces.** This study
+and the window-stability study below run the RMS detector at its operating
+threshold and count its events as they come, without the validation stage
+(`onset_hfo.validate`) that the review application, the pipeline and the
+benchmark apply. So nothing validation does or does not reject changes a
+number here: with the peak-contrast check added to validation after 0.3.24,
+a re-run of all 20 patients reproduced `subjects.csv` and
+`outcome_groups_300s.csv` exactly. The robustness and montage screens in
+[`EVALUATION.md`](EVALUATION.md) validate without measuring each event's
+spectrum, so the check has nothing to act on there either: re-run, all 800
+and all 600 of their rows reproduce exactly. The sub-population screen did
+move, because the discharge detector it splits events by changed; its tables
+and its section were rebuilt. The benchmark against the expert markings is
+the one study the check itself changes.
+
 ### Contacts, channels, and the resection margin
 
 The clinical sheet names **contacts** (`ahr1-4` → AHR1…AHR4). The analysis

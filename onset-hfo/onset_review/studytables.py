@@ -663,8 +663,9 @@ def subpopulation_outcome(band: str = "ripple") -> pd.DataFrame:
 
     One row per metric x population, pooled over five 60 s windows per patient.
     Reported in the ripple band because the fast-ripple spike-coupled
-    population has a median of one event per window, which cannot support an
-    argmax; ``docs/EVALUATION.md`` §3b has that argument in full.
+    population is thin -- a median of 22 events per window against 88, and
+    fewer than five in 27 of 100 windows; ``docs/EVALUATION.md`` §3b has that
+    argument in full.
     """
     path = COHORT / "subpopulation_screen.csv"
     if not path.exists():
@@ -676,9 +677,9 @@ def subpopulation_outcome(band: str = "ripple") -> pd.DataFrame:
 def subpopulation_measurability() -> pd.DataFrame:
     """Events per window per population, which is why the band choice was forced.
 
-    The column to read is ``median``: a population with one event per minute
-    cannot rank channels, and an argmax over it produced the most flattering
-    numbers in the whole screen.
+    The columns to read are ``median`` and ``windows_under_5``: a population
+    with a handful of events per minute cannot rank channels, and the
+    fast-ripple spike-coupled one is in that state in 27 of 100 windows.
     """
     path = COHORT / "subpopulation_screen.csv"
     if not path.exists():
