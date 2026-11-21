@@ -154,6 +154,7 @@ def choose(recordings: list[dict], rule: SegmentRule) -> tuple[pd.DataFrame, dic
                "flat": 0.0, "too short to use": 0.0}
     total = 0.0
     scored_any = False
+    n_seizures = 0
     for rec in recordings:
         duration = float(rec["duration"])
         marks = rec["marks"]
@@ -166,6 +167,7 @@ def choose(recordings: list[dict], rule: SegmentRule) -> tuple[pd.DataFrame, dic
             allowed = _intersect(allowed, staged)
             removed["not in the chosen stages"] += before - _length(allowed)
         seizures = seizure_spans(marks)
+        n_seizures += len(seizures)
         margin = float(rule.min_from_seizure_s)
         before = _length(allowed)
         allowed = _subtract(allowed, [(a - margin, b + margin) for a, b in seizures])
@@ -207,8 +209,28 @@ def choose(recordings: list[dict], rule: SegmentRule) -> tuple[pd.DataFrame, dic
             "total_s": round(total, 1), "available_s": round(available, 1),
             "chosen_s": round(float(frame["duration"].sum()) if len(frame) else 0.0, 1),
             "n_available": len(candidates),
-            "no_sleep_scored": bool(rule.stages) and not scored_any}
+            "no_sleep_scored": bool(rule.stages) and not scored_any,
+            # With no seizure marked the distance rule removes nothing, and
+            # "at least 1 h from any seizure" is then a sentence about the
+            # marking, not about the patient.
+            "n_seizures_marked": int(n_seizures)}
     return frame, info
+
+
+#: Said wherever the rule is quoted and no seizure was marked.
+NO_SEIZURE_MARKED = ("No seizure is marked in these recordings, so the distance "
+                     "from seizures is UNVERIFIED: the rule had nothing to keep "
+                     "away from. Mark the seizures, or record that there were none.")
+
+
+def seizure_caveat(info: dict | None) -> str:
+    """`NO_SEIZURE_MARKED` when the choice was made with no seizure marked.
+
+    An `info` saved before the count was kept says nothing either way, and
+    gets nothing: a caveat about an old case's marking would be a guess."""
+    if info and info.get("n_seizures_marked") == 0:
+        return NO_SEIZURE_MARKED
+    return ""
 
 
 def describe_choice(frame: pd.DataFrame, info: dict, rule: SegmentRule) -> str:
@@ -231,6 +253,8 @@ def describe_choice(frame: pd.DataFrame, info: dict, rule: SegmentRule) -> str:
     if info["available_s"] > info["chosen_s"]:
         parts.append(f"{info['available_s'] / 60:.0f} minutes qualified; "
                      f"{info['chosen_s'] / 60:.0f} were taken, spread evenly in time.")
+    if seizure_caveat(info):
+        parts.append(seizure_caveat(info))
     return " ".join(parts)
 
 

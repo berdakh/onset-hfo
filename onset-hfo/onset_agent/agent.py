@@ -784,8 +784,13 @@ class OnsetAgent:
                            if not guard._is_traceable(n, stated))
             if loose:
                 note({"type": "number_check", "result": "refused", "numbers": loose})
+                # The refused text is not shown. It carried the numbers that
+                # failed, under the word "Refused", which a reader skims past;
+                # it stays in the trace for anyone checking why.
                 return AgentAnswer(question=question, refused=True, mode=kind, sources=sources,
-                                   text=content,
+                                   text=("I could not answer that from the project's "
+                                         "documents: the answer I produced stated numbers "
+                                         "they do not contain, so it is not shown."),
                                    reason=("the answer states "
                                            + ", ".join(f"{n:g}" for n in loose)
                                            + ", which the cited documents do not"),

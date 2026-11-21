@@ -151,6 +151,45 @@ surviving preprocessing.
 | expert | ripple | reviewed | 5/13 (0.38) | 3/7 (0.43) | 0.48 (0.26–0.70) | 1.00 |
 | rms | fast ripple | all | 10/13 (0.77) | 3/7 (0.43) | 0.67 (0.45–0.89) | 0.17 |
 
+### What chance alone would give — the size of the resection
+
+The counts above mean nothing without knowing how much was resected. The
+fraction of scored channels inside the resection runs from **0.02 to 0.80**
+across these patients (reviewed channels; median 0.39 in the seizure-free
+group and 0.50 in the recurrence group): in one patient almost any channel is
+"in the resection", in another almost none. A channel picked at random in
+each patient would land in the resection in **4.26 of the 13** seizure-free
+patients and **3.00 of the 7** others. Against that
+(`data/outcome/chance_baseline.csv`, `onset_hfo.outcome.chance_baseline`):
+
+| source | band | scope | group | observed | expected by chance | P(this many or more by chance) |
+|---|---|---|---|---|---|---|
+| expert | fast ripple | reviewed | seizure-free | 11/13 | 4.26 | 0.000005 |
+| expert | fast ripple | reviewed | recurrence | 3/7 | 3.00 | 0.66 |
+| rms | fast ripple | reviewed | seizure-free | 11/13 | 4.26 | 0.000005 |
+| rms | fast ripple | reviewed | recurrence | 3/7 | 3.00 | 0.66 |
+| rms | ripple | reviewed | seizure-free | 8/13 | 4.26 | 0.012 |
+| rms | ripple | reviewed | recurrence | 2/7 | 3.00 | 0.90 |
+| expert | ripple | reviewed | seizure-free | 5/13 | 4.26 | 0.43 |
+| expert | ripple | reviewed | recurrence | 3/7 | 3.00 | 0.66 |
+
+Read with care in both directions.
+
+- In the seizure-free group the busiest fast-ripple channel lies in the
+  resection far more often than a random channel would. In the recurrence
+  group it does so **exactly as often as chance**: 3 of 7 against 3.00
+  expected. "3 of 7" in the table above is not a weaker version of the
+  seizure-free result; it is no result.
+- This is not evidence that the marker predicts outcome. The resection was
+  planned by clinicians reading the same recordings, so the busiest channel
+  lying inside it is partly the marker agreeing with the people who chose
+  what to remove. The comparison *between* the groups is the one above, and
+  it does not reach significance (AUC 0.71, p = 0.12). The null here treats
+  each patient's top channel as drawn uniformly from the scored channels,
+  which real implants are not: contacts are placed where the clinical
+  hypothesis is.
+- Ripples marked by the experts do no better than chance in either group.
+
 ### `share_in_rz` — the metric that carries nothing
 
 | source | band | scope | median (free) | median (recur) | AUC (95% CI) | p |

@@ -23,8 +23,18 @@ can work from a fresh clone with no 700 MB download and no 90-minute rerun.
 | `robustness_groups.csv` | band × metric × rule × re-test | 32 |
 | `montage_screen.csv` | band × patient × window × montage | 600 |
 | `montage_groups.csv` | band × montage × metric | 60 |
+| `chance_baseline.csv` | band × scope × source × outcome group | 16 |
 
 ## What each file carries
+
+**`chance_baseline.csv`** — for each band, scope, source and outcome group:
+how many patients' top channel was resected (`observed` of `n`), how many a
+channel picked at random in each patient would give (`expected`, the sum of
+each patient's resected fraction of scored channels), the exact probability
+of the observed count or more under that null (`p_at_least`), and the range
+of those per-patient fractions. Derived from `subjects.csv` and
+`participants.csv` alone by `onset_hfo.outcome.chance_baseline`; rewritten by
+`scripts/rederive_outcome_tables.py`.
 
 **`participants.csv`** — the archive's own `participants.tsv`, reduced to the
 columns this project uses. `epilepsy` is `TLE` or `ETE` (temporal or

@@ -40,7 +40,7 @@ from onset_hfo.quality import (
     reject_unusable_events,
     segment_quality,
 )
-from onset_hfo.validate import validate_events
+from onset_hfo.validate import flag_note, validate_events
 from onset_review.adjudication import Adjudication
 
 __all__ = ["ReviewRequest", "ReviewSession", "load_session",
@@ -240,7 +240,9 @@ class ReviewRequest:
         return self.path is not None
 
     def label(self) -> str:
-        where = self.path.name if self.imported else self.dataset
+        from onset_hfo.privacy import shown_name
+
+        where = shown_name(self.path) if self.imported else self.dataset
         return (f"{where} · {self.subject} · run-{self.run} · "
                 f"{self.t_start:g}–{self.t_stop:g} s")
 
@@ -282,6 +284,9 @@ class ReviewRequest:
                 detector_cfg = replace(detector_cfg,
                                        threshold_sd=float(self.threshold_sd))
             setattr(cfg, name, detector_cfg)
+        # The one-window analysis reads this off the config; without the copy
+        # "Check data quality: off" was ignored there and reported as off.
+        cfg.check_quality = bool(self.check_quality)
         return cfg
 
 
@@ -908,6 +913,8 @@ def streamed_session(request: ReviewRequest, cache_dir: Path | None = None,
     if request.check_quality and analysis.quality is not None:
         notes.append(quality_summary(analysis.quality, analysis.segments,
                                      kept=request.keep_channels))
+    if flag_note(events):
+        notes.append(flag_note(events))
 
     say(1.0, "Ready")
     session = ReviewSession(
@@ -1081,7 +1088,8 @@ def session_from_recording(record: Recording, request: ReviewRequest,
                + list(getattr(record, "notes", []))
                + ([quality_summary(quality, segments,
                                    kept=request.keep_channels)]
-                  if cfg.check_quality else [])),
+                  if cfg.check_quality else [])
+               + ([flag_note(events)] if flag_note(events) else [])),
         citation=str(getattr(record, "citation", "")),
         sfreq=float(prep.sfreq), t_offset=float(prep.t_offset),
         montage=prep.montage, modality=getattr(prep, "modality", "ieeg"),

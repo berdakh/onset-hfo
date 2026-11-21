@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from pathlib import Path
 
 import pytest
 
@@ -174,7 +175,8 @@ def test_a_read_survives_a_round_trip_through_disk(request_):
 
 def test_a_corrupt_file_costs_the_verdicts_but_not_the_window(request_):
     """Opening the recording has to work even when the read cannot be parsed,
-    and the unreadable file is left alone rather than overwritten."""
+    and the unreadable file is kept rather than overwritten -- beside where
+    it was, since left in place the next save would replace it."""
     read = adj.Adjudication()
     read.judge_event(adj.event_key("A1-A2", 1.0), "agree", reader="Dr Smith")
     path = adj.save(request_, read)
@@ -182,7 +184,7 @@ def test_a_corrupt_file_costs_the_verdicts_but_not_the_window(request_):
 
     recovered = adj.load(request_)
     assert recovered.empty
-    assert path.read_text(encoding="utf-8") == "{not json at all"
+    assert Path(recovered.set_aside).read_text(encoding="utf-8") == "{not json at all"
 
 
 def test_the_write_is_atomic_in_the_sense_that_matters(request_):
@@ -223,6 +225,27 @@ def test_a_verdict_follows_its_event_through_a_small_onset_shift():
     assert out.verdict_of(key) == "agree"
     assert out.events[key].match == "near"
     assert out.orphaned == {}
+
+
+def test_a_verdict_on_an_oscillation_does_not_land_on_a_discharge():
+    """10 ms apart on the same channel, and not the same thing: "real" said of
+    a ripple would otherwise count the spike as confirmed by a reader who
+    never judged it."""
+    import dataclasses
+
+    read = adj.Adjudication(reader="Dr Smith")
+    ripple = adj.event_key("A1-A2", 12.340, "rms")
+    read.judge_event(ripple, "agree")
+    spike = dataclasses.replace(_Event("A1-A2", 12.330), detector="spike")
+
+    out = adj.reconcile(read, [spike])
+    assert out.events == {}
+    assert list(out.orphaned) == [ripple]
+
+    # Another oscillation detector finding it 10 ms off is the same event.
+    other = dataclasses.replace(_Event("A1-A2", 12.330), detector="line_length")
+    out = adj.reconcile(read, [other])
+    assert out.verdict_of(adj.event_key("A1-A2", 12.330, "line_length")) == "agree"
 
 
 def test_an_exact_match_is_reported_as_one():
@@ -299,3 +322,132 @@ def test_channel_verdicts_and_the_window_note_survive_reconciliation():
     assert out.channels["A1-A2"].note == "popping electrode"
     assert out.note == "first minute only"
     assert out.reader == "Dr Smith"
+
+
+def test_an_unreadable_read_is_moved_aside_not_written_over(request_):
+    """A truncated file loaded as an empty read and stayed where it was, so
+    the next verdict's save replaced it: a crash during one write cost every
+    verdict before it."""
+    read = adj.Adjudication()
+    read.judge_event(adj.event_key("A1-A2", 1.0, "rms"), "agree", reader="Dr Smith")
+    path = adj.save(request_, read)
+    damaged = path.read_text(encoding="utf-8")[:40]
+    path.write_text(damaged, encoding="utf-8")
+
+    loaded = adj.load(request_)
+    assert loaded.events == {} and loaded.set_aside
+    assert not path.exists()
+    aside = [p for p in path.parent.iterdir() if ".unreadable-" in p.name]
+    assert [str(p) for p in aside] == [loaded.set_aside]
+    assert aside[0].read_text(encoding="utf-8") == damaged
+
+    loaded.judge_event(adj.event_key("A1-A2", 2.0, "rms"), "disagree", reader="Dr B")
+    adj.save(request_, loaded)
+    assert aside[0].read_text(encoding="utf-8") == damaged
+    assert "set_aside" not in path.read_text(encoding="utf-8")
+    assert adj.reconcile(loaded, []).set_aside == loaded.set_aside
+
+
+def test_a_read_of_the_wrong_shape_does_not_raise(request_):
+    path = adj.save(request_, adj.Adjudication())
+    path.write_text('{"events": ["not", "a", "mapping"]}', encoding="utf-8")
+    assert adj.load(request_).set_aside
+
+
+def test_a_near_match_does_not_take_another_verdicts_own_event():
+    """Two verdicts 30 ms apart; a re-run keeps only the later event. The
+    earlier verdict used to claim it as a near match, and the verdict that
+    was actually given to it was orphaned."""
+    read = adj.Adjudication(reader="Dr Smith")
+    gone = adj.event_key("A1-A2", 12.340, "rms")
+    kept = adj.event_key("A1-A2", 12.370, "rms")
+    read.judge_event(gone, "disagree")
+    read.judge_event(kept, "agree")
+
+    out = adj.reconcile(read, [_Event("A1-A2", 12.370)])
+    assert out.verdict_of(kept) == "agree" and out.events[kept].match == "exact"
+    assert list(out.orphaned) == [gone]
+
+
+# -- a second reader ----------------------------------------------------------
+
+
+def test_a_second_readers_verdict_does_not_erase_the_first(request_):
+    """Dr B's click replaced Dr A's verdict and left no sign there had been
+    one. The later verdict still counts; the earlier one is kept."""
+    key = adj.event_key("A1-A2", 3.0, "rms")
+    other = adj.event_key("A1-A2", 7.0, "rms")
+    read = adj.Adjudication()
+    read.judge_event(key, "agree", reader="Dr A", note="clear island")
+    read.judge_event(other, "agree", reader="Dr A")
+    read.judge_event(key, "disagree", reader="Dr B")
+    read.judge_event(other, "agree", reader="Dr B")
+
+    assert read.verdict_of(key) == "disagree" and read.events[key].reader == "Dr B"
+    assert [(j.reader, j.verdict, j.note) for j in read.superseded[key]] == [
+        ("Dr A", "agree", "clear island")]
+    assert read.readers == ["Dr A", "Dr B"]
+    second = read.second_opinions()
+    assert second["n"] == 2 and second["agreed"] == 1
+    assert second["disagreed"] == [(key, "Dr A", "agree", "Dr B", "disagree")]
+
+    # Changing your own mind is still a replacement, not a second opinion.
+    read.judge_event(key, "unsure", reader="Dr B")
+    assert len(read.superseded[key]) == 1
+
+    adj.save(request_, read)
+    back = adj.load(request_)
+    assert back.superseded[key][0].reader == "Dr A"
+    assert back.second_opinions()["n"] == 2
+
+
+def test_an_earlier_verdict_follows_its_event_through_a_re_analysis():
+    read = adj.Adjudication()
+    key = adj.event_key("A1-A2", 12.340, "rms")
+    read.judge_event(key, "agree", reader="Dr A")
+    read.judge_event(key, "disagree", reader="Dr B")
+    out = adj.reconcile(read, [_Event("A1-A2", 12.355)])
+    moved = adj.event_key("A1-A2", 12.355, "rms")
+    assert out.verdict_of(moved) == "disagree"
+    assert out.superseded[moved][0].reader == "Dr A"
+    assert out.second_opinions()["disagreed"][0][0] == moved
+
+
+def test_a_read_remembers_which_file_it_was_given_on(request_):
+    """A read is found by the file's path. The fingerprint is how it is known
+    to be about the file now there and not one that replaced it."""
+    read = adj.Adjudication(fingerprint="size:10:aaaa")
+    read.judge_event(adj.event_key("A1-A2", 1.0, "rms"), "agree", reader="Dr A")
+    adj.save(request_, read)
+    back = adj.load(request_)
+    assert back.fingerprint == "size:10:aaaa"
+    assert adj.reconcile(back, []).fingerprint == "size:10:aaaa"
+    # An archive window has none, and its file does not grow a field.
+    plain = adj.Adjudication()
+    assert "fingerprint" not in plain.to_json()
+
+
+# -- what the window was recorded under ---------------------------------------
+
+
+def test_recording_conditions_are_kept_with_the_read_and_never_guessed(request_):
+    read = adj.Adjudication(reader="Dr A")
+    assert dict(read.condition_rows()) == {
+        "Vigilance state": adj.NOT_RECORDED,
+        "Since the last seizure": adj.NOT_RECORDED,
+        "Anti-seizure medication": adj.NOT_RECORDED}
+    assert read.empty
+
+    read.set_conditions({"state": "N2/N3 sleep", "medication": "being tapered",
+                         "since_seizure": ""})
+    assert not read.empty
+    rows = dict(read.condition_rows())
+    assert rows["Vigilance state"] == "N2/N3 sleep"
+    assert rows["Since the last seizure"] == adj.NOT_RECORDED
+    assert read.conditions["by"] == "Dr A" and read.conditions["at"]
+
+    adj.save(request_, read)
+    back = adj.reconcile(adj.load(request_), [])
+    assert back.conditions["medication"] == "being tapered"
+    back.set_conditions({})
+    assert back.conditions == {}

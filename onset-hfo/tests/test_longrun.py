@@ -288,3 +288,22 @@ def test_the_streaming_threshold_is_above_what_fits_comfortably():
     the caveats that come with it."""
     assert STREAM_ABOVE_S >= 120.0
     assert DEFAULT_CHUNK_S <= STREAM_ABOVE_S
+
+
+def test_a_span_refuses_a_band_the_sampling_rate_cannot_carry():
+    """The one-window analysis says "HFO detection skipped" at 512 Hz. The
+    streamed path had no such gate, so the same file gave ripple rates at ten
+    minutes that it refused at one."""
+    record = make_synthetic_recording(duration_s=200.0, seed=7, verbose=False)
+    record.raw.resample(512.0, verbose="ERROR")
+    with pytest.raises(ValueError, match="at least 556 Hz.*512 Hz"):
+        analyse_span(recording_source(record), 0.0, 200.0, PipelineConfig(),
+                     detectors=("rms",), check_quality=False)
+
+
+def test_a_span_with_no_hfo_detector_still_runs(short_recording):
+    """Discharges only. The band lookup subscripted `BANDS`, which is not a
+    mapping, so asking for no HFO detector was a TypeError."""
+    out = analyse_span(recording_source(short_recording), 0.0, SHORT_S,
+                       PipelineConfig(), detectors=(), check_quality=False)
+    assert {e.detector for e in out.events} <= {"spike"}

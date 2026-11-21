@@ -465,10 +465,17 @@ class ImportDialog(QDialog):
         duration = float(self.info.get("duration") or 0.0)
         sfreq = float(self.info.get("sfreq") or 0.0)
 
-        self.subject = QLineEdit(self.path.stem[:40])
+        # Not the file's stem when the stem looks like a name or a date of
+        # birth, as a hospital export's does: the label goes into the report,
+        # exported file names, the log and the assistant's prompt.
+        from onset_hfo.privacy import looks_identifying, safe_label
+
+        self.subject = QLineEdit(safe_label(self.path))
         self.subject.setMaximumWidth(320)
+        why = looks_identifying(self.path.name.split(".")[0])
         self.subject.setToolTip(
-            "A label for the report. Use a study code, not a patient name.")
+            "A label for the report. Use a study code, not a patient name."
+            + (f" The file's own name was not used: {why}." if why else ""))
 
         # Bounded by the recording itself rather than by a round number: a
         # reviewer asking for 0–60 s of a 12 s file should be corrected by the
@@ -529,7 +536,7 @@ class ImportDialog(QDialog):
     # -- result ------------------------------------------------------------
     def request(self, detectors: tuple[str, ...] = ("rms",)) -> ReviewRequest:
         return ReviewRequest(
-            dataset="", subject=self.subject.text().strip() or self.path.stem,
+            dataset="", subject=self.subject.text().strip() or _safe_label(self.path),
             run="01", task=None,
             t_start=float(self.t_start.value()),
             t_stop=float(self.t_stop.value()),
@@ -588,3 +595,9 @@ def choose_file(parent=None, start: str | Path | None = None):
     dialog = ImportDialog(path, parent)
     accepted = dialog.exec_() if hasattr(dialog, "exec_") else dialog.exec()
     return dialog.request() if accepted else None
+
+
+def _safe_label(path) -> str:
+    from onset_hfo.privacy import safe_label
+
+    return safe_label(path)

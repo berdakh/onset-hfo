@@ -761,3 +761,54 @@ def outcome_study(subjects: list[str] | None = None, n_subjects: int | None = No
                          dataset=dataset, window_s=(t_start, t_stop), detector=detector,
                          threshold_sd={b: _threshold_for(b, threshold_sd) for b in bands},
                          power_floor=floor)
+
+
+# --------------------------------------------------------------------------
+# What chance alone would give
+# --------------------------------------------------------------------------
+
+def _at_least(probabilities, k: int) -> float:
+    """P(X >= k) for a sum of independent Bernoulli trials with these
+    probabilities (the Poisson-binomial distribution), computed exactly."""
+    dist = np.array([1.0])
+    for p in probabilities:
+        dist = np.convolve(dist, [1.0 - float(p), float(p)])
+    return float(dist[int(k):].sum()) if k <= len(dist) - 1 else 0.0
+
+
+def chance_baseline(subjects: pd.DataFrame, participants: pd.DataFrame) -> pd.DataFrame:
+    """How often the top channel would lie in the resection by chance alone.
+
+    "The busiest channel was resected in 11 of 13 seizure-free patients and
+    3 of 7 others" has no meaning without the resections' sizes. The fraction
+    of scored channels inside the resection runs from about 1 in 50 to 3 in 4
+    across this cohort: in one patient almost any channel is "resected", in
+    another almost none, and a large resection both contains the top channel
+    and cures more often.
+
+    For each band, scope, source and outcome group this gives the observed
+    count beside what a channel picked at random in each patient would give:
+    ``expected`` (the sum of each patient's resected fraction), ``p_at_least``
+    (the exact probability of the observed count or more under that null),
+    and the range of the per-patient fractions. It reads only the per-patient
+    table, so it needs no recording. It does not make the comparison between
+    the groups significant or not; it says what each group's count is worth.
+    """
+    frame = subjects.merge(participants[["subject", "outcome"]], on="subject")
+    frame = frame.dropna(subset=["top_channel_resected"])
+    frame = frame[frame["n_channels"] > 0].copy()
+    frame["p_chance"] = frame["n_resected_channels"] / frame["n_channels"]
+    rows = []
+    for (band, scope, source, outcome), group in frame.groupby(
+            ["band", "scope", "source", "outcome"], sort=True):
+        observed = int(group["top_channel_resected"].sum())
+        rows.append({
+            "band": band, "scope": scope, "source": source, "outcome": outcome,
+            "n": int(len(group)), "observed": observed,
+            "expected": round(float(group["p_chance"].sum()), 2),
+            "p_at_least": float(f"{_at_least(group['p_chance'], observed):.3g}"),
+            "p_chance_min": round(float(group["p_chance"].min()), 3),
+            "p_chance_median": round(float(group["p_chance"].median()), 3),
+            "p_chance_max": round(float(group["p_chance"].max()), 3),
+        })
+    return pd.DataFrame(rows)

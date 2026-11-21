@@ -1310,3 +1310,55 @@ def test_another_window_is_analysed_with_this_windows_settings_once(review, reco
 
     other_band = dataclasses.replace(review.request, band="fast_ripple")
     assert windows.window_key(other_band) != windows.window_key(review.request)
+
+
+def test_the_report_says_what_the_window_was_recorded_under_or_that_nobody_said(review):
+    """Sleep or awake, how long since a seizure, medication: a rate cannot be
+    compared with another without them, and the report used to have no place
+    for any of the three."""
+    import dataclasses
+
+    from onset_review import adjudication
+
+    blank = report.review_markdown(review)
+    assert blank.count("**NOT RECORDED**") == 3
+    assert "Recording conditions not recorded: vigilance state" in blank
+
+    read = dataclasses.replace(review.read)
+    read.set_conditions({"state": "N2/N3 sleep", "since_seizure": "more than 24 h",
+                         "medication": "full dose"}, reader="Dr A")
+    filled = report.review_markdown(dataclasses.replace(review, read=read))
+    assert "| Vigilance state | N2/N3 sleep |" in filled
+    assert "| Conditions given by | Dr A" in filled
+    assert adjudication.NOT_RECORDED not in filled
+    assert "Recording conditions not recorded" not in filled
+
+
+# -- a picture that says which way round it is, and whose it is ---------------
+
+
+def test_every_map_view_names_its_edges_in_the_patients_terms():
+    """A flat dot map is symmetric enough to be read either way round, and
+    half a conference reads an axial picture with the patient's left on the
+    right. The edges are labelled from the same table the view is drawn by."""
+    from onset_review import contactmap
+
+    assert set(contactmap.EDGES) == set(contactmap.VIEWS)
+    for view, (left, right, _bottom, _top) in contactmap.EDGES.items():
+        (axis, sign), _vertical = contactmap.VIEWS[view]
+        if axis == 0:                       # the picture's horizontal is left-right
+            assert {left, right} == {"patient's LEFT", "patient's RIGHT"}
+            # +x is the patient's right; a mirrored axis puts it on the left.
+            assert (right if sign > 0 else left) == "patient's RIGHT"
+        else:                               # horizontal is back-front
+            assert (right if sign > 0 else left) == "front"
+
+
+def test_a_saved_picture_carries_its_identity_in_the_image(review):
+    from onset_review import contactmap
+
+    text = contactmap.stamp_text(review, "ripple rate", schematic=True)
+    assert str(review.request.subject) in text
+    assert "SCHEMATIC positions, not this patient's anatomy" in text
+    assert "not for navigation" in text and "ripple rate" in text
+    assert "positions as supplied" in contactmap.stamp_text(review, schematic=False)

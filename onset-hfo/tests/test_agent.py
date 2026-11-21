@@ -873,3 +873,52 @@ def test_a_question_naming_a_detector_is_briefed_with_that_detectors_ranking(sto
     assert ("top_channels", {"detector": "line_length", "k": 5}) in extras
     assert not [c for c in briefing_extras(store, "Which channel leads?")
                 if c[0] == "top_channels"]
+
+
+# -- the same requests in other words, and what an answer may not say --------
+
+
+@pytest.mark.parametrize("question", [
+    "Which contacts would you cut out?",
+    "Which electrodes should come out?",
+    "Which contacts to excise?",
+    "Which channel is the epileptic focus?",
+    "Is AR1 the source of the seizures?",
+    "Where do the seizures come from?",
+])
+def test_the_question_gate_knows_a_surgeons_words_for_it(question):
+    """The gate knew "resect" and "remove" and "seizure onset zone". Every one
+    of these asked the same thing and reached the model."""
+    from onset_agent.guard import check_question
+
+    assert not check_question(question, "sub-01").ok
+
+
+@pytest.mark.parametrize("answer", [
+    "AR1-AR2 is the seizure onset zone and should be resected.",
+    "AR1-AR2 should be removed.",
+    "I recommend that the team resect AR1-AR2.",
+    "AR1-AR2 is likely the epileptogenic zone.",
+    "These contacts are candidates for resection.",
+    "The rate points to the seizure focus.",
+])
+def test_an_answer_that_recommends_or_localises_is_not_verified(answer):
+    """The question gate is the first line and can be talked around. An answer
+    saying what should be done, or that a channel *is* the onset zone, used to
+    pass verification: it cites nothing and contains no number."""
+    from onset_agent.guard import verify_answer
+
+    result = verify_answer(answer, [], set(), set())
+    assert not result.ok and result.problems
+
+
+@pytest.mark.parametrize("answer", [
+    "AR1-AR2 has the highest ripple rate.",
+    "A high event rate is a measurement, not a seizure-onset zone.",
+    "This is not the seizure onset zone; it is a rate.",
+    "I cannot say where seizures start.",
+])
+def test_an_answer_may_still_say_what_a_rate_is_not(answer):
+    from onset_agent.guard import verify_answer
+
+    assert verify_answer(answer, [], set(), set()).ok

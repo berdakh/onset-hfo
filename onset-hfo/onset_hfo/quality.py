@@ -72,11 +72,15 @@ __all__ = ["channel_quality", "segment_quality", "clean_seconds",
 #: a human is asked to look at it, because the measurement is as consistent
 #: with the finding as with a fault. See `QualityConfig.max_hf_ratio_sd` for
 #: the recording that settled which is which.
-SET_ASIDE = ("flat", "clipped", "line_noise", "mostly_bad_segments")
+SET_ASIDE = ("non_finite", "flat", "clipped", "line_noise", "mostly_bad_segments")
 
 #: What each verdict means, in a sentence a reviewer can act on. The interface
 #: and the report both read these, so there is one wording per reason.
 REASONS: dict[str, str] = {
+    "non_finite": "the file holds samples that are not numbers on this "
+                  "contact (NaN or infinite) — a gap or a dropout in the "
+                  "recording. Not analysed: it has no rate, which is not a "
+                  "rate of zero",
     "flat": "almost no signal — a disconnected, shorted or dead contact",
     "clipped": "pinned at the amplifier's limit for part of the window; a "
                "clipped edge rings through an 80–250 Hz filter like a ripple",
@@ -163,10 +167,13 @@ def channel_quality(prep: Prepared, cfg: QualityConfig | None = None,
 
     bad_fraction = _bad_segment_fraction(segments, names)
 
+    lost = set(getattr(prep, "non_finite", None) or [])
     rows = []
     for i, name in enumerate(names):
         reason = ""
-        if amplitude[i] < cfg.flat_uv:
+        if name in lost or not np.isfinite(amplitude[i]):
+            reason = "non_finite"
+        elif amplitude[i] < cfg.flat_uv:
             reason = "flat"
         elif clipped[i] > cfg.max_clipped_fraction:
             reason = "clipped"

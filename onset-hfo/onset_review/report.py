@@ -26,8 +26,11 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from onset_hfo.config import config_digest, software_versions
+from onset_hfo.privacy import shown_name
 from onset_hfo.quality import REASONS, quality_summary
 from onset_review import adjudication, trends
+from onset_review.adjudication import NOT_RECORDED
 from onset_review.session import DETECTOR_LABELS, ReviewSession
 
 __all__ = ["review_markdown", "write_review", "DISCLAIMER"]
@@ -97,7 +100,7 @@ def _header(session: ReviewSession, reviewer: str | None) -> list[str]:
     # An imported window has no accession, and an empty cell in a document
     # that will be read beside a cohort result reads as a missing value rather
     # than an absent one.
-    source = (f"local file `{request.path.name}` (not a public archive "
+    source = (f"local file `{shown_name(request.path)}` (not a public archive "
               f"recording; nothing here has checked its provenance)"
               if request.imported else f"`{request.dataset}`")
     span_start, span_stop = session.span
@@ -119,12 +122,35 @@ def _header(session: ReviewSession, reviewer: str | None) -> list[str]:
         ("Sampling rate", f"{session.sfreq:g} Hz"),
         ("Reviewed on", now),
         ("Software", _credit()),
+        ("Versions", ", ".join(f"{name} {version}"
+                               for name, version in software_versions().items())),
+        ("Analysis settings", f"fingerprint `{config_digest(request.pipeline_config().as_dict())}`"),
+        *([("File fingerprint", f"`{fingerprint}`")]
+          if (fingerprint := str(getattr(getattr(session, "recording", None),
+                                         "fingerprint", "") or "")) else []),
     ]
     named = reviewer or ", ".join(session.read.readers) or session.read.reader
     if named:
         rows.append(("Reviewer", named))
-    return ["| field | value |", "|---|---|",
-            *[f"| {name} | {value} |" for name, value in rows], ""]
+    # What the rates below cannot be read without. Printed whether or not
+    # anyone filled it in: a blank that is not shown is a blank nobody sees.
+    conditions = session.read.condition_rows()
+    rows += [(label, value if value != NOT_RECORDED else f"**{NOT_RECORDED}**")
+             for label, value in conditions]
+    given_by = session.read.conditions.get("by")
+    if given_by:
+        rows.append(("Conditions given by",
+                     f"{given_by}, {session.read.conditions.get('at', '')}".strip(", ")))
+    out = ["| field | value |", "|---|---|",
+           *[f"| {name} | {value} |" for name, value in rows], ""]
+    missing = [label.lower() for label, value in conditions if value == NOT_RECORDED]
+    if missing:
+        out += [f"**Recording conditions not recorded: {', '.join(missing)}.** "
+                "Event rates differ several-fold between sleep and wakefulness, "
+                "rise after a seizure and rise as medication is withdrawn. "
+                "Without these the rates below cannot be compared with another "
+                "window, another night or another patient.", ""]
+    return out
 
 
 def review_markdown(session: ReviewSession, reviewer: str | None = None,
@@ -172,6 +198,9 @@ def review_markdown(session: ReviewSession, reviewer: str | None = None,
     out += [_table(findings, ["rank", "channel", "n_events", "rate", "annotators"]),
             "_Rate is events per minute with its 95% Poisson interval; every "
             "measurement per channel is in the appendix._", ""]
+    physiological = _physiological_note(session)
+    if physiological:
+        out += [physiological, ""]
 
     accord = trends.agreement_summary(session)
     agreement = trends.agreement(session)
@@ -384,7 +413,7 @@ def _methods_section(session: ReviewSession) -> list[str]:
     low, high = request.band_hz
     start, stop = session.span
     minutes = (stop - start) / 60.0
-    source = (f"the local file {request.path.name}" if request.imported
+    source = (f"the local file {shown_name(request.path)}" if request.imported
               else f"{request.dataset}")
     detectors = []
     for name in request.detectors:
@@ -492,6 +521,20 @@ def _read_section(session: ReviewSession) -> list[str]:
             f"| Real | {counts['agree']} |",
             f"| Not real | {counts['disagree']} |",
             f"| Cannot tell | {counts['unsure']} |", ""]
+
+    second = read.second_opinions()
+    if second["n"]:
+        out += [f"**Two readers.** {second['n']} verdict(s) were given after "
+                f"another reader's on the same event or contact. They agreed on "
+                f"{second['agreed']} and differed on {len(second['disagreed'])}. "
+                f"The counts above are the later reader's; the earlier verdicts "
+                f"are kept in the read."
+                + (" Differed on: " + "; ".join(
+                    f"`{key}` ({before} said {_verdict_word(was)}, {after} said "
+                    f"{_verdict_word(is_)})"
+                    for key, before, was, after, is_ in second["disagreed"][:10])
+                   + ("; …" if len(second["disagreed"]) > 10 else "") + "."
+                   if second["disagreed"] else ""), ""]
 
     if judged < total:
         out += [f"**This is a partial read.** {total - judged} of {total} "
@@ -626,3 +669,31 @@ def _quality_section(session: ReviewSession) -> list[str]:
                 "and leaves the judgement to whoever can look at the trace.",
                 ""]
     return out
+
+
+def _verdict_word(verdict: str) -> str:
+    return {"agree": "real", "disagree": "not real", "unsure": "cannot tell"}.get(
+        str(verdict), str(verdict))
+
+
+def _physiological_note(session, top: int = 10) -> str:
+    """Which of the highest-rate channels sit where ripples are physiological.
+
+    Regions come from the layout: an atlas label is not available for a single
+    window, so this is the structure the electrode's *name* claims, and says
+    so. A recording whose names say nothing gets no note -- which is not a
+    statement that none of its contacts is in hippocampus.
+    """
+    from onset_hfo.physiology import physiological_note
+    from onset_review.anatomy import electrode_layout
+
+    try:
+        layout = electrode_layout(session, electrodes=getattr(session, "electrodes", None))
+    except Exception:                       # noqa: BLE001 -- a note, not the analysis
+        return ""
+    if layout.empty or "region" not in layout:
+        return ""
+    head = layout.sort_values("rank").head(top)
+    head = head[head["n_events"] > 0]
+    return physiological_note(head["channel"], head["region"],
+                              how="going by the electrode's name")

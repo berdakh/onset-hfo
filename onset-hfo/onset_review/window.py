@@ -1606,12 +1606,53 @@ def _read_menu(menubar, host: QMainWindow, panels: dict,
                      "report.")
     about.triggered.connect(lambda _=False: _window_note(host, session))
 
+    conditions = menu.addAction("Recording &conditions…")
+    conditions.setToolTip("Sleep or awake, how long since the last seizure, "
+                          "and medication. The report prints them, and says so "
+                          "when nobody recorded them.")
+    conditions.triggered.connect(lambda _=False: _recording_conditions(host, session))
+
     prompt = lambda: _ask_reader(host, session)      # noqa: E731
     events.reader_prompt = prompt
     findings.reader_prompt = prompt
     for panel in (events, findings):
         signal = (panel.judged if panel is events else panel.channelJudged)
         signal.connect(lambda *_: _set_reader_status(host, session))
+
+
+def _recording_conditions(host: QMainWindow, session: ReviewSession) -> None:
+    """Ask what the window was recorded under, and save it with the read."""
+    from qtpy.QtWidgets import QComboBox, QDialog, QDialogButtonBox, QFormLayout
+
+    dialog = QDialog(host)
+    dialog.setWindowTitle("Recording conditions")
+    form = QFormLayout(dialog)
+    note = QLabel(
+        "A rate means little without these: it differs several-fold between "
+        "sleep and wakefulness, rises after a seizure, and rises as "
+        "medication is withdrawn. Leave one blank if you do not know it — "
+        "the report will say it was not recorded.")
+    note.setWordWrap(True)
+    form.addRow(note)
+    boxes = {}
+    for key, label, choices in adjudication.CONDITIONS:
+        box = QComboBox()
+        box.addItem("")
+        box.addItems(list(choices))
+        box.setCurrentText(session.read.conditions.get(key, ""))
+        form.addRow(label, box)
+        boxes[key] = box
+    buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+    buttons.accepted.connect(dialog.accept)
+    buttons.rejected.connect(dialog.reject)
+    form.addRow(buttons)
+    if dialog.exec() != QDialog.Accepted:
+        return
+    session.read.set_conditions({key: box.currentText() for key, box in boxes.items()})
+    try:
+        adjudication.save(session.request, session.read)
+    except OSError as error:
+        host.statusBar().showMessage(f"Could not save your read: {error}", 10000)
 
 
 def _window_note(host: QMainWindow, session: ReviewSession) -> None:
@@ -1836,17 +1877,29 @@ def _load_coordinates(host: QMainWindow, session: ReviewSession, panels: dict,
         QMessageBox.warning(host, "These coordinates cannot be used",
                             read.summary())
         return
-    answer = QMessageBox.question(
-        host, "Place the contacts from this file?",
+    # A file whose sides disagree with its own electrode names is not placed
+    # on a default button: the question is a warning, and Cancel is what
+    # Return gives.
+    doubtful = bool(read.side_conflicts)
+    ask = QMessageBox.warning if doubtful else QMessageBox.question
+    answer = ask(
+        host, ("Left and right disagree — place the contacts anyway?"
+               if doubtful else "Place the contacts from this file?"),
         f"{read.summary()}\n\nThe 3D view will use these positions instead of "
         f"the schematic layout. Nothing else in the analysis changes — "
         f"coordinates do not affect a rate.",
-        QMessageBox.Yes | QMessageBox.Cancel, QMessageBox.Yes)
+        QMessageBox.Yes | QMessageBox.Cancel,
+        QMessageBox.Cancel if doubtful else QMessageBox.Yes)
     if answer != QMessageBox.Yes:
         return
     session.electrodes = read.frame
     origin = (f"the coordinate file you supplied ({read.path.name}), read as "
               f"{read.units}")
+    if doubtful:
+        # Carried into the caption, which is what survives a screenshot.
+        origin += (f" — LEFT AND RIGHT UNVERIFIED: {len(read.side_conflicts)} "
+                   f"of {read.side_checked} electrodes lie on the side their "
+                   f"name denies")
     panels["brain"].set_electrodes(read.frame, origin=origin, space=read.space)
     panels["map"].set_electrodes(read.frame, origin=origin)
     if on_electrodes is not None:

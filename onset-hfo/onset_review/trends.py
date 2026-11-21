@@ -158,6 +158,7 @@ def event_table(session: ReviewSession, include_rejected: bool = False) -> pd.Da
             "prominence_db": round(float(event.spectral_prominence_db), 1),
             "n_peaks": int(event.n_peaks),
             "with_spike": bool(event.co_occurs_with_spike),
+            "flags": ", ".join(getattr(event, "flags", []) or []),
             "accepted": bool(event.accepted),
             "reject_reason": event.reject_reason or "",
             # What a reader's verdict is filed under. Built here rather than

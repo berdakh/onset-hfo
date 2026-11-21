@@ -24,7 +24,14 @@ from pathlib import Path
 
 import pandas as pd
 
-from onset_hfo.config import BANDS, PIPELINE_VERSION, RESULTS_DIR, PipelineConfig
+from onset_hfo.config import (
+    BANDS,
+    PIPELINE_VERSION,
+    RESULTS_DIR,
+    PipelineConfig,
+    config_digest,
+    software_versions,
+)
 from onset_hfo.datasets import Recording
 from onset_hfo.detectors import HFO_DETECTORS as _HFO_DETECTORS
 from onset_hfo.detectors import (
@@ -42,7 +49,12 @@ from onset_hfo.quality import (
     segment_quality,
 )
 from onset_hfo.report import Report, build_report
-from onset_hfo.validate import flag_spike_cooccurrence, rejection_summary, validate_events
+from onset_hfo.validate import (
+    flag_note,
+    flag_spike_cooccurrence,
+    rejection_summary,
+    validate_events,
+)
 
 __all__ = ["PipelineResult", "run_pipeline"]
 
@@ -132,7 +144,9 @@ class PipelineResult:
         (out / "report.md").write_text(self.report.to_markdown())
         (out / "provenance.json").write_text(json.dumps(rec.provenance(), indent=2, default=str))
         (out / "config.json").write_text(json.dumps(
-            {"pipeline_version": PIPELINE_VERSION, "config": self.config.as_dict(),
+            {"pipeline_version": PIPELINE_VERSION, "software": software_versions(),
+             "config_sha256_16": config_digest(self.config.as_dict()),
+             "config": self.config.as_dict(),
              "preprocessing": self.prepared.steps, "timings_s": self.timings},
             indent=2, default=str))
         print(f"[onset-hfo] results written to {out}")
@@ -286,6 +300,9 @@ def run_pipeline(recording: Recording, config: PipelineConfig | None = None,
     if hfo_skipped:
         notes.append(hfo_skipped)
     notes += population_notes(events, duration)
+    flagged = flag_note([e for evs in events.values() for e in evs])
+    if flagged:
+        notes.append(flagged)
     if cfg.check_quality:
         notes.append(quality_summary(quality, segments))
 

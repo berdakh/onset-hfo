@@ -325,3 +325,98 @@ def test_the_importer_core_needs_no_qt(module):
         for name in names:
             assert name.split(".")[0] not in {"qtpy", "PySide6", "PyQt5",
                                               "PyQt6", "onset_review"}, name
+
+
+# -- what the file says about itself: mains and the acquisition filter ------
+
+
+def _fif_with(tmp_path, *, mains=None, lowpass=None, sfreq=2000.0, seconds=10.0):
+    import mne
+
+    rng = np.random.default_rng(5)
+    n = int(sfreq * seconds)
+    t = np.arange(n) / sfreq
+    data = rng.normal(0.0, 8e-6, size=(4, n))
+    if mains:
+        data += 20e-6 * np.sin(2 * np.pi * mains * t)
+    raw = mne.io.RawArray(data, mne.create_info(["A1", "A2", "A3", "A4"], sfreq,
+                                                ch_types="seeg"), verbose="ERROR")
+    if lowpass:
+        with raw.info._unlock():
+            raw.info["lowpass"] = float(lowpass)
+    path = tmp_path / f"m{mains}_l{lowpass}_raw.fif"
+    raw.save(path, overwrite=True, verbose="ERROR")
+    return path
+
+
+def test_mains_at_60_hz_is_noticed_when_the_import_assumed_50(tmp_path):
+    """50 Hz is the default when nobody says. At a 60 Hz site that notches
+    the wrong series and leaves 180 and 240 Hz inside the ripple band."""
+    from onset_hfo.io import mains_in_signal
+
+    record = open_recording(_fif_with(tmp_path, mains=60.0))
+    assert mains_in_signal(record.raw) == 60.0
+    warning = [note for note in record.notes if note.startswith("WARNING")]
+    assert len(warning) == 1
+    assert "mains pickup at 60 Hz" in warning[0] and "told 50 Hz" in warning[0]
+    assert "180" in warning[0]
+
+
+def test_the_right_mains_and_a_clean_signal_raise_nothing(tmp_path):
+    from onset_hfo.io import mains_in_signal
+
+    right = open_recording(_fif_with(tmp_path, mains=60.0), line_freq=60.0)
+    assert not [note for note in right.notes if note.startswith("WARNING")]
+    clean = open_recording(_fif_with(tmp_path))
+    assert mains_in_signal(clean.raw) is None
+    assert not [note for note in clean.notes if note.startswith("WARNING")]
+
+
+def test_a_file_low_passed_at_acquisition_says_which_bands_it_cannot_show(tmp_path):
+    """Sampled at 2 kHz and filtered at 300 Hz: the sampling-rate check passes
+    the fast-ripple band, and the file holds nothing in it."""
+    from onset_hfo.io import acquisition_lowpass
+
+    record = open_recording(_fif_with(tmp_path, lowpass=300.0))
+    assert acquisition_lowpass(record.raw) == 300.0
+    warning = [note for note in record.notes if "low-pass filtered at 300 Hz" in note]
+    assert len(warning) == 1
+    assert "fast ripples (250–500 Hz)" in warning[0]
+    assert "ripples (80–250 Hz)" not in warning[0].replace("fast ripples", "")
+
+    narrow = open_recording(_fif_with(tmp_path, lowpass=120.0))
+    text = " ".join(narrow.notes)
+    assert "ripples (80–250 Hz) or fast ripples (250–500 Hz)" in text
+    assert acquisition_lowpass(open_recording(_fif_with(tmp_path)).raw) is None
+
+
+def test_an_exporters_decoration_is_taken_off_a_contact_name():
+    """`POL LA1`, `EEG LA1-Ref`: left as written, no contact is recognised,
+    no bipolar pair forms, and the analysis is silently monopolar."""
+    from onset_hfo.io import clean_contact_names
+
+    names = ["POL LA1", "EEG LA2-Ref", "SEEG RH 3", "LA4", "EKG", "POL DC01", "Fp1-REF"]
+    assert clean_contact_names(names) == {
+        "POL LA1": "LA1", "EEG LA2-Ref": "LA2", "SEEG RH 3": "RH3",
+        "POL DC01": "DC01", "Fp1-REF": "Fp1"}
+    # A rename that would merge two channels is not made.
+    assert clean_contact_names(["POL LA1", "LA1"]) == {}
+    assert clean_contact_names(["LA1", "LA2"]) == {}
+
+
+def test_a_decorated_file_is_paired_like_any_other(tmp_path):
+    import mne
+
+    from onset_hfo.preprocess import prepare
+
+    rng = np.random.default_rng(2)
+    names = [f"POL LA{i}" for i in range(1, 5)] + [f"EEG RH{i}-Ref" for i in range(1, 4)]
+    raw = mne.io.RawArray(rng.normal(0, 8e-6, size=(len(names), 8000)),
+                          mne.create_info(names, 2000.0, ch_types="seeg"), verbose="ERROR")
+    path = tmp_path / "decorated_raw.fif"
+    raw.save(path, verbose="ERROR")
+    record = open_recording(path)
+    assert record.raw.ch_names == ["LA1", "LA2", "LA3", "LA4", "RH1", "RH2", "RH3"]
+    assert any("read without it" in note for note in record.notes)
+    prep = prepare(record, verbose=False)
+    assert prep.montage == "bipolar" and len(prep.ch_names) == 5

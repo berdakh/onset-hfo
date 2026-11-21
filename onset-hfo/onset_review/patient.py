@@ -34,11 +34,17 @@ class PatientPanel(QWidget):
         super().__init__(parent)
         self.palette_tokens = current()
         self._session = session
-        self.record = patient_record(str(session.request.subject), data_dir)
         #: An imported file has no accession and no cohort row, so the two
         #: paragraphs below that describe the *archive's* record would be
         #: answering a question nobody asked.
         self.imported = bool(getattr(session.request, "imported", False))
+        # The lookup is told whose recording this is: a hospital file labelled
+        # `sub-05` is not the cohort's sub-05, and must not be shown that
+        # patient's diagnosis and surgical outcome.
+        self.record = patient_record(
+            str(session.request.subject), data_dir,
+            dataset=str(getattr(session.request, "dataset", "") or ""),
+            imported=self.imported)
 
         body = QWidget()
         column = QVBoxLayout(body)
@@ -46,7 +52,7 @@ class PatientPanel(QWidget):
         column.setSpacing(2)
 
         column.addWidget(_title(session.request.subject))
-        where = (f"imported from {session.request.path.name}"
+        where = (f"imported from {_shown(session.request.path)}"
                  if self.imported else session.request.dataset)
         column.addWidget(muted(
             f"{where} · run {session.request.run} · "
@@ -252,3 +258,9 @@ def _facts(rows, palette) -> QWidget:
         grid.addWidget(key, index, 0)
         grid.addWidget(body, index, 1)
     return widget
+
+
+def _shown(path) -> str:
+    from onset_hfo.privacy import shown_name
+
+    return shown_name(path)

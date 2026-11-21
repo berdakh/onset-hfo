@@ -375,3 +375,103 @@ def test_excluding_every_channel_is_refused(recording):
         prepare(recording, replace(PreprocessConfig(),
                                    exclude=tuple(recording.raw.ch_names)),
                 verbose=False)
+
+
+def test_the_band_pass_keeps_its_upper_edge_below_nyquist():
+    """The clamp read `0.45 * sfreq * 2`, which is 0.9 of the sampling rate
+    and clamps nothing: a caller outside the pipeline asking for 80-250 Hz at
+    400 Hz got MNE's error instead of a band the recording can carry."""
+    import numpy as np
+
+    from onset_hfo.detectors.base import bandpass
+
+    rng = np.random.default_rng(0)
+    out = bandpass(rng.standard_normal((1, 4000)), 400.0, (80.0, 250.0))
+    assert out.shape == (1, 4000) and np.isfinite(out).all()
+
+
+# -- the bipolar montage says what it left out --------------------------------
+
+
+def test_a_grid_is_not_paired_across_the_end_of_a_row():
+    """G8 and G9 are numbered consecutively and lie a whole grid apart."""
+    from onset_hfo.preprocess import bipolar_pairs, bipolar_plan
+
+    grid = [f"G{i}" for i in range(1, 17)]
+    assert ("G8", "G9") in bipolar_pairs(grid)
+    rows = bipolar_pairs(grid, grid_columns=(("G", 8),))
+    assert ("G8", "G9") not in rows and ("G7", "G8") in rows and ("G9", "G10") in rows
+    assert len(rows) == 14
+
+    _, _, warnings_ = bipolar_plan([f"G{i}" for i in range(1, 33)])
+    assert len(warnings_) == 1 and "probably a grid" in warnings_[0]
+    assert bipolar_plan([f"G{i}" for i in range(1, 33)], grid_columns=(("G", 8),))[2] == []
+
+
+def test_every_contact_in_no_pair_is_named_with_its_reason():
+    """A name the pattern did not read, a duplicate number and a lone contact
+    all used to vanish from the analysis without a word."""
+    from onset_hfo.preprocess import bipolar_plan
+
+    pairs, left_out, _ = bipolar_plan(
+        ["LA1", "LA2", "LA02", "POL RH1", "X9", "LB1", "LB2"], exclude={"LB2"})
+    assert pairs == [("LA1", "LA2")]
+    assert left_out["POL RH1"].startswith("its name is not")
+    assert left_out["LA02"] == "it has the same number as LA2"
+    assert left_out["X9"] == "no neighbouring contact to pair it with"
+    assert left_out["LB2"] == "it was marked bad"
+    assert "LB1" in left_out
+
+
+def test_the_steps_say_which_contacts_were_not_analysed(recording):
+    from onset_hfo.preprocess import prepare
+
+    record = recording.__class__(**{**recording.__dict__, "raw": recording.raw.copy()})
+    lone = record.raw.ch_names[0]
+    record.raw.rename_channels({lone: "ZZ7"})
+    steps = prepare(record, verbose=False).steps
+    line = [s for s in steps if "NOT ANALYSED" in s]
+    assert len(line) == 1 and "ZZ7 (no neighbouring contact" in line[0]
+
+
+# -- what a result says about how it was made ---------------------------------
+
+
+def test_the_version_stamped_on_a_result_is_the_version_that_ran():
+    """It was the literal "0.1.0" through twenty-odd releases."""
+    import re
+    from pathlib import Path
+
+    import onset_review
+    from onset_hfo import config
+
+    declared = re.search(r'^version = "([^"]+)"',
+                         (Path(config.__file__).parents[1] / "pyproject.toml").read_text(),
+                         re.MULTILINE).group(1)
+    assert config._SOURCE_VERSION == declared == onset_review.__version__
+    assert config.PIPELINE_VERSION == declared
+
+
+def test_a_saved_result_names_its_software_and_its_settings(result, tmp_path):
+    import json
+
+    from onset_hfo.config import config_digest
+
+    saved = json.loads((result.save(tmp_path) / "config.json").read_text())
+    assert set(saved["software"]) >= {"onset-hfo", "python", "mne", "numpy", "scipy"}
+    assert saved["config_sha256_16"] == config_digest(result.config.as_dict())
+    other = result.config.as_dict()
+    other["rms"]["threshold_sd"] = 4.5
+    assert config_digest(other) != saved["config_sha256_16"]
+
+
+def test_a_file_fingerprint_follows_the_content_not_the_name(tmp_path):
+    from onset_hfo.io import file_fingerprint
+
+    a, b = tmp_path / "a.bin", tmp_path / "renamed.bin"
+    a.write_bytes(b"x" * 3_000_000)
+    b.write_bytes(b"x" * 3_000_000)
+    assert file_fingerprint(a) == file_fingerprint(b) and file_fingerprint(a).startswith("size:3000000:")
+    b.write_bytes(b"x" * 2_999_999 + b"y")
+    assert file_fingerprint(a) != file_fingerprint(b)
+    assert file_fingerprint(tmp_path / "missing.bin") == ""

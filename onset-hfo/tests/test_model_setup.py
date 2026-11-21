@@ -269,3 +269,44 @@ def test_a_pull_larger_than_two_gigabytes_still_reports_progress(qapp):
     assert box.bar.value() == 50
     assert "1.30 of 2.60 GB" in box.bar.format()
     box.close()
+
+
+# -- a model that is not on this computer -----------------------------------------
+
+
+def test_nothing_is_sent_to_another_computer_without_being_asked(qapp, monkeypatch):
+    """The address field took any host. The question, the recording's label,
+    its channel names and its rates went wherever it pointed, unannounced."""
+    from onset_review.assistant import AssistantPanel
+
+    monkeypatch.setenv("ONSET_ASSISTANT_NO_PROBE", "1")
+    panel = AssistantPanel(session=object())
+    try:
+        asked = []
+        panel.backend.setCurrentIndex(panel.backend.findData("openai_compat"))
+        panel.base_url.setText("http://127.0.0.1:8000/v1")
+        panel.confirm_remote = lambda host: asked.append(host) or False
+        assert panel._remote_allowed() and asked == []          # local: no question
+
+        panel.base_url.setText("https://models.example.org/v1")
+        assert panel.model_address() == "https://models.example.org/v1"
+        assert not panel._remote_allowed()
+        assert asked == ["models.example.org"]
+        assert "Not sent" in panel.transcript.toPlainText()
+
+        panel.confirm_remote = lambda host: asked.append(host) or True
+        assert panel._remote_allowed() and len(asked) == 2
+        assert panel._remote_allowed() and len(asked) == 2      # once per address
+
+        panel.backend.setCurrentIndex(panel.backend.findData("scripted"))
+        assert panel.model_address() == "" and panel._remote_allowed()
+
+        # Ollama's address comes from the environment, not from the field.
+        panel.backend.setCurrentIndex(panel.backend.findData("ollama"))
+        monkeypatch.setenv("OLLAMA_HOST", "http://127.0.0.1:11434")
+        assert panel._remote_allowed()
+        monkeypatch.setenv("OLLAMA_HOST", "http://gpu-box.example.org:11434")
+        panel.confirm_remote = lambda host: asked.append(host) or False
+        assert not panel._remote_allowed() and asked[-1] == "gpu-box.example.org"
+    finally:
+        panel.close()

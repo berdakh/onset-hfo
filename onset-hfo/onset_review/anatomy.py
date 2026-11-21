@@ -185,15 +185,25 @@ def _inferred_position(shaft: str, index: int,
     position being reported.
     """
     letters = shaft.upper().rstrip("'")
-    hemisphere = letters[-1] if letters[-1:] in ("L", "R") else "R"
-    stem = letters[:-1] if letters[-1:] in ("L", "R") else letters
+    hemisphere = letters[-1] if letters[-1:] in ("L", "R") else "?"
+    stem = letters[:-1] if hemisphere != "?" else letters
     region = REGIONS.get(stem, REGIONS.get(letters, UNKNOWN))
 
     if region is UNKNOWN:
         return _unmapped_position(stem, index, hemisphere, n_contacts)
 
     x, y, z = region["target"]
-    x = x + (index - 1) * _pitch(n_contacts, MAX_SHAFT_LENGTH_M)
+    step = (index - 1) * _pitch(n_contacts, MAX_SHAFT_LENGTH_M)
+    if hemisphere == "?":
+        # The name says which structure and not which side -- `A1`, and `A'1`
+        # too, since what a prime means differs between centres. This shaft
+        # used to be drawn in the right hemisphere, at the very point `AR1`
+        # is, which is a side being stated by a picture that does not know
+        # it. It stands on the midline instead, running upward, where no
+        # depth electrode is and nobody will read a hemisphere off it.
+        splay = (_bearing(stem) % 5 - 2) * 0.0022
+        return (0.0, float(y + splay), float(z + step))
+    x = x + step
     if hemisphere == "L":
         x = -x
     # A small deterministic splay on z keeps two electrodes aimed at the same
@@ -345,7 +355,13 @@ def electrode_layout(session, resection=None, electrodes: pd.DataFrame | None = 
         # it), and plenty of real electrode names carry no L or R -- so a
         # layout built from coordinates should not keep reporting "side
         # unknown" about something it has just been told.
-        if sources and set(sources) == {"archive"} and abs(centre[0]) > 1e-4:
+        #
+        # Only where the name is silent. A name that says left over a position
+        # on the right is a conflict -- a mirrored file, most often -- and the
+        # coordinate import reports it as one; settling it here in the file's
+        # favour would erase the only sign that something is wrong.
+        if (hemisphere == "?" and sources and set(sources) == {"archive"}
+                and abs(centre[0]) > 1e-4):
             hemisphere = "L" if centre[0] < 0 else "R"
         rows.append({
             "channel": channel,
@@ -421,6 +437,16 @@ def layout_caption(layout: pd.DataFrame, origin: str = ARCHIVE_ORIGIN) -> str:
         return (f"Contact positions are {origin}, except for {n} channel(s) "
                 f"placed from their electrode names. Those are schematic.")
     unmapped = float((layout["region"] == UNKNOWN["label"]).mean())
+    sideless = _sideless_shafts(layout)
+    if unmapped <= 0.5 and sideless:
+        return (f"SCHEMATIC LAYOUT — {NOT_ANATOMY}. No electrode coordinates "
+                "came with this recording, so each shaft is drawn at the "
+                "textbook location of the structure its name claims, contacts "
+                "in order along it. SIDE UNKNOWN for "
+                f"{len(sideless)} shaft(s) — {', '.join(sideless)} — whose "
+                "names carry no L or R: they are drawn on the midline or "
+                "fanned out, and neither says left or right. Do not read a "
+                "position or a side off this picture.")
     if unmapped > 0.5:
         return (f"MONTAGE DIAGRAM — {NOT_ANATOMY}, and no anatomy at all. No "
                 "electrode coordinates came with this recording, and these "
@@ -434,6 +460,15 @@ def layout_caption(layout: pd.DataFrame, origin: str = ARCHIVE_ORIGIN) -> str:
             "location of the structure its name claims, contacts in order "
             "along it. Use it to see which shafts are active and how they sit "
             "relative to the resection; do not read a position off it.")
+
+
+def _sideless_shafts(layout: pd.DataFrame) -> list[str]:
+    """Shafts placed from their names whose names do not say which side."""
+    if not {"hemisphere", "shaft", "source"} <= set(layout.columns):
+        return []
+    rows = layout[(layout["source"] == "inferred")
+                  & ~layout["hemisphere"].isin(["L", "R"])]
+    return sorted({str(s) for s in rows["shaft"]})
 
 
 def brain_surface(n_theta: int = 48, n_phi: int = 32):

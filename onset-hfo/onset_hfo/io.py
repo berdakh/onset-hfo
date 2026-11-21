@@ -30,14 +30,18 @@ absence by saying so; nothing here invents them.
 
 from __future__ import annotations
 
+import re
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
 
 import mne
+import numpy as np
 import pandas as pd
 
+from onset_hfo.config import BANDS
 from onset_hfo.datasets import Recording
+from onset_hfo.privacy import looks_identifying, safe_label, shown_name, study_code
 
 __all__ = ["Format", "FORMATS", "detect_format", "supported_suffixes",
            "file_filter", "channel_overview", "recording_info", "recording_kind",
@@ -394,11 +398,17 @@ def open_recording(path: str | Path, *, t_start: float = 0.0,
                 raw.set_channel_types(wanted, verbose="ERROR")
         with raw.info._unlock():
             raw.info["line_freq"] = float(line_freq)
+        renamed = clean_contact_names(raw.ch_names)
+        if renamed:
+            raw.rename_channels(renamed, verbose="ERROR")
 
     rescaled = _units_from_channels_tsv(raw, _channels_tsv_beside(path))
     types = set(raw.get_channel_types())
     notes = [
-        f"imported from {path.name} ({fmt.name}, via mne.io.{fmt.reader})",
+        f"imported from {shown_name(path)} ({fmt.name}, via mne.io.{fmt.reader})",
+        *(["the file's own name is not shown: " + looks_identifying(path.name.split(".")[0])
+           + ", so it is called " + study_code(path) + " in everything this "
+           "software writes"] if looks_identifying(path.name.split(".")[0]) else []),
         f"window {t_start:g}–{stop:g} s of a {duration:g} s recording; all "
         f"times reported by this pipeline are in original-recording seconds",
         f"mains frequency {line_freq:g} Hz, as given to this import and not "
@@ -411,10 +421,40 @@ def open_recording(path: str | Path, *, t_start: float = 0.0,
         "no expert markings, no resected zone and no participant record come "
         "with an imported file, so anything in this software that compares "
         "against them is unavailable rather than empty",
+        *([f"{len(renamed)} channel name(s) carried the exporter's prefix or "
+           f"reference suffix and are read without it "
+           f"({', '.join(f'{a} as {b}' for a, b in list(renamed.items())[:4])}"
+           f"{', …' if len(renamed) > 4 else ''}): left as written, no contact on "
+           f"them is recognised and no bipolar pair is formed"] if renamed else []),
         *([f"the file does not state the unit of {len(rescaled)} channels; the BIDS "
            f"channels.tsv beside it gives it ({', '.join(sorted(set(rescaled.values())))}), "
            "so they were read in that unit rather than as volts"] if rescaled else []),
     ]
+    # Two things the file can say about itself that the person importing it
+    # may not know, and that decide whether an HFO count means anything.
+    seen = mains_in_signal(raw)
+    if seen is not None and abs(seen - float(line_freq)) > 1.0:
+        notes.append(
+            f"WARNING: the signal carries mains pickup at {seen:g} Hz, and this "
+            f"import was told {line_freq:g} Hz. The notch is on the wrong "
+            f"frequency: the interference and its harmonics "
+            f"({2 * seen:g}, {3 * seen:g}, {4 * seen:g} Hz) are still in the "
+            f"signal, inside or beside the ripple band. Import again with mains "
+            f"set to {seen:g} Hz")
+    cut = acquisition_lowpass(raw)
+    if cut is not None:
+        lost = [f"{label} ({band[0]:g}–{band[1]:g} Hz)"
+                for label, band in (("ripples", BANDS.ripple),
+                                    ("fast ripples", BANDS.fast_ripple))
+                if cut < band[1]]
+        if lost:
+            notes.append(
+                f"WARNING: the file's header says it was low-pass filtered at "
+                f"{cut:g} Hz when it was recorded or exported. Activity above "
+                f"that is attenuated however fast the file is sampled, so few "
+                f"or no events in {' or '.join(lost)} is what this file would "
+                f"show whether or not the brain produced them")
+
     if not (types & set(INTRACRANIAL_TYPES)):
         from onset_hfo.modality import MODALITIES, detect
 
@@ -428,11 +468,135 @@ def open_recording(path: str | Path, *, t_start: float = 0.0,
             "there is nothing the pipeline can analyse")
 
     return Recording(
-        raw=raw, source=f"local:{path.name}",
-        subject=subject or path.stem, task=task, run=run,
+        raw=raw, source=f"local:{shown_name(path)}",
+        subject=subject or safe_label(path), task=task, run=run,
         t_offset=float(t_start), line_freq=float(line_freq),
         dataset_id="", citation="", notes=notes,
+        fingerprint=file_fingerprint(path),
     )
+
+
+def file_fingerprint(path) -> str:
+    """What identifies a recording's content without reading all of it.
+
+    SHA-256 over the file's size and its first and last mebibyte, as
+    `size:<bytes>:<16 hex>`. A whole-file hash of a multi-gigabyte recording
+    on every open would be minutes the reader waits; this is milliseconds,
+    and two different recordings sharing a size, a header and a tail is not
+    a case that arises. For a recording kept as a folder, its largest file.
+    Empty when the file cannot be read, which is said by its absence.
+    """
+    import hashlib
+
+    path = Path(path)
+    try:
+        if path.is_dir():
+            files = [p for p in path.rglob("*") if p.is_file()]
+            if not files:
+                return ""
+            path = max(files, key=lambda p: p.stat().st_size)
+        size = path.stat().st_size
+        digest = hashlib.sha256(str(size).encode())
+        with open(path, "rb") as handle:
+            digest.update(handle.read(1 << 20))
+            if size > (1 << 20):
+                handle.seek(max(0, size - (1 << 20)))
+                digest.update(handle.read(1 << 20))
+    except OSError:
+        return ""
+    return f"size:{size}:{digest.hexdigest()[:16]}"
+
+
+#: What a clinical exporter wraps a contact name in: "POL LA1", "EEG LA1-Ref",
+#: "SEEG LA 1". None of it is part of the name the implantation plan uses.
+_NAME_PREFIX = re.compile(r"^(?:POL|EEG|SEEG|ECOG|IEEG)[\s_:]+", re.IGNORECASE)
+_NAME_SUFFIX = re.compile(r"[\s_-]+(?:REF|REFERENCE|AVG|AV|LE|MONO)\s*$", re.IGNORECASE)
+_CONTACT_NAME = re.compile(r"^[A-Za-z]+'?\d{1,3}$")
+
+
+def clean_contact_names(names) -> dict[str, str]:
+    """`{name in the file: contact name}` for the names an exporter decorated.
+
+    Only a name that *becomes* a contact name (letters, then a number) by
+    losing a known prefix, a reference suffix and its spaces is changed, and
+    only if the result collides with nothing: a rename that merged two
+    channels would be worse than the decoration. Everything else is left
+    exactly as the file has it.
+    """
+    wanted: dict[str, str] = {}
+    for name in names:
+        if _CONTACT_NAME.match(name):
+            continue
+        bare = _NAME_SUFFIX.sub("", _NAME_PREFIX.sub("", str(name).strip()))
+        bare = re.sub(r"\s+", "", bare)
+        if bare != name and _CONTACT_NAME.match(bare):
+            wanted[name] = bare
+    taken = [n for n in names if n not in wanted] + list(wanted.values())
+    return {old: new for old, new in wanted.items() if taken.count(new) == 1}
+
+
+def mains_in_signal(raw, picks=None) -> float | None:
+    """50 or 60 if the signal plainly carries that mains frequency, else None.
+
+    A bare EDF does not say where it was recorded, and the import assumes
+    50 Hz when nobody does. This reads the answer off the data instead: the
+    power in a narrow line at each candidate against the spectrum either side
+    of it, on the median channel. None when neither stands out, or when both
+    do -- a clean recording is not evidence for either.
+    """
+    from scipy.signal import welch
+
+    sfreq = float(raw.info["sfreq"])
+    if sfreq < 150.0:
+        return None
+    try:
+        data = raw.get_data(picks=picks if picks is not None else "data")
+    except Exception:                       # noqa: BLE001 -- no data channels
+        return None
+    if data.size == 0 or data.shape[1] < int(2 * sfreq):
+        return None
+    data = data[np.isfinite(data).all(axis=1)]
+    if not len(data):
+        return None
+    freqs, power = welch(data, fs=sfreq, nperseg=int(min(data.shape[1], 4 * sfreq)),
+                         axis=-1)
+    power = np.median(power, axis=0)
+
+    def prominence(line: float) -> float:
+        peak = power[(freqs >= line - 0.5) & (freqs <= line + 0.5)]
+        around = power[((freqs >= line - 5) & (freqs <= line - 2))
+                       | ((freqs >= line + 2) & (freqs <= line + 5))]
+        if not len(peak) or not len(around) or float(np.median(around)) <= 0:
+            return 0.0
+        return float(peak.max() / np.median(around))
+
+    at = {50.0: prominence(50.0), 60.0: prominence(60.0)}
+    best = max(at, key=at.get)
+    other = min(at, key=at.get)
+    if at[best] < MAINS_PROMINENCE or at[best] < 3.0 * at[other]:
+        return None
+    return best
+
+
+#: How far a mains line must rise above the spectrum either side of it, as a
+#: power ratio, before the signal is taken to say which mains it was recorded
+#: on. Ten is a line nobody would miss on a spectrum; a notch at acquisition
+#: or a well-shielded room leaves nothing, and then nothing is concluded.
+MAINS_PROMINENCE = 10.0
+
+
+def acquisition_lowpass(raw) -> float | None:
+    """The low-pass the file's header declares, when it is below what the
+    sampling rate alone would allow. None when the header does not say, which
+    MNE reports as a low-pass at the Nyquist frequency."""
+    try:
+        cut = float(raw.info.get("lowpass") or 0.0)
+    except (TypeError, ValueError):
+        return None
+    nyquist = float(raw.info["sfreq"]) / 2.0
+    if not np.isfinite(cut) or cut <= 0 or cut >= 0.98 * nyquist:
+        return None
+    return cut
 
 
 def _unsupported(path: Path) -> str:

@@ -431,3 +431,48 @@ def test_the_verdict_names_the_window_that_was_analysed():
     assert "34-comparison Bonferroni" in full
     assert "a 60-second window" in verdict((0.0, 60.0))
     assert "a 45-second window" in verdict((30.0, 75.0))
+
+
+# -- what chance alone would give --------------------------------------------
+
+
+def test_the_chance_baseline_is_exact_and_matches_the_committed_table():
+    """"Top channel resected in 11 of 13" means nothing without the size of
+    each resection. The committed table and the document quote this
+    function's numbers; this holds all three together."""
+    from pathlib import Path
+
+    import numpy as np
+    import pandas as pd
+
+    from onset_hfo.outcome import _at_least, chance_baseline
+
+    # The Poisson-binomial tail, against cases that can be done by hand.
+    assert _at_least([0.5, 0.5], 0) == 1.0
+    assert _at_least([0.5, 0.5], 1) == 0.75
+    assert _at_least([0.5, 0.5], 2) == 0.25
+    assert _at_least([1.0, 0.0, 0.25], 2) == 0.25
+    assert _at_least([0.3], 5) == 0.0
+
+    root = Path(__file__).resolve().parents[1]
+    subjects = pd.read_csv(root / "data" / "outcome" / "subjects.csv")
+    participants = pd.read_csv(root / "data" / "outcome" / "participants.csv")
+    table = chance_baseline(subjects, participants)
+    committed = pd.read_csv(root / "data" / "outcome" / "chance_baseline.csv")
+    pd.testing.assert_frame_equal(table, committed, check_dtype=False)
+
+    def row(source, band, outcome):
+        hit = table[(table["source"] == source) & (table["band"] == band)
+                    & (table["scope"] == "reviewed") & (table["outcome"] == outcome)]
+        return hit.iloc[0]
+
+    free, recur = row("expert", "fast_ripple", "S"), row("expert", "fast_ripple", "F")
+    assert (free["observed"], free["n"], free["expected"]) == (11, 13, 4.26)
+    assert (recur["observed"], recur["n"], recur["expected"]) == (3, 7, 3.00)
+    assert free["p_at_least"] < 1e-4 and np.isclose(recur["p_at_least"], 0.66)
+
+    text = (root / "docs" / "OUTCOME.md").read_text(encoding="utf-8")
+    assert "| expert | fast ripple | reviewed | seizure-free | 11/13 | 4.26 | 0.000005 |" in text
+    assert "| expert | fast ripple | reviewed | recurrence | 3/7 | 3.00 | 0.66 |" in text
+    assert "| rms | ripple | reviewed | seizure-free | 8/13 | 4.26 | 0.012 |" in text
+    assert f"**{table['p_chance_min'].min():.2f} to {table['p_chance_max'].max():.2f}**" in text

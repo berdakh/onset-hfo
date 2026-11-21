@@ -138,7 +138,7 @@ def _request_from(args) -> object:
 
     if args.open_path is not None:
         return ReviewRequest(
-            dataset="", subject=args.subject or args.open_path.stem,
+            dataset="", subject=args.subject or _safe_label(args.open_path),
             path=args.open_path, line_freq=float(args.line_freq),
             channel_types=_channel_types(args), **common)
 
@@ -597,16 +597,40 @@ class _Review:
         from onset_review import adjudication
 
         stored = adjudication.load(session.request)
-        if not stored.reader:
-            # Carried from the window being replaced. A reviewer who named
-            # themselves and then moved to the next minute is the same person,
-            # and being asked again at every window is how a reader learns to
-            # click past the question.
-            carried = (self.parts.session.read.reader
-                       if self.parts is not None else "")
-            stored.reader = (carried or (self.args.reader or "")).strip()
+        # Who is reading is whoever named themselves in *this* run of the
+        # application, carried from the window being replaced -- a reviewer
+        # who moved to the next minute is the same person, and being asked at
+        # every window is how a reader learns to click past the question.
+        # It is not whoever saved this window's file: on a shared workstation
+        # that put every verdict Dr B gave under Dr A's name, with no prompt.
+        # With nobody named yet the first verdict asks.
+        carried = (self.parts.session.read.reader
+                   if self.parts is not None else "")
+        stored.reader = (carried or (self.args.reader or "")).strip()
+        current = str(getattr(getattr(session, "recording", None), "fingerprint", "") or "")
+        other_file = bool(stored.fingerprint and current
+                          and stored.fingerprint != current and not stored.empty)
+        if current:
+            stored.fingerprint = current if not other_file else stored.fingerprint
         session.read = adjudication.reconcile(stored, session.events)
         self._orphans = len(session.read.orphaned)
+        if other_file:
+            # Found by path, and the file at that path is not the one judged.
+            session.notes.append(
+                "THESE VERDICTS WERE GIVEN ON A DIFFERENT FILE: the saved read "
+                "for this window belongs to a recording with another content "
+                f"fingerprint ({stored.fingerprint}; this file is {current}). "
+                "The file at this path was replaced or re-exported. Check "
+                "every verdict against the signal before relying on it.")
+        if session.read.set_aside:
+            # Said in the window's own notes, which the report prints: a read
+            # that silently starts again from nothing looks like no read was
+            # ever made.
+            session.notes.append(
+                "EARLIER VERDICTS NOT LOADED: the saved read for this window "
+                "could not be parsed and was moved to "
+                f"{session.read.set_aside}. Nothing in it was deleted; this "
+                "window starts from an empty read.")
 
     def trace_at(self, t_file: float) -> None:
         """Put the signal around `t_file` under the analysis already on screen.
@@ -1155,3 +1179,9 @@ def _screenshot(app, parts, path: Path) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+def _safe_label(path) -> str:
+    from onset_hfo.privacy import safe_label
+
+    return safe_label(path)

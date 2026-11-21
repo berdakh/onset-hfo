@@ -53,8 +53,22 @@ CHART_FIELDS = [
 ]
 
 
-def patient_record(subject: str, data_dir: Path | None = None) -> dict:
+#: The one archive the committed tables describe. A subject label is only
+#: unique inside its archive: `sub-05` is a patient of this cohort, and it is
+#: also what any hospital might call its own fifth study.
+COHORT_DATASET = "ds003498"
+
+
+def patient_record(subject: str, data_dir: Path | None = None, *,
+                   dataset: str | None = None, imported: bool = False) -> dict:
     """Everything the committed tables hold about one patient.
+
+    `dataset` and `imported` say whose recording is asking. A file opened from
+    disk, or a subject of any archive but the cohort's, gets no record however
+    its label reads: showing the cohort patient's epilepsy type, resection and
+    surgical outcome beside somebody else's EEG is another patient's chart on
+    this one's screen. `dataset=None` means the caller is asking about the
+    cohort itself, which is what the studies and the demo do.
 
     Reads the extracts in `data/outcome/`, which exist precisely so a number
     can be checked from a fresh clone with no download. Missing files are not
@@ -63,6 +77,8 @@ def patient_record(subject: str, data_dir: Path | None = None) -> dict:
     """
     root = Path(data_dir) if data_dir is not None else _default_dir()
     record: dict = {"subject": subject, "available": False}
+    if imported or (dataset is not None and dataset != COHORT_DATASET):
+        return record
     participants = _read(root / "participants.csv")
     if participants is None or "subject" not in participants:
         return record

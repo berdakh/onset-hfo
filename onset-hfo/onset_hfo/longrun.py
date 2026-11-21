@@ -50,6 +50,7 @@ rather than waved at: over the same 200 s, chunks of 30 s, 60 s and 100 s give
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
@@ -94,8 +95,8 @@ STREAM_ABOVE_S = 180.0
 
 #: Worst first. `channel_quality` picks one reason per channel in a fixed
 #: order of seriousness; this is that order, used to merge the per-chunk
-#: verdicts into one. The first four set a contact aside; the rest flag it.
-REASON_SEVERITY = ("flat", "clipped", "line_noise", "mostly_bad_segments",
+#: verdicts into one. The first five set a contact aside; the rest flag it.
+REASON_SEVERITY = ("non_finite", "flat", "clipped", "line_noise", "mostly_bad_segments",
                    "hf_noise", "hf_active", "amplitude")
 
 
@@ -178,6 +179,22 @@ def analyse_span(source: Source, t_start: float, t_stop: float,
             seen["montage"] = prep.montage
             seen["line_freq"] = float(prep.line_freq)
             seen["steps"] = list(prep.steps)
+            # The gate `run_pipeline` and the one-window review both apply,
+            # and this path did not: a band the sampling rate cannot carry
+            # is refused, not detected in whatever is left of it. Without
+            # this a 512 Hz file was "HFO detection skipped" at one minute
+            # and a table of ripple rates at ten.
+            for name in detectors:
+                band = tuple(getattr(cfg, name).band) if hasattr(cfg, name) else None
+                if band and not BANDS.usable(prep.sfreq, band):
+                    raise ValueError(
+                        f"the {band[0]:g}–{band[1]:g} Hz band needs a sampling "
+                        f"rate of at least {math.ceil(band[1] / 0.45)} Hz (its "
+                        f"top within 90% of the Nyquist frequency), and this "
+                        f"recording is {prep.sfreq:g} Hz after preprocessing. "
+                        f"Choose a lower band, or analyse a window of three "
+                        f"minutes or less to read its discharges and signal "
+                        f"quality without the HFO detectors.")
             # Now that the sampling rate is known, let `plan_chunks` do the
             # arithmetic it could not do before the first chunk existed. It
             # raises rather than returning, which is what should happen: a
@@ -281,7 +298,7 @@ def _widest_band(cfg: PipelineConfig, detectors) -> tuple:
     lows = [tuple(getattr(cfg, name).band) for name in detectors
             if hasattr(cfg, name)]
     if not lows:
-        return tuple(BANDS["ripple"])
+        return tuple(BANDS.ripple)
     return min(lows, key=lambda band: band[0])
 
 

@@ -267,6 +267,19 @@ class SpikeConfig:
     #: costs no recall and lifts precision from 0.58 to ~0.95
     #: (docs/EVALUATION.md).
     max_raw_jump_sd: float = 10.0
+    #: ...and only when that jump is also a *step*: more than this fraction
+    #: of the candidate's whole excursion crossed within `step_ms`. The SD
+    #: test alone is a statement about the sampling rate and the noise floor
+    #: as much as about the waveform: at 2 kHz on a quiet contact, a genuinely
+    #: sharp discharge moves tens of robust SDs between samples, and 468 of
+    #: 468 such discharges were discarded as instrumentation -- on exactly the
+    #: channels that spike hardest. A pop covers most of its excursion in a
+    #: sample or two (measured: 0.9 and above); a discharge with a 4 ms time
+    #: constant covers about a tenth in half a millisecond. 0 restores the SD
+    #: test on its own.
+    max_step_fraction: float = 0.5
+    #: The time a step is allowed, in ms. At least one sample.
+    step_ms: float = 0.5
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -296,6 +309,35 @@ class ValidationConfig:
     #: Implanted ripples score a median of about 15 dB on the bipolar signal
     #: (5th percentile about 7 dB), so this is a floor, not a tight filter.
     min_peak_prominence_db: float = 4.0
+    #: Minimum height (dB) of that peak above the troughs either side of it
+    #: (`spectral.event_peak_contrast`): there has to be a peak *inside* the
+    #: band, not only energy in it. The prominence above is measured against
+    #: a straight line through the spectrum outside the band, and a sharp
+    #: discharge's spectrum is not a straight line: on a 1/f^2 background,
+    #: 468 of 468 discharges with no oscillation in them passed 4 dB of
+    #: prominence and were counted as ripples, every one "peaking" at the
+    #: band's lower edge. They score under 5 dB here; implanted ripples on the
+    #: synthetic recording score a 5th percentile of 7 to 8 dB (median 25 to
+    #: 29) in both bands and at 2 and 5 SD. 6 dB sits between the two.
+    #: **Set on synthetic signals**: what it costs in recall against expert
+    #: markings has not been measured, and the cohort tables in `data/` were
+    #: computed before it existed. 0 turns it off and restores those.
+    min_peak_contrast_db: float = 6.0
+    #: **Flag**, never reject, an accepted HFO whose in-band peak is less than
+    #: this many dB above the next band up (`spectral.event_band_margin`):
+    #: broadband energy, as muscle and movement produce. Synthetic 20-400 Hz
+    #: bursts, all of which the checks above accept, score a median of -1 dB
+    #: (95th percentile 3); implanted ripples a median of 9. The two overlap,
+    #: which is why this is a flag for a reader and changes no rate. 0 = off.
+    broadband_margin_db: float = 2.0
+    #: **Flag** an accepted intracranial HFO that coincides with candidates
+    #: on at least this fraction of the *other electrodes* (shafts, strips),
+    #: and on at least `multichannel_min_electrodes` of them. A ripple is a
+    #: few millimetres across; something on most of the implant at once is
+    #: more often movement, muscle or the reference. Not rejected: a seizure
+    #: and a spreading discharge do the same. 0 = off.
+    multichannel_fraction: float = 0.5
+    multichannel_min_electrodes: int = 2
     #: Reject if the raw low-band (1-30 Hz) amplitude in the window exceeds
     #: this many robust SDs -- the signature of a spike-induced false ripple,
     #: unless a clear spectral peak survives the check above.
@@ -763,4 +805,52 @@ THRESHOLDS: dict[str, float] = {
 
 #: Version string stamped into every result table and report, so that a number
 #: someone quotes months from now can be traced back to the code that made it.
-PIPELINE_VERSION = "0.1.0"
+def _package_version() -> str:
+    """The installed package's version, or the one this source tree declares.
+
+    `PIPELINE_VERSION` was the literal "0.1.0" through twenty-odd releases, so
+    every saved result and report said it came from a pipeline that had
+    changed many times since. It is now the version of the code that ran.
+    """
+    try:
+        from importlib.metadata import PackageNotFoundError, version
+
+        try:
+            return version("onset-hfo")
+        except PackageNotFoundError:
+            pass
+    except ImportError:                     # pragma: no cover
+        pass
+    return _SOURCE_VERSION
+
+
+#: What `pyproject.toml` declares, for a source tree that is not installed.
+#: A test holds the two together.
+_SOURCE_VERSION = "0.3.24"
+PIPELINE_VERSION = _package_version()
+
+
+def software_versions() -> dict[str, str]:
+    """The versions that decide what an analysis computes, for its record.
+
+    The filters are MNE's and SciPy's, and their defaults have changed
+    between releases; a result that cannot name them cannot be reproduced.
+    """
+    import platform
+
+    out = {"onset-hfo": PIPELINE_VERSION, "python": platform.python_version()}
+    for name in ("mne", "numpy", "scipy", "pandas"):
+        try:
+            out[name] = str(__import__(name).__version__)
+        except Exception:                   # noqa: BLE001 -- absent or odd; say so
+            out[name] = "unknown"
+    return out
+
+
+def config_digest(config: dict) -> str:
+    """A short, stable fingerprint of a configuration (`PipelineConfig.as_dict`)."""
+    import hashlib
+    import json
+
+    text = json.dumps(config, sort_keys=True, default=str, separators=(",", ":"))
+    return hashlib.sha256(text.encode()).hexdigest()[:16]

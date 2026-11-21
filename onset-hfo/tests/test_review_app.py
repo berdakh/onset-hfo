@@ -1897,6 +1897,32 @@ def test_the_patient_panel_says_an_imported_window_has_no_record(qapp, recording
     assert "age, sex and handedness" not in text
 
 
+def test_an_imported_file_labelled_like_a_cohort_subject_gets_no_record(
+        qapp, recording):
+    """`sub-05` from a hospital is not the cohort's sub-05. Showing that
+    patient's epilepsy type and surgical outcome beside this EEG would be
+    another patient's chart on this one's screen."""
+    import pathlib
+
+    from onset_review.patient import PatientPanel
+    from onset_review.record import patient_record
+
+    assert patient_record("sub-05")["available"] is True
+    assert patient_record("sub-05", imported=True)["available"] is False
+    assert patient_record("sub-05", dataset="ds003029")["available"] is False
+    assert patient_record("sub-05", dataset="ds003498")["available"] is True
+
+    request = ReviewRequest(dataset="ds003498", subject="sub-05",
+                            path=pathlib.Path("sub-05.edf"),
+                            t_start=0.0, t_stop=float(recording.duration))
+    panel = PatientPanel(session_from_recording(recording, request))
+    assert panel.record["available"] is False
+    text = " ".join(label.text() for label in panel.findChildren(qt.QLabel))
+    assert "no participant record, no resected zone" in text
+    assert "Surgical outcome" not in text
+    assert not hasattr(panel, "outcome_shown")
+
+
 def test_the_command_line_flags_open_the_dialog_on_their_answer(qapp,
                                                                 recording_file):
     """`--window 0 30 --all-channels-as seeg` is an answer, not a suggestion.
@@ -4157,3 +4183,25 @@ def test_a_pane_that_does_not_fit_beside_the_pages_opens_as_a_window(paged, monk
     monkeypatch.setattr(qt.QApplication, "primaryScreen", staticmethod(lambda: Narrow()))
     assert host._fit_pane(dock) is True and dock.isFloating()
     dock.setFloating(False)
+
+
+# -- what the assistant reads, against what the screen shows ------------------
+
+
+def test_the_assistant_says_when_its_evidence_is_not_the_analysis_on_screen():
+    """A long span is ranked over ten minutes and the assistant read one of
+    them, quoting its numbers as verified against tables they do not match."""
+    import types
+
+    from onset_review.assistant import evidence_scope
+
+    def session(span, keep=()):
+        request = types.SimpleNamespace(t_start=120.0, t_stop=180.0, keep_channels=keep)
+        return types.SimpleNamespace(request=request, span=span)
+
+    assert evidence_scope(session((120.0, 180.0))) == ""
+    long = evidence_scope(session((0.0, 600.0)))
+    assert "cover 0–600 s" in long and "only the 120–180 s" in long
+    kept = evidence_scope(session((120.0, 180.0), keep=("AR1-AR2",)))
+    assert "reinstated (AR1-AR2)" in kept and "still set aside" in kept
+    assert evidence_scope(types.SimpleNamespace()) == ""

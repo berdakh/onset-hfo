@@ -149,6 +149,11 @@ def _split_key(key: str) -> tuple[str, float, str]:
         return channel, float("nan"), detector
 
 
+def _kind(detector: str) -> str:
+    """What a detector finds: a discharge, or an oscillation."""
+    return "spike" if str(detector).strip().lower() == "spike" else "oscillation"
+
+
 def reader_name(default: str | None = None) -> str:
     """A sensible starting value for the reader's name, never a final one.
 
@@ -230,6 +235,23 @@ def path_for(request) -> Path:
 # --------------------------------------------------------------------------
 
 
+#: What a rate cannot be read without, and what a recording does not say
+#: about itself: `(key, label, choices)`. HFO and discharge rates differ
+#: several-fold between NREM sleep and wakefulness, rise for hours after a
+#: seizure, and rise as anti-seizure medication is withdrawn for monitoring.
+#: The reader records each, or the report says in capitals that nobody did.
+CONDITIONS = (
+    ("state", "Vigilance state",
+     ("N2/N3 sleep", "N1 sleep", "REM sleep", "awake", "mixed", "not scored")),
+    ("since_seizure", "Since the last seizure",
+     ("more than 24 h", "6–24 h", "1–6 h", "under 1 h", "seizure in this window",
+      "unknown")),
+    ("medication", "Anti-seizure medication",
+     ("full dose", "being tapered", "withdrawn", "unknown")),
+)
+NOT_RECORDED = "NOT RECORDED"
+
+
 @dataclass
 class Adjudication:
     """One reader's verdicts on one window, and the bookkeeping around them."""
@@ -244,6 +266,25 @@ class Adjudication:
     #: person's recorded opinion because the software's opinion changed is the
     #: one behaviour this module must not have.
     orphaned: dict = field(default_factory=dict)
+    #: Verdicts another reader gave before the one now in `events` or
+    #: `channels`: key -> [Judgement, ...], oldest first. A second reader's
+    #: click used to replace the first reader's verdict and leave no trace
+    #: that there had been one, or that the two disagreed. `events` is still
+    #: the verdict that counts; these are kept, saved, and reported.
+    superseded: dict = field(default_factory=dict)
+    #: Where :func:`load` moved a stored read it could not parse, or "". Not
+    #: written to the file: it is about this load, and exists so the window
+    #: can say that earlier verdicts were not read and where they now are.
+    set_aside: str = ""
+    #: The content fingerprint of the file these verdicts were given on
+    #: (`onset_hfo.io.file_fingerprint`), for a file read from disk. A read
+    #: is found by the file's path; this is how it is known to be about the
+    #: file now at that path and not one that replaced it.
+    fingerprint: str = ""
+    #: The conditions the window was recorded under, as the reader gave them:
+    #: `CONDITIONS` keys -> one of their choices, plus `by` and `at`. Empty
+    #: until somebody says; never guessed.
+    conditions: dict = field(default_factory=dict)
     #: Free text about the window as a whole, which is the thing a reader
     #: actually wants to write at the end of a read.
     note: str = ""
@@ -299,10 +340,31 @@ class Adjudication:
             note = previous.note
         judged = Judgement(verdict=verdict, reader=who, at=now(), note=note,
                            match=previous.match if previous else "")
+        # Someone else's verdict is not overwritten, it is superseded: kept
+        # under the same key with its reader and time. The same reader
+        # changing their mind replaces their own, as it always has.
+        if previous is not None and previous.reader and previous.reader != who:
+            self.superseded.setdefault(key, []).append(replace(previous, match=""))
         into[key] = judged
         if who and not self.reader:
             self.reader = who
         return judged
+
+    def set_conditions(self, values: dict, reader: str = "") -> None:
+        """Record what the window was recorded under. A blank value clears
+        that condition: "not recorded" is a state, and it is the default."""
+        kept = {key: str(values.get(key) or "").strip()
+                for key, _label, _choices in CONDITIONS}
+        kept = {key: value for key, value in kept.items() if value}
+        if kept:
+            kept["by"] = (reader or self.reader or "").strip()
+            kept["at"] = now()
+        self.conditions = kept
+
+    def condition_rows(self) -> list[tuple[str, str]]:
+        """`(label, value)` for every condition, `NOT_RECORDED` where blank."""
+        return [(label, self.conditions.get(key) or NOT_RECORDED)
+                for key, label, _choices in CONDITIONS]
 
     def set_draft(self, text: str, by: str, evidence: list | None = None,
                   basis: str | None = None, verdicts: dict | None = None) -> None:
@@ -373,7 +435,7 @@ class Adjudication:
     @property
     def empty(self) -> bool:
         return (not self.events and not self.channels and not self.orphaned
-                and not self.note.strip())
+                and not self.note.strip() and not self.conditions)
 
     @property
     def readers(self) -> list:
@@ -384,11 +446,34 @@ class Adjudication:
         collapsing into a single "Reviewer" line.
         """
         seen = []
-        for judged in (list(self.events.values()) + list(self.channels.values())
-                       + list(self.orphaned.values())):
+        earlier = [judged for group in self.superseded.values() for judged in group]
+        for judged in (earlier + list(self.events.values())
+                       + list(self.channels.values()) + list(self.orphaned.values())):
             if judged.reader and judged.reader not in seen:
                 seen.append(judged.reader)
         return seen
+
+    def second_opinions(self) -> dict:
+        """What happened where one reader's verdict followed another's.
+
+        `n` events or channels carry an earlier verdict by someone else; on
+        `agreed` of them the latest earlier reader said the same as the one
+        now standing, and `disagreed` lists the rest as `(key, earlier
+        reader, earlier verdict, current reader, current verdict)`.
+        """
+        current = {**self.channels, **self.orphaned, **self.events}
+        agreed, disagreed = 0, []
+        for key, group in sorted(self.superseded.items()):
+            now_ = current.get(key)
+            if now_ is None or not group:
+                continue
+            before = group[-1]
+            if before.verdict == now_.verdict:
+                agreed += 1
+            else:
+                disagreed.append((key, before.reader, before.verdict,
+                                  now_.reader, now_.verdict))
+        return {"n": agreed + len(disagreed), "agreed": agreed, "disagreed": disagreed}
 
     def counts(self) -> dict:
         """How many of each verdict, over the whole window."""
@@ -437,6 +522,8 @@ class Adjudication:
             "schema": SCHEMA,
             "window": self.window,
             "reader": self.reader,
+            **({"fingerprint": self.fingerprint} if self.fingerprint else {}),
+            **({"conditions": dict(self.conditions)} if self.conditions else {}),
             "note": self.note,
             "draft": self.draft,
             "draft_by": self.draft_by,
@@ -458,6 +545,8 @@ class Adjudication:
                                                   **self.events}.items())},
             "channels": {key: judged.to_json()
                          for key, judged in sorted(self.channels.items())},
+            "superseded": {key: [judged.to_json() for judged in group]
+                           for key, group in sorted(self.superseded.items()) if group},
         }
 
     @classmethod
@@ -465,6 +554,8 @@ class Adjudication:
         return cls(
             window=str(data.get("window", "")),
             reader=str(data.get("reader", "")),
+            fingerprint=str(data.get("fingerprint", "")),
+            conditions={str(k): str(v) for k, v in (data.get("conditions") or {}).items()},
             note=str(data.get("note", "")),
             draft=str(data.get("draft", "")),
             draft_by=str(data.get("draft_by", "")),
@@ -482,6 +573,8 @@ class Adjudication:
                     for key, value in (data.get("events") or {}).items()},
             channels={str(key): Judgement.from_json(value)
                       for key, value in (data.get("channels") or {}).items()},
+            superseded={str(key): [Judgement.from_json(value) for value in group]
+                        for key, group in (data.get("superseded") or {}).items()},
         )
 
 
@@ -490,8 +583,10 @@ def load(request) -> Adjudication:
 
     A corrupt or unreadable file returns an empty read rather than stopping
     the window from opening: losing the reviewer's previous verdicts is bad,
-    but refusing to show them the recording at all is worse, and the file is
-    left on disk untouched for them to look at.
+    but refusing to show them the recording at all is worse. The file is
+    renamed `<window>.unreadable-<time>.json` beside where it was, so that
+    the next save cannot write over it, and the returned read's `set_aside`
+    names it.
     """
     path = path_for(request)
     blank = Adjudication(window=window_id(request))
@@ -499,13 +594,31 @@ def load(request) -> Adjudication:
         return blank
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        if not isinstance(data, dict):
+            raise ValueError("not a JSON object")
+        read = Adjudication.from_json(data)
+    except OSError:
         return blank
-    if not isinstance(data, dict):
+    except (ValueError, TypeError, AttributeError, KeyError):
+        # A file that cannot be read is still somebody's verdicts. Returning
+        # a blank read and leaving it in place meant the next verdict's save
+        # wrote over it. It is moved aside instead, where it stays until a
+        # person looks at it, and the blank read says where it went.
+        blank.set_aside = str(_set_aside(path) or "")
         return blank
-    read = Adjudication.from_json(data)
     read.window = read.window or blank.window
     return read
+
+
+def _set_aside(path: Path) -> Path | None:
+    """Rename an unreadable read out of the way of the next save."""
+    stamp = _dt.datetime.now(_dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    target = path.with_name(f"{path.stem}.unreadable-{stamp}.json")
+    try:
+        path.replace(target)
+    except OSError:
+        return None
+    return target
 
 
 def save(request, read: Adjudication) -> Path:
@@ -571,6 +684,7 @@ def reconcile(read: Adjudication, events,
     """
     carried: dict = {}
     orphans: list = []
+    moved: dict = {}             # a verdict's stored key -> the key it now has
     # Current events, grouped by channel and sorted, so a verdict only ever
     # looks at the handful of events it could plausibly be about.
     by_channel: dict = {}
@@ -581,16 +695,31 @@ def reconcile(read: Adjudication, events,
         items.sort()
     taken: set = set()
 
+    # Exact matches first, all of them. In a single pass a verdict whose own
+    # event had gone could take, as a near match, the event another verdict
+    # was given to -- and that verdict, arriving second, was orphaned.
+    current = {key for items in by_channel.values() for _, key in items}
     for key, judged in read.events.items():
-        channel, start, _ = _split_key(key)
+        if key in current:
+            taken.add(key)
+            carried[key] = replace(judged, match="exact")
+
+    for key, judged in read.events.items():
+        if key in carried:
+            continue
+        channel, start, detector = _split_key(key)
         candidates = by_channel.get(channel, [])
         best, best_gap, best_exact = None, float("inf"), False
         for when, candidate_key in candidates:
             if candidate_key in taken:
                 continue
-            if candidate_key == key:
-                best, best_gap, best_exact = candidate_key, 0.0, True
-                break
+            # A verdict is about one kind of thing. "A real oscillation" given
+            # to a ripple must not land on the discharge 10 ms away, or the
+            # discharge is counted as confirmed by a reader who never judged
+            # it. Between two oscillation detectors the same event is the
+            # same event, so those still match.
+            if _kind(_split_key(candidate_key)[2]) != _kind(detector):
+                continue
             gap = abs(when - start)
             if gap <= tolerance_s and gap < best_gap:
                 best, best_gap = candidate_key, gap
@@ -599,11 +728,13 @@ def reconcile(read: Adjudication, events,
             continue
         taken.add(best)
         carried[best] = replace(judged, match="exact" if best_exact else "near")
+        moved[key] = best
 
     # The paragraphs travel with the read: a re-analysis that dropped them
     # would let the next save erase what the reader wrote or signed off.
     return Adjudication(
         window=read.window, reader=read.reader, note=read.note,
+        fingerprint=read.fingerprint, conditions=dict(read.conditions),
         events=carried, channels=dict(read.channels),
         orphaned={key: replace(read.events[key], match="orphan")
                   for key in sorted(orphans)},
@@ -612,4 +743,8 @@ def reconcile(read: Adjudication, events,
         draft_verdicts=dict(read.draft_verdicts),
         limits=read.limits, limits_by=read.limits_by, limits_at=read.limits_at,
         limits_evidence=list(read.limits_evidence), limits_basis=read.limits_basis,
-        limits_verdicts=dict(read.limits_verdicts))
+        limits_verdicts=dict(read.limits_verdicts),
+        # Earlier readers' verdicts follow the verdict that superseded them.
+        superseded={moved.get(key, key): list(group)
+                    for key, group in read.superseded.items()},
+        set_aside=read.set_aside)

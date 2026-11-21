@@ -112,6 +112,11 @@ def main() -> int:
         return 0 if same_subjects and same_groups else 1
     subjects.to_csv(OUTCOME / "subjects.csv", index=False)
     groups.to_csv(GROUPS, index=False)
+    # What chance alone gives each group, from the same per-patient table.
+    from onset_hfo.outcome import chance_baseline
+
+    chance_baseline(subjects, pd.read_csv(OUTCOME / "participants.csv")).to_csv(
+        OUTCOME / "chance_baseline.csv", index=False)
     return 0
 
 
