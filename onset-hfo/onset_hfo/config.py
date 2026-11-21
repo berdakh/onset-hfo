@@ -323,8 +323,10 @@ class ValidationConfig:
     #: markings of ds003498 (20 patients, docs/EVALUATION.md section 2): it
     #: costs 0.007 to 0.026 recall in the ripple band, 0.002 in the fast
     #: ripple band, and buys no measurable agreement -- it removes marked and
-    #: unmarked events at about the same rate. The cohort tables in `data/`
-    #: were computed before it existed. 0 turns it off and restores those.
+    #: unmarked events at about the same rate. The benchmark tables in
+    #: `data/benchmark/` include it; the outcome, stability, robustness and
+    #: montage tables do not depend on it. 0 turns it off and restores the
+    #: benchmark as it was before.
     min_peak_contrast_db: float = 6.0
     #: **Flag**, never reject, an accepted HFO whose in-band peak is less than
     #: this many dB above the next band up (`spectral.event_band_margin`):
@@ -763,8 +765,8 @@ class PipelineConfig:
 #: because it is what a reviewer expects and what the ictal pipeline was built
 #: with. But it is now *measured* rather than assumed, and on interictal data
 #: it is a poor choice: scored against expert HFO markings on 20 subjects of
-#: ds003498, 5.0 SD reaches recall 0.12 and ranks channels at Spearman 0.37,
-#: against recall 0.38 and 0.66 at 2.0 SD. See ``docs/EVALUATION.md``.
+#: ds003498, 5.0 SD reaches recall 0.15 and ranks channels at Spearman 0.48,
+#: against recall 0.45 and 0.69 at 2.0 SD. See ``docs/EVALUATION.md``.
 #:
 #: Use these by name rather than copying numbers around:
 #:
@@ -776,23 +778,24 @@ THRESHOLDS: dict[str, float] = {
     # Highest agreement with expert channel ranking on ds003498 when it was
     # measured (rho 0.655). Channel ranking is the clinically meaningful
     # comparison: nobody operates on an event, they operate on tissue. Since
-    # five patients' electrodes were read correctly (after 0.3.24) it gives
-    # rho 0.685 and the optimum is 1.75 SD (0.698). The preset stays: the
-    # outcome and HUP studies run at it as an operating point fixed before
-    # them, and moving it for 0.013 would tune them on their own data.
+    # then five patients' electrodes were read correctly (after 0.3.24) and
+    # validation gained the peak-contrast check; it now gives rho 0.691 and
+    # the optimum is 1.75 SD (0.699). The preset stays: the outcome and HUP
+    # studies run at it as an operating point fixed before them, and moving
+    # it for 0.008 would tune them on their own data.
     "interictal-agreement": 2.0,
-    # Highest event-level F1 on the same cohort when measured (0.418; 0.489
-    # now, against 0.498 at 1.75 SD). Finds more events and is wrong more
+    # Highest event-level F1 on the same cohort when measured (0.418; 0.478
+    # now, against 0.485 at 1.75 SD). Finds more events and is wrong more
     # often; prefer it when recall matters more than precision.
     "interictal-recall": 1.5,
     # The same criterion measured in the FAST RIPPLE band on the same cohort,
-    # where the answer is 5.0 SD (rho 0.645, an interior maximum of a 2-10
+    # where the answer is 5.0 SD (rho 0.643, an interior maximum of a 2-10
     # sweep) -- numerically the literature value, but arrived at by
     # measurement and listed separately so the coincidence is not mistaken
     # for a default nobody checked.
     #
     # The gap between this and ``interictal-agreement`` is the practical
-    # point: at 2.0 SD the fast-ripple detector runs at precision 0.127 and
+    # point: at 2.0 SD the fast-ripple detector runs at precision 0.126 and
     # returns ~1,340 detections per 60 s against a mean of 278 expert-marked
     # fast ripples per subject. One threshold for both bands is not a
     # simplification, it is a bug.

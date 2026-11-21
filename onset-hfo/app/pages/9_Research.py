@@ -82,7 +82,7 @@ st.success("""
 a finding; the question was whether that disagreement is structural. Four
 features were implemented and swept on real data, and it is: every pairwise
 Jaccard overlap sits between 0.47 and 0.79. The two added features bought
-**0.021 ρ** in ripples and **0.006** in fast ripples, both inside the per-patient
+**0.021 ρ** in ripples and **0.008** in fast ripples, both inside the per-patient
 bootstrap interval, so the choice of feature is not where the headroom is.
 
 **Do the ripple sub-populations localise differently?** Not in the ripple band:

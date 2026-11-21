@@ -56,13 +56,13 @@ number in this section was re-run with it.
 
 | detector | threshold | precision | recall | F1 | rank ρ | top-5 shared |
 |---|---|---|---|---|---|---|
-| RMS | 1.5 SD | 0.479 | 0.573 | 0.489 | 0.673 | 2.95 / 5 |
-| RMS | 1.75 SD | 0.526 | 0.533 | **0.498** | **0.698** | 2.95 / 5 |
-| RMS | 2.0 SD | 0.579 | 0.477 | 0.494 | 0.685 | 3.05 / 5 |
-| RMS | 3.0 SD | 0.694 | 0.313 | 0.400 | 0.611 | 2.75 / 5 |
-| RMS | **5.0 SD (shipped default)** | 0.709 | 0.164 | 0.245 | 0.479 | 2.35 / 5 |
-| line length | 2.0 SD | 0.669 | 0.362 | 0.436 | 0.645 | 2.85 / 5 |
-| line length | 5.0 SD | 0.636 | 0.114 | 0.174 | 0.433 | 2.05 / 5 |
+| RMS | 1.5 SD | 0.478 | 0.548 | 0.478 | 0.678 | 2.85 / 5 |
+| RMS | 1.75 SD | 0.525 | 0.507 | **0.485** | **0.699** | 2.80 / 5 |
+| RMS | 2.0 SD | 0.579 | 0.451 | 0.478 | 0.691 | 3.00 / 5 |
+| RMS | 3.0 SD | 0.699 | 0.293 | 0.383 | 0.625 | 2.75 / 5 |
+| RMS | **5.0 SD (shipped default)** | 0.714 | 0.150 | 0.228 | 0.481 | 2.25 / 5 |
+| line length | 2.0 SD | 0.671 | 0.344 | 0.422 | 0.648 | 2.85 / 5 |
+| line length | 5.0 SD | 0.647 | 0.107 | 0.165 | 0.430 | 2.15 / 5 |
 
 ### Fast ripple band (250–500 Hz), cohort means
 
@@ -70,15 +70,15 @@ Analysable at last: these recordings are 2000 Hz, the ictal one was 1000.
 
 | detector | threshold | precision | recall | F1 | rank ρ | top-5 shared |
 |---|---|---|---|---|---|---|
-| RMS | 2.0 SD | 0.127 | 0.649 | 0.204 | 0.512 | 3.05 / 5 |
-| RMS | 3.0 SD | 0.339 | 0.468 | 0.388 | 0.595 | 3.40 / 5 |
-| RMS | 3.5 SD | 0.472 | 0.400 | 0.428 | 0.618 | 3.70 / 5 |
-| RMS | 4.0 SD | 0.598 | 0.357 | **0.436** | 0.615 | 3.65 / 5 |
-| RMS | **5.0 SD** | 0.756 | 0.288 | 0.394 | **0.645** | 3.40 / 5 |
-| RMS | 6.0 SD | 0.784 | 0.237 | 0.344 | 0.592 | 3.25 / 5 |
-| RMS | 8.0 SD | 0.779 | 0.153 | 0.241 | 0.575 | 2.80 / 5 |
-| RMS | 10.0 SD | 0.757 | 0.107 | 0.177 | 0.535 | 2.85 / 5 |
-| line length | 5.0 SD | 0.784 | 0.238 | 0.345 | 0.577 | 3.25 / 5 |
+| RMS | 2.0 SD | 0.126 | 0.648 | 0.203 | 0.510 | 3.00 / 5 |
+| RMS | 3.0 SD | 0.338 | 0.467 | 0.387 | 0.595 | 3.40 / 5 |
+| RMS | 3.5 SD | 0.472 | 0.398 | 0.427 | 0.619 | 3.75 / 5 |
+| RMS | 4.0 SD | 0.599 | 0.355 | **0.434** | 0.615 | 3.65 / 5 |
+| RMS | **5.0 SD** | 0.761 | 0.286 | 0.392 | **0.643** | 3.45 / 5 |
+| RMS | 6.0 SD | 0.792 | 0.235 | 0.342 | 0.591 | 3.20 / 5 |
+| RMS | 8.0 SD | 0.786 | 0.151 | 0.238 | 0.571 | 2.85 / 5 |
+| RMS | 10.0 SD | 0.766 | 0.105 | 0.175 | 0.532 | 2.85 / 5 |
+| line length | 5.0 SD | 0.790 | 0.237 | 0.343 | 0.575 | 3.25 / 5 |
 
 The fast-ripple means at 5.0 SD are over 19 patients for precision and ρ: the
 detector finds nothing on sub-10's reviewed channels at that threshold, so
@@ -87,8 +87,8 @@ neither is defined there (`data/benchmark/per_patient.csv.gz`).
 **The two bands want different operating points, by a factor of two and a
 half.** Ripples rank best around 2 SD (1.75 on this grid, 2.0 shipped),
 fast ripples at 5.0 SD — an interior maximum of a 2–10 sweep, not a boundary.
-Running the ripple value in the fast-ripple band costs precision 0.756 →
-0.127: a mean of 1,341 detections per 60 s against a
+Running the ripple value in the fast-ripple band costs precision 0.761 →
+0.126: a mean of 1,340 detections per 60 s against a
 mean of 278 expert-marked fast ripples. A single
 threshold for both bands is not a simplification, it is a bug, and
 [OUTCOME.md](OUTCOME.md) shows what it costs downstream. `config.THRESHOLDS`
@@ -99,8 +99,8 @@ and `onset_hfo.outcome.BAND_THRESHOLD_SD` maps bands to them.
 
 **The shipped default is wrong for interictal HFO work, and now we know by how
 much.** At 5.0 SD — Staba's published value, which this pipeline inherited —
-the ripple detector finds 16% of the expert-marked events and ranks channels
-at ρ = 0.48. At 2.0 SD it finds 48% and ranks at ρ = 0.685. The threshold was
+the ripple detector finds 15% of the expert-marked events and ranks channels
+at ρ = 0.48. At 2.0 SD it finds 45% and ranks at ρ = 0.691. The threshold was
 never tuned to the simulator on principle; it turns out the principle
 protected a value that real data does not support. `config.THRESHOLDS` now
 carries both, measured and named, and `--threshold interictal-agreement`
@@ -108,8 +108,8 @@ selects the better one. The default stays 5.0 so that published ictal results
 do not silently change; a future release should split the defaults by task.
 
 **The two criteria now agree.** F1 and channel-rank agreement both peak at
-1.75 SD (0.498 and 0.698); the shipped 2.0 SD, chosen when rank agreement
-peaked there, gives 0.494 and 0.685. Both are interior maxima — the sweep was
+1.75 SD (0.485 and 0.699); the shipped 2.0 SD, chosen when rank agreement
+peaked there, gives 0.478 and 0.691. Both are interior maxima — the sweep was
 extended downwards precisely because the first grid put its optimum on the
 edge, which is not an optimum but a boundary. The difference between 1.75 and
 2.0 SD is smaller than anything this cohort can resolve, and the shipped value
@@ -124,13 +124,13 @@ precision, not a measurement of it. The honest reading: *we reproduce roughly
 half of a different detector's validated ripples and rank the same channels
 as active at ρ ≈ 0.7.*
 
-**RMS beats line length on real data** (rank agreement 0.685 against 0.645
+**RMS beats line length on real data** (rank agreement 0.691 against 0.648
 at 2.0 SD), reversing their order on synthetic data (0.679 vs 0.697 F1 there). A detector comparison that holds only on
 simulated signal is a comparison of simulators.
 
 **Per-subject variability is large** and the cohort mean hides it: reviewed
 channels range from 14 to 65, expert events per 60 s from 644 to 7,935, and
-per-subject best ripple F1 from 0.41 to 0.73 (median 0.55).
+per-subject best ripple F1 from 0.40 to 0.73 (median 0.54).
 `data/benchmark/per_patient.csv.gz` has every patient's row, and
 `notebooks/09_benchmark_per_patient.ipynb` rebuilds every mean above from it.
 
@@ -292,27 +292,27 @@ tissue:
 
 | detector | best SD | rank ρ | F1 | precision | recall | detections/60 s |
 |---|---|---|---|---|---|---|
-| short-time energy | 3.0 | **0.706** | 0.505 | 0.511 | 0.564 | 1,650 |
-| RMS | 2.0 | **0.685** | 0.494 | 0.579 | 0.477 | 1,184 |
-| line length | 1.5 | 0.668 | 0.489 | 0.569 | 0.485 | 1,224 |
-| Hilbert envelope | 1.5 | 0.610 | 0.460 | 0.508 | 0.491 | 1,362 |
+| short-time energy | 3.0 | **0.712** | 0.493 | 0.511 | 0.538 | 1,572 |
+| RMS | 2.0 | **0.691** | 0.478 | 0.579 | 0.451 | 1,118 |
+| line length | 1.5 | 0.669 | 0.477 | 0.568 | 0.464 | 1,175 |
+| Hilbert envelope | 1.5 | 0.615 | 0.447 | 0.508 | 0.467 | 1,297 |
 
 **Fast ripple band (250–500 Hz)**
 
 | detector | best SD | rank ρ | F1 | precision | recall | detections/60 s |
 |---|---|---|---|---|---|---|
-| Hilbert envelope | 5.0 | **0.651** | 0.399 | 0.759 | 0.292 | 100 |
-| RMS | 5.0 | **0.645** | 0.394 | 0.756 | 0.288 | 100 |
-| short-time energy | 12.0 | 0.637 | 0.387 | 0.768 | 0.281 | 96 |
-| line length | 5.0 | 0.577 | 0.345 | 0.784 | 0.238 | 83 |
+| Hilbert envelope | 5.0 | **0.651** | 0.398 | 0.763 | 0.290 | 99 |
+| RMS | 5.0 | **0.643** | 0.392 | 0.761 | 0.286 | 99 |
+| short-time energy | 12.0 | 0.635 | 0.386 | 0.773 | 0.279 | 96 |
+| line length | 5.0 | 0.575 | 0.343 | 0.790 | 0.237 | 82 |
 
 (RMS's grid here has no 1.75 SD point, which is where `agreement_sweep.csv`
 puts its ripple optimum; at 2.0 SD the two files agree.)
 
-**Both margins are within what twenty patients can resolve.** 0.706 against
-0.685 in ripples, 0.651 against 0.645 in fast ripples. Patient by patient the
-leader's ρ minus RMS's is +0.020 (bootstrap 95% interval −0.011 to +0.053,
-better in 14 of 20 patients) in ripples and +0.006 (−0.011 to +0.024, better
+**Both margins are within what twenty patients can resolve.** 0.712 against
+0.691 in ripples, 0.651 against 0.643 in fast ripples. Patient by patient the
+leader's ρ minus RMS's is +0.021 (bootstrap 95% interval −0.010 to +0.052,
+better in 14 of 20 patients) in ripples and +0.008 (−0.009 to +0.026, better
 in 9 of 19) in fast ripples. Two more detectors, each tuned on real data,
 bought **no established improvement in channel ranking** over the two that
 were already there. That is
@@ -332,7 +332,7 @@ feature:
 
 Short-time energy needs **1.5×** the ripple threshold and **2.4×** the
 fast-ripple threshold that RMS does. Run it at RMS's 5.0 SD in the fast-ripple
-band — the obvious thing to do — and rank agreement falls from 0.637 to 0.577.
+band — the obvious thing to do — and rank agreement falls from 0.635 to 0.577.
 The Hilbert envelope, by contrast, wants almost exactly what RMS wants (1.5
 against 2.0; 5.0 against 5.0), which is the same story the synthetic agreement
 matrix told: those two are the closest pair in the family.
@@ -354,7 +354,7 @@ ripple sweep had to be extended downwards for exactly this reason.
 Extending (down to 0.5 for the ripple arms, up to 15.0 for short-time energy in
 fast ripples) moved one of them materially: **short-time energy's fast-ripple
 rank agreement went from 0.570 at 8.0 SD to 0.601 at 12.0 SD** (0.606 and
-0.637 since the five patients were re-scored after 0.3.24). Had the grid not
+0.635 in the table as it stands). Had the grid not
 been extended, that detector would have been reported 0.03 worse than it is.
 All sixteen optima are interior, before and after the re-scoring.
 
@@ -447,9 +447,18 @@ Three things to read off it.
   evidence, either way, of how much of it there is.
 
 The check is on by default because the artefact it removes is real and the
-measured cost is small. `min_peak_contrast_db=0` turns it off and reproduces
-every cohort table in `data/`, all of which were computed before it existed
-and none of which has been re-run with it.
+measured cost is small. The benchmark tables in `data/benchmark/` were re-run
+with it on (`scripts/rerun_benchmark_per_patient.py`) and include it: the
+"6 dB" rows above are the rows of §0. `min_peak_contrast_db=0` turns it off
+and reproduces the benchmark as it was before.
+
+No other cohort table changes with it. The outcome study and the
+window-stability study (`data/outcome/subjects.csv`, `data/stability/`) count
+the detector's candidates without the validation stage, so the check cannot
+change them; re-run, they reproduce exactly. The robustness and montage
+screens (§6c, §3c) validate without measuring each event's spectrum and also
+reproduce exactly. The sub-population screen (§3b) moved for a different
+reason, the discharge detector's step test, and was rebuilt.
 
 ## 3. The threshold is a choice, not a fact
 

@@ -143,8 +143,8 @@ FULL_RUN_S = 300.0
 #: first version of this analysis did -- destroys exactly the channel ranking
 #: the outcome question depends on.
 BAND_THRESHOLD_SD: dict[str, float] = {
-    "ripple": THRESHOLDS["interictal-agreement"],   # 2.0 SD, rank rho 0.685
-    "fast_ripple": THRESHOLDS["literature"],        # 5.0 SD, rank rho 0.645
+    "ripple": THRESHOLDS["interictal-agreement"],   # 2.0 SD, rank rho 0.691
+    "fast_ripple": THRESHOLDS["literature"],        # 5.0 SD, rank rho 0.643
 }
 
 #: Fallback for a band with no measured operating point.

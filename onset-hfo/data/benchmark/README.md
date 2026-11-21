@@ -76,8 +76,7 @@ are comparable. 79 rows, same columns.
 detector × band × criterion optima sat on an endpoint, which is the grid
 running out rather than an optimum. Extending moved one materially:
 short-time energy's fast-ripple rank agreement went from 0.570 at 8.0 SD to
-**0.601 at 12.0 SD** (0.606 and 0.637 since five patients were re-scored
-after 0.3.24). All sixteen are interior.
+**0.601 at 12.0 SD** (0.606 and 0.635 in the table as it stands). All sixteen are interior.
 
 Regenerate offline, from the slices already in `artifacts/data/`:
 
@@ -117,10 +116,10 @@ rounded to three decimals; all 113 reproduce exactly, and
 
 **How many patients a mean is over.** Recall is defined for every patient:
 each has expert events of both bands on the channels scored. Precision and
-ρ are undefined in the 52 rows where the detector found nothing, so the means
+ρ are undefined in the 53 rows where the detector found nothing, so the means
 of those two columns are over fewer patients at high thresholds, while F1 (0
 there) is over all 20. One quoted figure is affected: the RMS detector's
-fast-ripple ρ 0.645 and precision 0.756 at 5.0 SD are over 19 patients,
+fast-ripple ρ 0.643 and precision 0.761 at 5.0 SD are over 19 patients,
 because it finds nothing on sub-10's reviewed channels at that threshold.
 
 **Five patients' markings use other electrode names than their recordings.**
@@ -137,6 +136,31 @@ which holds the evidence), and these five patients' rows, and every mean, were
 re-run with it. All 41,187 events are now scored. `cohort.csv`'s
 `n_reviewed_channels` counts the channels scored.
 
+**Re-run with the peak-contrast check.** Validation now also requires a peak
+inside the band (`ValidationConfig.min_peak_contrast_db`, 6 dB;
+[`../../docs/EVALUATION.md`](../../docs/EVALUATION.md) §2), which rejects some
+of the events the older checks accepted, for all four detectors and in both
+bands: 5.6% of the RMS detector's ripple detections at 2.0 SD and 0.9% of its
+fast-ripple detections at 5.0 SD. This file and the two tables of means were re-run with it
+by `scripts/rerun_benchmark_per_patient.py`. Before the re-run, that script
+with the check off (`--check-off sub-01`) reproduced the previous rows of the
+one patient it was tried on, all 136, to within 1e-16; the other nineteen
+were not compared that way. The largest change in any
+cohort mean, over both tables:
+
+| `precision` | `recall` | `f1` | `rank_rho` | `top5_overlap` | `detections` |
+|---|---|---|---|---|---|
+| 0.014 | 0.026 | 0.020 | 0.019 | 0.15 | 78.1 |
+
+Each of these is in the ripple band. In the fast-ripple band no mean moved
+by more than 0.010 in precision, 0.004 in ρ, 0.003 in F1, 0.002 in recall,
+0.05 in top-5 overlap or one detection per subject. No detector's best
+threshold by ρ moved in either band. By F1 one did, to a tie: on the
+four-detector grid RMS in the ripple band now scores 0.478 at both 1.5 and
+2.0 SD, where 2.0 SD was ahead (0.494 against 0.489). The rows where the
+detector found nothing went from 52 to 53. `min_peak_contrast_db=0`
+reproduces the tables as they were.
+
 Regenerated with `onset_hfo.benchmark.benchmark_subject`, patient by patient,
 from the 60 s slices; the per-patient tables of the original runs were in the
 untracked `artifacts/` and were not kept. Before the five patients were
@@ -152,8 +176,9 @@ then rebuilt from it. Read and checked step by step in
 One row per patient × band × detector × threshold × floor: 20 patients, the
 benchmark's window (first 60 s of `run-01`, reviewed channels), both
 detectors at the thresholds the project reports at, and the same candidates
-validated with `ValidationConfig.min_peak_contrast_db` at 0 (off, which is
-what every other table here was computed with), 3, 6 (the default) and 9 dB.
+validated with `ValidationConfig.min_peak_contrast_db` at 0 (off), 3, 6 (the
+default, and what the sweeps and `per_patient.csv.gz` above are computed
+with) and 9 dB.
 
 | column | meaning |
 |---|---|

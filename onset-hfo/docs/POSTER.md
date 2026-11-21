@@ -55,7 +55,7 @@ Each clause of the claim, and exactly what backs it.
 | the headline outcome numbers | expert 11/13 vs 3/7, AUC 0.71 (0.49–0.92), p = 0.12; rms the same 11/13 vs 3/7, AUC 0.71 (0.49–0.92), p = 0.12 | [`OUTCOME.md`](OUTCOME.md) primary table |
 | the power floor | 13 vs 7 detects AUC ≥ 0.85 at 80% power | `onset_hfo.outcome.min_detectable_auc` |
 | multiplicity | 34 distinct comparisons; none reaches p < 0.05 even uncorrected (smallest 0.057); chance alone gives ~2 | [`OUTCOME.md`](OUTCOME.md), [`LIMITATIONS.md`](LIMITATIONS.md) |
-| detector agreement with expert markings | ripple 2.0 SD: precision 0.58, recall 0.48, channel-rank ρ 0.69. fast ripple 5.0 SD: 0.76 / 0.29 / 0.65, over 41,187 marked events | [`EVALUATION.md`](EVALUATION.md) |
+| detector agreement with expert markings | ripple 2.0 SD: precision 0.58, recall 0.45, channel-rank ρ 0.69. fast ripple 5.0 SD: 0.76 / 0.29 / 0.64, over 41,187 marked events | [`EVALUATION.md`](EVALUATION.md) |
 
 Two caveats that belong **on the poster**, not in a drawer:
 

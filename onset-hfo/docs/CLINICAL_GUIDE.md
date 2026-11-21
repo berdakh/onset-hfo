@@ -1017,7 +1017,7 @@ against on public data, how well it agreed, and where it fails:
 
 - **Finding HFOs** — the detectors against the expert markings of ds003498:
   best channel-rank ρ 0.70 for ripples (RMS at 1.75 SD; the shipped 2.0 SD
-  is within 0.02) and 0.65 for fast ripples, precision 0.53 and 0.76, read as
+  is within 0.02) and 0.64 for fast ripples, precision 0.53 and 0.76, read as
   agreement rather than accuracy.
 - **Interictal HFOs and surgical outcome** — ds003498, 13 seizure-free
   against 7 with recurrence: AUC 0.71, p = 0.12, not significant; the same
@@ -2043,11 +2043,11 @@ Cohort figures from [`EVALUATION.md`](EVALUATION.md), 20 patients, against the
 annotators' 41,187 marked events, on reviewed channels only.
 
 **Ripple band, individual events.** At 2.0 SD the detector agrees with a
-little over half of what it marks (precision 0.58) and finds about half of what
-the annotators marked (recall 0.48). Raising the threshold to 5.0 SD buys
-precision 0.71 and costs recall — 0.16.
+little over half of what it marks (precision 0.58) and finds a little under
+half of what the annotators marked (recall 0.45). Raising the threshold to
+5.0 SD buys precision 0.71 and costs recall — 0.15.
 
-**Fast ripple band.** Much harder. At 2.0 SD precision is 0.127: about eight
+**Fast ripple band.** Much harder. At 2.0 SD precision is 0.126: about eight
 detections for every marked one. It takes 5.0 SD to reach precision 0.76.
 
 **Ranking channels is easier than marking events,** which is the useful part:

@@ -1640,7 +1640,7 @@ print(result.summary("top_channel_resected")
       .query("scope == 'reviewed' and band == 'fast_ripple'").to_string(index=False))
 """),
     md("""
-At 2.0 SD the fast-ripple detector runs at precision 0.086 — a mean of 1,142
+At 2.0 SD the fast-ripple detector runs at precision 0.126 — a mean of 1,340
 detections per 60 s against a mean of 278 expert-marked fast ripples. Nothing
 about the outcome data was used to choose either threshold; both come from
 channel-rank agreement with the experts, measured by `onset-hfo benchmark`
@@ -2270,8 +2270,8 @@ nb9 = [
 means: one row per detector, band and threshold, averaged over the 20
 patients of ds003498 (the first 60 s of each patient's first run, scored on
 the channels the experts reviewed). `docs/EVALUATION.md` and the Validation
-page quote them: channel-rank ρ 0.685 for ripples with the RMS detector at the
-shipped 2.0 SD (0.698 at 1.75 SD, the best), and 0.645 for fast ripples at
+page quote them: channel-rank ρ 0.691 for ripples with the RMS detector at the
+shipped 2.0 SD (0.699 at 1.75 SD, the best), and 0.643 for fast ripples at
 5.0 SD.
 
 This notebook starts one step earlier, from the per-patient scores the means
@@ -2401,7 +2401,7 @@ def operating_point(band, detector, threshold):
 operating_point("ripple", "rms", 2.0)"""),
     code("""operating_point("fast_ripple", "rms", 5.0)"""),
     md("""
-The fast-ripple figures the documents quote, ρ 0.645 and precision 0.756,
+The fast-ripple figures the documents quote, ρ 0.643 and precision 0.761,
 are means over **19** patients: at 5.0 SD the detector found no fast ripple on
 sub-10's reviewed channels, where the experts marked 100, so neither value is
 defined for that patient. Its recall (0) and F1 (0) are in the means beside

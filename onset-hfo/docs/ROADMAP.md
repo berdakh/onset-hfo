@@ -244,16 +244,16 @@ bands. At each detector's *own* best threshold, by channel-rank agreement:
 
 | band | best | rank ρ | RMS | margin |
 |---|---|---|---|---|
-| ripple | short-time energy @ 3.0 SD | 0.706 | 0.685 @ 2.0 SD | **+0.021** |
-| fast ripple | Hilbert envelope @ 5.0 SD | 0.651 | 0.645 @ 5.0 SD | **+0.006** |
+| ripple | short-time energy @ 3.0 SD | 0.712 | 0.691 @ 2.0 SD | **+0.021** |
+| fast ripple | Hilbert envelope @ 5.0 SD | 0.651 | 0.643 @ 5.0 SD | **+0.008** |
 
 *Re-run after 0.3.24* with five patients' electrodes read in the recording's
 names (`EVALUATION.md` §0); the margins were +0.003 in both bands before.
 
 **Two more detectors, each tuned on real data, bought no established
 improvement in channel ranking.** Both margins sit inside the per-patient
-bootstrap interval (ripple +0.020, −0.011 to +0.053; fast ripple +0.006,
-−0.011 to +0.024). That is worth knowing: the ceiling here is
+bootstrap interval (ripple +0.021, −0.010 to +0.052; fast ripple +0.008,
+−0.009 to +0.026). That is worth knowing: the ceiling here is
 not the choice of feature.
 
 **The portability claim, measured.** Optimal threshold in robust SDs —
@@ -267,7 +267,7 @@ wants:
 | fast ripple | 5.0 | 5.0 | 5.0 | **12.0** |
 
 Run short-time energy at RMS's 5.0 SD in the fast-ripple band and rank
-agreement falls from 0.637 to 0.577. So the synthetic conclusion holds, and
+agreement falls from 0.635 to 0.577. So the synthetic conclusion holds, and
 one synthetic *verdict* was too harsh: "mostly the energy detector at an
 untuned, lower operating point" is right about a shared threshold and wrong
 about the detector. At its own it is competitive.
@@ -275,7 +275,7 @@ about the detector. At its own it is competitive.
 **Four of sixteen arms first peaked on an endpoint** — the grid running out,
 not an optimum, which is the §0 lesson. Extending moved one materially:
 short-time energy's fast-ripple rank agreement went 0.570 at 8.0 SD → **0.601
-at 12.0** (0.606 → 0.637 after the re-run). All sixteen are now interior, and a test enforces it.
+at 12.0** (0.606 → 0.635 in the table as it stands). All sixteen are now interior, and a test enforces it.
 
 **And the block was never the network.** The board read "blocked on a
 `benchmark` run with network access" for weeks. All 20 subjects were cached at
