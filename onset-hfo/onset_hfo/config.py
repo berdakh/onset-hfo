@@ -319,9 +319,12 @@ class ValidationConfig:
     #: band's lower edge. They score under 5 dB here; implanted ripples on the
     #: synthetic recording score a 5th percentile of 7 to 8 dB (median 25 to
     #: 29) in both bands and at 2 and 5 SD. 6 dB sits between the two.
-    #: **Set on synthetic signals**: what it costs in recall against expert
-    #: markings has not been measured, and the cohort tables in `data/` were
-    #: computed before it existed. 0 turns it off and restores those.
+    #: **Set on synthetic signals.** Measured afterwards against the expert
+    #: markings of ds003498 (20 patients, docs/EVALUATION.md section 2): it
+    #: costs 0.007 to 0.026 recall in the ripple band, 0.002 in the fast
+    #: ripple band, and buys no measurable agreement -- it removes marked and
+    #: unmarked events at about the same rate. The cohort tables in `data/`
+    #: were computed before it existed. 0 turns it off and restores those.
     min_peak_contrast_db: float = 6.0
     #: **Flag**, never reject, an accepted HFO whose in-band peak is less than
     #: this many dB above the next band up (`spectral.event_band_margin`):

@@ -144,3 +144,26 @@ re-scored, this file reproduced every committed mean exactly, and the patient
 descriptions it records matched `cohort.csv`; the means and `cohort.csv` were
 then rebuilt from it. Read and checked step by step in
 [`notebooks/09_benchmark_per_patient.ipynb`](../../notebooks/09_benchmark_per_patient.ipynb).
+
+---
+
+## `peak_contrast.csv` — what the peak-contrast check costs against the markings
+
+One row per patient × band × detector × threshold × floor: 20 patients, the
+benchmark's window (first 60 s of `run-01`, reviewed channels), both
+detectors at the thresholds the project reports at, and the same candidates
+validated with `ValidationConfig.min_peak_contrast_db` at 0 (off, which is
+what every other table here was computed with), 3, 6 (the default) and 9 dB.
+
+| column | meaning |
+|---|---|
+| `floor_db` | the peak-contrast floor the candidates were validated with |
+| `accepted` | events accepted in the window |
+| `precision`, `recall`, `f1` | against the expert markings, matched within 20 ms |
+| `rank_rho`, `top5_overlap` | channel ranking against the experts' |
+
+`peak_contrast_events.csv.gz` holds every candidate the older checks accept:
+its contrast in dB and whether an expert marking on the same channel overlaps
+it. Regenerate both with `python scripts/run_peak_contrast_cost.py` (needs the
+archive; about fifteen minutes after the first fetch). The reading is in
+[`../../docs/EVALUATION.md`](../../docs/EVALUATION.md) §2.

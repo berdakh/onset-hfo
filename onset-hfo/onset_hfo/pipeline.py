@@ -96,11 +96,17 @@ class PipelineResult:
     #: Why the HFO detectors did not run, or "" when they did: a recording
     #: sampled too slowly for the band (`BANDS.usable`).
     hfo_skipped: str = ""
+    #: Seconds the events cover, when that is more than `prepared` holds (a
+    #: span analysed in chunks, of which one window is kept as signal).
+    span_s: float | None = None
+    #: The provenance to save in place of the recording's own, for the same
+    #: case: the recording describes the window held, not the span analysed.
+    provenance_record: dict | None = None
 
     # -- access -----------------------------------------------------------
     @property
     def duration_s(self) -> float:
-        return self.prepared.duration
+        return float(self.span_s) if self.span_s else self.prepared.duration
 
     def events_frame(self, accepted_only: bool = False) -> pd.DataFrame:
         """All events from all detectors as one table."""
@@ -142,7 +148,8 @@ class PipelineResult:
         (out / "agreement.json").write_text(json.dumps(self.agreement, indent=2, default=str))
         (out / "report.json").write_text(self.report.to_json())
         (out / "report.md").write_text(self.report.to_markdown())
-        (out / "provenance.json").write_text(json.dumps(rec.provenance(), indent=2, default=str))
+        (out / "provenance.json").write_text(json.dumps(
+            self.provenance_record or rec.provenance(), indent=2, default=str))
         (out / "config.json").write_text(json.dumps(
             {"pipeline_version": PIPELINE_VERSION, "software": software_versions(),
              "config_sha256_16": config_digest(self.config.as_dict()),
@@ -247,20 +254,68 @@ def run_pipeline(recording: Recording, config: PipelineConfig | None = None,
             print(f"[onset-hfo] spikes: {len(spikes)} interictal discharges "
                   f"({timings['detect_spikes']:.1f} s)")
 
-    duration = prep.duration
+    result = assemble_result(
+        recording, prep, cfg, events, spikes, quality=quality, segments=segments,
+        timings=timings, hfo_skipped=hfo_skipped, verbose=verbose)
+    if save_to is not None:
+        result.save(save_to)
+    if verbose:
+        print(f"[onset-hfo] done in {sum(timings.values()):.1f} s")
+    return result
+
+
+def assemble_result(recording: Recording, prep: Prepared, cfg: PipelineConfig,
+                    events: dict[str, list[Event]], spikes: list[Event], *,
+                    quality: pd.DataFrame | None = None,
+                    segments: pd.DataFrame | None = None,
+                    timings: dict | None = None, hfo_skipped: str = "",
+                    duration_s: float | None = None, t_start: float | None = None,
+                    clean_seconds: dict | None = None, extra_notes=(),
+                    verbose: bool = False) -> PipelineResult:
+    """Everything after detection: rates, comparison, populations, the report.
+
+    `run_pipeline` detects and then calls this. It is separate so that an
+    analysis made another way -- the review window's, over a span longer than
+    memory and with the reader's own overrides -- can be saved as the same
+    kind of result, with the same tables, from *its* events. That is what the
+    assistant reads; built by re-running the pipeline on the stretch of signal
+    the window happens to hold, it described a different analysis than the
+    one on screen.
+
+    `duration_s` and `t_start` say what the events cover when that is not
+    what `prep` holds; `clean_seconds` is the per-channel denominator already
+    in use, and when given nothing is rejected again here.
+    """
+    timings = dict(timings or {})
+    quality = pd.DataFrame() if quality is None else quality
+    segments = pd.DataFrame() if segments is None else segments
+    spanned = duration_s is not None or t_start is not None
+    provenance = recording.provenance()
+    if spanned:
+        start = float(prep.t_offset if t_start is None else t_start)
+        length = float(prep.duration if duration_s is None else duration_s)
+        provenance = {**provenance, "slice_start_s": start, "slice_stop_s": start + length}
+    duration = float(prep.duration if duration_s is None else duration_s)
     # The denominator. One number per channel once any time can be rejected:
     # dividing a channel that lost four seconds by the window's nominal length
     # reports a rate per minute of a minute that was not analysed, and the
     # Poisson interval inherits the error -- which would make rejecting the
     # artifact worse than leaving it in.
-    clean = analysable_seconds(segments, quality, list(prep.ch_names),
-                               duration) or duration
-    if cfg.check_quality:
-        rejected = sum(reject_unusable_events(evs, segments, quality)
-                       for evs in list(events.values()) + [spikes])
-        if verbose and rejected:
-            print(f"[onset-hfo] {rejected} detections fell on time or channels "
-                  f"the quality checks set aside")
+    if clean_seconds is not None:
+        # Already decided by whoever analysed this: the review window, which
+        # honours channels its reader reinstated. Rejecting again here would
+        # undo that, and dividing by a different denominator would make the
+        # saved rates differ from the ones on screen.
+        clean = dict(clean_seconds) or duration
+    else:
+        clean = analysable_seconds(segments, quality, list(prep.ch_names),
+                                   duration) or duration
+        if cfg.check_quality:
+            rejected = sum(reject_unusable_events(evs, segments, quality)
+                           for evs in list(events.values()) + [spikes])
+            if verbose and rejected:
+                print(f"[onset-hfo] {rejected} detections fell on time or channels "
+                      f"the quality checks set aside")
 
     rates = {name: channel_rates(evs, clean, prep.ch_names) for name, evs in events.items()}
     spike_rates = channel_rates(spikes, clean, prep.ch_names) if spikes else \
@@ -278,8 +333,8 @@ def run_pipeline(recording: Recording, config: PipelineConfig | None = None,
     change_frame = None
     change_rows: list[dict] = []
     onset, offset = recording.seizure
-    start_abs = prep.t_offset
-    stop_abs = prep.t_offset + duration
+    start_abs = float(prep.t_offset if t_start is None else t_start)
+    stop_abs = start_abs + duration
     if onset is not None and start_abs < onset < stop_abs:
         before = (start_abs, onset)
         during = (onset, min(offset or stop_abs, stop_abs))
@@ -296,19 +351,20 @@ def run_pipeline(recording: Recording, config: PipelineConfig | None = None,
     # sub-population is a label.
     populations = {name: population_rates(evs, clean, prep.ch_names)
                    for name, evs in events.items()}
-    notes = list(recording.notes or [])
+    notes = list(recording.notes or []) + list(extra_notes)
     if hfo_skipped:
         notes.append(hfo_skipped)
     notes += population_notes(events, duration)
     flagged = flag_note([e for evs in events.values() for e in evs])
     if flagged:
         notes.append(flagged)
-    if cfg.check_quality:
+    if cfg.check_quality and quality is not None and len(quality):
         notes.append(quality_summary(quality, segments))
 
+    notes = list(dict.fromkeys(notes))       # a caller's notes may repeat ours
     rejections = {name: rejection_summary(evs) for name, evs in events.items()}
     report = build_report(
-        provenance=recording.provenance(), rates=rates, comparison=comparison, events=events,
+        provenance=provenance, rates=rates, comparison=comparison, events=events,
         spike_rates=spike_rates, duration_s=duration, preprocessing_steps=prep.steps,
         config=cfg.as_dict(), rejections=rejections, rate_change_rows=change_rows,
         top_k=cfg.top_k, notes=notes, citation=recording.citation)
@@ -320,9 +376,6 @@ def run_pipeline(recording: Recording, config: PipelineConfig | None = None,
                             populations=populations, quality=quality,
                             segments=segments,
                             clean_seconds=(clean if isinstance(clean, dict) else {}),
-                            hfo_skipped=hfo_skipped)
-    if save_to is not None:
-        result.save(save_to)
-    if verbose:
-        print(f"[onset-hfo] done in {sum(timings.values()):.1f} s")
+                            hfo_skipped=hfo_skipped, span_s=duration_s,
+                            provenance_record=provenance if spanned else None)
     return result

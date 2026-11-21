@@ -393,6 +393,64 @@ to take that on trust.
 
 ---
 
+### The peak-contrast check: what it does on synthetic discharges, and on this cohort
+
+Validation also requires a peak *inside* the band: the in-band spectral peak
+must stand 6 dB above the troughs either side of it
+(`ValidationConfig.min_peak_contrast_db`, `spectral.event_peak_contrast`). The
+prominence check above compares the spectrum with a straight line fitted
+outside the band, and a sharp discharge's spectrum is curved: it clears that
+line with no peak in it anywhere.
+
+**On synthetic discharges it does what it was built for.** Sharp discharges
+with no oscillation in them, on a 1/f² background with a 2 µV white floor
+(`tests/test_ringing.py`): 468 of 468 were accepted as ripples by the older
+checks, every one "peaking" at the band's lower edge; none is accepted now.
+On the simulator, whose events are real oscillations, it costs at most 0.013
+recall.
+
+**Against the expert markings it buys nothing measurable, and costs a little
+recall.** ds003498, 20 patients, first 60 s of `run-01`, reviewed channels —
+the benchmark's own window. Each detector ran once; the same candidates were
+validated with the check off and on (`scripts/run_peak_contrast_cost.py`,
+`data/benchmark/peak_contrast.csv`). Cohort means:
+
+| band | detector | threshold | check | accepted | agreement (precision) | recall | rank ρ |
+|---|---|---|---|---|---|---|---|
+| ripple | rms | 2.0 SD | off | 1184 | 0.579 | 0.477 | 0.685 |
+| ripple | rms | 2.0 SD | 6 dB | 1118 | 0.579 | 0.451 | 0.691 |
+| ripple | rms | 5.0 SD | off | 265 | 0.709 | 0.164 | 0.479 |
+| ripple | rms | 5.0 SD | 6 dB | 241 | 0.714 | 0.150 | 0.481 |
+| ripple | line length | 2.0 SD | off | 736 | 0.669 | 0.362 | 0.645 |
+| ripple | line length | 2.0 SD | 6 dB | 699 | 0.671 | 0.344 | 0.648 |
+| fast ripple | rms | 5.0 SD | off | 100 | 0.756 | 0.288 | 0.645 |
+| fast ripple | rms | 5.0 SD | 6 dB | 99 | 0.761 | 0.286 | 0.643 |
+
+Three things to read off it.
+
+- **Recall falls by 0.007 to 0.026 in the ripple band** (median over patients
+  0.006 to 0.015; one patient loses 0.145 at 2.0 SD) and by 0.002 in the fast
+  ripple band. **Agreement does not rise**: 0.579 to 0.579 at the ripple
+  operating point. The channel ranking is unchanged (ρ within 0.006).
+- **The check removes marked and unmarked events alike.** Of the ripple
+  candidates the older checks accept at 2.0 SD (RMS), 5.2% of those an expert
+  marking matches score under 6 dB, and 6.2% of those none matches
+  (`peak_contrast_events.csv.gz`). If discharges ringing through the filter
+  were a large share of what the detector finds beyond the experts, the
+  second number would be much the larger. It is not.
+- **That is not the same as no ringing.** The reference here is the validated
+  output of the source study's Morphology detector, which filters the same
+  band and can be fooled by the same discharge; an event both detectors take
+  for a ripple counts as agreement. The 0.97 synthetic precision above and
+  this table are both true: the check removes a known artefact where it is
+  known to be present, and on this cohort's interictal windows there is no
+  evidence, either way, of how much of it there is.
+
+The check is on by default because the artefact it removes is real and the
+measured cost is small. `min_peak_contrast_db=0` turns it off and reproduces
+every cohort table in `data/`, all of which were computed before it existed
+and none of which has been re-run with it.
+
 ## 3. The threshold is a choice, not a fact
 
 RMS detector, synthetic data, sweeping `threshold_sd`:

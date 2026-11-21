@@ -220,3 +220,39 @@ def test_the_source_reads_any_stretch_of_the_same_recording(request_):
     assert list(early.raw.ch_names) == list(late.raw.ch_names)
     assert not np.allclose(early.raw.get_data()[:, :100],
                            late.raw.get_data()[:, :100])
+
+
+# -- what the assistant reads is the span, not the window ---------------------
+
+
+def test_the_assistants_evidence_is_the_spans_own_analysis(spanned, tmp_path):
+    """The assistant's evidence was the pipeline re-run on the one stretch of
+    signal the window holds, so it quoted, as verified, rates from one minute
+    beside tables ranking the whole span."""
+    import json
+
+    import pandas as pd
+
+    pytest.importorskip("qtpy.QtWidgets", reason="the review extra is not installed")
+    from onset_review.assistant import evidence_scope, result_from_session
+
+    assert evidence_scope(spanned), "this session is one the old path got wrong"
+    result = result_from_session(spanned)
+    start, stop = spanned.span
+    assert result.duration_s == pytest.approx(stop - start)
+    primary = spanned.request.primary
+    saved = result.rates[primary].set_index("channel")
+    screen = spanned.findings.set_index("channel")
+    for channel in screen.index:
+        assert int(saved.loc[channel, "n_events"]) == int(screen.loc[channel, "n_events"])
+        assert float(saved.loc[channel, "rate_per_min"]) == pytest.approx(
+            float(screen.loc[channel, "rate_per_min"]), rel=1e-6, abs=1e-9)
+
+    folder = result.save(tmp_path)
+    provenance = json.loads((folder / "provenance.json").read_text())
+    assert provenance["slice_start_s"] == pytest.approx(start)
+    assert provenance["slice_stop_s"] == pytest.approx(stop)
+    events = pd.read_csv(folder / "events.csv")
+    held = (float(spanned.request.t_start), float(spanned.request.t_stop))
+    assert ((events["start"] < held[0]) | (events["start"] >= held[1])).any(), \
+        "events from outside the held window are in the evidence"
