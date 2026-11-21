@@ -32,15 +32,15 @@ features.**
 **Swept on real data, and the verdict here was too harsh.** This docstring
 used to call it "mostly the energy detector at an untuned, lower operating
 point". Half right. Across the 20 patients of ds003498 its own best threshold
-is **4.0 robust SD in the ripple band and 12.0 in fast ripples**, against 2.0
+is **3.0 robust SD in the ripple band and 12.0 in fast ripples**, against 2.0
 and 5.0 for RMS -- so at a *shared* threshold it is badly mis-set, exactly as
 claimed. But at its own, it matches RMS rather than trading recall for
-precision: rank agreement 0.658 against 0.655 in ripples, 0.601 against 0.610
+precision: rank agreement 0.712 against 0.691 in ripples, 0.635 against 0.643
 in fast ripples. A competitive detector that wants a different number, not a
 mis-set copy of one. ``docs/EVALUATION.md`` §1b has the tables.
 
 **Run it at RMS's threshold and it is genuinely worse**: 5.0 SD in the
-fast-ripple band gives rank agreement 0.485 where its own 12.0 gives 0.601.
+fast-ripple band gives rank agreement 0.577 where its own 12.0 gives 0.635.
 That gap is the whole reason this file says what it says.
 """
 

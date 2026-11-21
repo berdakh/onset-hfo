@@ -148,6 +148,46 @@ def evidence_scope(session) -> str:
     return "The assistant's evidence is not the analysis on screen: " + "; ".join(parts) + "."
 
 
+def result_from_session(session):
+    """The window's own analysis as a `PipelineResult`, for saving.
+
+    Built from the events, the quality tables and the per-channel seconds the
+    session already holds, by the same function `run_pipeline` finishes with
+    (`onset_hfo.pipeline.assemble_result`). So the rates the assistant reads
+    are the rates in the window's tables: over the whole span, with the
+    contacts the reader reinstated, and with nothing detected twice.
+    """
+    import numpy as np
+
+    from onset_hfo.pipeline import assemble_result
+    from onset_hfo.preprocess import Prepared
+
+    request = session.request
+    names = [str(c) for c in session.findings["channel"]] \
+        if getattr(session, "findings", None) is not None and len(session.findings) \
+        else list(session.raw.ch_names)
+    held = session.raw.get_data()
+    order = {name: i for i, name in enumerate(session.raw.ch_names)}
+    data = np.stack([held[order[name]] if name in order else np.zeros(held.shape[1])
+                     for name in names])
+    prep = Prepared(data=data, ch_names=names, sfreq=float(session.sfreq),
+                    t_offset=float(session.t_offset), montage=str(session.montage),
+                    steps=list(session.steps), recording=session.recording,
+                    modality=str(getattr(session, "modality", "ieeg")),
+                    unit=str(getattr(session, "unit", "µV")))
+    events = {name: [e for e in session.events if e.detector == name]
+              for name in request.detectors}
+    spikes = [e for e in session.events if e.detector == "spike"]
+    span_start, span_stop = session.span
+    return assemble_result(
+        session.recording, prep, request.pipeline_config(), events, spikes,
+        quality=session.quality, segments=session.segments,
+        duration_s=float(span_stop - span_start), t_start=float(span_start),
+        clean_seconds=dict(session.clean_seconds or {}),
+        extra_notes=[note for note in session.notes
+                     if note not in (session.recording.notes or [])])
+
+
 class _StoreWorker(QThread):
     """Builds the saved analysis the agent reads, off the GUI thread.
 
@@ -163,6 +203,10 @@ class _StoreWorker(QThread):
         self._directory = directory
         self.store = None
         self.error: str | None = None
+        #: Whether what was saved is the analysis on screen. False only when
+        #: the window's own analysis could not be saved and the pipeline was
+        #: re-run on the signal the window holds instead.
+        self.matches_screen = True
 
     def run(self) -> None:
         try:
@@ -170,11 +214,25 @@ class _StoreWorker(QThread):
             from onset_hfo.store import ResultStore
 
             request = self._session.request
-            result = run_pipeline(
-                self._session.recording, config=request.pipeline_config(),
-                detectors=tuple(request.detectors),
-                with_spikes=request.with_spikes,
-                save_to=self._directory, verbose=False)
+            result = None
+            if evidence_scope(self._session):
+                # The window's own analysis covers more than the signal it
+                # holds, or carries the reader's overrides: save *that*, from
+                # its events, instead of re-running the pipeline on the
+                # stretch of signal that happens to be loaded.
+                try:
+                    result = result_from_session(self._session)
+                    result.save(self._directory)
+                    self.matches_screen = True
+                except Exception:       # noqa: BLE001 -- fall back, and say so
+                    result = None
+            if result is None:
+                result = run_pipeline(
+                    self._session.recording, config=request.pipeline_config(),
+                    detectors=tuple(request.detectors),
+                    with_spikes=request.with_spikes,
+                    save_to=self._directory, verbose=False)
+                self.matches_screen = not evidence_scope(self._session)
             saved = Path(self._directory) / _result_name(self._session.recording)
             # Where each channel sits, for the map query. Written beside the
             # analysis so the assistant reads it like any other table; no
@@ -620,7 +678,8 @@ class AssistantPanel(QWidget):
                              f"{html.escape(self._builder.error)}")
             return False
         self._store = self._builder.store
-        scope = evidence_scope(self._session)
+        self._evidence_matches = bool(getattr(self._builder, "matches_screen", True))
+        scope = "" if self._evidence_matches else evidence_scope(self._session)
         if scope:
             self._say_system("<b>" + html.escape(scope) + "</b>")
         return True
@@ -693,7 +752,10 @@ class AssistantPanel(QWidget):
         return self._draft(LIMITS_QUESTION, self.draftedLimits)
 
     def _draft(self, question: str, signal) -> bool:
-        scope = evidence_scope(self._session)
+        if not self._ensure_store():
+            return False
+        scope = ("" if getattr(self, "_evidence_matches", True)
+                 else evidence_scope(self._session))
         if scope:
             # A paragraph that goes into the report is not drafted from a
             # different analysis than the one the report tabulates.

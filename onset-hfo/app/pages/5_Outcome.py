@@ -172,15 +172,16 @@ pooled by subject mean, using this study's own metric functions.
         st.error(
             "**It does not help.** Every sub-population arm is at or below the "
             "merged rate: best gains of " + ", ".join(gains) + ". The "
-            "spike-coupled arm sits near chance on all three — on "
-            "`top_channel_resected`, 0.692 in the seizure-free patients "
-            "against 0.657 in the recurrences.")
+            "spike-coupled arm is not separated from chance on any of the "
+            "three — on `top_channel_resected`, 0.708 in the seizure-free "
+            "patients against 0.614 in the recurrences.")
 
         st.markdown("""
 **Why the ripple band is shown first and not the pre-specified fast-ripple
 one.** The spike-coupled population in the fast-ripple band is thin — a median
-of 9 events per window, fewer than 5 in 38 of 100 windows — and one seizure-free
-patient (sub-10) has none at all, so that arm is 12 against 7.
+of 22 events per window against 88 in the ripple band, fewer than 5 in 27 of
+100 windows — and one seizure-free patient (sub-10) has none at all, so that
+arm is 12 against 7.
 """)
         meas = panels.subpopulation_measurability()
         if not meas.empty:
@@ -191,26 +192,26 @@ patient (sub-10) has none at all, so that arm is 12 against 7.
             st.caption("Out of 100 subject-windows per population per band.")
 
         st.warning("""
-**And that thin population gives the most flattering numbers in the whole
-screen.** In fast ripples the spike-coupled arm's `top_channel_resected` is
-**AUC 0.875, p = 0.004**, Bonferroni 0.033 across that band's nine rows, and its
-`share_in_rz` 0.857 (p = 0.009). That is reported as measured. Three things
-argue against reading it as a gain of the split. The tie-aware
+**In fast ripples nothing survives correction either.** The spike-coupled
+arm's `top_channel_resected` is **AUC 0.786, p = 0.026**, Bonferroni 0.236
+across that band's nine rows, and no better than the merged arm's 0.791
+(Bonferroni 0.101). Its `share_in_rz` is 0.786 (p = 0.042, Bonferroni 0.381),
+0.082 above the merged 0.703 and the only positive gain in either band. Three
+things argue against reading that as a gain of the split. The tie-aware
 `candidates_resected` metric, which exists precisely to catch an argmax over a
-set that is mostly ties, puts the same arm at **0.446** — below chance. The
-merged arm replicates across bands (0.791 → 0.747) while the coupled arm
-collapses (0.875 → 0.533). And it is one of many comparisons, on five 60 s
-windows and 12 seizure-free patients against 7: a hypothesis for a larger
-cohort, not a result. The band effect that *should* be there is: merged
-`share_in_rz` falls 0.703 → 0.516 from fast ripples to ripples, as fast ripples
-localising better predicts. Before five patients' electrodes were read in the
-recording's names (corrected after 0.3.24) the same arm gave 0.806, p = 0.025.
+set that is mostly ties, puts the same arm at **0.554**, under the merged
+0.593. It does not carry to the ripple band: the coupled share goes
+0.786 → 0.516 and the coupled busiest channel 0.786 → 0.599, while the merged
+busiest channel holds at 0.791 → 0.747. And it is one of many comparisons, on
+five 60 s windows and 12 seizure-free patients against 7. The band effect that
+*should* be there is: merged `share_in_rz` falls 0.703 → 0.516 from fast
+ripples to ripples, as fast ripples localising better predicts.
 """)
 
         st.info("""
 **One thing the split does measure reliably.** The spike-coupled share of all
-ripples is a stable patient property — within-subject SD 0.012 against
-between-subject 0.056, so an ICC of about 0.96. It is a real and repeatable
+ripples is a stable patient property — within-subject SD 0.016 against
+between-subject 0.068, so an ICC of about 0.95. It is a real and repeatable
 feature of a patient. It just does not predict where the surgeon cut, which is
 more useful to know than either "no signal" or "promising". Full tables:
 `docs/EVALUATION.md` §3b.

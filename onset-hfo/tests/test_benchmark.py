@@ -331,3 +331,49 @@ def test_timing_warnings_says_so_when_nothing_succeeded():
     frame = pd.DataFrame([{"ok": False, "gpu_name": "none", "run_id": "a",
                            "quantization": "fp16"}])
     assert timing_warnings(frame) == ["no successful cells"]
+
+
+# -- the peak-contrast check, against the markings ----------------------------
+
+
+def test_the_document_quotes_the_peak_contrast_table():
+    """What the check costs on real recordings is a measurement with a file
+    behind it, and the document's table is that file's cohort means."""
+    from pathlib import Path
+
+    import pandas as pd
+
+    root = Path(__file__).resolve().parents[1]
+    table = pd.read_csv(root / "data" / "benchmark" / "peak_contrast.csv")
+    assert table["subject"].nunique() == 20
+    assert sorted(table["floor_db"].unique()) == [0.0, 3.0, 6.0, 9.0]
+    means = table.groupby(["band", "detector", "threshold_sd", "floor_db"])[
+        ["accepted", "precision", "recall", "rank_rho"]].mean()
+    text = (root / "docs" / "EVALUATION.md").read_text(encoding="utf-8")
+    labels = {"rms": "rms", "line_length": "line length"}
+    for (band, detector, threshold), check in (
+            (("ripple", "rms", 2.0), {0.0: "off", 6.0: "6 dB"}),
+            (("ripple", "rms", 5.0), {0.0: "off", 6.0: "6 dB"}),
+            (("ripple", "line_length", 2.0), {0.0: "off", 6.0: "6 dB"}),
+            (("fast_ripple", "rms", 5.0), {0.0: "off", 6.0: "6 dB"})):
+        for floor, word in check.items():
+            row = means.loc[(band, detector, threshold, floor)]
+            line = (f"| {band.replace('_', ' ')} | {labels[detector]} | {threshold:.1f} SD | "
+                    f"{word} | {row['accepted']:.0f} | {row['precision']:.3f} | "
+                    f"{row['recall']:.3f} | {row['rank_rho']:.3f} |")
+            assert line in text, line
+
+    # The check never accepts more, and at the default it does not buy agreement.
+    off = means.xs(0.0, level="floor_db")
+    on = means.xs(6.0, level="floor_db")
+    assert (on["accepted"] <= off["accepted"]).all()
+    assert (on["recall"] <= off["recall"] + 1e-9).all()
+    assert (on["precision"] - off["precision"]).abs().max() < 0.02
+
+    events = pd.read_csv(root / "data" / "benchmark" / "peak_contrast_events.csv.gz")
+    at = events[(events["band"] == "ripple") & (events["detector"] == "rms")
+                & (events["threshold_sd"] == 2.0)]
+    matched = (at[at["matched"]]["contrast_db"] < 6).mean()
+    unmatched = (at[~at["matched"]]["contrast_db"] < 6).mean()
+    assert f"{matched:.1%}" == "5.2%" and f"{unmatched:.1%}" == "6.2%"
+    assert "5.2% of those an expert" in text and "and 6.2% of those none matches" in text

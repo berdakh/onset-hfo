@@ -76,15 +76,15 @@ This one is **not** the per-subject grain of the three files above: it is five
 is not cached and fetching it needs the archive. The analysis pools the windows
 by subject mean. `n_events` is the population's event count in that window and
 is the column to read first — for the spike-coupled population in the fast
-ripple band its median is **9**, and 38 of 100 windows hold fewer than 5, which
-is why the screen's main answer comes from the ripple band and is reported as
-a secondary analysis.
+ripple band its median is **22** against 88 in the ripple band, and 27 of 100
+windows hold fewer than 5, which is why the screen's main answer comes from
+the ripple band and is reported as a secondary analysis.
 
 **The answer is no** in the ripple band, where the populations are large
 enough to measure: every sub-population AUC is at or below the merged one. In
-the fast ripple band the spike-coupled busiest channel separates the groups
-(AUC 0.875, p = 0.004) while the tie-aware metric puts the same arm below
-chance; §3b has the tables and what argues against reading it as a gain.
+the fast ripple band nothing survives correction: the spike-coupled busiest
+channel gives AUC 0.786, p = 0.026, Bonferroni 0.236, no better than the
+merged 0.791. §3b has the tables.
 
 **`robustness_ablation.csv`** — the ablation of
 `onset_agent.planner.rank_channels`'s robustness multiplier

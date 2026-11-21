@@ -306,11 +306,11 @@ scored only on the channels the annotators reviewed:
 
 | band | detector | threshold | precision | recall | F1 | channel-rank ρ |
 |---|---|---|---|---|---|---|
-| ripple | RMS | 1.75 SD | 0.53 | 0.53 | **0.50** | **0.70** |
-| ripple | RMS | 2.0 SD | 0.58 | 0.48 | 0.49 | 0.69 |
-| ripple | RMS | 5.0 SD *(default)* | 0.71 | 0.16 | 0.25 | 0.48 |
-| fast ripple | RMS | 4.0 SD | 0.60 | 0.36 | **0.44** | 0.62 |
-| fast ripple | RMS | 5.0 SD | 0.76 | 0.29 | 0.39 | **0.65** |
+| ripple | RMS | 1.75 SD | 0.53 | 0.51 | **0.49** | **0.70** |
+| ripple | RMS | 2.0 SD | 0.58 | 0.45 | 0.48 | 0.69 |
+| ripple | RMS | 5.0 SD *(default)* | 0.71 | 0.15 | 0.23 | 0.48 |
+| fast ripple | RMS | 4.0 SD | 0.60 | 0.35 | **0.43** | 0.62 |
+| fast ripple | RMS | 5.0 SD | 0.76 | 0.29 | 0.39 | **0.64** |
 | fast ripple | RMS | 2.0 SD | 0.13 | 0.65 | 0.20 | 0.51 |
 
 Read that as **agreement, not accuracy**: the reference is the validated
@@ -320,7 +320,7 @@ published detector's validated events and rank the same channels active at
 ρ ≈ 0.7*.
 
 It also shows the shipped default is wrong for this task — 5.0 SD comes from
-the ictal literature and finds 16% of interictal ripple markings. `--threshold
+the ictal literature and finds 15% of interictal ripple markings. `--threshold
 interictal-agreement` (2.0 SD, within 0.02 of the 1.75 SD optimum on F1
 and ρ) is the measured operating point **for ripples**.
 Fast ripples want 5.0 SD on the same cohort, and running 2.0 SD there drops

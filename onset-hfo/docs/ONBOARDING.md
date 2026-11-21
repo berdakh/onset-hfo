@@ -151,8 +151,8 @@ shipped 60 s analysis the app and tests read).
 
 **Against expert HFO markings** (20 patients, 41,187 marked events, §0): the two
 bands want operating points a factor of 2.5 apart — ripples rank best around
-**2.0 SD** (ρ = 0.685; 0.698 at 1.75), fast ripples at **5.0 SD** (ρ = 0.645).
-The shipped default of 5.0 is *known to be wrong for ripple work*: it finds 16%
+**2.0 SD** (ρ = 0.691; 0.699 at 1.75), fast ripples at **5.0 SD** (ρ = 0.643).
+The shipped default of 5.0 is *known to be wrong for ripple work*: it finds 15%
 of the expert-marked events and ranks at ρ = 0.48. It stays 5.0 so that published
 ictal results do not silently change, and `BAND_THRESHOLD_SD` carries the
 measured values.
@@ -168,7 +168,7 @@ floor of 0.85 is why.
 | study | answer |
 |---|---|
 | §1b — two extra detectors (`hilbert`, `short_time_energy`) | buy nothing over RMS |
-| §3b — splitting ripples by discharge coupling | does not localise the resection better in ripples; in fast ripples one arm separates by one metric and falls below chance by the tie-aware one |
+| §3b — splitting ripples by discharge coupling | does not localise the resection better in ripples; in fast ripples no sub-population arm survives correction or beats the merged busiest channel |
 | §6c — the agent's robustness multiplier | helps in the ripple band, *hurts* in the fast-ripple band on every patient |
 
 ---
@@ -182,7 +182,7 @@ All of these are load-bearing and none is obvious from reading the code.
    only place that mapping is written down, and a test pins it against the
    Engel scores.
 2. **One threshold for both bands is a bug, not a simplification.** Running the
-   ripple value in the fast-ripple band costs precision 0.756 → 0.127. Use
+   ripple value in the fast-ripple band costs precision 0.761 → 0.126. Use
    `outcome.BAND_THRESHOLD_SD`.
 3. **`candidate_channels` needs integer event counts.** It decides which
    channels are statistically tied using **Poisson** intervals. Hand it a

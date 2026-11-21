@@ -71,3 +71,46 @@ def test_benchmark_means_reproduce_from_the_per_patient_scores():
     reviewed = patients.groupby("subject")["n_channels"].first()
     cohort = pd.read_csv(bench / "cohort.csv").set_index("subject")
     assert reviewed.equals(cohort["n_reviewed_channels"].rename("n_channels"))
+
+
+def test_the_evaluation_document_quotes_the_benchmark_tables():
+    """`docs/EVALUATION.md` §0 and §1b print rows of the two committed sweeps.
+    Each printed row is the file's, so a re-run that moves a mean fails here
+    rather than leaving the old figure in the document."""
+    root = Path(__file__).resolve().parents[1]
+    bench = root / "data" / "benchmark"
+    text = (root / "docs" / "EVALUATION.md").read_text(encoding="utf-8")
+    plain = text.replace("*", "")
+    labels = {"rms": "RMS", "line_length": "line length", "hilbert": "Hilbert envelope",
+              "short_time_energy": "short-time energy"}
+
+    sweep = pd.read_csv(bench / "agreement_sweep.csv").set_index(
+        ["band", "detector", "threshold_sd"])
+    quoted = {("ripple", "rms"): (1.5, 1.75, 2.0, 3.0, 5.0),
+              ("ripple", "line_length"): (2.0, 5.0),
+              ("fast_ripple", "rms"): (2.0, 3.0, 3.5, 4.0, 5.0, 6.0, 8.0, 10.0),
+              ("fast_ripple", "line_length"): (5.0,)}
+    for (band, detector), thresholds in quoted.items():
+        for threshold in thresholds:
+            row = sweep.loc[(band, detector, threshold)]
+            values = (f"{row['precision']:.3f} | {row['recall']:.3f} | {row['f1']:.3f} | "
+                      f"{row['rank_rho']:.3f} | {row['top5_overlap']:.2f} / 5 |")
+            lines = [line for line in plain.splitlines()
+                     if line.startswith(f"| {labels[detector]} | ") and line.endswith(values)]
+            assert any(f" {threshold:g} SD" in line or f" {threshold:.1f} SD" in line
+                       for line in lines), (band, detector, threshold, values)
+
+    four = pd.read_csv(bench / "four_detector_sweep.csv")
+    best = four.loc[four.groupby(["band", "detector"])["rank_rho"].idxmax()]
+    assert len(best) == 8
+    for row in best.itertuples():
+        line = (f"| {labels[row.detector]} | {row.threshold_sd:.1f} | {row.rank_rho:.3f} | "
+                f"{row.f1:.3f} | {row.precision:.3f} | {row.recall:.3f} | "
+                f"{row.detections:,.0f} |")
+        assert line in plain, line
+
+    # How many rows a mean leaves out, as `data/benchmark/README.md` counts them.
+    patients = pd.read_csv(bench / "per_patient.csv.gz")
+    undefined = int((patients["precision"].isna() | patients["spearman_rho"].isna()).sum())
+    readme = (bench / "README.md").read_text(encoding="utf-8")
+    assert f"undefined in the {undefined} rows where the detector found nothing" in readme

@@ -107,11 +107,19 @@ class Judgement:
     #: "orphan" when no event in the current analysis corresponds to it, and
     #: "" in the file itself, where matching has not happened yet.
     match: str = ""
+    #: The frequency band of the event the verdict was given to, as
+    #: :func:`band_label` writes it ("80-250"), or "" in a file written before
+    #: this was kept. An event's key is its channel, onset and detector; the
+    #: same detector run in the fast-ripple band produces a different event
+    #: at the same moment, and "a real ripple" does not carry over to it.
+    band: str = ""
 
     def to_json(self) -> dict:
         out = {"verdict": self.verdict, "reader": self.reader, "at": self.at}
         if self.note:
             out["note"] = self.note
+        if self.band:
+            out["band"] = self.band
         return out
 
     @classmethod
@@ -119,7 +127,17 @@ class Judgement:
         return cls(verdict=str(data.get("verdict", "unsure")),
                    reader=str(data.get("reader", "")),
                    at=str(data.get("at", "")),
-                   note=str(data.get("note", "")))
+                   note=str(data.get("note", "")),
+                   band=str(data.get("band", "")))
+
+
+def band_label(band) -> str:
+    """A band as a verdict records it: "80-250". "" when there is none."""
+    try:
+        low, high = band
+        return f"{float(low):g}-{float(high):g}"
+    except (TypeError, ValueError):
+        return ""
 
 
 def now() -> str:
@@ -272,6 +290,10 @@ class Adjudication:
     #: that there had been one, or that the two disagreed. `events` is still
     #: the verdict that counts; these are kept, saved, and reported.
     superseded: dict = field(default_factory=dict)
+    #: Event key -> band label for the events of the current analysis, set by
+    #: `reconcile`. Not saved: it is how a new verdict learns the band of the
+    #: event it is being given to.
+    event_bands: dict = field(default_factory=dict)
     #: Where :func:`load` moved a stored read it could not parse, or "". Not
     #: written to the file: it is about this load, and exists so the window
     #: can say that earlier verdicts were not read and where they now are.
@@ -338,8 +360,11 @@ class Adjudication:
         previous = into.get(key)
         if not note and previous is not None:
             note = previous.note
+        band = ""
+        if into is self.events:
+            band = self.event_bands.get(key) or (previous.band if previous else "")
         judged = Judgement(verdict=verdict, reader=who, at=now(), note=note,
-                           match=previous.match if previous else "")
+                           match=previous.match if previous else "", band=band)
         # Someone else's verdict is not overwritten, it is superseded: kept
         # under the same key with its reader and time. The same reader
         # changing their mind replaces their own, as it always has.
@@ -688,9 +713,17 @@ def reconcile(read: Adjudication, events,
     # Current events, grouped by channel and sorted, so a verdict only ever
     # looks at the handful of events it could plausibly be about.
     by_channel: dict = {}
+    bands: dict = {}
     for event in events:
         key = event_key(event.channel, event.start, event.detector)
         by_channel.setdefault(event.channel, []).append((float(event.start), key))
+        bands[key] = band_label(getattr(event, "band", None))
+
+    def same_band(judged, candidate_key) -> bool:
+        # A verdict that recorded no band (an older file) matches as it did.
+        return not judged.band or not bands.get(candidate_key) \
+            or judged.band == bands[candidate_key]
+
     for items in by_channel.values():
         items.sort()
     taken: set = set()
@@ -700,7 +733,7 @@ def reconcile(read: Adjudication, events,
     # was given to -- and that verdict, arriving second, was orphaned.
     current = {key for items in by_channel.values() for _, key in items}
     for key, judged in read.events.items():
-        if key in current:
+        if key in current and same_band(judged, key):
             taken.add(key)
             carried[key] = replace(judged, match="exact")
 
@@ -720,6 +753,10 @@ def reconcile(read: Adjudication, events,
             # same event, so those still match.
             if _kind(_split_key(candidate_key)[2]) != _kind(detector):
                 continue
+            # ...and about one band: a ripple and a fast ripple at the same
+            # moment are two events.
+            if not same_band(judged, candidate_key):
+                continue
             gap = abs(when - start)
             if gap <= tolerance_s and gap < best_gap:
                 best, best_gap = candidate_key, gap
@@ -735,6 +772,7 @@ def reconcile(read: Adjudication, events,
     return Adjudication(
         window=read.window, reader=read.reader, note=read.note,
         fingerprint=read.fingerprint, conditions=dict(read.conditions),
+        event_bands=bands,
         events=carried, channels=dict(read.channels),
         orphaned={key: replace(read.events[key], match="orphan")
                   for key in sorted(orphans)},

@@ -620,14 +620,18 @@ def test_adding_two_detectors_bought_nothing_and_the_page_says_so():
 
 
 
-def test_the_fast_ripple_coupled_population_is_the_unmeasurable_one():
-    """Why the Outcome page reports the split in the ripple band."""
+def test_the_fast_ripple_coupled_population_is_the_thin_one():
+    """Why the Outcome page reports the split in the ripple band.
+
+    The page quotes these: a median of 22 events per window against 88, and
+    fewer than five in 27 of 100 fast-ripple windows.
+    """
     meas = panels.subpopulation_measurability()
     coupled = meas[meas["population"] == "spike_coupled"].set_index("band")
-    assert coupled.loc["fast_ripple", "median"] <= 10
-    assert coupled.loc["ripple", "median"] > 5 * max(
-        coupled.loc["fast_ripple", "median"], 1)
-    assert coupled.loc["fast_ripple", "windows_under_5"] > 30
+    assert coupled.loc["fast_ripple", "median"] == 22
+    assert coupled.loc["ripple", "median"] == 88
+    assert coupled.loc["fast_ripple", "windows_under_5"] == 27
+    assert coupled.loc["ripple", "windows_under_5"] == 5
 
 
 def test_the_subpopulation_screen_keeps_every_patient_in_the_ripple_band():
@@ -697,8 +701,19 @@ def test_the_committed_group_tables_match_what_the_scripts_compute():
     groups = panels.subpopulation_groups("ripple").set_index(
         ["metric", "population"])["auc"].round(3)
     assert groups[("top_channel_resected", "merged")] == pytest.approx(0.747)
-    assert groups[("top_channel_resected", "spike_coupled")] == pytest.approx(0.533)
+    assert groups[("top_channel_resected", "spike_coupled")] == pytest.approx(0.599)
     assert groups[("share_in_rz", "merged")] == pytest.approx(0.516)
+
+    # The fast-ripple arm the pages quote: it survived correction at 0.875
+    # (Bonferroni 0.033) before the discharge detector's artefact test changed.
+    fast = panels.subpopulation_groups("fast_ripple").set_index(
+        ["metric", "population"]).round(3)
+    coupled = fast.loc[("top_channel_resected", "spike_coupled")]
+    assert coupled["auc"] == pytest.approx(0.786)
+    assert coupled["p"] == pytest.approx(0.026)
+    assert coupled["p_bonferroni"] == pytest.approx(0.236)
+    assert fast.loc[("share_in_rz", "spike_coupled"), "auc"] == pytest.approx(0.786)
+    assert not (fast["p_bonferroni"] < 0.05).any()
 
     rob = panels.robustness_groups()
     ripple = rob[(rob.band == "ripple")

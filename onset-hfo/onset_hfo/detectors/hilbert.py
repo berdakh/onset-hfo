@@ -39,8 +39,8 @@ ripple band. The two really are the closest pair of the four, on real data as
 on synthetic.
 
 **What it does not buy is a better ranking.** At its own best threshold it
-reaches rank agreement 0.613 in fast ripples against RMS's 0.610, and 0.578 in
-ripples against RMS's 0.655 -- a tie in one band and clearly behind in the
+reaches rank agreement 0.651 in fast ripples against RMS's 0.643, and 0.615 in
+ripples against RMS's 0.691 -- a tie in one band and clearly behind in the
 other. Adding it was worth doing to learn that the disagreement between
 detectors is structural; it was not worth doing to improve the answer. See
 ``docs/EVALUATION.md`` §1b.

@@ -52,7 +52,7 @@ METHODS = (
               "reviewed."),
         findings=(
             "Channel ranking against the experts': best channel-rank ρ 0.70 for ripples "
-            "(RMS detector at 1.75 SD; the shipped 2.0 SD is within 0.02 of it) and 0.65 "
+            "(RMS detector at 1.75 SD; the shipped 2.0 SD is within 0.02 of it) and 0.64 "
             "for fast ripples (RMS at 5 SD).",
             "Precision 0.53 and 0.76 at those thresholds. Read it as agreement, not "
             "accuracy: the reference is another detector's validated output, not a "

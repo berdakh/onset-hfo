@@ -290,55 +290,97 @@ def test_the_fast_ripple_coupled_population_is_the_thin_one():
     """Why the main answer comes from the ripple band.
 
     The pre-specified arm is fast ripples. Its spike-coupled population has a
-    median of 9 events per 60 s window and fewer than five in over a third of
-    windows (a median of one before five patients' electrodes were read
-    correctly), against 64 in the ripple band.
+    median of 22 events per 60 s window and fewer than five in 27 of the 100
+    windows, against a median of 88 in the ripple band. (9, 38 and 64 before
+    the discharge detector's artefact test stopped depending on the sampling
+    rate and kept more discharges.)
     """
     frame = _screen()
     coupled = frame[frame["population"] == SPIKE_COUPLED]
     fast = coupled[coupled["band"] == "fast_ripple"]["n_events"]
     ripple = coupled[coupled["band"] == "ripple"]["n_events"]
 
-    assert fast.median() <= 10, f"fast-ripple coupled median is now {fast.median()}"
-    assert (fast < 5).sum() > len(fast) // 3, \
-        "a third of fast-ripple windows should have almost no coupled events"
-    assert ripple.median() > 5 * max(fast.median(), 1), \
+    assert fast.median() == 22, f"fast-ripple coupled median is now {fast.median()}"
+    assert (fast < 5).sum() == 27, \
+        f"{(fast < 5).sum()} fast-ripple windows now have almost no coupled events"
+    assert ripple.median() == 88, f"ripple coupled median is now {ripple.median()}"
+    assert ripple.median() >= 4 * fast.median(), \
         "the ripple band is used because it carries the events; it no longer does"
 
 
-def test_the_tie_aware_metric_contradicts_the_flattering_fast_ripple_argmax():
-    """The check that retired the apparent gain, pinned as a regression test.
+def test_no_fast_ripple_arm_survives_correction():
+    """The fast-ripple headline, pinned because it used to be the opposite.
+
+    Spike-coupled `top_channel_resected` was AUC 0.875, Bonferroni 0.033 --
+    the one row in the screen that survived correction. With the discharge
+    detector keeping the sharp discharges its older artefact test discarded it
+    is 0.786, p = 0.026, Bonferroni 0.236, no better than the merged arm's
+    0.791, and nothing in either band survives. If a row does again, §3b and
+    every page that quotes it need rewriting.
+    """
+    result = _analysed_full().set_index(["band", "metric", "population"])
+    coupled = result.loc[("fast_ripple", "top_channel_resected", SPIKE_COUPLED)]
+    merged = result.loc[("fast_ripple", "top_channel_resected", "merged")]
+
+    assert coupled["auc"] == pytest.approx(0.786, abs=5e-4)
+    assert coupled["p"] == pytest.approx(0.026, abs=5e-4)
+    assert coupled["p_bonferroni"] == pytest.approx(0.236, abs=5e-4)
+    assert merged["auc"] == pytest.approx(0.791, abs=5e-4)
+    assert coupled["auc"] <= merged["auc"]
+
+    assert not (result["p_bonferroni"] < 0.05).any(), \
+        result[result["p_bonferroni"] < 0.05]
+    assert result["p_bonferroni"].idxmin() == \
+        ("fast_ripple", "top_channel_resected", "merged")
+    assert result["p_bonferroni"].min() == pytest.approx(0.101, abs=5e-4)
+
+
+def test_the_tie_aware_metric_does_not_back_the_fast_ripple_coupled_arm():
+    """The check on the one positive gain in the screen.
 
     `candidates_resected` was added (item 10 step 3) to stop an argmax
-    overclaiming when channels are statistically tied. Here it earns that: on
-    fast ripples the coupled arm looks best by `top_channel_resected` and
-    worst -- below chance -- by the tie-aware metric.
+    overclaiming when channels are statistically tied. On fast ripples the
+    coupled arm beats merged on `share_in_rz` (0.786 against 0.703) and reads
+    0.786 by `top_channel_resected`; the tie-aware metric puts it at 0.554,
+    under the merged arm's 0.593.
     """
     auc = _analysed()
     argmax = auc[("fast_ripple", "top_channel_resected", SPIKE_COUPLED)]
     tie_aware = auc[("fast_ripple", "candidates_resected", SPIKE_COUPLED)]
+    share = auc[("fast_ripple", "share_in_rz", SPIKE_COUPLED)]
 
-    assert argmax > auc[("fast_ripple", "top_channel_resected", "merged")]
-    assert tie_aware < 0.5 < argmax, (
-        f"the contradiction that retired the fast-ripple gain is gone: "
-        f"argmax {argmax:.3f}, tie-aware {tie_aware:.3f}")
+    assert share == pytest.approx(0.786, abs=5e-4)
+    assert share - auc[("fast_ripple", "share_in_rz", "merged")] == \
+        pytest.approx(0.082, abs=5e-4)
+    assert tie_aware == pytest.approx(0.554, abs=5e-4)
+    assert tie_aware < auc[("fast_ripple", "candidates_resected", "merged")], (
+        f"the tie-aware metric now backs the coupled arm: {tie_aware:.3f}")
+    assert argmax - tie_aware > 0.2, (
+        f"argmax {argmax:.3f} and tie-aware {tie_aware:.3f} now agree")
 
 
 def test_the_merged_arm_replicates_across_bands_and_the_coupled_arm_does_not():
-    """The evidence that the fast-ripple coupled AUC was noise in one arm.
+    """Why the fast-ripple coupled numbers are not read as a property of the split.
 
-    A band effect would move both arms. Only the coupled one collapses.
+    A band effect would move both arms. Merged holds (0.791 -> 0.747); the
+    coupled arm falls 0.786 -> 0.599 on the busiest channel and 0.786 -> 0.516
+    on the share.
     """
     auc = _analysed()
     merged = [auc[(b, "top_channel_resected", "merged")]
               for b in ("fast_ripple", "ripple")]
     coupled = [auc[(b, "top_channel_resected", SPIKE_COUPLED)]
                for b in ("fast_ripple", "ripple")]
+    share = [auc[(b, "share_in_rz", SPIKE_COUPLED)]
+             for b in ("fast_ripple", "ripple")]
 
     assert abs(merged[0] - merged[1]) < 0.05, \
         f"merged no longer replicates across bands: {merged[0]:.3f} vs {merged[1]:.3f}"
-    assert coupled[0] - coupled[1] > 0.25, \
-        f"the coupled arm no longer collapses: {coupled[0]:.3f} vs {coupled[1]:.3f}"
+    assert coupled[1] == pytest.approx(0.599, abs=5e-4)
+    assert coupled[0] - coupled[1] > 0.15, \
+        f"the coupled arm no longer falls: {coupled[0]:.3f} vs {coupled[1]:.3f}"
+    assert share[0] - share[1] > 0.25, \
+        f"the coupled share no longer falls: {share[0]:.3f} vs {share[1]:.3f}"
 
 
 #: ``min_detectable_auc`` per group size, for the four sizes the screen's arms
@@ -349,15 +391,14 @@ def test_the_merged_arm_replicates_across_bands_and_the_coupled_arm_does_not():
 POWER_FLOORS = {(13, 7): 0.85, (12, 7): 0.86, (13, 6): 0.87, (12, 6): 0.88}
 
 
-def test_only_the_arm_the_tie_aware_metric_contradicts_clears_its_power_floor():
+def test_no_arm_clears_its_power_floor():
     """13 seizure-free against 7 recurrences resolves an AUC of 0.85 or better.
 
-    In the ripple band nothing reaches it: 'no gain to report', not 'no
-    effect'. In the fast ripple band one arm does -- the spike-coupled busiest
-    channel, 0.875 at 12/7 -- and §3b reports it as measured together with
-    what argues against it: the tie-aware metric puts the same arm below
-    chance. If a second arm crosses, or that contradiction goes away, §3b
-    needs rewriting.
+    Nothing in either band reaches its floor: 'no gain to report', not 'no
+    effect'. The closest are the two fast-ripple busiest-channel arms, merged
+    at 0.791 (floor 0.85) and spike-coupled at 0.786 (floor 0.86 at 12/7). The
+    spike-coupled one cleared it, at 0.875, before the discharge detector's
+    artefact test changed. If an arm crosses again, §3b needs rewriting.
     """
     result = _analysed_full()
     sizes = {(int(r.n_SF), int(r.n_rec)) for r in result.itertuples()}
@@ -365,11 +406,11 @@ def test_only_the_arm_the_tie_aware_metric_contradicts_clears_its_power_floor():
 
     floor = result.apply(lambda r: POWER_FLOORS[(int(r.n_SF), int(r.n_rec))], axis=1)
     above = result[result.auc >= floor]
-    assert [(r.band, r.metric, r.population) for r in above.itertuples()] == \
-        [("fast_ripple", "top_channel_resected", SPIKE_COUPLED)], above
-    tie_aware = result.set_index(["band", "metric", "population"]).loc[
-        ("fast_ripple", "candidates_resected", SPIKE_COUPLED), "auc"]
-    assert tie_aware < 0.5
+    assert above.empty, above
+    best = result.loc[result.auc.idxmax()]
+    assert (best.band, best.metric, best.population) == \
+        ("fast_ripple", "top_channel_resected", "merged")
+    assert best.auc == pytest.approx(0.791, abs=5e-4)
 
 
 def test_the_recorded_power_floors_are_what_the_simulation_gives():

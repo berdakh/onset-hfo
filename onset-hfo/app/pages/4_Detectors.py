@@ -239,7 +239,7 @@ is RMS before the square root, so under a *fixed* threshold the two would select
 identical samples. They do not, because `median + 5 robustSD` sits at about the
 98th percentile of an RMS trace and the 96th of a squared one: squaring is not
 affine and stretches the upper tail relative to the median. Run short-time
-energy at RMS's fast-ripple threshold and its rank agreement falls from 0.637 to
+energy at RMS's fast-ripple threshold and its rank agreement falls from 0.635 to
 **0.577**. The Hilbert envelope, by contrast, wants almost exactly what RMS
 wants. Each feature needs its own sweep, and the table above is what that looks
 like.

@@ -221,8 +221,8 @@ anyone claiming otherwise.
   comparisons have none below 0.05 (the smallest is 0.057, where chance alone
   would give about two); the p = 0.032 an earlier release showed went when five
   patients' electrode names were corrected after 0.3.24. The sub-population
-  screen's fast-ripple arm at p = 0.004 is contradicted by its own tie-aware
-  metric and is not a finding.
+  screen's best fast-ripple arm is p = 0.026 before correction and 0.236
+  after it, and is not a finding.
 
 ---
 
