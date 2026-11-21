@@ -429,7 +429,7 @@ validated with the check off and on (`scripts/run_peak_contrast_cost.py`,
 Three things to read off it.
 
 - **Recall falls by 0.007 to 0.026 in the ripple band** (median over patients
-  0.006 to 0.015; one patient loses 0.145 at 2.0 SD) and by 0.002 in the fast
+  0.002 to 0.015; one patient loses 0.145 at 2.0 SD) and by 0.002 in the fast
   ripple band. **Agreement does not rise**: 0.579 to 0.579 at the ripple
   operating point. The channel ranking is unchanged (ρ within 0.006).
 - **The check removes marked and unmarked events alike.** Of the ripple
