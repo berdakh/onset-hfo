@@ -451,3 +451,49 @@ def test_recording_conditions_are_kept_with_the_read_and_never_guessed(request_)
     assert back.conditions["medication"] == "being tapered"
     back.set_conditions({})
     assert back.conditions == {}
+
+
+# -- a verdict is about one band ----------------------------------------------
+
+
+@dataclass
+class _Banded:
+    channel: str
+    start: float
+    detector: str = "rms"
+    band: tuple = (80.0, 250.0)
+
+
+def test_a_ripple_verdict_does_not_carry_onto_a_fast_ripple_at_the_same_moment():
+    """The key is channel, onset and detector. Re-run in the fast-ripple band,
+    the same detector finds a different event there, and "a real ripple" was
+    carried onto it."""
+    ripple = _Banded("A1-A2", 12.340)
+    read = adj.reconcile(adj.Adjudication(reader="Dr A"), [ripple])
+    key = adj.event_key("A1-A2", 12.340, "rms")
+    read.judge_event(key, "agree")
+    assert read.events[key].band == "80-250"
+    assert read.to_json()["events"][key]["band"] == "80-250"
+
+    fast = _Banded("A1-A2", 12.340, band=(250.0, 500.0))
+    near = _Banded("A1-A2", 12.352, band=(250.0, 500.0))
+    for events in ([fast], [near]):
+        out = adj.reconcile(read, events)
+        assert out.events == {} and list(out.orphaned) == [key]
+
+    # Back in the ripple band it is found again, and it is still Dr A's.
+    # (Through the file, as the application does: orphans are saved among the
+    # events they came from.)
+    stored = adj.Adjudication.from_json(adj.reconcile(read, [fast]).to_json())
+    back = adj.reconcile(stored, [ripple])
+    assert back.verdict_of(key) == "agree" and back.events[key].match == "exact"
+
+
+def test_a_verdict_from_before_bands_were_kept_matches_as_it_always_did():
+    read = adj.Adjudication(reader="Dr A")
+    key = adj.event_key("A1-A2", 12.340, "rms")
+    read.judge_event(key, "agree")                 # no analysis attached: no band
+    assert read.events[key].band == ""
+    out = adj.reconcile(read, [_Banded("A1-A2", 12.340, band=(250.0, 500.0))])
+    assert out.verdict_of(key) == "agree"
+    assert adj.band_label((80.0, 250.0)) == "80-250" and adj.band_label(None) == ""
