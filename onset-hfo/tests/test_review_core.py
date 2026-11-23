@@ -1362,3 +1362,38 @@ def test_a_saved_picture_carries_its_identity_in_the_image(review):
     assert "SCHEMATIC positions, not this patient's anatomy" in text
     assert "not for navigation" in text and "ripple rate" in text
     assert "positions as supplied" in contactmap.stamp_text(review, schematic=False)
+
+
+# -- the HTML export is a page, not the Markdown in a <pre> --------------------
+
+
+def test_the_html_export_renders_without_an_optional_package(review, tmp_path):
+    """It needed the `markdown` package, which nothing installs, and without
+    it wrapped the whole review in <pre>: a page of raw pipes and asterisks."""
+    path = report.write_review(review, tmp_path / "review.html")
+    page = path.read_text(encoding="utf-8")
+    assert page.startswith("<!doctype html>")
+    assert "<pre>" not in page
+    assert page.count("<table>") >= 3 and "<th>field</th>" in page
+    assert "<h1>iEEG review" in page and "<h2>What was reviewed</h2>" in page
+    assert "<strong>NOT RECORDED</strong>" in page and "<ul><li>" in page
+    body = page.split("<body>", 1)[1]
+    assert "**" not in body and "|---|" not in body and "\n## " not in body
+
+
+def test_the_html_renderer_escapes_what_it_is_given():
+    """A channel name or a reader's note goes into the page as text."""
+    html = report.markdown_to_html(
+        "# A <b>title</b>\n\n"
+        "A note: <script>alert(1)</script> & **bold** and `x < y` and _quiet_.\n\n"
+        "| a | b |\n|---|---|\n| <i>1</i> | **2** |\n\n"
+        "- one\n  continued\n- two\n\n1. first\n2. second\n")
+    assert "<script>" not in html and "&lt;script&gt;" in html
+    assert "<h1>A &lt;b&gt;title&lt;/b&gt;</h1>" in html
+    assert "<strong>bold</strong>" in html and "<code>x &lt; y</code>" in html
+    assert "<em>quiet</em>" in html and "&amp;" in html
+    assert "<td>&lt;i&gt;1&lt;/i&gt;</td><td><strong>2</strong></td>" in html
+    assert "<ul><li>one continued</li><li>two</li></ul>" in html
+    assert "<ol><li>first</li><li>second</li></ol>" in html
+    # Underscores inside a name are not emphasis.
+    assert "<em>" not in report.markdown_to_html("ds003498 sub_01 AR1_AR2")
