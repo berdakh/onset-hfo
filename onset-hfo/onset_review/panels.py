@@ -28,6 +28,7 @@ from qtpy.QtWidgets import (
     QHeaderView,
     QLabel,
     QPushButton,
+    QScrollArea,
     QTableView,
     QTextBrowser,
     QVBoxLayout,
@@ -1144,6 +1145,14 @@ class TrendsPanel(QWidget):
         self.cellPicked.emit(t, channel)
 
 
+def agreement_height_px(n_rows: int, row_px: float = 17, top_px: float = 44,
+                        bottom_px: float = 34) -> int:
+    """How tall the agreement chart is for `n_rows` channels, in pixels at
+    `AgreementPanel.DPI`: `row_px` a channel, so the names never touch however
+    many there are, plus room for the legend above and the axis below."""
+    return int(top_px + bottom_px + max(1, int(n_rows)) * row_px)
+
+
 class AgreementPanel(QWidget):
     """The detector against the archive's annotators, on the window on screen.
 
@@ -1179,10 +1188,24 @@ class AgreementPanel(QWidget):
         from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
         from matplotlib.figure import Figure
 
-        self.figure = Figure(figsize=(3.6, 2.6), facecolor=theme.current().surface)
+        # The dpi is pinned, as every other figure in the window pins it.
+        # Left to matplotlib's default it follows the machine's settings --
+        # 200 on one -- and 7-point names became 19 pixels tall in 17-pixel
+        # rows. Constrained layout makes room for the names and the legend
+        # at whatever width the panel is given.
+        self.figure = Figure(figsize=(3.6, 2.6), dpi=self.DPI, layout="constrained",
+                             facecolor=theme.current().surface)
         self.canvas = FigureCanvasQTAgg(self.figure)
         self.canvas.setMinimumHeight(120)
         self.canvas.mpl_connect("pick_event", self._bar_picked)
+        # The chart is as tall as its channels need and scrolls inside the
+        # panel. A fixed figure gave twenty channels a few pixels each and
+        # drew their names on top of one another.
+        self.chart = QScrollArea()
+        self.chart.setWidget(self.canvas)
+        self.chart.setWidgetResizable(True)
+        self.chart.setFrameShape(QScrollArea.NoFrame)
+        self.chart.setMinimumHeight(140)
         self._bars = []
         self.show_table = QCheckBox("Show the table")
         self.show_table.setObjectName("onset_agreement_table")
@@ -1197,7 +1220,7 @@ class AgreementPanel(QWidget):
         layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(4)
         layout.addWidget(self.statement)
-        layout.addWidget(self.canvas, 1)
+        layout.addWidget(self.chart, 1)
         layout.addWidget(self.show_table)
         layout.addWidget(self.view, 1)
 
@@ -1213,13 +1236,18 @@ class AgreementPanel(QWidget):
         self.show_table.blockSignals(False)
         self.view.setVisible(not on)
 
+    DPI = 100
+
     def _draw_bars(self) -> None:
         tokens = theme.current()
         self.figure.clear()
-        axes = self.figure.add_axes((0.30, 0.06, 0.66, 0.90))
-        axes.set_facecolor(tokens.surface)
         rows = compact.agreement_bars(self._frame)
         self._bars = rows
+        height = agreement_height_px(len(rows))
+        self.canvas.setMinimumHeight(height)
+        self.figure.set_figheight(height / self.DPI)
+        axes = self.figure.add_subplot(111)
+        axes.set_facecolor(tokens.surface)
         if not rows:
             axes.text(0.5, 0.5, "no reviewed channels in this window", ha="center",
                       va="center", color=tokens.text_muted, fontsize=8,
@@ -1245,8 +1273,12 @@ class AgreementPanel(QWidget):
             axes.spines[side].set_visible(False)
         for side in ("left", "bottom"):
             axes.spines[side].set_color(tokens.separator)
-        axes.legend(fontsize=7, frameon=False, loc="lower right",
-                    labelcolor=tokens.text_muted)
+        # Above the bars, where it covers nothing, on two lines so that it
+        # fits the side panel's width.
+        axes.legend(fontsize=7, frameon=False, loc="lower left", ncol=2,
+                    bbox_to_anchor=(0.0, 1.0), borderaxespad=0.2, handlelength=1.2,
+                    columnspacing=0.9, labelcolor=tokens.text_muted)
+        axes.set_ylim(-0.6, len(rows) - 0.4)
         axes.set_xlabel("events in this window", fontsize=7, color=tokens.text_muted)
         self.canvas.draw_idle()
 

@@ -4205,3 +4205,61 @@ def test_the_assistant_says_when_its_evidence_is_not_the_analysis_on_screen():
     kept = evidence_scope(session((120.0, 180.0), keep=("AR1-AR2",)))
     assert "reinstated (AR1-AR2)" in kept and "still set aside" in kept
     assert evidence_scope(types.SimpleNamespace()) == ""
+
+
+# -- the agreement chart keeps its channel names apart -------------------------
+
+
+def test_the_agreement_chart_keeps_its_channel_names_apart(qapp, review):
+    """A fixed figure at the machine's default dpi gave twenty channels a few
+    pixels each: their names were drawn on top of one another, the longest
+    were cut off at the left edge, and the legend sat on the bars."""
+    import matplotlib
+
+    from onset_review.panels import AgreementPanel, agreement_height_px
+
+    previous = matplotlib.rcParams["figure.dpi"]
+    matplotlib.rcParams["figure.dpi"] = 200          # as one machine had it
+    try:
+        panel = AgreementPanel(review)
+    finally:
+        matplotlib.rcParams["figure.dpi"] = previous
+    try:
+        import pandas as pd
+
+        # Twenty channels, with names as long as real ones get: the case
+        # that overlapped. Given directly, because the synthetic recording
+        # has no annotator-reviewed channels.
+        names = [f"AHR{i}-AHR{i + 1}" for i in range(1, 11)] + \
+                [f"IAR{i}-IAR{i + 1}" for i in range(1, 11)]
+        panel._frame = pd.DataFrame({
+            "channel": names, "n_expert": range(60, 40, -1), "n_detector": range(20),
+            "matched": range(20), "detector_only": 0, "expert_only": 0,
+            "sensitivity": 0.5, "precision": 0.5})
+        panel._draw_bars()
+        panel.resize(300, 600)
+        panel.show()
+        qapp.processEvents()
+        assert panel.figure.dpi == AgreementPanel.DPI
+        rows = len(panel._bars)
+        assert rows == 20
+        assert panel.canvas.minimumHeight() == agreement_height_px(rows)
+        assert agreement_height_px(20) > agreement_height_px(5)
+
+        panel.canvas.draw()
+        renderer = panel.canvas.get_renderer()
+        axes = panel.figure.axes[0]
+        boxes = sorted((label.get_window_extent(renderer)
+                        for label in axes.get_yticklabels() if label.get_text()),
+                       key=lambda box: box.y0)
+        assert len(boxes) == rows
+        for lower, upper in zip(boxes, boxes[1:], strict=False):
+            assert lower.y1 <= upper.y0 + 0.5, "two channel names overlap"
+        width = panel.figure.bbox.width
+        assert all(box.x0 >= 0 for box in boxes), "a name is cut off at the left"
+        legend = axes.get_legend().get_window_extent(renderer)
+        assert legend.y0 >= axes.get_window_extent(renderer).y1 - 0.5, \
+            "the legend sits on the bars"
+        assert 0 <= legend.x0 and legend.x1 <= width + 0.5, "the legend is cut off"
+    finally:
+        panel.close()

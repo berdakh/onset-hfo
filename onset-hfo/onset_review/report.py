@@ -21,6 +21,8 @@ Three rules shape what goes in:
 from __future__ import annotations
 
 import datetime as _dt
+import html
+import re
 from pathlib import Path
 
 import numpy as np
@@ -293,9 +295,9 @@ def write_review(session: ReviewSession, path: str | Path,
                  reviewer: str | None = None, notes: str = "") -> Path:
     """Write the review beside whatever name the reviewer chose.
 
-    A `.html` suffix renders through `markdown` when it is installed and falls
-    back to a readable `<pre>` block when it is not, because an export must not
-    fail for want of an optional dependency on a clinical machine.
+    A `.html` suffix renders it to a page of its own (`markdown_to_html`),
+    with no optional dependency: an export must look the same on every
+    clinical machine.
     """
     path = Path(path)
     text = review_markdown(session, reviewer=reviewer, notes=notes)
@@ -307,25 +309,130 @@ def write_review(session: ReviewSession, path: str | Path,
 
 
 def _as_html(text: str, session: ReviewSession) -> str:
-    title = f"iEEG review — {session.request.subject}"
-    try:
-        import markdown
-
-        body = markdown.markdown(text, extensions=["tables"])
-    except Exception:
-        body = "<pre>" + text.replace("&", "&amp;").replace("<", "&lt;") + "</pre>"
+    title = html.escape(f"iEEG review — {session.request.subject}")
     return (
         "<!doctype html>\n<html lang='en'><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
         f"<title>{title}</title><style>"
         "body{font:15px/1.55 -apple-system,Segoe UI,Roboto,sans-serif;"
-        "max-width:54rem;margin:3rem auto;padding:0 1.5rem;color:#1a1a1a}"
-        "table{border-collapse:collapse;margin:1rem 0;font-size:13px}"
-        "th,td{border:1px solid #d0d0d0;padding:.3rem .55rem;text-align:right}"
-        "th:first-child,td:first-child{text-align:left}"
-        "th{background:#f3f3f3}code{background:#f3f3f3;padding:.1rem .3rem}"
+        "max-width:54rem;margin:3rem auto;padding:0 1.5rem;color:#1a1a1a;"
+        "background:#fff}"
+        "table{border-collapse:collapse;margin:1rem 0;font-size:13px;display:block;"
+        "overflow-x:auto}"
+        "th,td{border:1px solid #d0d0d0;padding:.3rem .55rem;text-align:left;"
+        "vertical-align:top}"
+        "th{background:#f3f3f3}code{background:#f3f3f3;padding:.1rem .3rem;"
+        "border-radius:3px;font-size:.92em}"
         "h1{font-size:1.6rem}h2{font-size:1.2rem;margin-top:2rem;"
-        "border-bottom:1px solid #e0e0e0;padding-bottom:.2rem}"
-        "</style></head><body>\n" + body + "\n</body></html>\n")
+        "border-bottom:1px solid #e0e0e0;padding-bottom:.2rem}h3{font-size:1.05rem}"
+        "@media print{body{margin:0;max-width:none}}"
+        "</style></head><body>\n" + markdown_to_html(text) + "\n</body></html>\n")
+
+
+_INLINE = re.compile(r"`([^`]+)`|\*\*(.+?)\*\*|(?<![\w*])_([^_\n]+?)_(?![\w])")
+
+
+def _inline(text: str) -> str:
+    """Code, bold and italic within one line, everything else escaped."""
+    out, last = [], 0
+    for match in _INLINE.finditer(text):
+        out.append(html.escape(text[last:match.start()], quote=False))
+        code, bold, italic = match.groups()
+        if code is not None:
+            out.append(f"<code>{html.escape(code, quote=False)}</code>")
+        elif bold is not None:
+            out.append(f"<strong>{_inline(bold)}</strong>")
+        else:
+            out.append(f"<em>{_inline(italic)}</em>")
+        last = match.end()
+    out.append(html.escape(text[last:], quote=False))
+    return "".join(out)
+
+
+def _cells(line: str) -> list[str]:
+    line = line.strip()
+    if line.startswith("|"):
+        line = line[1:]
+    if line.endswith("|"):
+        line = line[:-1]
+    return [cell.strip() for cell in line.split("|")]
+
+
+_RULE = re.compile(r"^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$")
+_BULLET = re.compile(r"^\s*[-*+]\s+(.*)$")
+_NUMBERED = re.compile(r"^\s*\d+\.\s+(.*)$")
+_HEADING = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
+
+
+def markdown_to_html(text: str) -> str:
+    """The Markdown this module writes, as HTML, with no third-party package.
+
+    The HTML export used the optional `markdown` package and, without it,
+    wrapped the whole review in `<pre>`: a page of raw `|` and `**`. Nothing
+    installs that package, so that was every export. This covers exactly what
+    `review_markdown` emits -- headings, paragraphs, pipe tables, bulleted
+    and numbered lists, bold, italic and inline code -- and escapes all of
+    it, so a channel name or a reader's note cannot inject markup.
+    """
+    lines = str(text or "").splitlines()
+    out: list[str] = []
+    paragraph: list[str] = []
+
+    def flush() -> None:
+        if paragraph:
+            out.append("<p>" + _inline(" ".join(part.strip() for part in paragraph)) + "</p>")
+            paragraph.clear()
+
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if not line.strip():
+            flush()
+            i += 1
+            continue
+        heading = _HEADING.match(line)
+        if heading:
+            flush()
+            level = len(heading.group(1))
+            out.append(f"<h{level}>{_inline(heading.group(2))}</h{level}>")
+            i += 1
+            continue
+        if line.lstrip().startswith("|") and i + 1 < len(lines) and _RULE.match(lines[i + 1]):
+            flush()
+            head = _cells(line)
+            i += 2
+            rows = []
+            while i < len(lines) and lines[i].lstrip().startswith("|"):
+                rows.append(_cells(lines[i]))
+                i += 1
+            out.append("<table><thead><tr>"
+                       + "".join(f"<th>{_inline(c)}</th>" for c in head)
+                       + "</tr></thead><tbody>"
+                       + "".join("<tr>" + "".join(f"<td>{_inline(c)}</td>" for c in row)
+                                 + "</tr>" for row in rows)
+                       + "</tbody></table>")
+            continue
+        for pattern, tag in ((_BULLET, "ul"), (_NUMBERED, "ol")):
+            if pattern.match(line):
+                flush()
+                items = []
+                while i < len(lines) and pattern.match(lines[i]):
+                    item = [pattern.match(lines[i]).group(1)]
+                    i += 1
+                    # A wrapped item continues on indented lines.
+                    while (i < len(lines) and lines[i].startswith(("  ", "\t"))
+                           and lines[i].strip() and not _BULLET.match(lines[i])
+                           and not _NUMBERED.match(lines[i])):
+                        item.append(lines[i].strip())
+                        i += 1
+                    items.append(f"<li>{_inline(' '.join(item))}</li>")
+                out.append(f"<{tag}>" + "".join(items) + f"</{tag}>")
+                break
+        else:
+            paragraph.append(line)
+            i += 1
+    flush()
+    return "\n".join(out)
 
 
 def _findings_section(session: ReviewSession) -> list[str]:
