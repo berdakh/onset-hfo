@@ -92,7 +92,7 @@ For the research framing rather than the code, read
 | `notebooks/` | nine notebooks, each with a Colab badge; 06 and 08 need a GPU runtime |
 | `scripts/` | studies too long for a test: the model ladder, the sub-population screen, the multiplier ablation |
 | `app/` | the no-install demo: a Streamlit site over the committed results (`app/README.md`) |
-| `tests/` | about seventy files, 1,744 tests, all offline |
+| `tests/` | 83 files, 1,843 tests, all offline. Without the `review` extra the desktop's skip: CI's test job runs 1,461 and skips 73 |
 | `paper/` | **the preprint — untracked on purpose. Never commit it.** |
 
 ### `onset_hfo/` — the modules worth knowing first
