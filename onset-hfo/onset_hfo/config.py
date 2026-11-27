@@ -832,7 +832,7 @@ def _package_version() -> str:
 
 #: What `pyproject.toml` declares, for a source tree that is not installed.
 #: A test holds the two together.
-_SOURCE_VERSION = "0.3.24"
+_SOURCE_VERSION = "0.3.25"
 PIPELINE_VERSION = _package_version()
 
 
