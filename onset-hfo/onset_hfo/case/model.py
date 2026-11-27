@@ -121,15 +121,15 @@ class Case:
     steps: dict = field(default_factory=dict)
     log: list = field(default_factory=list)
     #: How the case is analysed: detectors, band, threshold, quality stage
-    #: and preprocessing, as a review request's fields (`onset_review.project.
-    #: request_to_dict`). Empty until the Preprocess step saves it.
+    #: and preprocessing, serialised as review request fields.
+    #: Empty until the Preprocess step saves it.
     analysis: dict = field(default_factory=dict)
     #: Contact sets a clinician named, e.g. {"soz": {"contacts": [...], "by": ..,
     #: "at": ..}}: the seizure onset zone as they judged it, for the Map step's
     #: agreement. Never computed by the software.
     zones: dict = field(default_factory=dict)
     #: Reviewers' sign-offs, each against a fingerprint of the content it
-    #: approves (`onset_review.casereport.sign_off`).
+    #: approves, recorded when the reviewer signs off the case report.
     signoffs: list = field(default_factory=list)
 
     # -- making and opening ----------------------------------------------------------
